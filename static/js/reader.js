@@ -86,7 +86,7 @@ class Reader {
     this.foldButton = button(icons.fold, "reader.foldAll", () => this.foldAll(), { class: "wide-only" });
     const link = (icon, title, href) => h("a", { class: "icon-button", href, target: "_blank", rel: "noopener noreferrer", title, "aria-label": title, html: icon });
 
-    const toolbar = h("div", { class: "reader-toolbar" },
+    const toolbar = this.toolbar = h("div", { class: "reader-toolbar" },
       this.tocButton,
       h("a", { class: "icon-button", href: "#/", title: t("reader.back"), "aria-label": t("reader.back"), html: icons.back }),
       h("div", { class: "title", title: paper.title }, withMath(paper.title)),
@@ -307,7 +307,7 @@ class Reader {
     const proof = target.closest(".ltx_proof.collapsed");
     if (proof) this.setProof(proof, false);
     if (remember) {
-      this.backStack.push(this.scroller.scrollTop);
+      this.backStack.push(scrollY);
       this.backButton.classList.add("visible");
     }
     const block = target.closest(".ltx_theorem, .ltx_para, .ltx_bibitem, .ltx_equation, .eq-scroll, section") || target;
@@ -317,21 +317,26 @@ class Reader {
     block.classList.add("flash");
   }
 
+  // Bas des barres fixes (en-tête + barre d'outils) : le haut de la zone de lecture.
+  viewTop() {
+    return this.toolbar.getBoundingClientRect().bottom;
+  }
+
   // Défilement doux pour les petits sauts, immédiat pour les longs (plus lisible).
   scrollToElement(element, smooth = true) {
-    const offset = element.getBoundingClientRect().top - this.scroller.getBoundingClientRect().top - 12;
-    const near = Math.abs(offset) < this.scroller.clientHeight * 1.5;
-    this.scroller.scrollTo({ top: this.scroller.scrollTop + offset, behavior: smooth && near ? "smooth" : "instant" });
+    const offset = element.getBoundingClientRect().top - this.viewTop() - 12;
+    const near = Math.abs(offset) < innerHeight * 1.5;
+    scrollTo({ top: Math.round(scrollY + offset), behavior: smooth && near ? "smooth" : "instant" });
   }
 
   goBack() {
     const top = this.backStack.pop();
-    if (top !== undefined) this.scroller.scrollTo({ top, behavior: "instant" });
+    if (top !== undefined) scrollTo({ top, behavior: "instant" });
     this.backButton.classList.toggle("visible", this.backStack.length > 0);
   }
 
   computeAnchors() {
-    const top = this.scroller.getBoundingClientRect().top - this.scroller.scrollTop;
+    const top = -scrollY;
     const elements = this.content.querySelectorAll("section[id], .ltx_theorem[id], .ltx_para[id], .ltx_abstract[id]");
     this.anchors = [...elements].map((el) => ({ el, y: el.getBoundingClientRect().top - top }))
       .filter((a) => a.el.offsetParent !== null)
@@ -340,7 +345,7 @@ class Reader {
 
   currentAnchor() {
     if (!this.anchors) this.computeAnchors();
-    const y = this.scroller.scrollTop + 24;
+    const y = scrollY + this.viewTop() + 24;
     let low = 0;
     let high = this.anchors.length - 1;
     let found = null;
@@ -355,7 +360,7 @@ class Reader {
     const anchor = this.currentAnchor();
     if (!anchor) return;
     // Section courante dans le sommaire : la dernière dont le début est au-dessus de la ligne de lecture
-    const y = this.scroller.scrollTop + 24;
+    const y = scrollY + this.viewTop() + 24;
     let section = null;
     for (const id of this.tocLinks.keys()) {
       const entry = this.anchors.find((a) => a.el.id === id);
@@ -635,7 +640,11 @@ class Reader {
   bindEvents() {
     this.savePosition = debounce((anchor) => api.savePosition(this.paper.id, anchor).catch(() => {}), 1500);
     const onScroll = debounce(() => this.onScroll(), 120);
-    this.scroller.addEventListener("scroll", () => { this.hidePreview(); onScroll(); }, { passive: true });
+    // L'article défile avec la fenêtre (et non dans une zone intérieure) : Safari ne fait plus
+    // trembler le texte d'un pixel à l'arrêt du défilement.
+    const onWindowScroll = () => { this.hidePreview(); onScroll(); };
+    addEventListener("scroll", onWindowScroll, { passive: true });
+    this.cleanups.push(() => removeEventListener("scroll", onWindowScroll));
 
     this.scroller.addEventListener("click", (event) => {
       const link = event.target.closest('a[href^="#"]');

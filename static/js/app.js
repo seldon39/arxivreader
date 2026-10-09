@@ -14,6 +14,7 @@ async function route() {
   const token = ++routeToken;
   cleanup?.();
   cleanup = null;
+  scrollTo({ top: 0, behavior: "instant" });
   const match = location.hash.match(/^#\/paper\/(.+)$/);
   document.querySelectorAll(".topnav a").forEach((a) => a.classList.toggle("active", !match && a.getAttribute("href") === "#/"));
   try {

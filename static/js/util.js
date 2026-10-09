@@ -67,20 +67,31 @@ const TEX_SYMBOLS = {
   ell: "ℓ", hbar: "ℏ", otimes: "⊗", oplus: "⊕", subset: "⊂", in: "∈", sim: "∼", cong: "≅",
 };
 const BLACKBOARD = { C: "ℂ", R: "ℝ", Z: "ℤ", Q: "ℚ", N: "ℕ", P: "ℙ", H: "ℍ" };
-const SUPERSCRIPTS = { 0: "⁰", 1: "¹", 2: "²", 3: "³", 4: "⁴", 5: "⁵", 6: "⁶", 7: "⁷", 8: "⁸", 9: "⁹", n: "ⁿ", "*": "*", "+": "⁺", "-": "⁻" };
 
 function texToText(tex) {
   return tex
     .replace(/\\mathbb\{?([A-Z])\}?/g, (_, c) => BLACKBOARD[c] || c)
     .replace(/\\(?:mathcal|mathrm|mathbf|mathfrak|operatorname|text|mathit)\{([^}]*)\}/g, "$1")
     .replace(/\\([A-Za-z]+)/g, (_, name) => TEX_SYMBOLS[name] ?? name)
-    .replace(/\^\{?([0-9n*+-])\}?/g, (_, c) => SUPERSCRIPTS[c])
-    .replace(/[{}]/g, "")
     .replace(/\\[,;! ]/g, " ");
+}
+
+// Indices et exposants (x_{n}, e^{-f}) en <sub>/<sup>, le reste en texte.
+function scripted(tex) {
+  const nodes = [];
+  const pattern = /([_^])(?:\{([^{}]*)\}|(\\?.))/g;
+  let last = 0;
+  for (const match of tex.matchAll(pattern)) {
+    nodes.push(tex.slice(last, match.index).replace(/[{}]/g, ""));
+    nodes.push(h(match[1] === "_" ? "sub" : "sup", {}, (match[2] ?? match[3]).replace(/[{}]/g, "")));
+    last = match.index + match[0].length;
+  }
+  nodes.push(tex.slice(last).replace(/[{}]/g, ""));
+  return nodes;
 }
 
 // Texte avec formules $…$ → nœuds (formules en italique mathématique).
 export function withMath(text) {
   return String(text).split(/(\$[^$]+\$)/).filter(Boolean).map((part) =>
-    part.startsWith("$") && part.endsWith("$") ? h("span", { class: "tex", title: part }, texToText(part.slice(1, -1))) : part);
+    part.startsWith("$") && part.endsWith("$") ? h("span", { class: "tex", title: part }, scripted(texToText(part.slice(1, -1)))) : part);
 }
