@@ -1,6 +1,7 @@
 """Accès à arXiv : identifiants, métadonnées et version HTML des articles."""
 
 import re
+import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 
@@ -73,8 +74,13 @@ def _text(node, path):
 
 
 def fetch_metadata(arxiv_id):
+    # arXiv demande au plus une requête toutes les 3 s : nouvelle tentative si elle répond 429/503
     with _client() as client:
-        response = client.get("https://export.arxiv.org/api/query", params={"id_list": arxiv_id})
+        for attempt in range(4):
+            response = client.get("https://export.arxiv.org/api/query", params={"id_list": arxiv_id})
+            if response.status_code not in (429, 503):
+                break
+            time.sleep(3 * (attempt + 1))
     response.raise_for_status()
     entry = ET.fromstring(response.text).find(f"{ATOM}entry")
     if entry is None or not _text(entry, f"{ATOM}title"):
@@ -114,6 +120,24 @@ def fetch_html(arxiv_id, version):
                 base = str(response.url)
                 return response.text, base if base.endswith("/") else base + "/", source
     return None
+
+
+MAX_SOURCE_BYTES = 60_000_000
+
+
+def fetch_source(arxiv_id, version):
+    """Source déposée sur arXiv (archive tar.gz ou .tex compressé), ou None si trop grosse."""
+    with _client() as client:
+        with client.stream("GET", f"https://arxiv.org/e-print/{arxiv_id}v{version}") as response:
+            if response.status_code != 200:
+                return None
+            chunks, size = [], 0
+            for chunk in response.iter_bytes():
+                size += len(chunk)
+                if size > MAX_SOURCE_BYTES:
+                    return None
+                chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def fetch_asset(url):

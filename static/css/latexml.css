@@ -15,10 +15,11 @@
   --font-math: "Latin Modern Math", "STIX Two Math", math;
   --indent: 1.5em;
 }
-:root[data-paper-font="lm"] {
-  --paper-font: "LM Roman", "Latin Modern Roman", "Computer Modern", serif;
-  --paper-caps: "LM Roman Caps", "LM Roman", serif;
-}
+/* Police du texte : réglage, ou « comme l'article » (paquet de police lu dans la source TeX) */
+[data-paper-font="charter"] { --paper-font: Charter, "Bitstream Charter", Georgia, serif; --paper-caps: var(--paper-font); }
+[data-paper-font="lm"] { --paper-font: "LM Roman", "Latin Modern Roman", "Computer Modern", serif; --paper-caps: "LM Roman Caps", "LM Roman", serif; }
+[data-paper-font="times"] { --paper-font: "Times New Roman", Times, serif; --paper-caps: var(--paper-font); }
+[data-paper-font="palatino"] { --paper-font: Palatino, "Palatino Linotype", "Book Antiqua", serif; --paper-caps: var(--paper-font); }
 
 .paper-content {
   font-family: var(--paper-font);
@@ -176,6 +177,13 @@ table.ltx_eqn_table { width: 100%; border-collapse: collapse; margin: .55em 0; d
 .ltx_bibblock { display: inline; }
 
 .ltx_ERROR, .ltx_page_logo { display: none; }
+
+/* Détails amsart / amsthm / amsplain */
+.paper-content cite, .preview cite { font-style: normal; }
+.ltx_tag_figure, .ltx_tag_table { font-variant: small-caps; letter-spacing: .02em; }
+.thm-italic .ltx_tag_item { font-style: italic; }
+.ams-title { font-style: italic; color: inherit !important; text-decoration: none; }
+a.ams-title:hover { text-decoration: underline; }
 
 /* Colonne très étroite : la justification creuserait de grands blancs autour des formules */
 @media (max-width: 640px) {

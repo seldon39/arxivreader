@@ -5,10 +5,11 @@ import shutil
 import time
 
 from . import db
-from .arxiv import fetch_asset, fetch_html, fetch_metadata, paper_key, parse_arxiv_id
+from .arxiv import fetch_asset, fetch_html, fetch_metadata, fetch_source, paper_key, parse_arxiv_id
 from .config import PAPERS
 from .sanitize import sanitize_document
 from .structure import extract_structure
+from .texsource import analyze_source
 
 ALLOWED_ASSET_TYPES = ("image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml")
 
@@ -43,6 +44,12 @@ def import_paper(query):
                 (staging / "assets" / local_name).write_bytes(data)
             time.sleep(0.2)
     structure["source"] = source
+    # Source TeX : options que la version HTML perd (numéros d'équation, police, étiquettes de listes)
+    try:
+        data = fetch_source(arxiv_id, meta.version)
+        structure["tex"] = analyze_source(data) if data else None
+    except Exception:
+        structure["tex"] = None
     (staging / "structure.json").write_text(json.dumps(structure, ensure_ascii=False), encoding="utf-8")
 
     shutil.rmtree(folder, ignore_errors=True)

@@ -2,6 +2,7 @@
 
 import { api } from "./api.js";
 import { closure, renderGraph } from "./graph.js";
+import { amsBibliography, markItalicStatements, placeEquationNumbers, relabelLists } from "./amsfix.js";
 import { layoutFigures, prepareFigures } from "./figures.js";
 import { typesetFragment, typesetMath } from "./math.js";
 import { t } from "./i18n.js";
@@ -139,6 +140,8 @@ class Reader {
 
     this.root.append(toolbar, this.toc, this.scroller, this.panel,
       h("div", { class: "scrim", onclick: () => this.closeDrawers() }));
+    // Police « comme l'article » : celle du paquet de police de la source TeX
+    if (settings.paperFont === "auto") this.root.dataset.paperFont = this.structure.tex?.font || "lm";
     view.replaceChildren(this.root);
   }
 
@@ -156,6 +159,15 @@ class Reader {
 
     if (!this.content.querySelector("[lang]")) this.content.lang = "en"; // césure à l'anglaise
     this.figures = prepareFigures(this.content);
+
+    // Ce que la version HTML perd par rapport au PDF (lu dans la source TeX à l'import)
+    const tex = this.structure.tex;
+    if (tex) {
+      placeEquationNumbers(this.content, tex.eqno);
+      relabelLists(this.content, tex.enumerate);
+    }
+    markItalicStatements(this.content);
+    amsBibliography(this.content);
 
     // Ponctuation collée à la formule qui la précède (pas de « , » seule en début de ligne)
     this.content.querySelectorAll("math").forEach((math) => {

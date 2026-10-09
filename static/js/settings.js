@@ -12,7 +12,7 @@ const DEFAULTS = {
   proofsCollapsed: false,
   tocOpen: true,
   panelOpen: true,
-  paperFont: "charter",
+  paperFont: "auto",
   marginMarks: true,
   mathRenderer: "mathjax",
 };
@@ -78,7 +78,7 @@ export function openSettingsDialog() {
     h("div", { class: "row" }, h("span", {}, t("settings.width")),
       segmented("readingWidth", [["narrow", t("settings.width.narrow")], ["normal", t("settings.width.normal")], ["wide", t("settings.width.wide")]], settings.readingWidth)),
     h("div", { class: "row" }, h("span", {}, t("settings.paperFont")),
-      segmented("paperFont", [["charter", "Charter"], ["lm", "Computer Modern"]], settings.paperFont)),
+      segmented("paperFont", [["auto", t("settings.paperFont.auto")], ["charter", "Charter"], ["lm", "Computer Modern"]], settings.paperFont)),
     h("div", { class: "row" }, h("span", {}, t("settings.math")),
       segmented("mathRenderer", [["mathjax", t("settings.math.mathjax")], ["native", t("settings.math.native")]], settings.mathRenderer)),
     h("label", { class: "check" }, h("input", { type: "checkbox", name: "proofsCollapsed", checked: settings.proofsCollapsed }), t("settings.proofs")),

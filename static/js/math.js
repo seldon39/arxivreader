@@ -29,7 +29,45 @@ function refreshStylesheet(MathJax) {
   if (!sheet.isConnected) document.head.append(sheet);
 }
 
+// \mathcal : LaTeXML écrit des lettres « script » Unicode (ℋ, 𝒪…) ; on les remet en
+// calligraphique Computer Modern (variante -tex-calligraphic de MathJax), comme dans le PDF.
+const SCRIPT_EXCEPTIONS = { "ℬ": "B", "ℰ": "E", "ℱ": "F", "ℋ": "H", "ℐ": "I", "ℒ": "L", "ℳ": "M", "ℛ": "R" };
+
+function scriptToLatin(text) {
+  if (SCRIPT_EXCEPTIONS[text]) return SCRIPT_EXCEPTIONS[text];
+  const code = text.codePointAt(0);
+  return text.length <= 2 && code >= 0x1d49c && code <= 0x1d4b5 ? String.fromCharCode(65 + code - 0x1d49c) : null;
+}
+
+function restoreCalligraphic(math) {
+  math.querySelectorAll("mi.ltx_font_mathcaligraphic").forEach((mi) => {
+    const latin = scriptToLatin(mi.textContent.trim());
+    if (!latin) return;
+    mi.textContent = latin;
+    mi.setAttribute("mathvariant", "-tex-calligraphic");
+  });
+}
+
+// Espacement des relations : LaTeXML réduit parfois l'espace autour de « = » (rspace="0.111em"
+// devant ∂, par exemple). TeX met 0,278 em (\thickmuskip) ; on rend la main au dictionnaire
+// d'opérateurs de MathJax quand l'espace indiqué est plus petit. Les espaces ajoutés par l'auteur
+// (plus grands) sont conservés.
+const RELATIONS = new Set("=<>≤≥≠≈≡∼≃≅∝∈∉∋⊂⊃⊆⊇⊊⊋≺≻⪯⪰≪≫→←↔⟶⟵⟷↦⟼⇒⇐⇔⟹⟸⟺∣∥⊥≔:=".split(""));
+
+function relationSpacing(math) {
+  math.querySelectorAll("mo").forEach((mo) => {
+    const text = mo.textContent.trim();
+    if (!RELATIONS.has(text) && text !== ":=") return;
+    for (const side of ["lspace", "rspace"]) {
+      const value = parseFloat(mo.getAttribute(side));
+      if (!Number.isNaN(value) && value < 0.27) mo.removeAttribute(side);
+    }
+  });
+}
+
 function convert(MathJax, math) {
+  restoreCalligraphic(math);
+  relationSpacing(math);
   const display = math.getAttribute("display") === "block";
   const node = MathJax.mathml2chtml(math.outerHTML, { display });
   node.dataset.tex = math.getAttribute("alttext") || "";
