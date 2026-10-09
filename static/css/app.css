@@ -76,7 +76,8 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 .tex { font-family: var(--font-math); font-style: italic; }
-html, body { margin: 0; height: 100%; }
+html, body { margin: 0; }
+body { min-height: 100vh; }
 body { background: var(--bg); color: var(--text); font: 15px/1.5 var(--font-ui); -webkit-font-smoothing: antialiased; }
 a { color: var(--link); text-decoration: none; }
 a:hover { text-decoration: underline; }
