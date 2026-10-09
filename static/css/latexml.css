@@ -23,7 +23,7 @@
 .paper-content {
   font-family: var(--paper-font);
   text-align: justify; hyphens: auto; -webkit-hyphens: auto;
-  font-kerning: normal; font-variant-ligatures: common-ligatures; text-rendering: optimizeLegibility;
+  font-kerning: normal; font-variant-ligatures: common-ligatures;
   overflow-wrap: break-word;
 }
 /* Les formules n'héritent pas des styles du texte qui les entoure (italique des énoncés,
@@ -139,7 +139,6 @@ table.ltx_eqn_table { width: 100%; border-collapse: collapse; margin: .55em 0; d
 
 /* ---- Figures et tableaux ---- */
 .ltx_figure, .ltx_table { margin: 1.4em 0; text-align: center; }
-.ltx_figure img, .ltx_graphics { max-width: 100%; height: auto; }
 .ltx_caption { font-size: .9em; margin-top: .5em; text-align: center; }
 .ltx_tabular { margin: 0 auto; border-collapse: collapse; text-align: left; }
 .ltx_tabular td, .ltx_tabular th { padding: .15em .55em; }
@@ -149,7 +148,21 @@ table.ltx_eqn_table { width: 100%; border-collapse: collapse; margin: .55em 0; d
 .ltx_border_r { border-right: 1px solid currentColor; }
 .ltx_border_tt { border-top: 2px solid currentColor; }
 .ltx_border_bb { border-bottom: 2px solid currentColor; }
-.ltx_picture, svg.ltx_picture { max-width: 100%; height: auto; overflow: visible; }
+/* Figures : couleurs d'origine, sur un fond blanc aux bords arrondis (lisibles aussi en mode sombre) */
+.figure-card, .ltx_figure img, img.ltx_graphics {
+  background: #fff; color: #000; border-radius: 10px; border: 1px solid var(--border);
+}
+.ltx_figure img, img.ltx_graphics { box-sizing: content-box; max-width: calc(100% - 28px); height: auto; padding: 14px; }
+.figure-card {
+  position: relative; display: inline-block; vertical-align: middle; padding: 14px; max-width: 100%;
+  box-sizing: border-box; line-height: normal; text-indent: 0; text-align: left;
+}
+.figure-card > svg.ltx_picture { display: block; max-width: 100%; height: auto; overflow: visible; }
+.figure-label {
+  position: absolute; left: 0; top: 0; translate: var(--shift-x, 14px) var(--shift-y, 14px);
+  white-space: nowrap; line-height: 1; text-indent: 0; text-align: left; color: #000;
+}
+.figure-label .ltx_foreignobject_container, .figure-label .ltx_foreignobject_content { display: inline-block; }
 
 /* ---- Notes de bas de page : affichées au survol ---- */
 .ltx_note_outer { display: none; }

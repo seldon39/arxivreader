@@ -2,6 +2,7 @@
 
 import { api } from "./api.js";
 import { closure, renderGraph } from "./graph.js";
+import { layoutFigures, prepareFigures } from "./figures.js";
 import { typesetFragment, typesetMath } from "./math.js";
 import { t } from "./i18n.js";
 import { onSettingsChange, saveSettings, settings } from "./settings.js";
@@ -40,30 +41,28 @@ class Reader {
     this.renderToc();
     this.renderPanel();
     this.bindEvents();
-    this.restorePosition();
-    if (settings.mathRenderer !== "native") setTimeout(() => this.renderMath(), 0);
+    this.finishLayout();
   }
 
-  // Formules en MathJax, de l'écran vers le reste de l'article, sans faire sauter la lecture
-  renderMath() {
-    const view = this.scroller.getBoundingClientRect();
-    const middle = view.top + view.height / 2;
-    typesetMath(this.content, {
-      priority: (math) => {
-        const r = math.getBoundingClientRect();
-        return r.height === 0 && r.width === 0 ? 1e9 : Math.abs(r.top - middle);
-      },
-      beforeChunk: () => {
-        this.anchors = null;
-        const anchor = this.currentAnchor();
-        return anchor ? { anchor, top: anchor.getBoundingClientRect().top } : null;
-      },
-      afterChunk: (state) => {
-        this.anchors = null;
-        if (state?.anchor.isConnected) this.scroller.scrollTop += state.anchor.getBoundingClientRect().top - state.top;
-      },
-      isCancelled: () => this.destroyed,
-    }).catch(() => {});
+  // Formules en MathJax avant d'afficher le texte (moins d'une seconde), puis reprise de la lecture
+  async finishLayout() {
+    if (settings.mathRenderer !== "native" && this.content.querySelector("math")) {
+      this.article.classList.add("typesetting");
+      const note = h("div", { class: "typesetting-note busy" }, h("span", { class: "spinner" }), t("reader.typesetting"));
+      this.scroller.prepend(note);
+      await new Promise((resolve) => setTimeout(resolve, 30)); // laisse s'afficher l'indicateur
+      try {
+        await typesetMath(this.content, { isCancelled: () => this.destroyed });
+      } catch {
+        // MathJax indisponible : le MathML du navigateur reste affiché
+      }
+      note.remove();
+      this.article.classList.remove("typesetting");
+    }
+    if (this.destroyed) return;
+    layoutFigures(this.figures);
+    this.anchors = null;
+    this.restorePosition();
   }
 
   // ---------- Construction ----------
@@ -156,6 +155,7 @@ class Reader {
     });
 
     if (!this.content.querySelector("[lang]")) this.content.lang = "en"; // césure à l'anglaise
+    this.figures = prepareFigures(this.content);
 
     // Ponctuation collée à la formule qui la précède (pas de « , » seule en début de ligne)
     this.content.querySelectorAll("math").forEach((math) => {
@@ -668,6 +668,7 @@ class Reader {
     let currentLayout = layout();
     const onResize = debounce(() => {
       this.anchors = null;
+      layoutFigures(this.figures);
       if (layout() === currentLayout) return;
       currentLayout = layout();
       // Changement de format : volets remis dans leur état par défaut pour cette largeur

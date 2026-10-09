@@ -1,6 +1,6 @@
 // Rendu des formules avec MathJax (mise en page fidèle à TeX, polices Computer Modern).
-// Le MathML produit par LaTeXML est converti formule par formule, par paquets, en commençant
-// par celles qui sont à l'écran ; le MathML natif reste affiché en attendant.
+// Toutes les formules sont converties avant l'affichage de l'article : la conversion prend
+// moins d'une seconde, et rien ne bouge ensuite pendant la lecture.
 
 const BASE = "/static/vendor/mathjax";
 let loading = null;
@@ -37,39 +37,33 @@ function convert(MathJax, math) {
   math.replaceWith(node);
 }
 
-/**
- * Convertit toutes les formules de `root`.
- * - priority(math) : nombre, les plus petits d'abord (distance à l'écran) ;
- * - beforeChunk() / afterChunk(state) : permettent au lecteur de garder sa position ;
- * - isCancelled() : arrêt si l'utilisateur quitte l'article.
- */
-export async function typesetMath(root, { priority = () => 0, beforeChunk = () => null, afterChunk = () => {}, isCancelled = () => false, chunk = 250 } = {}) {
+function topLevelMath(root) {
+  return [...root.querySelectorAll("math")].filter((m) => !m.parentElement.closest("math"));
+}
+
+// Convertit toutes les formules de `root` (par gros paquets, pour laisser vivre l'indicateur d'attente).
+export async function typesetMath(root, { isCancelled = () => false, chunk = 500 } = {}) {
   const MathJax = await loadMathJax();
-  const maths = [...root.querySelectorAll("math")].filter((m) => !m.parentElement.closest("math"));
-  const ordered = maths.map((m) => [priority(m), m]).sort((a, b) => a[0] - b[0]).map(([, m]) => m);
-  for (let i = 0; i < ordered.length; i += chunk) {
+  const maths = topLevelMath(root);
+  for (let i = 0; i < maths.length; i += chunk) {
     if (isCancelled()) return;
-    const state = beforeChunk();
-    for (const math of ordered.slice(i, i + chunk)) {
-      if (!math.isConnected) continue;
+    for (const math of maths.slice(i, i + chunk)) {
       try {
         convert(MathJax, math);
       } catch {
         // formule non convertible : le MathML natif reste en place
       }
     }
-    refreshStylesheet(MathJax);
-    afterChunk(state);
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
+  refreshStylesheet(MathJax);
 }
 
 // Formules restées en MathML natif dans un fragment copié (aperçus) : conversion immédiate.
 export function typesetFragment(root) {
   if (!window.MathJax?.mathml2chtml) return;
-  root.querySelectorAll("math").forEach((math) => {
-    if (math.parentElement.closest("math")) return;
+  for (const math of topLevelMath(root)) {
     try { convert(window.MathJax, math); } catch { /* MathML natif conservé */ }
-  });
+  }
   refreshStylesheet(window.MathJax);
 }
