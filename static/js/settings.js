@@ -16,6 +16,7 @@ const DEFAULTS = {
   marginMarks: true,
   mathRenderer: "mathjax",
 };
+const FEED_DEFAULT = ["math.DG", "math.CV", "math.SP", "math-ph"];
 const WIDTHS = { narrow: "42rem", normal: "56rem", wide: "72rem" };
 
 export const settings = { ...DEFAULTS };
@@ -83,15 +84,31 @@ export function openSettingsDialog() {
       segmented("mathRenderer", [["mathjax", t("settings.math.mathjax")], ["native", t("settings.math.native")]], settings.mathRenderer)),
     h("label", { class: "check" }, h("input", { type: "checkbox", name: "proofsCollapsed", checked: settings.proofsCollapsed }), t("settings.proofs")),
     h("label", { class: "check" }, h("input", { type: "checkbox", name: "marginMarks", checked: settings.marginMarks }), t("settings.marginMarks")),
+    h("h3", { class: "settings-section" }, t("settings.feed")),
+    h("label", { class: "row" }, h("span", {}, t("settings.feedCategories")),
+      h("input", { class: "text-input", type: "text", name: "feedCategories", value: (settings.feedCategories || FEED_DEFAULT).join(", "), spellcheck: "false" })),
+    h("label", { class: "row" }, h("span", {}, t("settings.s2Key")),
+      h("input", { class: "text-input", type: "password", name: "s2ApiKey", value: settings.s2ApiKey || "", autocomplete: "off", placeholder: t("settings.s2KeyPlaceholder") })),
+    h("p", { class: "hint", style: "margin: -6px 0 0" }, t("settings.s2KeyHint")),
     h("div", { class: "actions" }, h("button", { class: "button primary", value: "close" }, t("settings.close"))),
   );
   form.addEventListener("input", (event) => {
     const { name, value, checked, type } = event.target;
     if (!name) return;
+    if (name === "feedCategories" || name === "s2ApiKey") return; // enregistrés à la sortie du champ
     const parsed = type === "checkbox" ? checked : name === "fontSize" ? Number(value) : value;
     if (name === "fontSize") form.querySelector("#font-size-value").textContent = `${value}px`;
     saveSettings({ [name]: parsed });
     if (name === "language") openSettingsDialog(); // re-dessine la fenêtre dans la nouvelle langue
+  });
+  form.addEventListener("change", (event) => {
+    const { name, value } = event.target;
+    if (name === "feedCategories") {
+      const list = value.split(/[\s,;]+/).map((c) => c.trim()).filter(Boolean);
+      saveSettings({ feedCategories: list.length ? list : FEED_DEFAULT });
+    } else if (name === "s2ApiKey") {
+      saveSettings({ s2ApiKey: value.trim() });
+    }
   });
   dialog.replaceChildren(form);
   applyStatic(dialog);

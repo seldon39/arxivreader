@@ -1,6 +1,7 @@
 // Point d'entrée : réglages, navigation entre la bibliothèque et le lecteur.
 
 import { t } from "./i18n.js";
+import { renderFeed } from "./feed.js";
 import { renderLibrary } from "./library.js";
 import { renderReader } from "./reader.js";
 import { loadSettings, onSettingsChange, openSettingsDialog, settings } from "./settings.js";
@@ -16,9 +17,13 @@ async function route() {
   cleanup = null;
   scrollTo({ top: 0, behavior: "instant" });
   const match = location.hash.match(/^#\/paper\/(.+)$/);
-  document.querySelectorAll(".topnav a").forEach((a) => a.classList.toggle("active", !match && a.getAttribute("href") === "#/"));
+  const feedMatch = location.hash.match(/^#\/feed(?:\/(recommended|import))?$/);
+  const section = match ? "paper" : feedMatch ? "#/feed" : "#/";
+  document.querySelectorAll(".topnav a").forEach((a) => a.classList.toggle("active", a.getAttribute("href") === section));
   try {
-    if (match) {
+    if (feedMatch) {
+      await renderFeed(view, feedMatch[1] || "arxiv");
+    } else if (match) {
       const dispose = await renderReader(view, decodeURIComponent(match[1]));
       if (token === routeToken) cleanup = dispose; else dispose();
     } else {

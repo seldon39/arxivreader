@@ -33,10 +33,24 @@ http://127.0.0.1:8710/ ; le serveur n'écoute que sur ce Mac (pas sur le Wi-Fi).
 Les dépendances viennent des renvois (`\ref`, `\eqref`, `\cite`) dans l'énoncé et dans sa preuve :
 un argument utilisé sans renvoi explicite n'apparaît pas.
 
+## Feed (étape 2)
+
+Menu **Feed** en haut :
+- **Nouveautés arXiv** : annonces quotidiennes des catégories suivies (math.DG, math.CV, math.SP,
+  math-ph par défaut, modifiables dans les réglages), d'après le flux RSS d'arXiv ; mise à jour
+  automatique toutes les 3 h à l'ouverture. Filtres : nouveaux / croisés / nouvelles versions,
+  catégorie, recherche. 👍 pertinent, 👎 pas pertinent (masqué). « Lire » importe et ouvre l'article.
+- **Recommandations** : API de recommandations de Semantic Scholar, à partir des articles de la
+  bibliothèque et des 👍 (les 👎 sont écartés) ; mise à jour automatique une fois par jour.
+  Sans clé d'API, Semantic Scholar limite fortement les requêtes : une clé gratuite
+  (semanticscholar.org/product/api) peut être saisie dans les réglages ; elle reste sur ce Mac.
+- **Importer** : coller un e-mail de Scholar Inbox ou de Semantic Scholar, une liste de liens ou un
+  export BibTeX (ou choisir un fichier) ; les identifiants arXiv sont repérés, puis importés en lot.
+
+Titres et résumés sont mis en forme par MathJax (TeX entre `$…$`).
+
 ## Étapes suivantes prévues
 
-2. Feed : nouvelles soumissions math.DG, math.CV, math.SP, math-ph ; recommandations Semantic Scholar ;
-   import d'un export BibTeX ; champ « coller du texte » (e-mails Scholar Inbox…).
 3. Notes et annotations.
 4. IA (Claude, via la connexion Claude Code) sur les preuves : détailler, auditer, répondre.
 
@@ -54,6 +68,8 @@ app/            serveur Python (FastAPI)
   arxiv.py      identifiants, métadonnées (API arXiv), téléchargement du HTML
   sanitize.py   nettoyage du HTML
   structure.py  sommaire, énoncés, preuves, dépendances, bibliographie
+  texsource.py  lecture de la source TeX (options de classe, police, étiquettes de listes)
+  feed.py       nouveautés arXiv (RSS), recommandations Semantic Scholar, repérage d'identifiants
   library.py    import d'un article ; db.py : base SQLite ; main.py : routes web
 static/         interface (HTML, CSS, JavaScript sans compilation) ;
                 vendor/mathjax (MathJax 3.2.2) et fonts/ (Latin Modern) copiés localement

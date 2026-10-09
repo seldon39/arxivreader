@@ -30,6 +30,28 @@ CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT
 );
+-- Feed : articles vus dans les nouveautés arXiv ou recommandés par Semantic Scholar
+CREATE TABLE IF NOT EXISTS feed_items (
+    key TEXT PRIMARY KEY,            -- identifiant arXiv, ou « s2:<paperId> » sans version arXiv
+    arxiv_id TEXT,
+    version INTEGER,
+    title TEXT,
+    authors TEXT,
+    abstract TEXT,
+    categories TEXT,
+    primary_category TEXT,
+    announce_type TEXT,              -- new, cross, replace, replace-cross
+    announced TEXT,                  -- date d'annonce sur arXiv
+    in_arxiv INTEGER DEFAULT 0,
+    s2_rank INTEGER,                 -- rang dans la dernière recommandation, sinon NULL
+    link TEXT,
+    fetched_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS feed_status (
+    key TEXT PRIMARY KEY,
+    status TEXT,                     -- liked, disliked
+    updated_at TEXT DEFAULT (datetime('now'))
+);
 """
 
 JSON_COLUMNS = ("authors", "categories")

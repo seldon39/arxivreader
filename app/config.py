@@ -1,5 +1,6 @@
 """Chemins et réglages fixes de l'application."""
 
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -9,7 +10,7 @@ PAPERS = LIBRARY / "papers"
 DB_PATH = LIBRARY / "arxivreader.db"
 
 HOST = "127.0.0.1"
-PORT = 8710
+PORT = int(os.environ.get("ARXIVREADER_PORT", "8710"))  # autre port possible pour les tests
 
 USER_AGENT = "arXivReader/0.1 (personal reader)"
 

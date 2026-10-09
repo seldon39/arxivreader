@@ -8,13 +8,15 @@ let loading = null;
 function loadMathJax() {
   loading ||= new Promise((resolve, reject) => {
     window.MathJax = {
-      loader: { load: [] },
+      loader: { load: [], paths: { mathjax: BASE } },
+      // TeX des titres et résumés du feed ($L^2$, \(\mathbb{C}^n\)…)
+      tex: { inlineMath: [["$", "$"], ["\\(", "\\)"]], displayMath: [["$$", "$$"], ["\\[", "\\]"]], processEscapes: true },
       startup: { typeset: false, ready: () => { window.MathJax.startup.defaultReady(); resolve(window.MathJax); } },
       options: { enableMenu: false, menuOptions: { settings: { assistiveMml: false } } },
       chtml: { fontURL: `${BASE}/fonts/woff-v2`, scale: 1, matchFontHeight: false, mtextInheritFont: true },
     };
     const script = document.createElement("script");
-    script.src = `${BASE}/mml-chtml.js`;
+    script.src = `${BASE}/tex-mml-chtml.js`;
     script.async = true;
     script.onerror = () => reject(new Error("MathJax indisponible"));
     document.head.append(script);
@@ -104,4 +106,10 @@ export function typesetFragment(root) {
     try { convert(window.MathJax, math); } catch { /* MathML natif conservé */ }
   }
   refreshStylesheet(window.MathJax);
+}
+
+// Texte contenant du TeX entre $…$ (titres, résumés) : mise en forme par MathJax.
+export async function typesetTex(elements) {
+  const MathJax = await loadMathJax();
+  await MathJax.typesetPromise(elements);
 }

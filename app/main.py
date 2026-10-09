@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import db, library
+from . import db, feed, library
 from .arxiv import ArxivError
 from .config import HOST, PORT, STATIC
 
@@ -71,6 +71,19 @@ class ImportRequest(BaseModel):
 
 class PositionRequest(BaseModel):
     anchor: str
+
+
+class RefreshRequest(BaseModel):
+    view: str
+
+
+class StatusRequest(BaseModel):
+    key: str
+    status: str | None = None
+
+
+class LookupRequest(BaseModel):
+    text: str
 
 
 @app.get("/api/papers")
@@ -135,6 +148,46 @@ def remove(paper_id: str):
     return {"ok": True}
 
 
+@app.get("/api/feed")
+def feed_items(view: str = "arxiv"):
+    settings = db.get_settings()
+    return {
+        "items": feed.list_items(view, ["new", "cross", "replace", "replace-cross"]),
+        "refreshed": {"arxiv": settings.get("feed.arxivRefreshed"), "recommended": settings.get("feed.s2Refreshed")},
+        "seeds": settings.get("feed.s2Seeds"),
+        "categories": settings.get("feedCategories") or feed.FEED_CATEGORIES,
+    }
+
+
+@app.post("/api/feed/refresh")
+async def feed_refresh(body: RefreshRequest):
+    settings = db.get_settings()
+    try:
+        if body.view == "recommended":
+            count = await run_in_threadpool(feed.refresh_recommendations, settings.get("s2ApiKey") or None)
+        else:
+            count = await run_in_threadpool(feed.refresh_arxiv, settings.get("feedCategories") or None)
+    except feed.FeedError as error:
+        return JSONResponse({"error": str(error)}, status_code=400)
+    except Exception as error:  # réseau
+        return JSONResponse({"error": f"{type(error).__name__}: {error}"}, status_code=502)
+    return {"count": count}
+
+
+@app.put("/api/feed/status")
+def feed_status(body: StatusRequest):
+    feed.set_status(body.key[:100], body.status)
+    return {"ok": True}
+
+
+@app.post("/api/lookup")
+async def lookup(body: LookupRequest):
+    try:
+        return await run_in_threadpool(feed.lookup_ids, body.text[:2_000_000])
+    except Exception as error:
+        return JSONResponse({"error": f"{type(error).__name__}: {error}"}, status_code=502)
+
+
 @app.get("/api/settings")
 def settings():
     return db.get_settings()
@@ -142,7 +195,8 @@ def settings():
 
 @app.put("/api/settings")
 def update_settings(values: dict):
-    allowed = {"language", "theme", "fontSize", "readingWidth", "proofsCollapsed", "tocOpen", "panelOpen", "paperFont", "marginMarks", "mathRenderer"}
+    allowed = {"language", "theme", "fontSize", "readingWidth", "proofsCollapsed", "tocOpen", "panelOpen", "paperFont", "marginMarks", "mathRenderer",
+               "feedCategories", "feedTypes", "s2ApiKey"}
     db.save_settings({k: v for k, v in values.items() if k in allowed})
     return db.get_settings()
 
