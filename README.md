@@ -17,6 +17,9 @@ http://127.0.0.1:8710/ ; le serveur n'écoute que sur ce Mac (pas sur le Wi-Fi).
 - L'article est lu dans sa **version HTML officielle** (arxiv.org/html, sinon ar5iv), produite par LaTeXML
   à partir du TeX : formules en MathML, énoncés, preuves et renvois balisés.
   Sans version HTML, seuls le résumé et le lien PDF sont proposés.
+- **Mise en page « papier AMS »** (classe amsart) : texte en Charter ou Computer Modern, formules
+  rendues par **MathJax** (règles de TeX, polices Computer Modern, même rendu dans Safari, Firefox et
+  Chrome) ; le MathML du navigateur reste disponible dans les réglages.
 - **Aperçu au survol** de tout renvoi (théorème, équation, référence, note) ; clic = aller à l'endroit,
   avec un bouton « Retour ».
 - **Preuves repliables** ; les preuves écrites à la main (« *Proof.* … □ ») sont repérées automatiquement.
@@ -52,6 +55,7 @@ app/            serveur Python (FastAPI)
   sanitize.py   nettoyage du HTML
   structure.py  sommaire, énoncés, preuves, dépendances, bibliographie
   library.py    import d'un article ; db.py : base SQLite ; main.py : routes web
-static/         interface (HTML, CSS, JavaScript sans compilation)
+static/         interface (HTML, CSS, JavaScript sans compilation) ;
+                vendor/mathjax (MathJax 3.2.2) et fonts/ (Latin Modern) copiés localement
 tests/          tests hors ligne : .venv/bin/python -m unittest discover tests
 ```
