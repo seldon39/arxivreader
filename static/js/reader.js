@@ -2,6 +2,7 @@
 
 import { api } from "./api.js";
 import { closure, renderGraph } from "./graph.js";
+import { typesetFragment, typesetMath } from "./math.js";
 import { t } from "./i18n.js";
 import { onSettingsChange, saveSettings, settings } from "./settings.js";
 import { debounce, formatDate, h, icons, toast, withMath } from "./util.js";
@@ -40,6 +41,29 @@ class Reader {
     this.renderPanel();
     this.bindEvents();
     this.restorePosition();
+    if (settings.mathRenderer !== "native") setTimeout(() => this.renderMath(), 0);
+  }
+
+  // Formules en MathJax, de l'écran vers le reste de l'article, sans faire sauter la lecture
+  renderMath() {
+    const view = this.scroller.getBoundingClientRect();
+    const middle = view.top + view.height / 2;
+    typesetMath(this.content, {
+      priority: (math) => {
+        const r = math.getBoundingClientRect();
+        return r.height === 0 && r.width === 0 ? 1e9 : Math.abs(r.top - middle);
+      },
+      beforeChunk: () => {
+        this.anchors = null;
+        const anchor = this.currentAnchor();
+        return anchor ? { anchor, top: anchor.getBoundingClientRect().top } : null;
+      },
+      afterChunk: (state) => {
+        this.anchors = null;
+        if (state?.anchor.isConnected) this.scroller.scrollTop += state.anchor.getBoundingClientRect().top - state.top;
+      },
+      isCancelled: () => this.destroyed,
+    }).catch(() => {});
   }
 
   // ---------- Construction ----------
@@ -132,6 +156,18 @@ class Reader {
     });
 
     if (!this.content.querySelector("[lang]")) this.content.lang = "en"; // césure à l'anglaise
+
+    // Ponctuation collée à la formule qui la précède (pas de « , » seule en début de ligne)
+    this.content.querySelectorAll("math").forEach((math) => {
+      const next = math.nextSibling;
+      if (!next || next.nodeType !== Node.TEXT_NODE || !/^[.,;:)\]]/.test(next.data)) return;
+      const length = next.data.match(/^[.,;:)\]]+/)[0].length;
+      const rest = next.splitText(length);
+      const wrap = h("span", { class: "nobr" });
+      math.replaceWith(wrap);
+      wrap.append(math, next);
+      void rest;
+    });
 
     // Comme dans amsart, la date rejoint les mots-clés et la classification (note de première page)
     const dates = this.content.querySelector(".ltx_dates");
@@ -406,6 +442,7 @@ class Reader {
     box.addEventListener("mouseenter", () => clearTimeout(this.hideTimer));
     box.addEventListener("mouseleave", () => this.scheduleHide());
     document.body.append(box);
+    typesetFragment(box);
     const rect = link.getBoundingClientRect();
     const width = box.offsetWidth;
     const height = box.offsetHeight;
@@ -529,6 +566,7 @@ class Reader {
       element && h("div", { class: "statement" }, this.clean(element)),
       h("div", { class: "small" }, h("a", { href: `#${node.id}`, onclick: (e) => { e.preventDefault(); this.navigate(node.id); } }, t("panel.showInText"))),
     );
+    setTimeout(() => typesetFragment(card), 0);
     const section = (title, items) => h("div", { class: "panel-section" }, h("h3", {}, title),
       items.length ? h("div", { class: "node-list" }, items) : h("p", { class: "hint" }, t("panel.none")));
     const nodesOf = (ids) => ids.filter((id) => this.byId.has(id)).map((id) => this.nodeItem(this.byId.get(id)));
@@ -646,6 +684,7 @@ class Reader {
   }
 
   destroy() {
+    this.destroyed = true;
     this.hidePreview();
     this.overlay?.remove();
     this.cleanups.forEach((fn) => fn());

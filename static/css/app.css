@@ -39,10 +39,10 @@
 
   --topbar-h: 52px;
   --toolbar-h: 48px;
-  --toc-w: 270px;
-  --panel-w: 360px;
+  --toc-w: 240px;
+  --panel-w: 330px;
   --font-size: 18px;
-  --reading-width: 44rem;
+  --reading-width: 56rem;
   color-scheme: light;
 }
 
@@ -180,7 +180,7 @@ svg { fill: currentColor; }
 .reader[data-toc="closed"] .toc, .reader[data-panel="closed"] .panel { visibility: hidden; border: 0; padding: 0; }
 .paper-scroll { grid-area: paper; overflow: auto; position: relative; scroll-padding-top: 16px; background: var(--surface); }
 .paper {
-  max-width: var(--reading-width); margin: 0 auto; padding: 36px 40px 30vh;
+  max-width: var(--reading-width); margin: 0 auto; padding: 28px 32px 30vh;
   font-family: var(--paper-font); font-size: var(--font-size); line-height: 1.5;
 }
 .scrim { display: none; }

@@ -14,8 +14,9 @@ const DEFAULTS = {
   panelOpen: true,
   paperFont: "charter",
   marginMarks: true,
+  mathRenderer: "mathjax",
 };
-const WIDTHS = { narrow: "38rem", normal: "44rem", wide: "56rem" };
+const WIDTHS = { narrow: "42rem", normal: "56rem", wide: "72rem" };
 
 export const settings = { ...DEFAULTS };
 const listeners = new Set();
@@ -78,6 +79,8 @@ export function openSettingsDialog() {
       segmented("readingWidth", [["narrow", t("settings.width.narrow")], ["normal", t("settings.width.normal")], ["wide", t("settings.width.wide")]], settings.readingWidth)),
     h("div", { class: "row" }, h("span", {}, t("settings.paperFont")),
       segmented("paperFont", [["charter", "Charter"], ["lm", "Computer Modern"]], settings.paperFont)),
+    h("div", { class: "row" }, h("span", {}, t("settings.math")),
+      segmented("mathRenderer", [["mathjax", t("settings.math.mathjax")], ["native", t("settings.math.native")]], settings.mathRenderer)),
     h("label", { class: "check" }, h("input", { type: "checkbox", name: "proofsCollapsed", checked: settings.proofsCollapsed }), t("settings.proofs")),
     h("label", { class: "check" }, h("input", { type: "checkbox", name: "marginMarks", checked: settings.marginMarks }), t("settings.marginMarks")),
     h("div", { class: "actions" }, h("button", { class: "button primary", value: "close" }, t("settings.close"))),

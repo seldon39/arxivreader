@@ -142,7 +142,7 @@ def settings():
 
 @app.put("/api/settings")
 def update_settings(values: dict):
-    allowed = {"language", "theme", "fontSize", "readingWidth", "proofsCollapsed", "tocOpen", "panelOpen", "paperFont", "marginMarks"}
+    allowed = {"language", "theme", "fontSize", "readingWidth", "proofsCollapsed", "tocOpen", "panelOpen", "paperFont", "marginMarks", "mathRenderer"}
     db.save_settings({k: v for k, v in values.items() if k in allowed})
     return db.get_settings()
 

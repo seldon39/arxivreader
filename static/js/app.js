@@ -30,13 +30,13 @@ async function route() {
   }
 }
 
-let language = null;
 await loadSettings();
-language = settings.language;
+let rendering = `${settings.language}/${settings.mathRenderer}`;
 onSettingsChange(() => {
-  if (settings.language !== language) {
-    language = settings.language;
-    route(); // re-dessine la page dans la nouvelle langue
+  // Langue ou moteur de formules changé : la page est redessinée
+  if (`${settings.language}/${settings.mathRenderer}` !== rendering) {
+    rendering = `${settings.language}/${settings.mathRenderer}`;
+    route();
   }
 });
 document.getElementById("settings-button").addEventListener("click", openSettingsDialog);

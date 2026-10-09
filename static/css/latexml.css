@@ -26,12 +26,29 @@
   font-kerning: normal; font-variant-ligatures: common-ligatures; text-rendering: optimizeLegibility;
   overflow-wrap: break-word;
 }
-.paper-content math { font-family: var(--font-math); font-size: 1em; }
+/* Les formules n'héritent pas des styles du texte qui les entoure (italique des énoncés,
+   capitales des titres, alinéa, justification, césure) : sinon chiffres en italique, glyphes
+   changés et cellules de matrices décalées. */
+.paper-content math, .preview math, .dep-card math {
+  font-family: var(--font-math); font-size: 1em; font-style: normal; font-weight: normal;
+  font-variant: normal; text-transform: none; letter-spacing: normal; text-indent: 0;
+  text-align: initial; hyphens: manual; -webkit-hyphens: manual; white-space: nowrap;
+}
 .paper-content math[display="block"] { margin: 0; }
 .ltx_math_unparsed { white-space: nowrap; }
+.nobr { white-space: nowrap; }
+/* Formules rendues par MathJax */
+.paper-content mjx-container, .preview mjx-container, .dep-card mjx-container {
+  font-style: normal; font-weight: normal; font-variant: normal; text-transform: none; letter-spacing: normal;
+  text-indent: 0; hyphens: manual; -webkit-hyphens: manual;
+}
+.ltx_eqn_cell mjx-container[display="true"] { margin: 0 !important; }
+.paper-content mjx-container[display="true"] { overflow: visible; }
 
 /* ---- Styles de caractères ---- */
 .ltx_font_bold { font-weight: 700; }
+.ltx_font_medium { font-weight: 400; }
+.ltx_font_serif { font-family: var(--paper-font); }
 .ltx_font_italic { font-style: italic; }
 .ltx_font_upright { font-style: normal; }
 .ltx_font_smallcaps { font-variant: small-caps; }
@@ -98,6 +115,8 @@ section.ltx_subsection, section.ltx_subsubsection, section.ltx_paragraph { margi
 .ltx_theorem { margin: .9em 0; position: relative; }
 .ltx_title_theorem { font-weight: 400; }
 .ltx_title_theorem .ltx_tag_theorem, .ltx_title_theorem .ltx_font_bold { font-weight: 700; }
+.ltx_font_medium { font-weight: 400; }
+.ltx_font_serif { font-family: var(--paper-font); }
 .ltx_proof { margin: .5em 0 .9em; position: relative; }
 .ltx_title_proof { font-style: italic; font-weight: 400; }
 .qed { float: right; margin-left: 1em; font-family: var(--font-math); }
@@ -113,10 +132,10 @@ table.ltx_eqn_table { width: 100%; border-collapse: collapse; margin: .55em 0; d
 
 /* ---- Listes ---- */
 .ltx_itemize, .ltx_enumerate, .ltx_description { padding-left: 2.2em; margin: .35em 0; }
-.ltx_item { position: relative; margin: .15em 0; list-style: none; }
-.ltx_item > .ltx_tag { position: absolute; left: -2.2em; width: 2em; text-align: right; padding-right: .45em; }
+.ltx_item { margin: .15em 0; list-style: none; }
+.ltx_item > .ltx_tag { display: inline-block; min-width: 2.2em; margin-left: -2.2em; text-align: right; padding-right: .45em; text-indent: 0; }
 .ltx_item > .ltx_para:first-of-type, .ltx_item > .ltx_para:first-of-type > .ltx_p:first-child { display: inline; }
-.ltx_description > .ltx_item > .ltx_tag { position: static; font-weight: 700; margin-right: .4em; }
+.ltx_description > .ltx_item > .ltx_tag { min-width: 0; margin-left: 0; font-weight: 700; margin-right: .4em; }
 
 /* ---- Figures et tableaux ---- */
 .ltx_figure, .ltx_table { margin: 1.4em 0; text-align: center; }
@@ -139,8 +158,8 @@ table.ltx_eqn_table { width: 100%; border-collapse: collapse; margin: .55em 0; d
 /* ---- Bibliographie (amsplain) ---- */
 .ltx_bibliography { font-size: .9em; line-height: 1.45; }
 .ltx_biblist { list-style: none; padding: 0; margin: 0; }
-.ltx_bibitem { margin: 0 0 .45em; padding-left: 3.6em; position: relative; text-align: left; }
-.ltx_tag_bibitem { position: absolute; left: 0; width: 3.1em; text-align: right; }
+.ltx_bibitem { margin: 0 0 .45em; padding-left: 5.2em; text-align: left; }
+.ltx_tag_bibitem { display: inline-block; min-width: 4.8em; margin-left: -5.2em; padding-right: .4em; text-align: right; }
 .ltx_bibblock { display: inline; }
 
 .ltx_ERROR, .ltx_page_logo { display: none; }
