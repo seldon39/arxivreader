@@ -2,8 +2,7 @@
 
 :root {
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-  --font-read: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
-  --font-math: "STIX Two Math", "Latin Modern Math", "Cambria Math", math;
+  --font-read: Charter, "Bitstream Charter", Georgia, serif;
   --font-mono: "SF Mono", Menlo, Consolas, monospace;
 
   --bg: #f4f3f0;
@@ -181,8 +180,8 @@ svg { fill: currentColor; }
 .reader[data-toc="closed"] .toc, .reader[data-panel="closed"] .panel { visibility: hidden; border: 0; padding: 0; }
 .paper-scroll { grid-area: paper; overflow: auto; position: relative; scroll-padding-top: 16px; background: var(--surface); }
 .paper {
-  max-width: var(--reading-width); margin: 0 auto; padding: 32px 28px 30vh;
-  font-family: var(--font-read); font-size: var(--font-size); line-height: 1.65;
+  max-width: var(--reading-width); margin: 0 auto; padding: 36px 40px 30vh;
+  font-family: var(--paper-font); font-size: var(--font-size); line-height: 1.5;
 }
 .scrim { display: none; }
 
@@ -205,7 +204,7 @@ svg { fill: currentColor; }
   }
   .reader[data-panel="open"] .panel { transform: none; }
   .reader[data-panel="open"] .scrim { display: block; }
-  .paper { padding: 22px 18px 30vh; }
+  .paper { padding: 22px 26px 30vh; }
   .reader-toolbar .wide-only { display: none; }
 }
 @media (max-width: 899px), (max-width: 1279px) {
@@ -237,16 +236,16 @@ svg { fill: currentColor; }
   background: var(--warning-bg); color: var(--warning-text); display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
 }
 .notice button { border: 1px solid currentColor; background: transparent; border-radius: 6px; padding: 2px 10px; cursor: pointer; }
-.paper .ltx_theorem, .preview .ltx_theorem {
-  --kind: var(--k-other);
-  margin: 1.3em 0; padding: .65em 1em .2em; border-left: 3px solid var(--kind);
-  background: color-mix(in srgb, var(--kind) 6%, var(--surface)); border-radius: 0 8px 8px 0;
-  scroll-margin-top: 12px;
-}
-.ltx_theorem .ltx_title_theorem { color: var(--kind); }
+/* Énoncés : rendu de papier ; la nature de l'énoncé n'est signalée que par un repère dans la marge */
+.ltx_theorem { --kind: var(--k-other); scroll-margin-top: 12px; }
 .paper .ltx_theorem .ltx_title_theorem { cursor: pointer; }
-.paper .ltx_theorem .ltx_title_theorem:hover { text-decoration: underline; }
-.paper .ltx_theorem.selected { box-shadow: 0 0 0 2px var(--kind); }
+.paper .ltx_theorem .ltx_title_theorem:hover .ltx_tag_theorem { text-decoration: underline; text-decoration-color: var(--kind); text-underline-offset: 3px; }
+.paper[data-marks="on"] .ltx_theorem::before {
+  content: ""; position: absolute; left: -16px; top: .3em; bottom: .3em; width: 3px; border-radius: 2px;
+  background: var(--kind); opacity: .5;
+}
+.paper .ltx_theorem.selected { background: color-mix(in srgb, var(--kind) 9%, transparent); box-shadow: 0 0 0 6px color-mix(in srgb, var(--kind) 9%, transparent); border-radius: 2px; }
+.paper .ltx_theorem.selected::before { opacity: 1; }
 [data-kind="theorem"] { --kind: var(--k-theorem); }
 [data-kind="proposition"] { --kind: var(--k-proposition); }
 [data-kind="lemma"] { --kind: var(--k-lemma); }
@@ -259,19 +258,30 @@ svg { fill: currentColor; }
 [data-kind="notation"] { --kind: var(--k-notation); }
 [data-kind="problem"] { --kind: var(--k-problem); }
 
-.paper .ltx_proof { margin: .4em 0 1.4em; padding: 0 0 0 1em; border-left: 1px dashed var(--border-strong); }
+/* Preuves : le bouton de repli vit dans la marge ; repliée, la preuve tient sur une ligne « Proof. (afficher) » */
 .proof-toggle {
-  display: inline-flex; align-items: center; gap: 6px; margin: 0 0 .4em -.2em; padding: 2px 8px;
-  border: 0; border-radius: 6px; background: transparent; color: var(--muted); font: 13px var(--font-ui); cursor: pointer;
+  position: absolute; left: -24px; top: .25em; width: 20px; height: 20px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: 0; border-radius: 4px; background: transparent; color: var(--muted); font: 12px var(--font-ui); cursor: pointer;
+  opacity: .55; text-indent: 0;
 }
+.ltx_proof:hover > .proof-toggle, .proof-toggle:focus-visible { opacity: 1; }
 .proof-toggle:hover { background: var(--surface-hover); color: var(--text); }
+.proof-toggle .text { display: none; }
 .proof-toggle .caret { transition: transform .15s; display: inline-block; }
 .ltx_proof:not(.collapsed) > .proof-toggle .caret { transform: rotate(90deg); }
 .ltx_proof.collapsed > :not(.proof-toggle) { display: none; }
-.ltx_proof.collapsed { border-left-style: solid; border-left-color: transparent; }
+.ltx_proof.collapsed > .proof-toggle {
+  position: static; width: auto; height: auto; opacity: 1; padding: 0; gap: .4em;
+  font: italic 1em var(--paper-font); color: var(--text);
+}
+.ltx_proof.collapsed > .proof-toggle .text { display: inline; }
+.ltx_proof.collapsed > .proof-toggle .state { font: .8em var(--font-ui); color: var(--link); }
+.ltx_proof.collapsed > .proof-toggle .caret { display: none; }
 
-.paper a.ltx_ref { color: var(--link); }
-.paper .ltx_cite a.ltx_ref { color: var(--accent); }
+.paper-content a, .preview a { color: inherit; text-decoration: none; }
+.paper-content a.ltx_ref, .preview a.ltx_ref { color: var(--link); }
+.paper-content a:hover { text-decoration: underline; }
 .paper .flash { animation: flash 1.6s ease; }
 @keyframes flash { 0%, 30% { background-color: color-mix(in srgb, var(--accent) 22%, transparent); } 100% { background-color: transparent; } }
 .paper.reveal-hidden .arx-hidden-text { outline: 2px dashed #e08a00; color: var(--text) !important; font-size: 1em !important; opacity: 1 !important; display: inline !important; visibility: visible !important; }
@@ -287,10 +297,10 @@ svg { fill: currentColor; }
 .preview {
   position: fixed; z-index: 50; max-width: min(560px, calc(100vw - 24px)); max-height: 46vh; overflow: auto;
   background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: var(--shadow);
-  padding: 12px 16px; font-family: var(--font-read); font-size: calc(var(--font-size) * .9); line-height: 1.55;
+  padding: 14px 20px; font-family: var(--paper-font); font-size: calc(var(--font-size) * .9); line-height: 1.5; text-align: justify; hyphens: auto;
 }
 .preview .ltx_theorem { margin: 0; }
-.preview > .ltx_theorem { border-radius: 0 6px 6px 0; }
+.preview .ltx_p { text-indent: 0 !important; }
 .preview .ltx_proof { display: none; }
 .preview-footer { display: flex; justify-content: space-between; gap: 12px; margin-top: 8px; font: 13px var(--font-ui); color: var(--muted); }
 .preview-footer button { border: 0; background: transparent; color: var(--link); cursor: pointer; padding: 0; font: inherit; }
@@ -325,8 +335,9 @@ svg { fill: currentColor; }
 .badge.warn { color: var(--warning-text); background: var(--warning-bg); border-color: transparent; }
 .dep-card { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin: 0 2px 14px; background: var(--surface-soft); }
 .dep-card .heading { display: flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 6px; }
-.dep-card .statement { font-family: var(--font-read); font-size: 15px; line-height: 1.5; max-height: 220px; overflow: auto; }
-.dep-card .statement .ltx_theorem { margin: 0; padding: 0; border: 0; background: transparent; }
+.dep-card .statement { font-family: var(--paper-font); font-size: 15px; line-height: 1.45; max-height: 220px; overflow: auto; }
+.dep-card .statement .ltx_p { text-indent: 0 !important; }
+.dep-card .statement .ltx_theorem { margin: 0; background: transparent; box-shadow: none; }
 .dep-card .statement .ltx_proof { display: none; }
 .muted { color: var(--muted); }
 .small { font-size: 13px; }

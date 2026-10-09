@@ -79,7 +79,7 @@ class Reader {
     this.toc = h("aside", { class: "toc", "aria-label": t("reader.contents") });
     this.panel = h("aside", { class: "panel", "aria-label": t("reader.panel") });
     this.content = h("div", { class: "paper-content" });
-    this.article = h("article", { class: "paper" });
+    this.article = h("article", { class: "paper", dataset: { marks: settings.marginMarks ? "on" : "off" } });
     this.backButton = h("button", { class: "back-button", type: "button", onclick: () => this.goBack() }, `↩ ${t("reader.returnTo")}`);
     this.scroller = h("div", { class: "paper-scroll" }, this.article, this.backButton);
 
@@ -131,12 +131,23 @@ class Reader {
       wrap.append(table);
     });
 
-    // Preuves repliables
+    if (!this.content.querySelector("[lang]")) this.content.lang = "en"; // césure à l'anglaise
+
+    // Comme dans amsart, la date rejoint les mots-clés et la classification (note de première page)
+    const dates = this.content.querySelector(".ltx_dates");
+    const frontNotes = this.content.querySelectorAll(".ltx_keywords, .ltx_classification");
+    if (dates && frontNotes.length) frontNotes[frontNotes.length - 1].after(dates);
+    const front = this.content.querySelectorAll(".ltx_abstract, .ltx_keywords, .ltx_classification, .ltx_dates");
+    if (front.length) [...front].sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1)).at(-1).classList.add("front-last");
+
+    // Preuves repliables ; le ∎ de LaTeXML devient le □ d'amsthm, aligné à droite
     this.content.querySelectorAll(".ltx_proof").forEach((proof) => {
       const detected = proof.classList.contains("arx-detected-proof");
+      this.markQed(proof);
+      const title = proof.querySelector(".ltx_title_proof")?.textContent.trim() || "Proof.";
       const state = h("span", { class: "state" });
-      const toggle = h("button", { class: "proof-toggle", type: "button", "aria-expanded": "true" },
-        h("span", { class: "caret" }, "▸"), detected ? t("reader.proofDetected") : t("reader.proof"), " · ", state);
+      const toggle = h("button", { class: "proof-toggle", type: "button", "aria-expanded": "true", title: detected ? t("reader.proofDetected") : t("reader.proof") },
+        h("span", { class: "caret" }, "▸"), h("span", { class: "text" }, title), state);
       toggle.addEventListener("click", () => this.setProof(proof, !proof.classList.contains("collapsed")));
       proof.prepend(toggle);
       this.setProof(proof, settings.proofsCollapsed);
@@ -152,11 +163,25 @@ class Reader {
     });
   }
 
+  markQed(proof) {
+    const walker = document.createTreeWalker(proof, NodeFilter.SHOW_TEXT);
+    const hits = [];
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      if (node.data.includes("∎") && !node.parentElement.closest("math")) hits.push(node);
+    }
+    const last = hits.at(-1);
+    if (!last) return;
+    last.data = last.data.replace(/\s*∎\s*$/, "").replace("∎", "");
+    last.after(h("span", { class: "qed", "aria-hidden": "true" }, "□"));
+  }
+
   setProof(proof, collapsed) {
     proof.classList.toggle("collapsed", collapsed);
     const toggle = proof.querySelector(":scope > .proof-toggle");
     toggle.setAttribute("aria-expanded", String(!collapsed));
-    toggle.querySelector(".state").textContent = collapsed ? t("reader.showProof") : t("reader.hideProof");
+    toggle.querySelector(".state").textContent = collapsed ? `(${t("reader.showProof")})` : "";
+    toggle.setAttribute("aria-label", `${t("reader.proof")} — ${collapsed ? t("reader.showProof") : t("reader.hideProof")}`);
     this.anchors = null;
     this.updateFoldButton();
   }
@@ -192,6 +217,11 @@ class Reader {
     const remembered = which === "toc" ? innerWidth >= WIDE : innerWidth >= MEDIUM;
     if (remembered) saveSettings({ [which === "toc" ? "tocOpen" : "panelOpen"]: open });
     this.anchors = null;
+  }
+
+  setOpen(which, open) {
+    this.root.dataset[which] = open ? "open" : "closed";
+    (which === "toc" ? this.tocButton : this.panelButton).setAttribute("aria-pressed", String(open));
   }
 
   closeDrawers(except) {
@@ -596,10 +626,22 @@ class Reader {
       if (event.target.matches("input, textarea")) return;
       if (event.key === "Escape") { this.hidePreview(); this.closeDrawers(); }
     };
-    const onResize = debounce(() => { this.anchors = null; }, 200);
+    const layout = () => (innerWidth >= WIDE ? "wide" : innerWidth >= MEDIUM ? "medium" : "narrow");
+    let currentLayout = layout();
+    const onResize = debounce(() => {
+      this.anchors = null;
+      if (layout() === currentLayout) return;
+      currentLayout = layout();
+      // Changement de format : volets remis dans leur état par défaut pour cette largeur
+      this.setOpen("toc", currentLayout === "wide" && settings.tocOpen);
+      this.setOpen("panel", currentLayout !== "narrow" && settings.panelOpen);
+    }, 200);
     document.addEventListener("keydown", onKey);
     addEventListener("resize", onResize);
-    const unsubscribe = onSettingsChange(() => { this.anchors = null; });
+    const unsubscribe = onSettingsChange(() => {
+      this.anchors = null;
+      this.article.dataset.marks = settings.marginMarks ? "on" : "off";
+    });
     this.cleanups.push(() => document.removeEventListener("keydown", onKey), () => removeEventListener("resize", onResize), unsubscribe);
   }
 

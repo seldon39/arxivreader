@@ -1,88 +1,152 @@
-/* Mise en forme minimale des balises produites par LaTeXML (version HTML d'arXiv). */
+/* Mise en page « papier AMS » (classe amsart) des balises produites par LaTeXML.
+   Texte : Charter (comme \usepackage{charter}) ou Latin Modern (amsart par défaut) ;
+   formules : Latin Modern Math (Computer Modern). */
 
-.paper-content { overflow-wrap: break-word; }
+@font-face { font-family: "Latin Modern Math"; src: url("/static/fonts/latinmodern-math.otf") format("opentype"); font-display: swap; }
+@font-face { font-family: "LM Roman"; src: url("/static/fonts/lmroman10-regular.otf") format("opentype"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "LM Roman"; src: url("/static/fonts/lmroman10-italic.otf") format("opentype"); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: "LM Roman"; src: url("/static/fonts/lmroman10-bold.otf") format("opentype"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "LM Roman"; src: url("/static/fonts/lmroman10-bolditalic.otf") format("opentype"); font-weight: 700; font-style: italic; font-display: swap; }
+@font-face { font-family: "LM Roman Caps"; src: url("/static/fonts/lmromancaps10-regular.otf") format("opentype"); font-display: swap; }
 
+:root {
+  --paper-font: Charter, "Bitstream Charter", "Charis SIL", Georgia, serif;
+  --paper-caps: var(--paper-font);
+  --font-math: "Latin Modern Math", "STIX Two Math", math;
+  --indent: 1.5em;
+}
+:root[data-paper-font="lm"] {
+  --paper-font: "LM Roman", "Latin Modern Roman", "Computer Modern", serif;
+  --paper-caps: "LM Roman Caps", "LM Roman", serif;
+}
+
+.paper-content {
+  font-family: var(--paper-font);
+  text-align: justify; hyphens: auto; -webkit-hyphens: auto;
+  font-kerning: normal; font-variant-ligatures: common-ligatures; text-rendering: optimizeLegibility;
+  overflow-wrap: break-word;
+}
+.paper-content math { font-family: var(--font-math); font-size: 1em; }
+.paper-content math[display="block"] { margin: 0; }
+.ltx_math_unparsed { white-space: nowrap; }
+
+/* ---- Styles de caractères ---- */
 .ltx_font_bold { font-weight: 700; }
 .ltx_font_italic { font-style: italic; }
 .ltx_font_upright { font-style: normal; }
 .ltx_font_smallcaps { font-variant: small-caps; }
-.ltx_font_typewriter { font-family: var(--font-mono); font-size: .92em; }
+.ltx_font_typewriter { font-family: var(--font-mono); font-size: .9em; }
 .ltx_font_sansserif { font-family: var(--font-ui); }
 .ltx_font_slanted { font-style: oblique; }
 .ltx_framed { border: 1px solid currentColor; padding: 0 .2em; }
 .ltx_align_left { text-align: left; }
 .ltx_align_right { text-align: right; }
-.ltx_align_center { text-align: center; }
+.ltx_align_center, .ltx_centering { text-align: center; }
 .ltx_align_justify { text-align: justify; }
 .ltx_align_top { vertical-align: top; }
 .ltx_align_middle { vertical-align: middle; }
 .ltx_align_bottom { vertical-align: bottom; }
-.ltx_centering { text-align: center; }
 .ltx_inline-block { display: inline-block; }
 
-/* Titres de l'article */
-.ltx_title_document { font-size: 1.75em; line-height: 1.25; margin: 0 0 .6em; font-weight: 600; }
-.ltx_title_section, .ltx_title_appendix, .ltx_title_bibliography { font-size: 1.4em; margin: 2em 0 .7em; font-weight: 600; }
-.ltx_title_subsection { font-size: 1.18em; margin: 1.6em 0 .6em; font-weight: 600; }
-.ltx_title_subsubsection, .ltx_title_paragraph { font-size: 1.04em; margin: 1.3em 0 .5em; font-weight: 600; }
-.ltx_title_abstract { font-size: 1em; text-align: center; margin: 0 0 .4em; font-variant: small-caps; letter-spacing: .03em; }
-.ltx_runin { display: inline; font-size: 1em; margin: 0 .35em 0 0; }
+/* ---- En-tête de l'article : titre, auteurs, résumé ---- */
+.ltx_title_document {
+  font-family: var(--paper-font); font-size: 1.12em; font-weight: 700; line-height: 1.4;
+  text-transform: uppercase; letter-spacing: .01em; text-align: center; margin: .5em 0 1em;
+}
+.ltx_authors { display: block; text-align: center; margin: 0 0 2em; font-size: .86em; text-transform: uppercase; letter-spacing: .02em; }
+.ltx_creator { display: inline; }
+.ltx_personname { font-weight: 400; }
+.ltx_author_notes, .ltx_contact, .ltx_role_affiliation, .ltx_role_address, .ltx_role_email { display: none; }
+.ltx_abstract { margin: 0 2.4em 2em; font-size: .9em; line-height: 1.45; }
+.ltx_title_abstract { display: inline; font-size: 1em; font-weight: 400; font-variant: small-caps; margin: 0 .5em 0 0; }
+.ltx_title_abstract + .ltx_p, .ltx_abstract > .ltx_p:first-of-type { display: inline; }
+.ltx_dates, .ltx_keywords, .ltx_classification, .ltx_acknowledgements {
+  font-size: .82em; line-height: 1.4; margin: .2em 0; color: var(--muted); text-align: left;
+}
+.ltx_title_keywords, .ltx_title_classification { display: inline; font-size: 1em; font-weight: 400; font-style: italic; margin-right: .4em; }
+.ltx_title_classification::after { content: "."; }
+.ltx_classification { margin-bottom: 0; }
+.front-last { margin-bottom: 2.2em !important; }
+
+/* ---- Titres (amsart) : sections centrées en petites capitales, sous-sections en gras en ligne ---- */
+.ltx_title_section, .ltx_title_appendix, .ltx_title_bibliography {
+  font-family: var(--paper-caps); font-size: 1em; font-weight: 400; font-variant: small-caps; letter-spacing: .03em;
+  text-align: center; margin: 2.2em 0 .9em; line-height: 1.4;
+}
+section.ltx_subsection, section.ltx_subsubsection, section.ltx_paragraph { margin-top: 1.1em; }
+.ltx_title_subsection, .ltx_title_subsubsection, .ltx_title_paragraph {
+  display: inline; font-size: 1em; margin: 0 .45em 0 0; line-height: inherit;
+}
+.ltx_title_subsection { font-weight: 700; }
+.ltx_title_subsubsection, .ltx_title_paragraph { font-weight: 400; font-style: italic; }
+.ltx_title_subsection::after, .ltx_title_subsubsection::after { content: "."; }
+:is(.ltx_title_subsection, .ltx_title_subsubsection, .ltx_title_paragraph) + .ltx_para,
+:is(.ltx_title_subsection, .ltx_title_subsubsection, .ltx_title_paragraph) + .ltx_para > .ltx_p:first-child { display: inline; }
+:is(.ltx_title_subsection, .ltx_title_subsubsection, .ltx_title_paragraph) + .ltx_para > .ltx_p:first-child { text-indent: 0; }
+
+/* ---- Paragraphes : alinéa, pas d'espace entre paragraphes ---- */
+.ltx_para { margin: 0; }
+.ltx_p { margin: 0; }
+.ltx_para > .ltx_p:first-child { text-indent: var(--indent); }
+.ltx_noindent > .ltx_p:first-child, .ltx_item .ltx_p, .ltx_bibitem .ltx_p, .ltx_note .ltx_p,
+.ltx_caption .ltx_p, .ltx_abstract .ltx_p, .ltx_theorem .ltx_para:first-of-type > .ltx_p:first-child,
+.ltx_proof .ltx_para:first-of-type > .ltx_p:first-child, .ltx_td .ltx_p { text-indent: 0; }
+.ltx_runin { display: inline; font-size: 1em; margin: 0 .4em 0 0; line-height: inherit; }
 .ltx_runin + .ltx_para, .ltx_runin + .ltx_para > .ltx_p:first-child { display: inline; }
 
-/* Auteurs, dates, mots-clés */
-.ltx_authors { display: block; margin: 0 0 1.2em; color: var(--muted); }
-.ltx_creator { display: inline-block; margin-right: 1.2em; }
-.ltx_personname { color: var(--text); font-weight: 500; }
-.ltx_author_notes, .ltx_contact, .ltx_role_affiliation, .ltx_role_address, .ltx_role_email { display: none; }
-.ltx_dates, .ltx_keywords, .ltx_classification { color: var(--muted); font-size: .9em; margin: .4em 0; }
-.ltx_abstract { margin: 1.5em 0 2em; padding: 1em 1.2em; background: var(--surface-soft); border-radius: 8px; }
+/* ---- Énoncés (amsthm, style plain) et preuves ---- */
+.ltx_theorem { margin: .9em 0; position: relative; }
+.ltx_title_theorem { font-weight: 400; }
+.ltx_title_theorem .ltx_tag_theorem, .ltx_title_theorem .ltx_font_bold { font-weight: 700; }
+.ltx_proof { margin: .5em 0 .9em; position: relative; }
+.ltx_title_proof { font-style: italic; font-weight: 400; }
+.qed { float: right; margin-left: 1em; font-family: var(--font-math); }
 
-.ltx_para { margin: 0; }
-.ltx_p { margin: 0 0 .85em; }
-.ltx_noindent { text-indent: 0; }
-
-/* Équations : le numéro reste à droite, les formules larges défilent horizontalement */
-.ltx_equation.ltx_eqn_table, .ltx_equationgroup.ltx_eqn_table, table.ltx_eqn_table {
-  width: 100%; border-collapse: collapse; margin: .7em 0; display: table;
-}
-.ltx_eqn_cell { white-space: nowrap; padding: .15em 0; }
+/* ---- Équations ---- */
+table.ltx_eqn_table { width: 100%; border-collapse: collapse; margin: .55em 0; display: table; text-align: left; }
+.ltx_eqn_cell { white-space: nowrap; padding: .12em 0; text-indent: 0; }
 .ltx_eqn_center_padleft, .ltx_eqn_center_padright { width: 50%; }
 .ltx_eqn_left_padleft, .ltx_eqn_right_padright { width: 0; }
-.ltx_eqn_eqno { text-align: right; white-space: nowrap; padding-left: 1em; color: var(--muted); }
-.eq-scroll { overflow-x: auto; overflow-y: hidden; max-width: 100%; }
-math[display="block"] { margin: .3em 0; }
-math { font-family: var(--font-math); font-size: 1.04em; }
-.ltx_math_unparsed { white-space: nowrap; }
+.ltx_eqn_eqno { text-align: right; white-space: nowrap; padding-left: 1em; }
+.ltx_leqno .ltx_eqn_eqno.ltx_align_left { text-align: left; padding: 0 1em 0 0; }
+.eq-scroll { overflow-x: auto; overflow-y: hidden; max-width: 100%; scrollbar-width: thin; }
 
-/* Listes */
-.ltx_itemize, .ltx_enumerate, .ltx_description { padding-left: 2em; margin: .4em 0 .9em; }
-.ltx_item { position: relative; margin: .25em 0; }
-.ltx_item > .ltx_tag { position: absolute; left: -2em; width: 1.8em; text-align: right; padding-right: .3em; }
+/* ---- Listes ---- */
+.ltx_itemize, .ltx_enumerate, .ltx_description { padding-left: 2.2em; margin: .35em 0; }
+.ltx_item { position: relative; margin: .15em 0; list-style: none; }
+.ltx_item > .ltx_tag { position: absolute; left: -2.2em; width: 2em; text-align: right; padding-right: .45em; }
 .ltx_item > .ltx_para:first-of-type, .ltx_item > .ltx_para:first-of-type > .ltx_p:first-child { display: inline; }
-.ltx_description > .ltx_item > .ltx_tag { position: static; font-weight: 600; margin-right: .4em; }
+.ltx_description > .ltx_item > .ltx_tag { position: static; font-weight: 700; margin-right: .4em; }
 
-/* Figures et tableaux */
-.ltx_figure, .ltx_table { margin: 1.5em 0; text-align: center; }
+/* ---- Figures et tableaux ---- */
+.ltx_figure, .ltx_table { margin: 1.4em 0; text-align: center; }
 .ltx_figure img, .ltx_graphics { max-width: 100%; height: auto; }
-.ltx_caption { font-size: .92em; color: var(--muted); margin-top: .5em; }
-.ltx_tabular { margin: 0 auto; border-collapse: collapse; }
-.ltx_tabular td, .ltx_tabular th { padding: .2em .6em; }
-.ltx_border_t { border-top: 1px solid var(--border-strong); }
-.ltx_border_b { border-bottom: 1px solid var(--border-strong); }
-.ltx_border_l { border-left: 1px solid var(--border-strong); }
-.ltx_border_r { border-right: 1px solid var(--border-strong); }
-.ltx_border_tt { border-top: 2px solid var(--border-strong); }
-.ltx_border_bb { border-bottom: 2px solid var(--border-strong); }
+.ltx_caption { font-size: .9em; margin-top: .5em; text-align: center; }
+.ltx_tabular { margin: 0 auto; border-collapse: collapse; text-align: left; }
+.ltx_tabular td, .ltx_tabular th { padding: .15em .55em; }
+.ltx_border_t { border-top: 1px solid currentColor; }
+.ltx_border_b { border-bottom: 1px solid currentColor; }
+.ltx_border_l { border-left: 1px solid currentColor; }
+.ltx_border_r { border-right: 1px solid currentColor; }
+.ltx_border_tt { border-top: 2px solid currentColor; }
+.ltx_border_bb { border-bottom: 2px solid currentColor; }
 .ltx_picture, svg.ltx_picture { max-width: 100%; height: auto; overflow: visible; }
 
-/* Notes de bas de page : affichées au survol par le lecteur */
+/* ---- Notes de bas de page : affichées au survol ---- */
 .ltx_note_outer { display: none; }
-.ltx_note_mark { color: var(--accent); cursor: help; }
+.ltx_note_mark { cursor: help; }
 
-/* Bibliographie */
-.ltx_biblist { list-style: none; padding: 0; }
-.ltx_bibitem { margin: 0 0 .7em; padding-left: 4.5em; position: relative; font-size: .95em; }
-.ltx_tag_bibitem { position: absolute; left: 0; width: 4em; color: var(--muted); }
+/* ---- Bibliographie (amsplain) ---- */
+.ltx_bibliography { font-size: .9em; line-height: 1.45; }
+.ltx_biblist { list-style: none; padding: 0; margin: 0; }
+.ltx_bibitem { margin: 0 0 .45em; padding-left: 3.6em; position: relative; text-align: left; }
+.ltx_tag_bibitem { position: absolute; left: 0; width: 3.1em; text-align: right; }
 .ltx_bibblock { display: inline; }
 
 .ltx_ERROR, .ltx_page_logo { display: none; }
+
+/* Colonne très étroite : la justification creuserait de grands blancs autour des formules */
+@media (max-width: 640px) {
+  .paper-content, .ltx_abstract { text-align: left; }
+  .ltx_abstract { margin: 0 .8em 1.6em; }
+}
