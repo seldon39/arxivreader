@@ -1,0 +1,88 @@
+/* Mise en forme minimale des balises produites par LaTeXML (version HTML d'arXiv). */
+
+.paper-content { overflow-wrap: break-word; }
+
+.ltx_font_bold { font-weight: 700; }
+.ltx_font_italic { font-style: italic; }
+.ltx_font_upright { font-style: normal; }
+.ltx_font_smallcaps { font-variant: small-caps; }
+.ltx_font_typewriter { font-family: var(--font-mono); font-size: .92em; }
+.ltx_font_sansserif { font-family: var(--font-ui); }
+.ltx_font_slanted { font-style: oblique; }
+.ltx_framed { border: 1px solid currentColor; padding: 0 .2em; }
+.ltx_align_left { text-align: left; }
+.ltx_align_right { text-align: right; }
+.ltx_align_center { text-align: center; }
+.ltx_align_justify { text-align: justify; }
+.ltx_align_top { vertical-align: top; }
+.ltx_align_middle { vertical-align: middle; }
+.ltx_align_bottom { vertical-align: bottom; }
+.ltx_centering { text-align: center; }
+.ltx_inline-block { display: inline-block; }
+
+/* Titres de l'article */
+.ltx_title_document { font-size: 1.75em; line-height: 1.25; margin: 0 0 .6em; font-weight: 600; }
+.ltx_title_section, .ltx_title_appendix, .ltx_title_bibliography { font-size: 1.4em; margin: 2em 0 .7em; font-weight: 600; }
+.ltx_title_subsection { font-size: 1.18em; margin: 1.6em 0 .6em; font-weight: 600; }
+.ltx_title_subsubsection, .ltx_title_paragraph { font-size: 1.04em; margin: 1.3em 0 .5em; font-weight: 600; }
+.ltx_title_abstract { font-size: 1em; text-align: center; margin: 0 0 .4em; font-variant: small-caps; letter-spacing: .03em; }
+.ltx_runin { display: inline; font-size: 1em; margin: 0 .35em 0 0; }
+.ltx_runin + .ltx_para, .ltx_runin + .ltx_para > .ltx_p:first-child { display: inline; }
+
+/* Auteurs, dates, mots-clés */
+.ltx_authors { display: block; margin: 0 0 1.2em; color: var(--muted); }
+.ltx_creator { display: inline-block; margin-right: 1.2em; }
+.ltx_personname { color: var(--text); font-weight: 500; }
+.ltx_author_notes, .ltx_contact, .ltx_role_affiliation, .ltx_role_address, .ltx_role_email { display: none; }
+.ltx_dates, .ltx_keywords, .ltx_classification { color: var(--muted); font-size: .9em; margin: .4em 0; }
+.ltx_abstract { margin: 1.5em 0 2em; padding: 1em 1.2em; background: var(--surface-soft); border-radius: 8px; }
+
+.ltx_para { margin: 0; }
+.ltx_p { margin: 0 0 .85em; }
+.ltx_noindent { text-indent: 0; }
+
+/* Équations : le numéro reste à droite, les formules larges défilent horizontalement */
+.ltx_equation.ltx_eqn_table, .ltx_equationgroup.ltx_eqn_table, table.ltx_eqn_table {
+  width: 100%; border-collapse: collapse; margin: .7em 0; display: table;
+}
+.ltx_eqn_cell { white-space: nowrap; padding: .15em 0; }
+.ltx_eqn_center_padleft, .ltx_eqn_center_padright { width: 50%; }
+.ltx_eqn_left_padleft, .ltx_eqn_right_padright { width: 0; }
+.ltx_eqn_eqno { text-align: right; white-space: nowrap; padding-left: 1em; color: var(--muted); }
+.eq-scroll { overflow-x: auto; overflow-y: hidden; max-width: 100%; }
+math[display="block"] { margin: .3em 0; }
+math { font-family: var(--font-math); font-size: 1.04em; }
+.ltx_math_unparsed { white-space: nowrap; }
+
+/* Listes */
+.ltx_itemize, .ltx_enumerate, .ltx_description { padding-left: 2em; margin: .4em 0 .9em; }
+.ltx_item { position: relative; margin: .25em 0; }
+.ltx_item > .ltx_tag { position: absolute; left: -2em; width: 1.8em; text-align: right; padding-right: .3em; }
+.ltx_item > .ltx_para:first-of-type, .ltx_item > .ltx_para:first-of-type > .ltx_p:first-child { display: inline; }
+.ltx_description > .ltx_item > .ltx_tag { position: static; font-weight: 600; margin-right: .4em; }
+
+/* Figures et tableaux */
+.ltx_figure, .ltx_table { margin: 1.5em 0; text-align: center; }
+.ltx_figure img, .ltx_graphics { max-width: 100%; height: auto; }
+.ltx_caption { font-size: .92em; color: var(--muted); margin-top: .5em; }
+.ltx_tabular { margin: 0 auto; border-collapse: collapse; }
+.ltx_tabular td, .ltx_tabular th { padding: .2em .6em; }
+.ltx_border_t { border-top: 1px solid var(--border-strong); }
+.ltx_border_b { border-bottom: 1px solid var(--border-strong); }
+.ltx_border_l { border-left: 1px solid var(--border-strong); }
+.ltx_border_r { border-right: 1px solid var(--border-strong); }
+.ltx_border_tt { border-top: 2px solid var(--border-strong); }
+.ltx_border_bb { border-bottom: 2px solid var(--border-strong); }
+.ltx_picture, svg.ltx_picture { max-width: 100%; height: auto; overflow: visible; }
+
+/* Notes de bas de page : affichées au survol par le lecteur */
+.ltx_note_outer { display: none; }
+.ltx_note_mark { color: var(--accent); cursor: help; }
+
+/* Bibliographie */
+.ltx_biblist { list-style: none; padding: 0; }
+.ltx_bibitem { margin: 0 0 .7em; padding-left: 4.5em; position: relative; font-size: .95em; }
+.ltx_tag_bibitem { position: absolute; left: 0; width: 4em; color: var(--muted); }
+.ltx_bibblock { display: inline; }
+
+.ltx_ERROR, .ltx_page_logo { display: none; }

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>arXivReader</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/css/latexml.css">
+  <link rel="stylesheet" href="/static/css/app.css">
+  <script type="module" src="/static/js/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#/"><span class="brand-mark">arXiv</span>Reader</a>
+    <nav class="topnav">
+      <a href="#/" data-i18n="nav.library">Bibliothèque</a>
+    </nav>
+    <div class="topbar-actions">
+      <button class="icon-button" id="settings-button" type="button" data-i18n-title="settings.title" aria-haspopup="dialog">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm8.1-2.6.1-.9-.1-.9 2-1.6-2-3.4-2.4 1a7.6 7.6 0 0 0-1.6-.9L15.8 3h-3.9l-.4 2.6c-.6.2-1.1.5-1.6.9l-2.4-1-2 3.4 2 1.6-.1.9.1.9-2 1.6 2 3.4 2.4-1c.5.4 1 .7 1.6.9l.4 2.6h3.9l.4-2.6c.6-.2 1.1-.5 1.6-.9l2.4 1 2-3.4-2.1-1.6Z"/></svg>
+      </button>
+    </div>
+  </header>
+  <main id="view"></main>
+  <dialog id="settings-dialog" class="settings"></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

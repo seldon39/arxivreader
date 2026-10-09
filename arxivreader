@@ -1,0 +1,39 @@
+#!/bin/bash
+# Lance arXivReader : prépare l'environnement Python au besoin, démarre le serveur local
+# (127.0.0.1 uniquement) et ouvre le navigateur. Ctrl+C pour arrêter.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+PORT=8710
+URL="http://127.0.0.1:$PORT/"
+PYTHON="${PYTHON:-python3}"
+
+# Déjà lancé ? On ouvre simplement le navigateur.
+if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+  echo "arXivReader tourne déjà : $URL"
+  open "$URL"
+  exit 0
+fi
+
+# Environnement Python du projet (.venv), réinstallé si requirements.txt change.
+if [ ! -x .venv/bin/python ]; then
+  echo "Première installation de l'environnement Python…"
+  "$PYTHON" -m venv .venv
+fi
+HASH=$(shasum requirements.txt | cut -d' ' -f1)
+if [ "$(cat .venv/.requirements-hash 2>/dev/null)" != "$HASH" ]; then
+  .venv/bin/pip install --quiet --upgrade pip
+  .venv/bin/pip install --quiet -r requirements.txt
+  echo "$HASH" > .venv/.requirements-hash
+fi
+
+# Ouvre le navigateur dès que le serveur répond.
+(
+  for _ in $(seq 1 50); do
+    if curl -s -o /dev/null "$URL"; then open "$URL"; exit 0; fi
+    sleep 0.2
+  done
+) &
+
+echo "arXivReader : $URL  (Ctrl+C pour arrêter)"
+exec .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT" --log-level warning
