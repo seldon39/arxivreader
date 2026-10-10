@@ -1016,6 +1016,8 @@ dialog.figure-viewer::backdrop { background: rgba(20, 20, 24, .6); -webkit-backd
 .section-toggle:hover .chevron { color: var(--text); }
 .foldable.collapsed .section-toggle .chevron { transform: none; }
 .foldable.collapsed > .feed-card { display: none; }
+/* repliée : ligne grise fine ; le rouge marque la section ouverte (et l'annonce du jour) */
+.foldable.collapsed .feed-date { border-bottom: 1px solid var(--border-strong); }
 .followed-section.foldable.collapsed { margin-bottom: 14px; }
 .day-label { font: 600 17px var(--font-read); }
 /* annonce du jour entre deux lignes rouges, comme les intertitres */
