@@ -36,6 +36,7 @@ class Reader {
     this.selected = null;
     this.tab = "statements";
     this.showIsolated = false;
+    this.showRemarks = false;
     this.kindFilter = new Set();
     this.search = "";
     this.backStack = [];
@@ -774,6 +775,8 @@ class Reader {
     else this.renderGraphTab(body);
     this.panel.replaceChildren(tabBar, body);
     this.setPanelWide(this.tab === "ai");
+    const graph = this.tab === "graph" && body.querySelector(".graph-wrap");
+    if (graph) this.centerGraph(graph);
   }
 
   // Panneau élargi pour l'onglet IA, sans perdre l'endroit où l'on lit
@@ -909,26 +912,44 @@ class Reader {
 
   renderGraphTab(body) {
     const graph = renderGraph(this.nodes, {
-      selected: this.selected, showIsolated: this.showIsolated,
+      selected: this.selected, showIsolated: this.showIsolated, showRemarks: this.showRemarks,
       onSelect: (id) => this.select(id, { scroll: true }),
     });
     const isolated = h("input", { type: "checkbox", checked: this.showIsolated });
     isolated.addEventListener("change", () => { this.showIsolated = isolated.checked; this.renderPanel(); });
+    const remarks = h("input", { type: "checkbox", checked: this.showRemarks });
+    remarks.addEventListener("change", () => { this.showRemarks = remarks.checked; this.renderPanel(); });
     const expand = h("button", { class: "button", type: "button", onclick: () => this.openGraphOverlay() }, t("graph.expand"));
     const kinds = [...new Set(this.nodes.map((n) => n.kind))];
     body.append(
-      h("div", { class: "graph-tools" }, h("label", {}, isolated, t("graph.isolated")), expand),
-      graph ? h("div", { class: "graph-wrap" }, graph) : h("p", { class: "hint" }, t("graph.empty")),
+      h("div", { class: "graph-tools" }, h("label", {}, isolated, t("graph.isolated")), h("label", {}, remarks, t("graph.remarks")), expand),
+      graph ? this.graphWrap(graph) : h("p", { class: "hint" }, t("graph.empty")),
       h("div", { class: "legend" }, kinds.map((k) => h("span", { dataset: { kind: k } }, h("span", { class: "dot" }), t(`kind.${k}`)))),
       h("p", { class: "hint" }, t("graph.help")),
     );
+  }
+
+  // Graphe plus large que le panneau : on fait défiler jusqu'à l'énoncé choisi (sinon jusqu'au milieu)
+  graphWrap(graph) {
+    return h("div", { class: "graph-wrap" }, graph);
+  }
+
+  centerGraph(wrap) {
+    const box = wrap.getBoundingClientRect();
+    const target = wrap.querySelector(".node.selected")?.getBoundingClientRect();
+    if (target) {
+      wrap.scrollLeft += target.left - box.left - (wrap.clientWidth - target.width) / 2;
+      wrap.scrollTop += target.top - box.top - (wrap.clientHeight - target.height) / 2;
+    } else {
+      wrap.scrollLeft = (wrap.scrollWidth - wrap.clientWidth) / 2;
+    }
   }
 
   openGraphOverlay() {
     const close = () => { overlay.remove(); this.overlay = null; document.removeEventListener("keydown", onKey); };
     const onKey = (event) => { if (event.key === "Escape") close(); };
     const draw = () => renderGraph(this.nodes, {
-      selected: this.selected, showIsolated: this.showIsolated,
+      selected: this.selected, showIsolated: this.showIsolated, showRemarks: this.showRemarks,
       onSelect: (id) => { this.select(id); wrap.replaceChildren(draw()); },
     }) || h("p", { class: "hint" }, t("graph.empty"));
     const wrap = h("div", { class: "graph-wrap" }, draw());

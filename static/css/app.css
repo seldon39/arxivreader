@@ -368,6 +368,10 @@ svg { fill: currentColor; }
 .graph-tools label { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
 svg.graph { display: block; font: 12px var(--font-ui); }
 svg.graph .edge { fill: none; stroke: var(--border-strong); stroke-width: 1.3; }
+svg.graph .arrow-head.plain { fill: var(--border-strong); }
+svg.graph .arrow-head.up { fill: var(--k-lemma); }
+svg.graph .arrow-head.down { fill: var(--k-corollary); }
+svg.graph .edge.weak { stroke-dasharray: 4 3; }
 svg.graph .edge.up { stroke: var(--k-lemma); stroke-width: 2; }
 svg.graph .edge.down { stroke: var(--k-corollary); stroke-width: 2; }
 svg.graph .node rect { fill: var(--surface); stroke: var(--kind); stroke-width: 1.6; }
@@ -378,7 +382,8 @@ svg.graph .node.selected text { fill: #fff; font-weight: 600; }
 svg.graph.focus .node:not(.related):not(.selected), svg.graph.focus .edge:not(.up):not(.down) { opacity: .22; }
 .graph-overlay { position: fixed; inset: 0; z-index: 60; background: var(--bg); display: flex; flex-direction: column; }
 .graph-overlay header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--surface); }
-.graph-overlay .graph-wrap { flex: 1; max-height: none; margin: 12px; }
+.graph-overlay .graph-wrap { flex: 1; max-height: none; margin: 12px; display: flex; }
+.graph-overlay .graph-wrap svg { margin: auto; flex: none; }
 .legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12.5px; color: var(--muted); margin: 8px 4px; }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 

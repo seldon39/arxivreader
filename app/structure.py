@@ -1,12 +1,13 @@
 """Structure mathématique d'un article LaTeXML : sommaire, énoncés, preuves et dépendances."""
 
+import bisect
 import re
 
 from bs4 import NavigableString, Tag
 
 from .arxiv import extract_ids
 
-STRUCTURE_VERSION = 3  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
+STRUCTURE_VERSION = 4  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
 
 SECTION_LEVELS = {
     "ltx_part": 0, "ltx_chapter": 0, "ltx_section": 1, "ltx_appendix": 1,
@@ -38,6 +39,13 @@ JUSTIFICATION = re.compile(
     r"|conséquence|découle|d'après|grâce|obtient|déduit|même façon|même manière)\b", re.I)
 ANNOUNCES_PROOF_BELOW = re.compile(r"\b(we|nous)\s+(now\s+|will\s+|allons\s+)?(prove|show|establish|montrer|démontrer|montrons|démontrons)", re.I)
 NEEDS_PROOF = {"theorem", "proposition", "lemma", "corollary", "claim"}
+# « In the proof of Theorem 1.2, … » : l'énoncé est celui qu'on démontre, pas un énoncé utilisé
+PROVING = re.compile(r"(proof\s+of|prove|proving|show|preuve\s+d[eu]|démontrer|montrer)\s*(the\s+|le\s+|la\s+|du\s+)?(\w+\s*)?$", re.I)
+# Renvoi implicite à l'énoncé qui précède : « the above lemma », « the previous theorem », « le lemme précédent »
+IMPLICIT_REF = re.compile(
+    r"\b(?:the|this)\s+(?:above|previous|preceding|last|former)\s+(lemma|proposition|theorem|corollary|claim)\b"
+    r"|\bthe\s+(lemma|proposition|theorem|corollary)\s+above\b"
+    r"|\b(?:le|la|du|de\s+la)\s+(lemme|proposition|théorème|corollaire)\s+(?:précédente?|ci-dessus)\b", re.I)
 # Phrase juste après l'énoncé (« This follows from Lemma 2.1. »)
 JUSTIFIES_PREVIOUS = re.compile(
     r"^\s*(this|it|the (above )?(lemma|corollary|proposition|result) )\s*(follows|is (a |an )?(direct |immediate |straightforward )?consequence)"
@@ -375,10 +383,68 @@ def extract_structure(fragment, overrides=None):
             return ("theorem", theorem["id"])
         return None
 
+    # Position de chaque élément dans l'article, pour les renvois implicites
+    position = {id(element): i for i, element in enumerate(fragment.find_all(True))}
+    statements = sorted((position[id(by_id(n))], n) for n in order)
+    starts = [p for p, _ in statements]
+
+    def paragraphs(container):
+        return [container] if has_class(container, "ltx_para") else container.select(".ltx_para")
+
+    def implicit_refs(container):
+        """« the above lemma » : le dernier énoncé de cette nature avant le paragraphe."""
+        found = []
+        for para in paragraphs(container):
+            for match in IMPLICIT_REF.finditer(squash(plain(para))):
+                kind = classify(next(g for g in match.groups() if g), [])
+                i = bisect.bisect_left(starts, position.get(id(para), 0)) - 1
+                while i >= 0 and nodes[statements[i][1]]["kind"] != kind:
+                    i -= 1
+                if i >= 0:
+                    _add(found, statements[i][1])
+        return found
+
+    def in_block(element):
+        return enclosing(element, lambda e: has_class(e, "ltx_theorem") or has_class(e, "ltx_proof")
+                         or e.get("data-proof-of") or has_class(e, "ltx_bibliography")) is not None
+
+    # Équation obtenue dans le texte courant (hors énoncés et preuves) à partir d'énoncés cités juste avant,
+    # dans le même paragraphe : « From (3.30) and the above lemma, we get (3.33) ». Un énoncé qui cite
+    # cette équation dépend (faiblement) de ces énoncés.
+    statement_position = dict((n, p) for p, n in statements)
+    derived = {}
+    for para in fragment.select(".ltx_para"):
+        if in_block(para):
+            continue
+        sources = []  # (position dans l'article, énoncé)
+        for link in para.select('a.ltx_ref[href^="#"]'):
+            hit = resolve(link["href"][1:])
+            before = link.find_previous(string=True) or ""
+            if hit and hit[0] == "theorem" and not PROVING.search(before[-40:]):
+                sources.append((position[id(link)], hit[1]))
+        sources += [(position[id(para)], n) for n in implicit_refs(para)]
+        if not sources:
+            continue
+        # « … we get » suivi d'une formule centrée : LaTeXML la place dans le paragraphe suivant
+        blocks = [para]
+        following = para.find_next_sibling(True)
+        if following is not None and has_class(following, "ltx_para") and _is_equation(following.find(True) or following):
+            blocks.append(following)
+        for equation in (e for block in blocks for e in block.find_all(_is_equation)):
+            if not equation.get("id") or equation.find(class_="ltx_tag_equation") is None:
+                continue
+            here = position[id(equation)]
+            derived[equation["id"]] = [n for at, n in sources if at < here and statement_position[n] < here]
+
+    def proof_container(target):
+        return enclosing(target, lambda e: e.get("data-proof-of"))
+
     equations = {}
+    weak = {node_id: [] for node_id in order}
     for node_id in order:
         node = nodes[node_id]
-        scope = [by_id(node_id)] + [by_id(p) for p in node["proofs"]]
+        statement = by_id(node_id)
+        scope = [statement] + [by_id(p) for p in node["proofs"]]
         if node["justifiedBy"]:
             scope.append(by_id(node["justifiedBy"]))
         if node["proofPassage"]:
@@ -395,10 +461,45 @@ def extract_structure(fragment, overrides=None):
                 elif hit[0] == "equation":
                     _, eq_id, eq_label, owner = hit
                     equations[eq_id] = {"label": eq_label, "owner": owner}
-                    if owner != node_id:
-                        _add(node["usesEquations"], eq_id)
-                        if owner:
-                            _add(node["uses"], owner)
+                    if owner == node_id:
+                        continue
+                    _add(node["usesEquations"], eq_id)
+                    holder = proof_container(by_id(eq_id))
+                    if owner and holder is not None and statement in holder.descendants:
+                        continue  # énoncé posé dans la preuve de `owner` : il n'en dépend pas
+                    if owner:
+                        _add(node["uses"], owner)
+                    for used in derived.get(eq_id, []):
+                        if used != node_id:
+                            _add(weak[node_id], used)
+            for used in implicit_refs(container):
+                if used != node_id:
+                    _add(node["uses"], used)
+            # énoncés posés à l'intérieur de la preuve (lemme intermédiaire, théorème cité en cours de route)
+            if container is not statement:
+                for inner in container.select(".ltx_theorem[id]"):
+                    if inner["id"] in nodes and inner["id"] != node_id:
+                        _add(node["uses"], inner["id"])
+
+    # Liens faibles (par une équation du texte courant) : seulement s'ils ne créent pas de cycle
+    def reaches(start, goal):
+        seen, stack = set(), [start]
+        while stack:
+            current = stack.pop()
+            if current == goal:
+                return True
+            if current not in seen:
+                seen.add(current)
+                stack += nodes[current]["uses"]
+        return False
+
+    for node_id in order:
+        node = nodes[node_id]
+        node["weakUses"] = []
+        for used in weak[node_id]:
+            if used not in node["uses"] and not reaches(used, node_id):
+                node["uses"].append(used)
+                node["weakUses"].append(used)
     for node_id in order:
         for used in nodes[node_id]["uses"]:
             _add(nodes[used]["usedBy"], node_id)
