@@ -67,6 +67,12 @@ async function renderList(body, tab) {
     let target = shiftDay(data.day, step);
     if (step > 0 && data.latestDay && target > data.latestDay) return;
     loadingDay = true;
+    // Barre de jour collée en haut (on lisait la liste) : on ira au début de la liste du nouveau jour ;
+    // sinon, la page ne bouge pas.
+    const nav = list.querySelector(".day-nav");
+    const topbar = document.querySelector(".topbar").getBoundingClientRect().height;
+    const wasReading = nav && nav.getBoundingClientRect().top <= topbar + 1 && nav.parentElement.getBoundingClientRect().top < topbar;
+    const keepY = scrollY;
     dayLabel?.replaceChildren(h("span", { class: "spinner" }), " ", t("feed.loadingDay"));
     try {
       for (let attempt = 0; attempt < 5; attempt++) {
@@ -74,12 +80,17 @@ async function renderList(body, tab) {
         if (next.items.some((i) => i.in_arxiv) || step > 0 || attempt === 4) { data = next; break; }
         target = shiftDay(target, step);  // jour sans annonce (férié) : on continue
       }
-      window.scrollTo({ top: 0 });
     } catch (error) {
       toast(t("error.generic", { message: error.message }), { error: true, duration: 6000 });
     } finally {
       loadingDay = false;
       draw();
+      const section = list.querySelector(".day-nav")?.parentElement;
+      if (wasReading && section) {
+        window.scrollTo({ top: section.getBoundingClientRect().top + scrollY - topbar, behavior: "instant" });
+      } else {
+        window.scrollTo({ top: keepY, behavior: "instant" });
+      }
     }
   };
   let dayLabel = null;
