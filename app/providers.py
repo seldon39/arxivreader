@@ -8,14 +8,19 @@ Comme pour Claude, chacun ne reçoit que le texte de l'article et la demande, et
 """
 
 import asyncio
+import contextlib
 import glob
 import json
 import os
+import re
 import shutil
+import signal
 import subprocess
+import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import anyio
 import httpx
 
 from .config import LIBRARY
@@ -43,11 +48,15 @@ def provider_of(model):
 
 
 def valid_local_url(url):
+    if not isinstance(url, str) or len(url) > 200 or not url.isprintable() or " " in url:
+        return False
     try:
         parts = urlsplit(url)
+        parts.port  # port non numérique ou hors limites : ValueError
     except ValueError:
         return False
-    return parts.scheme == "http" and parts.hostname in LOCAL_HOSTS and not parts.username and len(url) <= 200
+    return (parts.scheme == "http" and parts.hostname in LOCAL_HOSTS and not parts.username
+            and not parts.query and not parts.fragment)
 
 
 # ---------- Programmes en ligne de commande ----------
@@ -70,6 +79,20 @@ def _environment():
 
 def find(command):
     return shutil.which(command, path=_search_path())
+
+
+def _write(path, text):
+    """Fichier de consignes ou de réglages partagé par les demandes : réécrit seulement s'il change, d'un
+    coup (fichier temporaire puis remplacement), jamais lu à moitié écrit par une demande voisine."""
+    try:
+        if path.read_text(encoding="utf-8") == text:
+            return
+    except OSError:
+        pass
+    handle, temporary = tempfile.mkstemp(dir=path.parent, prefix=".tmp-")
+    with os.fdopen(handle, "w", encoding="utf-8") as file:
+        file.write(text)
+    os.replace(temporary, path)
 
 
 def _workdir(name):
@@ -101,7 +124,7 @@ def status(provider, settings):
                 response = client.get(f"{url.rstrip('/')}/models")
                 response.raise_for_status()
                 models = sorted(m["id"] for m in response.json().get("data", []) if isinstance(m.get("id"), str))
-        except (httpx.HTTPError, ValueError, KeyError, TypeError):
+        except (httpx.HTTPError, httpx.InvalidURL, ValueError, KeyError, TypeError, AttributeError):
             return {"available": False, "loggedIn": False, "models": []}
         return {"available": True, "loggedIn": bool(models), "models": models}
     raise ValueError(provider)
@@ -113,15 +136,19 @@ async def _run(argv, stdin_text, cwd, parse, env=None):
     try:
         process = await asyncio.create_subprocess_exec(
             *argv, cwd=str(cwd), env=env or _environment(), limit=32 * 1024 * 1024,
-            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            start_new_session=True)  # groupe à part : arrêté avec ses éventuels sous-processus
     except OSError as error:
         raise ProviderError(str(error), "missing")
     errors = asyncio.create_task(process.stderr.read())
     state = {"error": None, "text": False}
     try:
-        process.stdin.write(stdin_text.encode())
-        await process.stdin.drain()
-        process.stdin.close()
+        try:
+            process.stdin.write(stdin_text.encode())
+            await process.stdin.drain()
+            process.stdin.close()
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # programme arrêté avant d'avoir tout lu (option inconnue, pas connecté…) : son message suit
         async for raw in process.stdout:
             try:
                 event = json.loads(raw)
@@ -135,20 +162,23 @@ async def _run(argv, stdin_text, cwd, parse, env=None):
         stderr = (await errors).decode(errors="replace").strip()
         if process.returncode and not state["text"]:
             message = state["error"] or (stderr.splitlines()[-1] if stderr else f"exit {process.returncode}")
-            raise ProviderError(message, _code(f"{message}\n{stderr}"))
+            raise ProviderError(message, _code(message))
     finally:
-        if process.returncode is None:
-            process.kill()
-            await process.wait()
         errors.cancel()
+        if process.returncode is None:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(process.pid, signal.SIGKILL)
+            with anyio.CancelScope(shield=True):  # page fermée : l'attente n'est pas interrompue à son tour
+                await process.wait()
 
 
 def _code(message):
+    """Nature d'une erreur, d'après le seul message retenu (pas toute la sortie d'erreur, trop bavarde)."""
     lowered = message.lower()
-    if any(word in lowered for word in ("not logged in", "login", "log in", "authenticat", "unauthorized", "401", "credentials")):
-        return "login"
-    if "limit" in lowered or "quota" in lowered or "429" in lowered:
+    if re.search(r"\b429\b|quota|usage limit|rate limit|too many requests", lowered):
         return "limit"
+    if re.search(r"not logged in|\blog ?in\b|authenticat|unauthori[sz]ed|\b401\b", lowered):
+        return "login"
     return "other"
 
 
@@ -173,7 +203,7 @@ async def stream_codex(system, prompt):
         raise ProviderError("codex is not installed", "missing")
     workdir = _workdir("codex")
     instructions = workdir.parent / "codex-instructions.md"  # hors du dossier de travail
-    instructions.write_text(system, encoding="utf-8")
+    _write(instructions, system)
     argv = [cli, "exec", "--json", "--ephemeral", "--skip-git-repo-check", "--ignore-user-config",
             "--sandbox", "read-only", "-C", str(workdir),
             "-c", "features.shell_tool=false", "-c", "features.unified_exec=false",  # aucune commande
@@ -215,12 +245,12 @@ async def stream_gemini(system, prompt):
         raise ProviderError("gemini is not installed", "missing")
     workdir = _workdir("gemini")
     folder = workdir.parent
-    (folder / "gemini-system.md").write_text(system, encoding="utf-8")
+    _write(folder / "gemini-system.md", system)
     # Réglages « système » (prioritaires sur ceux de l'utilisateur) : aucun outil, aucun serveur MCP,
     # pas de fichier de mémoire GEMINI.md
     settings = {"tools": {"core": ["__none__"], "exclude": GEMINI_TOOLS}, "mcpServers": {},
                 "context": {"fileName": "__arxivreader_none__.md"}}
-    (folder / "gemini-settings.json").write_text(json.dumps(settings), encoding="utf-8")
+    _write(folder / "gemini-settings.json", json.dumps(settings))
     env = _environment()
     env["GEMINI_SYSTEM_MD"] = str(folder / "gemini-system.md")  # remplace les consignes d'agent de Gemini
     env["GEMINI_CLI_SYSTEM_SETTINGS_PATH"] = str(folder / "gemini-settings.json")
@@ -255,6 +285,8 @@ async def stream_local(system, prompt, model, url):
                         chunk = json.loads(data)
                     except ValueError:
                         continue
+                    if not isinstance(chunk, dict):
+                        continue
                     if chunk.get("error"):
                         raise ProviderError(str(chunk["error"].get("message") if isinstance(chunk["error"], dict) else chunk["error"]))
                     text = ((chunk.get("choices") or [{}])[0].get("delta") or {}).get("content") or ""
@@ -269,5 +301,5 @@ async def stream_local(system, prompt, model, url):
                         yield text
     except httpx.ConnectError:
         raise ProviderError(f"No local server at {url}", "offline")
-    except httpx.HTTPError as error:
+    except (httpx.HTTPError, httpx.InvalidURL) as error:
         raise ProviderError(f"{type(error).__name__}: {error}")

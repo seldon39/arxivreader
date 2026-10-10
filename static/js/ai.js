@@ -33,6 +33,7 @@ export class Assistant {
     this.onChange = onChange;
     this.exchanges = [];
     this.status = null;
+    this.statusToken = 0;
     this.running = null;      // { exchange, controller }
     this.live = null;         // rendu en direct de la réponse en cours
     this.pending = { quote: null, parent: null, question: "" };
@@ -52,15 +53,19 @@ export class Assistant {
   async refreshStatus() {
     const expected = currentModel();
     if (this.checking && this.statusFor === expected) return; // vérification déjà en cours
+    const token = ++this.statusToken; // seule la dernière vérification demandée compte
     this.statusFor = expected;
     this.checking = true;
-    try { this.status = await api.aiStatus(); } catch { this.status = { available: false, loggedIn: false, provider: providerOf(expected), model: expected }; }
-    const models = this.status.models || [];
-    if (this.status.provider === "local" && models.length && !models.includes(settings.aiLocalModel)) {
+    let status;
+    try { status = await api.aiStatus(); } catch { status = { available: false, loggedIn: false, provider: providerOf(expected), model: expected }; }
+    if (token !== this.statusToken) return;
+    const models = status.models || [];
+    if (status.provider === "local" && models.length && !models.includes(settings.aiLocalModel)) {
       await saveSettings({ aiLocalModel: models[0] }); // modèle local pas encore choisi (ou disparu) : le premier
-      this.status.model = `local:${models[0]}`;
+      status.model = `local:${models[0]}`;
       this.statusFor = currentModel();
     }
+    this.status = status;
     this.checking = false;
     this.onChange();
   }
@@ -338,24 +343,22 @@ export class Assistant {
   // Nouvelle conversation dans l'application Claude, pré-remplie (non envoyée) avec l'article et l'échange.
   // Le lien est limité à ~14 000 caractères : le texte complet est aussi copié dans le presse-papiers.
   async continueInClaude(exchange) {
+    const pending = api.exportAI(exchange.id).then((result) => result.text);
+    const copied = await copyLater(pending);
     let text;
-    try { ({ text } = await api.exportAI(exchange.id)); } catch (error) { toastError(error); return; }
+    try { text = await pending; } catch (error) { toastError(error); return; }
     const LIMIT = 13000;
-    const copied = await navigator.clipboard.writeText(text).then(() => true, () => false);
-    const prefill = text.length > LIMIT ? `${text.slice(0, LIMIT)}\n\n[…] ${t("ai.continueCut")}` : text;
+    const long = text.length > LIMIT;
+    const prefill = long ? `${text.slice(0, LIMIT)}\n\n[…] ${copied ? t("ai.continueCut") : ""}`.trim() : text;
     location.href = `claude://claude.ai/new?q=${encodeURIComponent(prefill)}`;
-    toast(t(text.length > LIMIT ? "ai.continueLong" : copied ? "ai.continueDone" : "ai.continueOpened"), { duration: 8000 });
+    toast(t(long ? (copied ? "ai.continueLong" : "ai.continueLongNoCopy") : copied ? "ai.continueDone" : "ai.continueOpened"), { duration: 8000 });
   }
 
   // Autres assistants : le même texte, copié, à coller dans une nouvelle conversation
   async copyExchange(exchange) {
-    try {
-      const { text } = await api.exportAI(exchange.id);
-      await navigator.clipboard.writeText(text);
-      toast(t("ai.exportCopied"));
-    } catch (error) {
-      toastError(error);
-    }
+    const pending = api.exportAI(exchange.id).then((result) => result.text);
+    if (await copyLater(pending)) toast(t("ai.exportCopied"));
+    else pending.then(() => toast(t("ai.copyFailed"), { error: true }), toastError);
   }
 
   // ---------- Annotations proposées par Claude ----------
@@ -495,6 +498,21 @@ export function parseProposals(answer) {
 }
 
 const currentModel = () => modelFor(settings);
+
+// Copie d'un texte qui arrive du serveur : Safari n'autorise l'écriture dans le presse-papiers que pendant le
+// clic, d'où un ClipboardItem dont le contenu est promis (l'attendre d'abord ferait échouer la copie)
+async function copyLater(textPromise) {
+  try {
+    if (window.ClipboardItem) {
+      await navigator.clipboard.write([new ClipboardItem({ "text/plain": textPromise.then((text) => new Blob([text], { type: "text/plain" })) })]);
+    } else {
+      await navigator.clipboard.writeText(await textPromise);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
 const ERROR_KEYS = { login: "ai.error.login", missing: "ai.error.login", limit: "ai.error.limit", offline: "ai.error.offline" };
 
 // Rendu progressif : les paragraphes terminés sont mis en forme (MathJax) une seule fois,

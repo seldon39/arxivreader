@@ -96,7 +96,7 @@ export function layoutFigures(cards) {
 // Fenêtre superposée (<dialog> modal) : l'article reste visible, grisé, derrière ; × , Échap ou un clic
 // sur le fond la ferment. Un dessin TikZ est recopié puis remis en page à la nouvelle taille
 // (ses étiquettes HTML sont recalculées) ; une image est simplement agrandie.
-export function openFigure(target, { closeLabel = "Close" } = {}) {
+export function openFigure(target, { closeLabel = "Close", onLink = null } = {}) {
   const opener = document.activeElement;
   const figure = target.closest(".ltx_figure");
   const caption = figure?.querySelector(".ltx_caption");
@@ -135,7 +135,14 @@ export function openFigure(target, { closeLabel = "Close" } = {}) {
     dialog.append(text);
   }
   close.addEventListener("click", () => dialog.close());
-  dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); }); // clic sur le fond
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) dialog.close(); // clic sur le fond
+    else if (event.target.closest?.('a[href^="#"]')) { // renvoi dans la légende ou une étiquette : on y va
+      dialog.close();
+      onLink?.(event);
+    }
+  });
+  dialog.addEventListener("keydown", (event) => { if (event.key === "Escape") event.stopPropagation(); }); // ferme la figure seule
   dialog.addEventListener("close", () => {
     removeEventListener("resize", fit);
     dialog.remove();

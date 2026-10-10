@@ -69,7 +69,7 @@ export async function saveSettings(values) {
 // Assistant IA choisi : à quoi il sert, s'il est prêt (sinon la marche à suivre), et pour un modèle
 // local, l'adresse du serveur et le modèle
 let aiCheck = 0;
-async function renderAISettings(holder) {
+async function renderAISettings(holder, keepFocus = null) {
   const provider = settings.aiProvider || "claude";
   const check = ++aiCheck;
   const line = h("p", { class: "hint", "aria-live": "polite" }, t("settings.aiChecking"));
@@ -92,6 +92,18 @@ async function renderAISettings(holder) {
   line.replaceWith(...fields.filter(Boolean),
     status.loggedIn ? h("p", { class: "hint ai-ready" }, `✓ ${t("settings.aiReady")}`)
       : setupNotice({ ...status, provider }, () => renderAISettings(holder)));
+  if (keepFocus && !holder.contains(document.activeElement)) holder.querySelector(`[name="${keepFocus}"]`)?.focus();
+}
+
+// Serveur local : sur ce Mac seulement (même règle que le serveur, qui refuse le reste)
+function localUrl(url) {
+  try {
+    const parts = new URL(url); // port invalide : exception
+    return parts.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(parts.hostname)
+      && !parts.username && !parts.search && !parts.hash && url === url.trim();
+  } catch {
+    return false;
+  }
 }
 
 function segmented(name, options, current) {
@@ -153,7 +165,7 @@ export function openSettingsDialog() {
     const parsed = type === "checkbox" ? checked : name === "fontSize" ? Number(value) : value;
     if (name === "fontSize") form.querySelector("#setting-fontSize").textContent = t("settings.fontSize", { n: value });
     const saved = saveSettings({ [name]: parsed });
-    if (name === "aiProvider" || name === "aiLocalModel") saved.then(() => renderAISettings(form.querySelector(".ai-settings")));
+    if (name === "aiProvider") saved.then(() => renderAISettings(form.querySelector(".ai-settings")));
     if (name === "language") {
       openSettingsDialog(); // re-dessine la fenêtre dans la nouvelle langue
       dialog.querySelector('input[name="language"]:checked')?.focus();
@@ -169,11 +181,11 @@ export function openSettingsDialog() {
       saveSettings({ s2ApiKey: value.trim() });
     } else if (name === "aiLocalUrl") {
       const url = value.trim().replace(/\/+$/, "");
-      if (url && !/^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(\/|$)/.test(url)) {
+      if (url && !localUrl(url)) {
         toast(t("settings.aiLocalUrlBad"), { error: true });
         return;
       }
-      saveSettings({ aiLocalUrl: url }).then(() => renderAISettings(form.querySelector(".ai-settings")));
+      saveSettings({ aiLocalUrl: url }).then(() => renderAISettings(form.querySelector(".ai-settings"), "aiLocalUrl"));
     }
   });
   renderAISettings(form.querySelector(".ai-settings"));

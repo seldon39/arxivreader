@@ -288,11 +288,14 @@ function groupFences(closer) {
   const close = closer.localName === "mo" ? closer.textContent.trim() : "";
   const open = OPENER_OF[close];
   if (!open) return null;
+  // remontée parmi les voisins, toutes sortes de délimiteurs comptées : l'ouvrante qui répond doit être
+  // de la même sorte (« [0,1)×(0,1]^2 » : pas de groupe, l'exposant reste sur le crochet)
   let depth = 0;
   for (let node = closer.previousElementSibling; node; node = node.previousElementSibling) {
     const text = node.localName === "mo" ? node.textContent.trim() : "";
-    if (text === close) depth++;
-    else if (text === open && depth-- === 0) {
+    if (text in OPENER_OF) depth++;
+    else if (Object.values(OPENER_OF).includes(text) && depth-- === 0) {
+      if (text !== open) return null;
       const row = document.createElementNS(closer.namespaceURI, "mrow");
       node.before(row);
       while (row.nextElementSibling !== closer) row.append(row.nextElementSibling);
@@ -377,6 +380,8 @@ export function splitLongInlineMath(content) {
     if (!math.closest(".ltx_p") || math.closest("td, .ltx_title, .figure-card, .ltx_note")) continue;
     const tex = math.getAttribute("alttext") || "";
     if (tex.length < 30) continue;
+    // barres \left| … \right| (ou \middle) : les deux moitiés n'auraient plus la même hauteur
+    if (/\\left\s*(\||\\[|]|\\[lV]?vert|\\Vert|\\lVert)|\\middle/.test(tex)) continue;
     let row = math.querySelector(":scope > semantics")?.firstElementChild;
     while (row?.localName === "mrow" && row.childElementCount === 1 && row.firstElementChild.localName === "mrow") row = row.firstElementChild;
     if (row?.localName !== "mrow") continue;

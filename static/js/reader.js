@@ -5,6 +5,7 @@ import { closure, renderGraph } from "./graph.js";
 import { Annotator, noteEditor } from "./annotations.js";
 import { Assistant } from "./ai.js";
 import { alignNumberColumns, amsBibliography, fixMathML, splitLongInlineMath, markItalicStatements, moveTitleNotes, normalizeFontScale, placeEquationNumbers, relabelLists } from "./amsfix.js";
+import { currentModel } from "./aiproviders.js";
 import { layoutFigures, openFigure, prepareFigures } from "./figures.js";
 import { typesetFragment, typesetMath, typesetTex } from "./math.js";
 import { t } from "./i18n.js";
@@ -300,9 +301,11 @@ class Reader {
     // Figures cliquables (et au clavier) : affichage en grand par-dessus l'article
     this.content.querySelectorAll(".figure-card, img.ltx_graphics").forEach((figure) => {
       figure.tabIndex = 0;
-      figure.setAttribute("role", "button");
-      figure.setAttribute("aria-label", t("reader.figureZoom"));
       figure.title = t("reader.figureZoom");
+      if (figure.querySelector("a")) return; // étiquettes avec renvois : pas de bouton qui contienne des liens
+      figure.setAttribute("role", "button");
+      const alt = figure.getAttribute("alt")?.trim();
+      figure.setAttribute("aria-label", alt ? `${alt} — ${t("reader.figureZoom")}` : t("reader.figureZoom"));
     });
 
     normalizeFontScale(this.content);
@@ -1166,7 +1169,7 @@ class Reader {
       if (event.type === "keydown" && event.key !== "Enter" && event.key !== " ") return;
       if (event.target.closest("a")) return; // lien dans une étiquette
       event.preventDefault();
-      openFigure(figure, { closeLabel: t("reader.figureClose") });
+      openFigure(figure, { closeLabel: t("reader.figureClose"), onLink: this.interceptLinks });
     };
     this.content.addEventListener("click", zoom);
     this.content.addEventListener("keydown", zoom);
@@ -1224,8 +1227,13 @@ class Reader {
     addEventListener("resize", onResize);
     // Taille, largeur ou police changées : même passage à l'écran après la nouvelle mise en page
     let look = `${settings.fontSize}/${settings.readingWidth}/${settings.paperFont}`;
+    let assistant = currentModel(settings);
     this.updateZoomButton();
     const unsubscribe = onSettingsChange(() => {
+      if (currentModel(settings) !== assistant) { // assistant IA changé dans les réglages : onglet IA à jour
+        assistant = currentModel(settings);
+        if (this.tab === "ai") this.renderPanel();
+      }
       this.updateZoomButton();
       this.article.dataset.marks = settings.marginMarks ? "on" : "off";
       const now = `${settings.fontSize}/${settings.readingWidth}/${settings.paperFont}`;

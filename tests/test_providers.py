@@ -79,6 +79,20 @@ class Providers(unittest.TestCase):
         with self.assertRaises(providers.ProviderError) as caught:
             asyncio.run(collect(providers.stream_codex("S", "P")))
         self.assertEqual(caught.exception.code, "limit")
+        self.events(exit=1, err="Loaded cached credentials.\nError: 429 Too Many Requests\n")  # pas « login »
+        with self.assertRaises(providers.ProviderError) as caught:
+            asyncio.run(collect(providers.stream_gemini("S", "P")))
+        self.assertEqual(caught.exception.code, "limit")
+
+    def test_program_that_exits_at_once(self):
+        # programme qui s'arrête sans lire la demande (option refusée) : son message, pas une erreur de tuyau
+        script = self.tmp / "quick"
+        script.write_text("#!/bin/sh\necho 'error: unexpected argument --ignore-user-config' >&2\nexit 2\n")
+        script.chmod(0o755)
+        providers.find = lambda command: str(script)
+        with self.assertRaises(providers.ProviderError) as caught:
+            asyncio.run(collect(providers.stream_codex("S", "P" * 2_000_000)))
+        self.assertIn("unexpected argument", str(caught.exception))
 
     def test_gemini(self):
         self.events({"type": "init"}, {"type": "message", "role": "user", "content": "PROMPT"},
@@ -179,6 +193,9 @@ class Settings(unittest.TestCase):
         self.assertEqual(put({"aiLocalUrl": "http://localhost:1234/v1", "aiLocalModel": "qwen3:32b"}), 200)
         self.assertEqual(put({"aiLocalUrl": "http://192.168.1.5:11434/v1"}), 400)  # sur cet ordinateur seulement
         self.assertEqual(put({"aiLocalUrl": "https://api.openai.com/v1"}), 400)
+        for url in ("http://127.0.0.1:abc/v1", "http://127.0.0.1:99999/v1", "http://127.0.0.1:11434/v1?x=1", "http://127.0.0.1/v1\n"):
+            self.assertEqual(put({"aiLocalUrl": url}), 400, url)
+        self.assertEqual(put({"aiProvider": ["codex"]}), 400)  # pas une erreur 500
 
 
 if __name__ == "__main__":

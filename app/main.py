@@ -550,7 +550,7 @@ BOOLEAN_SETTINGS = {"proofsCollapsed", "tocOpen", "panelOpen", "marginMarks", "n
 
 def _valid_setting(key, value):
     if key in SETTING_CHOICES:
-        return value in SETTING_CHOICES[key]
+        return isinstance(value, str) and value in SETTING_CHOICES[key]
     if key in BOOLEAN_SETTINGS:
         return isinstance(value, bool)
     if key == "fontSize":
