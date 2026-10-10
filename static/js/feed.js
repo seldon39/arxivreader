@@ -182,7 +182,8 @@ async function renderList(body, tab) {
       // Articles qui citent les vôtres (Semantic Scholar), trouvés ces dernières semaines
       const citing = data.items.filter((i) => i.citing?.length && !inDayList(i) && matches(i))
         .sort((a, b) => (b.cited_found || "").localeCompare(a.cited_found || "") || (b.announced || "").localeCompare(a.announced || ""));
-      if (citing.length) sections.push(foldableSection("citingCollapsed", t("feed.citingTitle"), citing.map(card), "citing-section"));
+      // repliée par défaut : un clic sur l'intertitre l'ouvre
+      if (citing.length) sections.push(foldableSection("citingCollapsed", t("feed.citingTitle"), citing.map(card), { extraClass: "citing-section", collapsedByDefault: true }));
       const followed = data.items.filter((i) => i.followed && !i.citing?.length && !inDayList(i) && matches(i))
         .sort((a, b) => (b.announced || "").localeCompare(a.announced || ""));
       if (followed.length) sections.push(foldableSection("followedCollapsed", t("feed.followedTitle"), followed.map(card)));
@@ -463,7 +464,7 @@ function feedCard(item, onChange = () => {}, { compact = false, fresh = false, s
 
 // Section repliable (« Citent vos articles », « Nouveaux articles de vos auteurs suivis ») : l'intertitre
 // porte une flèche à droite ; l'état replié est retenu dans les réglages (clé settingKey)
-function foldableSection(settingKey, title, cards, extraClass = "") {
+function foldableSection(settingKey, title, cards, { extraClass = "", collapsedByDefault = false } = {}) {
   const section = h("section", { class: `feed-day followed-section foldable ${extraClass}`.trim() });
   const toggle = h("button", { class: "section-toggle", type: "button",
     onclick: () => { const collapsed = !section.classList.contains("collapsed"); setCollapsed(collapsed); saveSettings({ [settingKey]: collapsed }); } },
@@ -474,7 +475,7 @@ function foldableSection(settingKey, title, cards, extraClass = "") {
     toggle.setAttribute("aria-expanded", String(!collapsed));
     toggle.title = t(collapsed ? "feed.expandSection" : "feed.collapseSection");
   };
-  setCollapsed(Boolean(settings[settingKey]));
+  setCollapsed(settings[settingKey] ?? collapsedByDefault);
   section.append(h("h2", { class: "feed-date" }, toggle), ...cards);
   return section;
 }
