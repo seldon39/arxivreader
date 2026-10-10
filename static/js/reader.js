@@ -4,7 +4,7 @@ import { api } from "./api.js";
 import { closure, renderGraph } from "./graph.js";
 import { Annotator, noteEditor } from "./annotations.js";
 import { Assistant } from "./ai.js";
-import { amsBibliography, fixMathML, markItalicStatements, moveTitleNotes, normalizeFontScale, placeEquationNumbers, relabelLists } from "./amsfix.js";
+import { alignNumberColumns, amsBibliography, fixMathML, markItalicStatements, moveTitleNotes, normalizeFontScale, placeEquationNumbers, relabelLists } from "./amsfix.js";
 import { layoutFigures, prepareFigures } from "./figures.js";
 import { typesetFragment, typesetMath, typesetTex } from "./math.js";
 import { t } from "./i18n.js";
@@ -307,6 +307,7 @@ class Reader {
       placeEquationNumbers(this.content, tex.eqno);
       relabelLists(this.content, tex.enumerate);
     }
+    alignNumberColumns(this.content); // après le placement des numéros (source TeX ou non)
     markItalicStatements(this.content);
     amsBibliography(this.content);
 

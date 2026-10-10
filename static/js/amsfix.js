@@ -21,6 +21,26 @@ export function placeEquationNumbers(content, side) {
   content.querySelector(".ltx_document")?.classList.toggle("ltx_leqno", side === "left");
 }
 
+// Équation sur plusieurs lignes (align, gather…) dont certaines lignes seulement sont numérotées :
+// les lignes sans numéro reçoivent une cellule vide à sa place, sinon leurs colonnes sont décalées
+// d'un cran (numéro à gauche : « F(τ)⁻¹ = … » de la ligne suivante n'est plus aligné sur « = »).
+export function alignNumberColumns(content) {
+  for (const table of content.querySelectorAll("table.ltx_eqn_table")) {
+    const rows = [...table.querySelectorAll(":scope > tbody > tr, :scope > tr")];
+    const numbered = rows.find((row) => row.querySelector(":scope > td.ltx_eqn_eqno"));
+    if (!numbered || rows.length < 2) continue;
+    const left = numbered.firstElementChild?.classList.contains("ltx_eqn_eqno");
+    let covered = 0; // lignes encore couvertes par un numéro qui s'étend sur plusieurs lignes (rowspan)
+    for (const row of rows) {
+      const number = row.querySelector(":scope > td.ltx_eqn_eqno");
+      if (number) { covered = Math.max(1, Number(number.getAttribute("rowspan")) || 1) - 1; continue; }
+      if (covered > 0) { covered--; continue; }
+      const filler = h("td", { class: `ltx_eqn_cell ltx_eqn_eqno ltx_eqn_filler ${left ? "ltx_align_left" : "ltx_align_right"}` });
+      if (left) row.prepend(filler); else row.append(filler);
+    }
+  }
+}
+
 const ROMAN = [[1000, "m"], [900, "cm"], [500, "d"], [400, "cd"], [100, "c"], [90, "xc"], [50, "l"], [40, "xl"], [10, "x"], [9, "ix"], [5, "v"], [4, "iv"], [1, "i"]];
 
 function counter(kind, n) {
@@ -198,6 +218,7 @@ export function moveTitleNotes(content) {
 // Dans une formule sans \left ni \middle, ils reprennent leur taille fixe. Les tailles explicites
 // (\big, \bigl… : attributs minsize/maxsize) ne sont pas touchées.
 const FENCES = new Set(["(", ")", "[", "]", "{", "}", "⟨", "⟩", "|", "‖", "∥", "/", "⌊", "⌋", "⌈", "⌉"]);
+const RELATION_RE = /^(?:[=<>≤≥≠≈≡∼≃≅∝∈∉∋⊂⊃⊆⊇≺≻⪯⪰≪≫→←↔⟶⟵↦⟼⇒⇐⇔⟹⟸⟺≔]|:=)$/;
 // Caractères absents des polices de MathJax, remplacés par leur équivalent TeX
 const GLYPHS = { "⟂": "⊥" };
 
@@ -223,6 +244,26 @@ export function fixMathML(content, macros = []) {
           && mo.getAttribute("stretchy") !== "false") {
         mo.setAttribute("stretchy", "false");
       }
+    }
+    // Relation au bord d'une cellule alignée (« &= », « &\leq », ou « = » seul dans sa colonne) : en TeX,
+    // l'espace d'une relation (\thickmuskip) est mise des deux côtés ; MathJax l'omet au bord de la
+    // formule. Espaces rétablies par des <mspace> (que MathJax respecte toujours).
+    if (math.closest("td.ltx_eqn_cell")) {
+      const tokens = [...math.querySelectorAll("mi, mo, mn, mtext")].filter((token) => token.textContent.trim());
+      const isRelation = (token) => token?.localName === "mo" && RELATION_RE.test(token.textContent.trim());
+      const space = (token, where) => {
+        if (token.parentElement?.localName === "semantics") { // <mo> seul dans la formule : entouré d'un <mrow>
+          const row = document.createElementNS(token.namespaceURI, "mrow");
+          token.replaceWith(row);
+          row.append(token);
+        }
+        if (!["mrow", "mstyle", "mpadded"].includes(token.parentElement?.localName)) return;
+        const gap = document.createElementNS(token.namespaceURI, "mspace");
+        gap.setAttribute("width", "0.2778em");
+        token[where](gap);
+      };
+      if (isRelation(tokens[0])) space(tokens[0], "before");
+      if (isRelation(tokens.at(-1)) && tokens.length === 1) space(tokens[0], "after");
     }
     for (const mi of math.querySelectorAll("mi")) {
       if (GLYPHS[mi.textContent.trim()]) mi.textContent = GLYPHS[mi.textContent.trim()];
