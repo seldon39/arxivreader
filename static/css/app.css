@@ -506,3 +506,4 @@ svg.graph { color: var(--border-strong); }
 .reader-toolbar .thumb { width: 36px; height: 36px; }
 .reader-toolbar .thumb svg { width: 20px; height: 20px; }
 .reader-toolbar .thumb[aria-pressed="true"] { background: transparent; color: var(--text); }
+.topbar .icon-button svg.gear { width: 22px; height: 22px; }
