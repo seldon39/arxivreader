@@ -244,7 +244,9 @@ export function feedCard(item, onChange = () => {}, { compact = false } = {}) {
   abstract.addEventListener("click", () => abstract.classList.toggle("open"));
 
   const statusButton = (value, label, icon) => {
-    const button = h("button", { class: "icon-button", type: "button", title: label, "aria-label": label, "aria-pressed": String(item.status === value) }, icon);
+    // Pouce à la YouTube : contour au repos, plein une fois choisi
+    const button = h("button", { class: `icon-button thumb thumb-${icon}`, type: "button", title: label, "aria-label": label, "aria-pressed": String(item.status === value) },
+      h("span", { class: "thumb-off", html: icons.thumbOff }), h("span", { class: "thumb-on", html: icons.thumbOn }));
     button.addEventListener("click", async () => {
       const next = item.status === value ? null : value;
       try {
@@ -279,7 +281,7 @@ export function feedCard(item, onChange = () => {}, { compact = false } = {}) {
     reason.kind === "author" ? `👤 ${t("feed.reason.author")} : ${reason.label}`
       : reason.kind === "keyword" ? `🔑 ${reason.label}`
         : [`≈ ${t("feed.reason.similar")} : `, h("i", {}, withMath(reason.label.length > 90 ? `${reason.label.slice(0, 88)}…` : reason.label)),
-          reason.via === "reference" ? ` (${t("feed.reason.reference")})` : reason.via === "liked" ? " (👍)" : ""]));
+          reason.via === "reference" ? ` (${t("feed.reason.reference")})` : reason.via === "liked" ? ` (${t("feed.reason.liked")})` : ""]));
   const level = item.relevance === undefined ? null : item.relevance >= 0.6 ? "high" : item.relevance >= 0.25 ? "medium" : item.relevance >= COMPACT_BELOW ? "low" : "none";
   const meter = level && level !== "none" && h("span", { class: `relevance relevance-${level}`, title: t("feed.relevanceHint", { n: Math.round(item.relevance * 100) }) },
     h("span", { class: "relevance-bar" }, h("span", { style: `width: ${Math.round(item.relevance * 100)}%` })), t(`feed.level.${level}`));
@@ -299,8 +301,8 @@ export function feedCard(item, onChange = () => {}, { compact = false } = {}) {
     item.abstract && abstract,
     h("div", { class: "feed-actions" },
       read,
-      statusButton("liked", t("feed.like"), "👍"),
-      statusButton("disliked", t("feed.dislike"), "👎"),
+      statusButton("liked", t("feed.like"), "up"),
+      statusButton("disliked", t("feed.dislike"), "down"),
       h("span", { class: "spacer" }),
       item.link && h("a", { class: "icon-button", href: item.link, target: "_blank", rel: "noopener noreferrer", title: item.arxiv_id ? "arXiv" : "Semantic Scholar", html: icons.external }),
       item.arxiv_id && h("a", { class: "icon-button", href: `https://arxiv.org/pdf/${item.arxiv_id}`, target: "_blank", rel: "noopener noreferrer", title: "PDF", html: icons.pdf })));

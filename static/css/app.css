@@ -491,3 +491,15 @@ svg.graph { color: var(--border-strong); }
 .day-arrow { font-size: 26px; line-height: 1; width: 40px; height: 40px; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface); }
 .day-arrow:disabled { opacity: .35; cursor: default; }
 .followed-section { margin-bottom: 30px; }
+
+/* Pouces à la YouTube */
+.thumb { color: var(--text); width: 38px; height: 38px; border-radius: 999px; }
+.thumb svg { width: 21px; height: 21px; display: block; }
+.thumb .thumb-on { display: none; }
+.thumb[aria-pressed="true"] .thumb-on { display: block; }
+.thumb[aria-pressed="true"] .thumb-off { display: none; }
+.thumb-down svg { transform: rotate(180deg); }
+.feed-actions .thumb[aria-pressed="true"] { background: transparent; color: var(--text); }
+.thumb:hover { background: var(--surface-hover); }
+.thumb:active svg { transform: scale(.88); }
+.thumb-down:active svg { transform: rotate(180deg) scale(.88); }
