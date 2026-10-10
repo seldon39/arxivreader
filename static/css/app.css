@@ -1020,8 +1020,15 @@ dialog.figure-viewer::backdrop { background: rgba(20, 20, 24, .6); -webkit-backd
 .foldable.collapsed .feed-date { border-bottom: 1px solid var(--border-strong); }
 .followed-section.foldable.collapsed { margin-bottom: 14px; }
 .day-label { font: 600 17px var(--font-read); }
-/* annonce du jour entre deux lignes rouges, comme les intertitres */
-.day-nav { border-top: 1.5px solid var(--accent); border-bottom: 1.5px solid var(--accent); }
+/* annonce du jour : encadré rouge aux coins arrondis, fond légèrement teinté de rouge */
+.day-nav {
+  border: 1.5px solid var(--accent); border-radius: 8px; padding: 8px 6px; margin: 0 -6px 14px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg));
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .day-nav { background: color-mix(in srgb, var(--accent) 10%, var(--bg)); }
+}
+:root[data-theme="dark"] .day-nav { background: color-mix(in srgb, var(--accent) 10%, var(--bg)); }
 /* proximité : la mention (« Très proche »…) soulignée par la jauge, de la même largeur */
 .relevance { flex-direction: column-reverse; align-items: stretch; gap: 3px; margin-top: 2px; line-height: 1.2; }
 .relevance .relevance-bar { width: auto; }
