@@ -1,15 +1,16 @@
 // Assistants IA possibles (réglages) : Claude, Codex, Gemini, modèle local. Noms affichés, et marche à
 // suivre quand l'assistant choisi n'est pas prêt (pas installé, pas connecté, serveur local éteint).
 
+import { api } from "./api.js";
 import { t } from "./i18n.js";
-import { h } from "./util.js";
+import { h, toast, toastError } from "./util.js";
 
 export const PROVIDERS = ["claude", "codex", "gemini", "local"];
 const NAMES = { claude: "Claude", codex: "Codex", gemini: "Gemini" };
 
-// Commande à lancer : [pas connecté, pas installé]
+// Commande à lancer : [pas connecté, pas installé] (Claude : celle du SDK, longue, non affichée)
 const COMMANDS = {
-  claude: ["./arxivreader login", "./arxivreader login"],
+  claude: [null, null],
   codex: ["codex login", "npm install -g @openai/codex"],
   gemini: ["gemini", "npm install -g @google/gemini-cli"],
   local: ["ollama pull qwen3", "OLLAMA_CONTEXT_LENGTH=32768 ollama serve"],
@@ -47,6 +48,9 @@ export function setupNotice(status, onRetry) {
   return h("div", { class: "notice ai-login" },
     h("strong", {}, t(`ai.${step}.title.${provider}`)),
     h("p", {}, t(`ai.${step}.text.${provider}`)),
-    h("code", { class: "ai-command" }, COMMANDS[provider][status.available ? 0 : 1]),
-    onRetry && h("button", { class: "button small-button", type: "button", onclick: onRetry }, t("ai.login.check")));
+    COMMANDS[provider][status.available ? 0 : 1] && h("code", { class: "ai-command" }, COMMANDS[provider][status.available ? 0 : 1]),
+    h("div", { class: "ai-setup-actions" },
+      h("button", { class: "button small-button primary", type: "button", onclick: () => api.aiSetup(provider, step)
+        .then(() => toast(t("ai.setup.opened")), toastError) }, t(provider === "claude" ? "ai.setup.claude" : "ai.setup.terminal")),
+      onRetry && h("button", { class: "button small-button", type: "button", onclick: onRetry }, t("ai.login.check"))));
 }

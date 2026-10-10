@@ -43,6 +43,7 @@ export const api = {
   setProof: (id, nodeId, body) => request("PUT", `/api/papers/${encodeURIComponent(id)}/proofs/${encodeURIComponent(nodeId)}`, body),
   clearProof: (id, nodeId) => request("DELETE", `/api/papers/${encodeURIComponent(id)}/proofs/${encodeURIComponent(nodeId)}`),
   aiStatus: () => request("GET", "/api/ai/status"),
+  aiSetup: (provider, step) => request("POST", "/api/ai/setup", { provider, step }),
   aiExchanges: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/ai`),
   exportAI: (exchangeId) => request("GET", `/api/ai/${exchangeId}/export`),
   setAIApplied: (exchangeId, applied) => request("PUT", `/api/ai/${exchangeId}/applied`, { applied }),

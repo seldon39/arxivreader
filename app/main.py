@@ -4,6 +4,9 @@ import asyncio
 import json
 import os
 import re
+import signal
+import threading
+import time
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
 
@@ -37,6 +40,8 @@ async def lifespan(_app):
     # vérification périodique des auteurs suivis (ARXIVREADER_NO_ALERTS=1 pour la couper, par ex. en test)
     alerts.stop.clear()
     task = None if os.environ.get("ARXIVREADER_NO_ALERTS") else asyncio.create_task(alerts.loop())
+    if os.environ.get("ARXIVREADER_WATCH_PARENT"):
+        threading.Thread(target=_watch_parent, args=(os.getppid(),), daemon=True).start()
     yield
     if task:
         alerts.stop.set()  # la vérification en cours s'arrête à l'auteur suivant
@@ -45,6 +50,13 @@ async def lifespan(_app):
             await asyncio.wait_for(task, 5)
         except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
             pass
+
+
+def _watch_parent(parent):
+    """Application Mac fermée sans avoir pu arrêter le serveur (plantage, arrêt forcé) : il s'arrête aussi."""
+    while os.getppid() == parent:
+        time.sleep(2)
+    os.kill(os.getpid(), signal.SIGTERM)
 
 
 app = FastAPI(title="arXivReader", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
@@ -106,6 +118,11 @@ class AnnotationRequest(BaseModel):
     note: str | None = None
     state: str | None = None
     author: str | None = None  # « claude » : proposée par Claude, acceptée par vous
+
+
+class SetupRequest(BaseModel):
+    provider: str
+    step: str  # login (connexion) ou missing (installation)
 
 
 class AppliedRequest(BaseModel):
@@ -291,6 +308,18 @@ def _checked_node(paper_id, node_id):
 @app.get("/api/ai/status")
 async def ai_status():
     return await run_in_threadpool(ai.status, db.get_settings())
+
+
+@app.post("/api/ai/setup")
+def ai_setup(body: SetupRequest):
+    """Installation ou connexion de l'assistant : commande prévue d'avance, lancée dans le Terminal."""
+    try:
+        providers.open_setup(body.provider, body.step, ai.cli_path())
+    except ValueError:
+        raise HTTPException(400, "Unknown setup step")
+    except OSError as error:
+        return JSONResponse({"error": str(error)}, status_code=500)
+    return {"ok": True}
 
 
 @app.get("/api/papers/{paper_id}/ai")

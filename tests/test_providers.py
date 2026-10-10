@@ -121,6 +121,25 @@ class Providers(unittest.TestCase):
         self.assertEqual(ai.paper_limit("local:qwen3"), providers.LOCAL_LIMIT)
 
 
+class Setup(unittest.TestCase):
+    def test_terminal_script(self):
+        saved = (providers.LIBRARY, providers.subprocess.run)
+        providers.LIBRARY = pathlib.Path(tempfile.mkdtemp())
+        opened = []
+        providers.subprocess.run = lambda argv, **kw: opened.append(argv)
+        try:
+            providers.open_setup("codex", "login")
+            script = providers.LIBRARY / "ai" / "setup-codex.command"
+            self.assertIn("codex login", script.read_text())
+            self.assertEqual(opened[0][:3], ["open", "-a", "Terminal"])
+            providers.open_setup("claude", "login", "/path with space/claude")
+            self.assertIn("'/path with space/claude' auth login --claudeai", (providers.LIBRARY / "ai" / "setup-claude.command").read_text())
+            with self.assertRaises(ValueError):  # commandes fixées d'avance, rien d'autre
+                providers.open_setup("codex", "rm -rf ~")
+        finally:
+            providers.LIBRARY, providers.subprocess.run = saved
+
+
 class Local(unittest.TestCase):
     def setUp(self):
         class Handler(BaseHTTPRequestHandler):

@@ -821,6 +821,7 @@ mark.hl:hover { filter: brightness(.95); }
 .ai-disclaimer { margin: 0; font-size: 12.5px; color: var(--muted); }
 .ai-login { flex-direction: column; align-items: flex-start; gap: 6px; }
 .ai-login p { margin: 0; }
+.ai-setup-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .ai-command { font: 13px var(--font-mono); background: var(--surface); color: var(--text); padding: 3px 8px; border-radius: 6px; user-select: all; }
 .ai-privacy { margin-top: 16px; }
 

@@ -13,6 +13,7 @@ import glob
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -99,6 +100,41 @@ def _workdir(name):
     folder = LIBRARY / "ai" / name  # vide : rien à lire, même si un outil restait actif
     folder.mkdir(parents=True, exist_ok=True)
     return folder
+
+
+# Installation et connexion, dans une fenêtre du Terminal (ces commandes demandent parfois une saisie) :
+# commandes fixées ici, jamais reçues de la page
+SETUP = {
+    ("codex", "login"): "codex login",
+    ("codex", "missing"): "npm install -g @openai/codex && codex login",
+    ("gemini", "login"): "gemini",
+    ("gemini", "missing"): "npm install -g @google/gemini-cli && gemini",
+    ("local", "login"): "ollama pull qwen3",
+    ("local", "missing"): "OLLAMA_CONTEXT_LENGTH=32768 ollama serve",
+}
+
+
+def open_setup(provider, step, claude_cli=None):
+    if provider == "claude" and step in ("login", "missing"):
+        if not claude_cli:
+            raise OSError("claude-agent-sdk is missing")
+        command = (f"env -u ANTHROPIC_API_KEY {shlex.quote(claude_cli)} auth login --claudeai && "
+                   f"env -u ANTHROPIC_API_KEY {shlex.quote(claude_cli)} auth status --text")
+    elif (provider, step) in SETUP:
+        command = SETUP[provider, step]
+    else:
+        raise ValueError(provider)
+    folder = LIBRARY / "ai"
+    folder.mkdir(parents=True, exist_ok=True)
+    script = folder / f"setup-{provider}.command"
+    shown = "claude auth login" if provider == "claude" else command
+    _write(script, "#!/bin/bash\n"
+                   f"export PATH={shlex.quote(_search_path())}\n"
+                   f"echo {shlex.quote('$ ' + shown)}\n"
+                   f"{command}\n"
+                   "echo\necho \"Terminé : revenez dans arXivReader et cliquez sur « Vérifier à nouveau ».\"\n")
+    script.chmod(0o700)
+    subprocess.run(["open", "-a", "Terminal", str(script)], check=True, timeout=20)
 
 
 def status(provider, settings):

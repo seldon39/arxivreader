@@ -2,6 +2,23 @@
 
 Lecteur personnel d'articles arXiv, inspiré d'arXivpecker. Usage strictement local, sur ce Mac.
 
+## Application Mac
+
+`macos/build.sh` construit `dist/arXivReader.app` et `dist/arXivReader.dmg` (~170 Mo, Mac Apple Silicon,
+macOS 13 ou plus) : une application autonome, avec sa fenêtre (WebKit, comme Safari), qui embarque Python et
+ses paquets. Rien d'autre à installer.
+
+- **Installer** : ouvrir le `.dmg`, glisser arXivReader dans Applications. Quitter (⌘Q) arrête aussi le serveur.
+- **Bibliothèque** : `~/Library/Application Support/arXivReader` (menu arXivReader → Afficher la bibliothèque
+  dans le Finder). À la première ouverture, l'application propose de recopier une bibliothèque existante (le
+  dossier `library/` de ce projet) : quitter d'abord l'ancienne version. Ensuite, l'ancienne et la nouvelle ne
+  partagent plus rien.
+- **Connexion des assistants IA** : bouton *Se connecter…* / *Lancer dans le Terminal* dans l'onglet IA.
+- **Chez un collègue** : l'application n'est pas signée par un compte développeur Apple. Au premier lancement,
+  macOS la bloque : Réglages Système → Confidentialité et sécurité → *Ouvrir quand même* (une seule fois).
+- Construire : outils en ligne de commande Xcode (`swiftc`), miniforge (`conda`, Python pris dans son cache) et
+  `.venv` à jour (ses paquets sont recopiés).
+
 ## Lancer
 
 - **Double-clic** sur `ArXivReader.command` dans le Finder : une fenêtre Terminal s'ouvre, puis le navigateur.
@@ -149,6 +166,7 @@ app/            serveur Python (FastAPI)
   ai.py         texte de l'article et consignes pour Claude, appel sans outils (SDK Claude Agent)
   providers.py  autres assistants : Codex, Gemini (en ligne de commande), modèle local (Ollama, LM Studio)
   library.py    import d'un article ; db.py : base SQLite ; main.py : routes web
+macos/          application Mac : main.swift (fenêtre, serveur), icon.swift, build.sh
 static/         interface (HTML, CSS, JavaScript sans compilation) ;
                 vendor/mathjax (MathJax 3.2.2) et fonts/ (Latin Modern) copiés localement
 tests/          tests hors ligne : .venv/bin/python -m unittest discover tests
