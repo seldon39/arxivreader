@@ -108,7 +108,9 @@ async function renderList(body, tab) {
   };
   addEventListener("keydown", onKey);
   // la recherche, les catégories et les articles écartés sont ceux de la mémoire (gardés d'une visite à l'autre)
-  const state = Object.assign(memory, { types: new Set(settings.feedTypes || ["new", "cross"]), sort: settings.feedSort || "relevance" });
+  // tri propre à chaque onglet : proximité au profil, ou ordre d'origine (arXiv, Semantic Scholar)
+  const sortSetting = tab === "recommended" ? "feedSortS2" : "feedSort";
+  const state = Object.assign(memory, { types: new Set(settings.feedTypes || ["new", "cross"]), sort: settings[sortSetting] || "relevance", sortSetting });
 
   const doRefresh = async (automatic = false) => {
     refresh.disabled = true;
@@ -150,7 +152,7 @@ async function renderList(body, tab) {
       list.replaceChildren(h("div", { class: "empty" }, t(tab === "recommended" ? "feed.emptyS2" : "feed.emptyArxiv")));
       return;
     }
-    const byRelevance = tab === "arxiv" && state.sort === "relevance";
+    const byRelevance = state.sort === "relevance";
     const card = (item) => feedCard(item, draw, { compact: byRelevance && item.relevance < COMPACT_BELOW && !item.libraryId && item.status !== "liked" });
     const sections = [];
     let shown;
@@ -218,14 +220,14 @@ function renderFilters(filters, tab, data, state, draw) {
     return button;
   };
   const row = [search];
-  if (tab === "arxiv") {
-    const keys = ["relevance", "arxiv"];
+  {
+    const keys = ["relevance", tab === "recommended" ? "s2" : "arxiv"];
     const sortButtons = keys.map((key) => {
       const button = h("button", { class: "kind-filter", type: "button", "aria-pressed": String(state.sort === key) }, t(`feed.sort.${key}`));
       button.addEventListener("click", () => {
         state.sort = key;
         sortButtons.forEach((b, i) => b.setAttribute("aria-pressed", String(keys[i] === key)));
-        saveSettings({ feedSort: key });
+        saveSettings({ [state.sortSetting]: key });
         draw();
       });
       return button;
