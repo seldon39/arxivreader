@@ -113,6 +113,9 @@ bouton pour l'ouvrir à cet endroit ; dans la bibliographie, une pastille « Ouv
 ## Articles sans version HTML
 
 Quand arXiv ne propose pas de version HTML, l'article se lit dans son PDF, affiché dans le lecteur.
+Le PDF est affiché par pdf.js (Mozilla), intégré à l'application : il indique la page lue, si bien que
+le passage du PDF au HTML (sélecteur « HTML | PDF ») revient au même endroit, et que la position de
+lecture est gardée aussi en lisant le PDF. Les scripts contenus dans les PDF ne sont jamais exécutés.
 Énoncés, preuves, dépendances, graphe et bibliographie sont tirés de la source TeX (environnements
 `\newtheorem`, numérotation simulée, `\ref`/`\eqref`/`\cref`) ; un énoncé choisi mène à sa page du PDF
 (ancres de hyperref, sinon recherche du texte). Comparé à la version HTML sur 42 articles : 99 % des
@@ -211,7 +214,8 @@ app/            serveur Python (FastAPI)
   library.py    import d'un article ; db.py : base SQLite ; main.py : routes web
 macos/          application Mac : main.swift (fenêtre, serveur), icon.swift, build.sh
 static/         interface (HTML, CSS, JavaScript sans compilation) ;
-                vendor/mathjax (MathJax 3.2.2) et fonts/ (Latin Modern) copiés localement
+                vendor/mathjax (MathJax 3.2.2), vendor/pdfjs (pdf.js 6.3.289, Apache 2.0)
+                et fonts/ (Latin Modern) copiés localement
 tests/          tests hors ligne : .venv/bin/python -m unittest discover tests
 ```
 

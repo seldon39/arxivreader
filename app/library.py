@@ -198,23 +198,26 @@ def ensure_pdf(paper):
 
 
 def pdf_pages(paper):
-    """{id d'énoncé ou de section: page du PDF} ; calculé une fois par PDF et gardé (pages.json)."""
+    """{"pages": {id d'énoncé ou de section: page du PDF}, "tops": {id: hauteur dans la page}} ;
+    calculé une fois par PDF et gardé (pages.json)."""
     structure = load_structure(paper["id"]) or {}
     if structure.get("source") == "tex":  # pages déjà trouvées à l'import
-        return {item["id"]: item["page"] for item in structure.get("nodes", []) + structure.get("toc", [])
-                + structure.get("proofBlocks", []) if item.get("page")}
+        items = [item for item in structure.get("nodes", []) + structure.get("toc", []) + structure.get("proofBlocks", [])
+                 if item.get("page")]
+        return {"pages": {item["id"]: item["page"] for item in items},
+                "tops": {item["id"]: item["top"] for item in items if item.get("top") is not None}}
     path = ensure_pdf(paper)
     if path is None:
         return None
     cache = paper_dir(paper["id"]) / "pages.json"
-    stamp = f"{path.stat().st_mtime}:{STRUCTURE_VERSION}"
+    stamp = f"{path.stat().st_mtime}:{STRUCTURE_VERSION}:tops"
     if cache.exists():
         saved = json.loads(cache.read_text(encoding="utf-8"))
         if saved.get("stamp") == stamp:
-            return saved["pages"]
-    pages = texstructure.pages_for(structure, path.read_bytes())
-    write_atomic(cache, json.dumps({"stamp": stamp, "pages": pages}))
-    return pages
+            return saved["located"]
+    located = texstructure.pages_for(structure, path.read_bytes())
+    write_atomic(cache, json.dumps({"stamp": stamp, "located": located}))
+    return located
 
 
 def set_in_library(paper_id, value):

@@ -94,7 +94,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             DispatchQueue.main.async {
                 guard let self, !self.quitting, self.server?.isRunning == true else { return }
                 if (response as? HTTPURLResponse)?.statusCode == 200 {
-                    self.webView.load(URLRequest(url: URL(string: "\(self.origin)/")!))
+                    // Essais : ARXIVREADER_START=#/paper/… ouvre directement cette page
+                    let route = ProcessInfo.processInfo.environment["ARXIVREADER_START"] ?? ""
+                    self.webView.load(URLRequest(url: URL(string: "\(self.origin)/\(route)")!))
                 } else if Date().timeIntervalSince(start) > 90 {
                     self.fail(tr("Le serveur d'arXivReader ne répond pas.", "The arXivReader server does not answer."), detail: self.logTail())
                 } else {

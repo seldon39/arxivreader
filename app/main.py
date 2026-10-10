@@ -26,6 +26,14 @@ PAPER_ID = re.compile(r"[A-Za-z0-9.\-_]+")          # comparés en entier (fullm
 ASSET_NAME = re.compile(r"[0-9a-f]{16}(\.[a-z]+)?")
 
 PDF_CSP = "default-src 'self'; frame-ancestors 'self'"
+# lecteur PDF (pdf.js, dans un cadre de la page du lecteur) : WebAssembly pour certaines images, polices
+# et images construites en mémoire, travailleur pour l'analyse du PDF ; rien hors de 127.0.0.1
+PDFJS = "/static/vendor/pdfjs/"
+PDFJS_CSP = (
+    "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: blob:; font-src 'self' data: blob:; connect-src 'self'; worker-src 'self' blob:; "
+    "object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'none'"
+)
 CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; "
@@ -82,7 +90,8 @@ async def local_only(request: Request, call_next):
             return PlainTextResponse("JSON expected", status_code=415)
     response = await call_next(request)
     # le PDF d'un article s'affiche dans un cadre de la page du lecteur (même origine)
-    response.headers["Content-Security-Policy"] = PDF_CSP if request.url.path.endswith("/pdf") else CSP
+    path = request.url.path
+    response.headers["Content-Security-Policy"] = PDF_CSP if path.endswith("/pdf") else PDFJS_CSP if path.startswith(PDFJS) else CSP
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "no-referrer"
     if request.url.path == "/" or request.url.path.startswith("/static/"):
@@ -256,7 +265,7 @@ def paper_pdf(paper_id: str):
 
 @app.get("/api/papers/{paper_id}/pages")
 def paper_pages(paper_id: str):
-    """Page du PDF de chaque énoncé et section : {id: page}."""
+    """Endroit du PDF de chaque énoncé et section : {"pages": {id: page}, "tops": {id: hauteur}}."""
     pages = library.pdf_pages(checked_paper(paper_id))
     if pages is None:
         raise HTTPException(404, "No PDF")

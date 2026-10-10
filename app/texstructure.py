@@ -538,27 +538,34 @@ def from_source(data):
 # ---------- Pages du PDF ----------
 
 def locate_pages(structure, pdf_bytes):
-    """Page (à partir de 1) de chaque énoncé et section : ancres de hyperref, sinon texte du PDF."""
+    """Page (à partir de 1) de chaque énoncé et section : ancres de hyperref, sinon texte du PDF.
+    Avec une ancre, aussi la hauteur dans la page (« top », coordonnées du PDF, origine en bas)."""
     import pypdf
     try:
         reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
         destinations = {}
         for name, destination in (reader.named_destinations or {}).items():
             try:
-                destinations[str(name)] = reader.get_destination_page_number(destination) + 1
+                top = getattr(destination, "top", None)
+                destinations[str(name)] = (reader.get_destination_page_number(destination) + 1,
+                                           round(float(top), 1) if top is not None else None)
             except Exception:
                 continue
         texts = None
         for item in structure["nodes"] + structure["toc"]:
-            page = next((destinations[a] for a in item.get("anchors", []) if a in destinations), None)
+            page, top = next((destinations[a] for a in item.get("anchors", []) if a in destinations), (None, None))
             if page is None:
                 if texts is None:
                     texts = [re.sub(r"\s+", " ", page.extract_text() or "") for page in reader.pages]
                 page = _search(texts, item)
             item["page"] = page
+            if top is not None:
+                item["top"] = top
         for proof in structure.get("proofBlocks", []):
             target = next((n for n in structure["nodes"] if n["id"] == proof["of"]), None)
             proof["page"] = target.get("page") if target else None
+            if target and target.get("top") is not None:
+                proof["top"] = target["top"]
     except Exception:
         pass
     return structure
@@ -576,7 +583,8 @@ SECTION_COMMANDS = {0: "chapter", 1: "section", 2: "subsection", 3: "subsubsecti
 
 
 def pages_for(structure, pdf_bytes):
-    """Pages du PDF des énoncés et sections d'une structure lue dans la version HTML : {id: page}."""
+    """Pages du PDF des énoncés et sections d'une structure lue dans la version HTML :
+    {"pages": {id: page}, "tops": {id: hauteur dans la page}} (hauteur connue seulement par les ancres)."""
     items = {"nodes": [], "toc": [], "proofBlocks": []}
     for node in structure.get("nodes", []):
         number = (re.search(r"(\S+)$", node["label"]) or [None, ""])[1].rstrip(".")
@@ -589,7 +597,9 @@ def pages_for(structure, pdf_bytes):
         anchors = [f"{command}.{number.group(1)}", f"appendix.{number.group(1)}"] if number else []
         items["toc"].append({"id": section["id"], "title": section.get("title", ""), "level": section.get("level"), "anchors": anchors})
     locate_pages(items, pdf_bytes)
-    return {item["id"]: item["page"] for item in items["nodes"] + items["toc"] if item.get("page")}
+    located = [item for item in items["nodes"] + items["toc"] if item.get("page")]
+    return {"pages": {item["id"]: item["page"] for item in located},
+            "tops": {item["id"]: item["top"] for item in located if item.get("top") is not None}}
 
 
 def _search(texts, item):

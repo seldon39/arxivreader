@@ -8,6 +8,7 @@ import { alignNumberColumns, amsBibliography, fixMathML, splitLongInlineMath, ma
 import { currentModel } from "./aiproviders.js";
 import { layoutFigures, openFigure, prepareFigures } from "./figures.js";
 import { findBar, setFindHandler } from "./find.js";
+import { PdfView } from "./pdfview.js";
 import { defineMacros, statementElement, statementsContainer } from "./texview.js";
 import { typesetFragment, typesetMath, typesetTex } from "./math.js";
 
@@ -152,23 +153,61 @@ class Reader {
 
   // ---------- Lecture en HTML ou dans le PDF ----------
 
-  // Page du PDF d'un élément : énoncé, section, preuve (page de son énoncé), sinon section qui le contient
-  pageFor(id) {
+  // Endroit du PDF d'un élément : énoncé, section, preuve (celui de son énoncé), sinon section qui le
+  // contient. { page, top } ; top : hauteur dans la page (coordonnées du PDF), quand hyperref la donne.
+  pdfSpot(id) {
     if (this.texOnly) {
       const item = this.byId.get(id) || this.structure.toc.find((s) => s.id === id)
         || (this.structure.proofBlocks || []).find((p) => p.id === id);
-      return item?.page || null;
+      return item?.page ? { page: item.page, top: item.top ?? null } : null;
     }
     const pages = this.pages || {};
-    if (pages[id]) return pages[id];
+    const spot = (key) => ({ page: pages[key], top: this.tops?.[key] ?? null });
+    if (pages[id]) return spot(id);
     const owner = this.nodes.find((n) => n.proofs.includes(id));
-    if (owner && pages[owner.id]) return pages[owner.id];
+    if (owner && pages[owner.id]) return spot(owner.id);
     for (let element = this.find(id); element; element = element.parentElement?.closest("[id]")) {
       const statement = element.closest(".ltx_theorem[id]");
-      if (statement && pages[statement.id]) return pages[statement.id];
-      if (pages[element.id]) return pages[element.id];
+      if (statement && pages[statement.id]) return spot(statement.id);
+      if (pages[element.id]) return spot(element.id);
     }
     return null;
+  }
+
+  // Élément du HTML à l'endroit lu dans le PDF : le dernier énoncé ou la dernière section qui commence
+  // avant le haut de la fenêtre (ou juste en dessous). Pages en ordre du document ; une page qui recule
+  // (titre introuvable dans le PDF, page 1 par défaut) est ignorée.
+  htmlSpot(location) {
+    if (!location?.page || !this.pages) return null;
+    if (!this.pdfAnchors) {
+      this.pdfAnchors = Object.keys(this.pages).map((id) => this.find(id)).filter(Boolean)
+        .sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+    }
+    let found = null;
+    let last = 0;
+    for (const element of this.pdfAnchors) {
+      const page = this.pages[element.id];
+      if (page < last) continue;
+      last = page;
+      const top = this.tops?.[element.id];
+      const before = page < location.page
+        || (page === location.page && (top == null || location.top == null || top >= location.top - 40));
+      if (!before) break;
+      found = element;
+    }
+    return found;
+  }
+
+  async loadPages() {
+    if (this.pages) return;
+    try {
+      const result = await api.pages(this.paper.id);
+      this.pages = result.pages || {};
+      this.tops = result.tops || {};
+    } catch {
+      this.pages = {};
+      this.tops = {};
+    }
   }
 
   async setView(view, { save = true } = {}) {
@@ -182,34 +221,45 @@ class Reader {
       const anchorId = save ? this.currentAnchor()?.id : this.paper.position;
       this.pdfMode = true;
       this.root.dataset.view = "pdf";
-      if (!this.pdfView) {
-        this.pdfUrl = `/api/papers/${encodeURIComponent(this.paper.id)}/pdf`;
-        this.pdfFrame = h("iframe", { class: "pdf-frame", title: this.paper.title });
-        this.pdfView = h("div", { class: "paper pdf-mode pdf-view" }, this.pdfFrame);
+      if (!this.pdf) {
+        this.pdf = new PdfView(`/api/papers/${encodeURIComponent(this.paper.id)}/pdf`, this.paper.title);
+        this.pdfView = h("div", { class: "paper pdf-mode pdf-view" }, this.pdf.frame);
         this.scroller.append(this.pdfView);
+        this.followPdf();
       }
       scrollTo({ top: 0, behavior: "instant" });
-      if (!this.pages) {
-        this.pdfFrame.src = `${this.pdfUrl}#page=1`;
-        try { this.pages = await api.pages(this.paper.id); } catch { this.pages = {}; }
-        if (this.destroyed || !this.pdfMode) return;
-      }
-      const page = anchorId ? this.pageFor(anchorId) : null;
-      this.pdfFrame.src = `${this.pdfUrl}?page=${page || 1}#page=${page || 1}`;
+      await this.loadPages();
+      if (this.destroyed || !this.pdfMode) return;
+      const spot = anchorId ? this.pdfSpot(anchorId) : null;
+      this.pdf.goTo(spot?.page || 1, spot?.top ?? null);
     } else {
+      // retour au HTML : à l'endroit lu dans le PDF, sinon là où l'on en était dans le HTML
+      const target = this.htmlSpot(this.pdf?.location());
       this.pdfMode = false;
       delete this.root.dataset.view;
       this.anchors = null;
-      if (this.htmlScroll !== undefined) scrollTo({ top: this.htmlScroll, behavior: "instant" });
+      if (target) {
+        this.reveal(target);
+        requestAnimationFrame(() => this.scrollToElement(target, false));
+      } else if (this.htmlScroll !== undefined) scrollTo({ top: this.htmlScroll, behavior: "instant" });
       else this.restorePosition();
     }
+  }
+
+  // Lecture dans le PDF : la position de lecture suit (même article rouvert plus tard, dans le HTML ou le PDF)
+  followPdf() {
+    this.pdf.onMove((location) => {
+      if (!this.pdfMode || this.destroyed) return;
+      const target = this.htmlSpot(location);
+      if (target) this.savePosition(target.id);
+    });
   }
 
   // Article lu dans le PDF : page de l'énoncé, de la section ou de la preuve, et énoncé choisi dans le panneau
   showInPdf(id) {
     const node = this.byId.get(id);
-    const page = this.pageFor(id);
-    if (page && this.pdfFrame) this.pdfFrame.src = `${this.pdfUrl}?page=${page}#page=${page}`; // nouvelle adresse : le PDF va à la page
+    const spot = this.pdfSpot(id);
+    if (spot && this.pdf) this.pdf.goTo(spot.page, spot.top);
     if (node) this.select(id, { openPanel: true });
   }
 
@@ -308,10 +358,11 @@ class Reader {
 
     if (paper.source === "tex") {
       // Pas de version HTML : lecture dans le PDF ; énoncés (rendus depuis la source TeX) pour le panneau
-      this.pdfUrl = `/api/papers/${encodeURIComponent(paper.id)}/pdf`;
-      this.pdfFrame = h("iframe", { class: "pdf-frame", title: paper.title, src: `${this.pdfUrl}#page=1` });
+      this.pdf = new PdfView(`/api/papers/${encodeURIComponent(paper.id)}/pdf`, paper.title);
+      const spot = this.startAt ? this.pdfSpot(this.startAt) : null;
+      this.pdf.load(spot?.page || 1, spot?.top ?? null);
       this.article.classList.add("pdf-mode");
-      this.article.append(this.pdfFrame);
+      this.article.append(this.pdf.frame);
       this.content = statementsContainer(this.structure);
       this.article.append(this.content);
     } else if (paper.source === "none") {
@@ -1383,8 +1434,10 @@ class Reader {
         return ranges.findIndex((range) => range.getBoundingClientRect().bottom > top);
       },
     });
-    // ⌘F : recherche dans le texte HTML (dans le PDF, rien : le texte affiché n'est pas celui de la page)
-    if (!this.texOnly) this.cleanups.push(setFindHandler((command) => { if (!this.pdfMode) this.finder.command(command); }), () => this.finder.close());
+    // ⌘F : recherche dans le texte HTML, ou celle de pdf.js quand on lit le PDF
+    this.cleanups.push(setFindHandler((command) => {
+      if (this.pdfMode) { if (command === "open") this.pdf?.find(); } else this.finder.command(command);
+    }), () => this.finder.close());
 
     const zoom = (event) => {
       const figure = event.target.closest?.(".figure-card, img.ltx_graphics");

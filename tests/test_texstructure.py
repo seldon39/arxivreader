@@ -72,5 +72,27 @@ class TexStructure(unittest.TestCase):
         self.assertEqual(self.structure["labels"]["lem:two"], self.nodes["Lemma 1.4"]["id"])
 
 
+class PdfSpotsTest(unittest.TestCase):
+    """Page et hauteur des énoncés, lues dans les ancres hyperref du PDF."""
+
+    def test_pages_and_tops(self):
+        import io
+        import pypdf
+        from pypdf.generic import Destination, Fit
+        from app.texstructure import pages_for
+        writer = pypdf.PdfWriter()
+        for _ in range(3):
+            writer.add_blank_page(width=612, height=792)
+        for name, top in (("lemma.2.3", 500), ("section.2", 700)):  # ancres /XYZ de hyperref, page 2
+            writer.add_named_destination_object(Destination(name, writer.pages[1].indirect_reference, Fit.xyz(left=0, top=top)))
+        buffer = io.BytesIO()
+        writer.write(buffer)
+        structure = {"nodes": [{"id": "S2.Thm3", "kind": "lemma", "label": "Lemma 2.3"}],
+                     "toc": [{"id": "S2", "title": "2 Setting", "level": 1}]}
+        located = pages_for(structure, buffer.getvalue())
+        self.assertEqual(located["pages"], {"S2.Thm3": 2, "S2": 2})
+        self.assertEqual(located["tops"], {"S2.Thm3": 500, "S2": 700})
+
+
 if __name__ == "__main__":
     unittest.main()
