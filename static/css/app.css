@@ -1018,7 +1018,8 @@ dialog.figure-viewer::backdrop { background: rgba(20, 20, 24, .6); -webkit-backd
 .foldable.collapsed > .feed-card { display: none; }
 .followed-section.foldable.collapsed { margin-bottom: 14px; }
 .day-label { font: 600 17px var(--font-read); }
-.day-nav { border-bottom: 1.5px solid var(--accent); } /* même ligne rouge que les intertitres */
+/* annonce du jour entre deux lignes rouges, comme les intertitres */
+.day-nav { border-top: 1.5px solid var(--accent); border-bottom: 1.5px solid var(--accent); }
 /* proximité : la mention (« Très proche »…) soulignée par la jauge, de la même largeur */
 .relevance { flex-direction: column-reverse; align-items: stretch; gap: 3px; margin-top: 2px; line-height: 1.2; }
 .relevance .relevance-bar { width: auto; }
