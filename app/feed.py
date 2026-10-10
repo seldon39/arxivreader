@@ -6,13 +6,13 @@ import re
 import time
 import unicodedata
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 
 import httpx
 
 from . import db, profile, relevance
-from .arxiv import ATOM, ARXIV_NS, extract_ids
+from .arxiv import ATOM, ARXIV_NS, extract_ids, with_retry
 from .config import FEED_CATEGORIES, USER_AGENT
 
 RSS_URL = "https://rss.arxiv.org/rss/{categories}"
@@ -189,22 +189,21 @@ def fetch_day(day, categories=None, api_key=None):
     """Annonces d'un jour passé (date YYYY-MM-DD) ; 0 si arXiv n'a rien annoncé ce jour-là."""
     categories = categories or FEED_CATEGORIES
     items = []
+    requested = False
     with _client() as client:
         for oai_set in sorted({_oai_set(c) for c in categories}):
             params = {"verb": "ListRecords", "metadataPrefix": "arXivRaw", "set": oai_set, "from": day, "until": day}
             while params:
-                for attempt in range(4):
-                    response = client.get(OAI_URL, params=params)
-                    if response.status_code != 503:
-                        break
-                    time.sleep(int(response.headers.get("Retry-After", "5")) + 1)
+                if requested:
+                    time.sleep(3.1)  # au plus une requête toutes les 3 s, comme le demande arXiv
+                requested = True
+                response = with_retry(lambda: client.get(OAI_URL, params=params), retry_on=(503,), delays=(5, 10, 20))
                 response.raise_for_status()
                 if "noRecordsMatch" in response.text[:3000]:
                     break
                 page, token = parse_oai_day(response.text, day, categories)
                 items += page
                 params = {"verb": "ListRecords", "resumptionToken": token} if token else None
-                time.sleep(3.1)  # au plus une requête toutes les 3 s, comme le demande arXiv
     with db.connect() as connection:
         for item in items:
             _store(connection, item)
@@ -212,9 +211,13 @@ def fetch_day(day, categories=None, api_key=None):
         relevance.fetch_embeddings([relevance.s2_key(i["arxiv_id"]) for i in items], api_key)
     except Exception:
         pass
-    fetched = db.get_settings().get("feed.days") or {}
-    fetched[day] = len(items)
-    db.save_settings({"feed.days": fetched})
+    # « 0 annonce » n'est retenu que pour un jour assez ancien : un jour récent peut ne pas être encore
+    # publié par l'OAI-PMH d'arXiv, il sera redemandé à la prochaine visite
+    recent = date.fromisoformat(day) >= datetime.now(timezone.utc).date() - timedelta(days=3)
+    if items or not recent:
+        fetched = db.get_settings().get("feed.days") or {}
+        fetched[day] = len(items)
+        db.save_settings({"feed.days": fetched})
     return len(items)
 
 
@@ -255,11 +258,8 @@ def refresh_recommendations(api_key=None, limit=60):
     headers = {"x-api-key": api_key} if api_key else {}
     body = {"positivePaperIds": positives, "negativePaperIds": negatives}
     with _client(headers) as client:
-        for attempt in range(4):
-            response = client.post(S2_RECOMMEND, params={"fields": S2_FIELDS, "limit": limit}, json=body)
-            if response.status_code != 429:
-                break
-            time.sleep(2 * 2 ** attempt)  # 2, 4, 8, 16 s
+        response = with_retry(lambda: client.post(S2_RECOMMEND, params={"fields": S2_FIELDS, "limit": limit}, json=body),
+                              retry_on=(429,), delays=(2, 4, 8))
     if response.status_code == 429:
         raise FeedError("rate-limited")
     if response.status_code == 403 and api_key:
@@ -347,12 +347,8 @@ def lookup_ids(text, limit=200):
     with _client() as client:
         for start in range(0, len(ids), 50):
             batch = ids[start:start + 50]
-            for attempt in range(4):
-                response = client.get("https://export.arxiv.org/api/query",
-                                      params={"id_list": ",".join(batch), "max_results": len(batch)})
-                if response.status_code not in (429, 503):
-                    break
-                time.sleep(3 * (attempt + 1))
+            response = with_retry(lambda: client.get("https://export.arxiv.org/api/query",
+                                                     params={"id_list": ",".join(batch), "max_results": len(batch)}))
             response.raise_for_status()
             for entry in ET.fromstring(response.text).findall(f"{ATOM}entry"):
                 entry_id = entry.findtext(f"{ATOM}id") or ""

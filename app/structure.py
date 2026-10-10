@@ -117,10 +117,12 @@ def is_passage_block(element):
     return isinstance(element, Tag) and bool(set(element.get("class") or []) & PASSAGE_BLOCKS) and bool(element.get("id"))
 
 
-def passage_elements(fragment, start_id, end_id):
-    """Blocs de l'article du bloc `start_id` au bloc `end_id` inclus, dans l'ordre (sans les blocs imbriqués)."""
-    start = fragment.find(id=start_id)
-    end = fragment.find(id=end_id) if end_id else None
+def passage_elements(fragment, start_id, end_id, by_id=None):
+    """Blocs de l'article du bloc `start_id` au bloc `end_id` inclus, dans l'ordre (sans les blocs imbriqués).
+    `by_id` : recherche par identifiant déjà indexée (sinon parcours de l'article)."""
+    find = by_id or (lambda element_id: fragment.find(id=element_id))
+    start = find(start_id)
+    end = find(end_id) if end_id else None
     if start is None:
         return []
     if end is None or end is start:
@@ -154,8 +156,12 @@ def extract_structure(fragment, overrides=None):
 
     def ensure_id(element, prefix):
         if not element.get("id"):
-            element["id"] = f"arx-{prefix}-{next(counter)}"
-            index[element["id"]] = element
+            # identifiant neuf, jamais déjà présent (une analyse précédente a pu en poser)
+            new = f"arx-{prefix}-{next(counter)}"
+            while new in index:
+                new = f"arx-{prefix}-{next(counter)}"
+            element["id"] = new
+            index[new] = element
         return element["id"]
 
     # Sommaire
@@ -448,7 +454,7 @@ def extract_structure(fragment, overrides=None):
         if node["justifiedBy"]:
             scope.append(by_id(node["justifiedBy"]))
         if node["proofPassage"]:
-            scope += passage_elements(fragment, node["proofPassage"]["start"], node["proofPassage"]["end"])
+            scope += passage_elements(fragment, node["proofPassage"]["start"], node["proofPassage"]["end"], by_id)
         for container in scope:
             for link in container.select('a.ltx_ref[href^="#"]'):
                 hit = resolve(link["href"][1:])
@@ -465,7 +471,7 @@ def extract_structure(fragment, overrides=None):
                         continue
                     _add(node["usesEquations"], eq_id)
                     holder = proof_container(by_id(eq_id))
-                    if owner and holder is not None and statement in holder.descendants:
+                    if owner and holder is not None and any(parent is holder for parent in statement.parents):
                         continue  # énoncé posé dans la preuve de `owner` : il n'en dépend pas
                     if owner:
                         _add(node["uses"], owner)

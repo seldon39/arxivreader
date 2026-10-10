@@ -1,13 +1,19 @@
 """Import d'un article dans la bibliothèque : métadonnées, HTML nettoyé, images et structure."""
 
 import json
+import os
 import shutil
+import tempfile
+import threading
 import time
+from collections import defaultdict
+
+from pathlib import Path
 
 from bs4 import BeautifulSoup
 
 from . import annotations, db
-from .arxiv import fetch_asset, fetch_html, fetch_metadata, fetch_source, paper_key, parse_arxiv_id
+from .arxiv import fetch_asset, fetch_html, fetch_metadata, fetch_source, open_client, paper_key, parse_arxiv_id
 from .config import PAPERS
 from .sanitize import sanitize_document
 from .structure import STRUCTURE_VERSION, extract_structure
@@ -20,14 +26,74 @@ def paper_dir(paper_id):
     return PAPERS / paper_id
 
 
+# Un verrou par article : import, mise à jour et ré-analyse d'un même article ne se chevauchent jamais
+_locks = defaultdict(threading.Lock)
+_locks_guard = threading.Lock()
+
+
+def paper_lock(paper_id):
+    with _locks_guard:
+        return _locks[paper_id]
+
+
+def write_atomic(path, text):
+    """Écrit à côté puis remplace : un lecteur voit l'ancien fichier ou le nouveau, jamais un fichier à moitié écrit."""
+    part = path.with_name(path.name + ".part")
+    part.write_text(text, encoding="utf-8")
+    os.replace(part, path)
+
+
 def import_paper(query, add_to_library=True):
     arxiv_id, _ = parse_arxiv_id(query)
     meta = fetch_metadata(arxiv_id)
     paper_id = paper_key(arxiv_id)
+    with paper_lock(paper_id):
+        source = _download(paper_id, arxiv_id, meta)  # arxiv-html, ar5iv ou none
+        previous = db.get_paper(paper_id)
+        db.save_paper({
+            "id": paper_id,
+            "arxiv_id": arxiv_id,
+            "version": meta.version,
+            "title": meta.title,
+            "authors": meta.authors,
+            "abstract": meta.abstract,
+            "categories": meta.categories,
+            "primary_category": meta.primary_category,
+            "published": meta.published,
+            "updated": meta.updated,
+            "doi": meta.doi,
+            "journal_ref": meta.journal_ref,
+            "comment": meta.comment,
+            "source": source,
+            "position": previous["position"] if previous else None,
+            # déjà dans la bibliothèque : on l'y laisse ; sinon selon la demande (« Lire » = cache seulement)
+            "in_library": 1 if add_to_library or (previous and previous.get("in_library")) else 0,
+        })
+        return db.get_paper(paper_id)
+
+
+def _download(paper_id, arxiv_id, meta):
     folder = paper_dir(paper_id)
-    staging = folder.with_name(folder.name + ".tmp")
-    shutil.rmtree(staging, ignore_errors=True)
-    (staging / "assets").mkdir(parents=True)
+    PAPERS.mkdir(parents=True, exist_ok=True)
+    # dossier de préparation propre à cet import, effacé en cas d'échec
+    staging = Path(tempfile.mkdtemp(dir=PAPERS, prefix=f".{paper_id}."))
+    try:
+        source = _fill(staging, paper_id, arxiv_id, meta)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+    # remplacement de l'ancienne version : l'article reste lisible jusqu'au dernier moment
+    old = folder.with_name(f".{paper_id}.old")
+    shutil.rmtree(old, ignore_errors=True)
+    if folder.exists():
+        folder.rename(old)
+    staging.rename(folder)
+    shutil.rmtree(old, ignore_errors=True)
+    return source
+
+
+def _fill(staging, paper_id, arxiv_id, meta):
+    (staging / "assets").mkdir()
 
     source = "none"
     structure = {"toc": [], "nodes": [], "equations": {}, "bibliography": [], "hiddenText": 0}
@@ -37,14 +103,15 @@ def import_paper(query, add_to_library=True):
         fragment, assets = sanitize_document(html, base_url)
         structure = extract_structure(fragment, annotations.proof_overrides(paper_id))
         (staging / "content.html").write_text(str(fragment), encoding="utf-8")
-        for local_name, remote in assets:
-            try:
-                data, content_type = fetch_asset(remote)
-            except Exception:
-                continue
-            if content_type.split(";")[0].strip() in ALLOWED_ASSET_TYPES:
-                (staging / "assets" / local_name).write_bytes(data)
-            time.sleep(0.2)
+        with open_client() as client:  # une seule connexion pour toutes les images
+            for local_name, remote in assets:
+                try:
+                    data, content_type = fetch_asset(remote, client)
+                except Exception:
+                    continue
+                if content_type.split(";")[0].strip() in ALLOWED_ASSET_TYPES:
+                    (staging / "assets" / local_name).write_bytes(data)
+                time.sleep(0.05)
     structure["source"] = source
     # Source TeX : options que la version HTML perd (numéros d'équation, police, étiquettes de listes)
     try:
@@ -53,30 +120,8 @@ def import_paper(query, add_to_library=True):
     except Exception:
         structure["tex"] = None
     (staging / "structure.json").write_text(json.dumps(structure, ensure_ascii=False), encoding="utf-8")
+    return source
 
-    shutil.rmtree(folder, ignore_errors=True)
-    staging.rename(folder)
-    previous = db.get_paper(paper_id)
-    db.save_paper({
-        "id": paper_id,
-        "arxiv_id": arxiv_id,
-        "version": meta.version,
-        "title": meta.title,
-        "authors": meta.authors,
-        "abstract": meta.abstract,
-        "categories": meta.categories,
-        "primary_category": meta.primary_category,
-        "published": meta.published,
-        "updated": meta.updated,
-        "doi": meta.doi,
-        "journal_ref": meta.journal_ref,
-        "comment": meta.comment,
-        "source": source,
-        "position": previous["position"] if previous else None,
-        # déjà dans la bibliothèque : on l'y laisse ; sinon selon la demande (« Lire » = cache seulement)
-        "in_library": 1 if add_to_library or (previous and previous.get("in_library")) else 0,
-    })
-    return db.get_paper(paper_id)
 
 
 def load_structure(paper_id):
@@ -95,14 +140,15 @@ def reanalyze(paper_id, previous):
     Les identifiants existants sont conservés : surlignages et notes restent en place."""
     folder = paper_dir(paper_id)
     content = folder / "content.html"
-    if not content.exists():
-        return previous
-    fragment = BeautifulSoup(content.read_text(encoding="utf-8"), "html.parser")
-    structure = extract_structure(fragment, annotations.proof_overrides(paper_id))
-    structure["source"] = previous.get("source")
-    structure["tex"] = previous.get("tex")
-    content.write_text(str(fragment), encoding="utf-8")
-    (folder / "structure.json").write_text(json.dumps(structure, ensure_ascii=False), encoding="utf-8")
+    with paper_lock(paper_id):
+        if not content.exists():
+            return previous
+        fragment = BeautifulSoup(content.read_text(encoding="utf-8"), "html.parser")
+        structure = extract_structure(fragment, annotations.proof_overrides(paper_id))
+        structure["source"] = previous.get("source")
+        structure["tex"] = previous.get("tex")
+        write_atomic(content, str(fragment))
+        write_atomic(folder / "structure.json", json.dumps(structure, ensure_ascii=False))
     return structure
 
 

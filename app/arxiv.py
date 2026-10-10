@@ -68,6 +68,20 @@ def _client():
     return httpx.Client(headers={"User-Agent": USER_AGENT}, follow_redirects=True, timeout=30)
 
 
+open_client = _client  # un seul client (connexion réutilisée) pour toutes les images d'un article
+
+
+def with_retry(send, retry_on=(429, 503), delays=(3, 6, 9)):
+    """Requête répétée tant que le serveur répond « trop de requêtes » ou « indisponible ».
+    Pas d'attente après la dernière tentative ; Retry-After respecté s'il donne des secondes (au plus 60)."""
+    for delay in (*delays, None):
+        response = send()
+        if response.status_code not in retry_on or delay is None:
+            return response
+        wait = response.headers.get("Retry-After", "").strip()
+        time.sleep(min(60, max(delay, int(wait) + 1)) if wait.isdigit() else delay)
+
+
 def _text(node, path):
     found = node.find(path)
     return " ".join(found.text.split()) if found is not None and found.text else ""
@@ -76,11 +90,7 @@ def _text(node, path):
 def fetch_metadata(arxiv_id):
     # arXiv demande au plus une requête toutes les 3 s : nouvelle tentative si elle répond 429/503
     with _client() as client:
-        for attempt in range(4):
-            response = client.get("https://export.arxiv.org/api/query", params={"id_list": arxiv_id})
-            if response.status_code not in (429, 503):
-                break
-            time.sleep(3 * (attempt + 1))
+        response = with_retry(lambda: client.get("https://export.arxiv.org/api/query", params={"id_list": arxiv_id}))
     response.raise_for_status()
     entry = ET.fromstring(response.text).find(f"{ATOM}entry")
     if entry is None or not _text(entry, f"{ATOM}title"):
@@ -140,8 +150,17 @@ def fetch_source(arxiv_id, version):
     return b"".join(chunks)
 
 
-def fetch_asset(url):
-    with _client() as client:
-        response = client.get(url)
-    response.raise_for_status()
-    return response.content, response.headers.get("content-type", "")
+MAX_ASSET_BYTES = 20_000_000
+
+
+def fetch_asset(url, client):
+    """Image de l'article (au plus 20 Mo), avec le client de l'import en cours."""
+    with client.stream("GET", url) as response:
+        response.raise_for_status()
+        chunks, size = [], 0
+        for chunk in response.iter_bytes():
+            size += len(chunk)
+            if size > MAX_ASSET_BYTES:
+                raise ArxivError(f"image trop grosse : {url}")
+            chunks.append(chunk)
+        return b"".join(chunks), response.headers.get("content-type", "")

@@ -3,7 +3,7 @@
 import json
 import re
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
@@ -17,8 +17,8 @@ from .config import HOST, PORT, STATIC
 
 ALLOWED_HOSTS = {f"{HOST}:{PORT}", f"localhost:{PORT}"}
 ALLOWED_ORIGINS = {f"http://{h}" for h in ALLOWED_HOSTS}
-PAPER_ID = re.compile(r"^[A-Za-z0-9.\-_]+$")
-ASSET_NAME = re.compile(r"^[0-9a-f]{16}(\.[a-z]+)?$")
+PAPER_ID = re.compile(r"[A-Za-z0-9.\-_]+")          # comparés en entier (fullmatch)
+ASSET_NAME = re.compile(r"[0-9a-f]{16}(\.[a-z]+)?")
 
 CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
@@ -44,11 +44,16 @@ async def local_only(request: Request, call_next):
     # d'écriture venant d'autres sites.
     if request.headers.get("host", "").lower() not in ALLOWED_HOSTS:
         return PlainTextResponse("Forbidden host", status_code=403)
+    # Une page d'un autre site ne peut pas non plus déclencher l'API (même en GET : <img src=…>) ;
+    # les navigateurs récents indiquent l'origine de la requête dans Sec-Fetch-Site.
+    if request.url.path.startswith("/api/") and request.headers.get("sec-fetch-site") not in (None, "same-origin", "none"):
+        return PlainTextResponse("Forbidden site", status_code=403)
     if request.method not in ("GET", "HEAD"):
         origin = request.headers.get("origin")
         if origin is not None and origin not in ALLOWED_ORIGINS:
             return PlainTextResponse("Forbidden origin", status_code=403)
-        if request.method != "DELETE" and "application/json" not in request.headers.get("content-type", ""):
+        content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
+        if request.method != "DELETE" and content_type != "application/json":
             return PlainTextResponse("JSON expected", status_code=415)
     response = await call_next(request)
     response.headers["Content-Security-Policy"] = CSP
@@ -60,7 +65,7 @@ async def local_only(request: Request, call_next):
 
 
 def checked_paper(paper_id):
-    if not PAPER_ID.match(paper_id):
+    if not PAPER_ID.fullmatch(paper_id):
         raise HTTPException(400, "Bad paper id")
     paper = db.get_paper(paper_id)
     if paper is None:
@@ -152,14 +157,18 @@ def papers():
             for paper in db.list_papers()]
 
 
-@app.post("/api/papers")
-async def add_paper(body: ImportRequest):
+async def _import(query, add_to_library):
     try:
-        return await run_in_threadpool(library.import_paper, body.query, body.library)
+        return await run_in_threadpool(library.import_paper, query, add_to_library)
     except ArxivError as error:
         return JSONResponse({"error": str(error)}, status_code=400)
     except Exception as error:  # réseau, page inattendue…
         return JSONResponse({"error": f"{type(error).__name__}: {error}"}, status_code=502)
+
+
+@app.post("/api/papers")
+async def add_paper(body: ImportRequest):
+    return await _import(body.query, body.library)
 
 
 @app.get("/api/papers/{paper_id}")
@@ -181,7 +190,7 @@ def content(paper_id: str):
 @app.get("/api/papers/{paper_id}/assets/{name}")
 def asset(paper_id: str, name: str):
     checked_paper(paper_id)
-    if not ASSET_NAME.match(name):
+    if not ASSET_NAME.fullmatch(name):
         raise HTTPException(400, "Bad asset name")
     path = library.paper_dir(paper_id) / "assets" / name
     if not path.exists():
@@ -233,7 +242,7 @@ def set_proof_location(paper_id: str, node_id: str, body: ProofChoice):
     """Emplacement de la preuve d'un énoncé, indiqué à la main ; renvoie la structure mise à jour."""
     structure = _checked_node(paper_id, node_id)
     ids = [body.ref, body.start, body.end]
-    if any(i is not None and not PAPER_ID.match(i) for i in ids):
+    if any(i is not None and not PAPER_ID.fullmatch(i) for i in ids):
         raise HTTPException(400, "Bad element id")
     try:
         annotations.set_proof(paper_id, node_id, body.mode, body.ref, body.start, body.end)
@@ -272,7 +281,7 @@ def list_ai(paper_id: str):
 async def ask_ai(paper_id: str, body: AIRequest):
     """Réponse de Claude en direct : une ligne JSON par morceau de texte, puis l'échange enregistré."""
     paper = checked_paper(paper_id)
-    structure = library.load_structure(paper_id) or {}
+    structure = await run_in_threadpool(library.load_structure, paper_id) or {}  # ré-analyse éventuelle hors de la boucle
     settings = db.get_settings()
     parent = ai.get(body.parent_id) if body.parent_id else None
     if parent and parent["paper_id"] != paper_id:
@@ -328,7 +337,7 @@ def save_position(paper_id: str, body: PositionRequest):
 @app.post("/api/papers/{paper_id}/refresh")
 async def refresh(paper_id: str):
     paper = checked_paper(paper_id)
-    return await run_in_threadpool(library.import_paper, paper["arxiv_id"])
+    return await _import(paper["arxiv_id"], bool(paper["in_library"]))  # un article seulement lu le reste
 
 
 @app.delete("/api/papers/{paper_id}")
@@ -343,7 +352,9 @@ async def feed_items(view: str = "arxiv", day: str | None = None):
     settings = db.get_settings()
     days = feed.known_days()
     if view == "arxiv" and day:
-        if not re.match(r"^\d{4}-\d{2}-\d{2}$", day):
+        try:
+            date.fromisoformat(day)
+        except ValueError:
             raise HTTPException(400, "Bad day")
         if day not in days and day <= _now()[:10]:  # jour pas encore chargé : demandé à l'OAI-PMH d'arXiv
             try:
@@ -414,7 +425,7 @@ async def add_profile_item(body: ProfileItem):
             await run_in_threadpool(relevance.fetch_embeddings, [key], db.get_settings().get("s2ApiKey") or None)
         except Exception:
             pass
-    return get_profile()
+    return await run_in_threadpool(get_profile)
 
 
 @app.delete("/api/profile/items/{item_id}")
@@ -450,7 +461,12 @@ def settings():
 def update_settings(values: dict):
     allowed = {"language", "theme", "fontSize", "readingWidth", "proofsCollapsed", "tocOpen", "panelOpen", "panelWidth", "tocWidth", "paperFont", "marginMarks", "mathRenderer",
                "feedCategories", "feedTypes", "s2ApiKey", "feedSort", "aiModel"}
-    db.save_settings({k: v for k, v in values.items() if k in allowed})
+    values = {k: v for k, v in values.items() if k in allowed}
+    categories = values.get("feedCategories")
+    if categories is not None and not (isinstance(categories, list) and all(
+            isinstance(c, str) and re.fullmatch(r"[a-z-]+(\.[A-Za-z-]+)?", c) for c in categories)):
+        raise HTTPException(400, "Bad categories")
+    db.save_settings(values)
     return db.get_settings()
 
 

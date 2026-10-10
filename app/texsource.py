@@ -49,9 +49,10 @@ def _read_archive(data):
         return files or None
     except tarfile.TarError:
         pass
-    try:
-        raw = gzip.decompress(data)
-    except OSError:
+    try:  # décompression bornée : une archive piégée ne peut pas remplir la mémoire
+        with gzip.GzipFile(fileobj=io.BytesIO(data)) as compressed:
+            raw = compressed.read(MAX_FILE_BYTES + 1)
+    except (OSError, EOFError):
         raw = data
     if raw[:4] == b"%PDF" or len(raw) > MAX_FILE_BYTES:
         return None

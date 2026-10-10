@@ -15,7 +15,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from . import db
-from .arxiv import ATOM, ArxivError, fetch_metadata, parse_arxiv_id
+from .arxiv import ATOM, ArxivError, fetch_metadata, parse_arxiv_id, with_retry
 from .config import USER_AGENT
 from .library import paper_dir
 from .relevance import STOPWORDS, _ascii, author_key
@@ -27,11 +27,7 @@ S2 = "https://api.semanticscholar.org/graph/v1"
 def _get_s2(path, params, api_key=None):
     headers = {"User-Agent": USER_AGENT, **({"x-api-key": api_key} if api_key else {})}
     with httpx.Client(headers=headers, timeout=30) as client:
-        for attempt in range(4):
-            response = client.get(f"{S2}{path}", params=params)
-            if response.status_code != 429:
-                break
-            time.sleep(2 * 2 ** attempt)
+        response = with_retry(lambda: client.get(f"{S2}{path}", params=params), retry_on=(429,), delays=(2, 4, 8))
     if response.status_code == 404:
         return None
     response.raise_for_status()
@@ -203,12 +199,8 @@ def complete_author_name(name, categories, colleagues=()):
     if not surname or not wanted:
         return None
     with httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=40) as client:
-        for attempt in range(4):
-            response = client.get("https://export.arxiv.org/api/query", params={
-                "search_query": f"au:{surname} AND ({' OR '.join(f'cat:{c}' for c in categories)})", "max_results": 100})
-            if response.status_code not in (429, 503):
-                break
-            time.sleep(3 * (attempt + 1))
+        response = with_retry(lambda: client.get("https://export.arxiv.org/api/query", params={
+            "search_query": f"au:{surname} AND ({' OR '.join(f'cat:{c}' for c in categories)})", "max_results": 100}))
     if response.status_code != 200:
         return None
     counts = Counter()
@@ -253,13 +245,9 @@ def followed_author_papers(categories, per_author=30, days=60):
                 continue
             if index:
                 time.sleep(3.1)
-            for attempt in range(4):
-                response = client.get("https://export.arxiv.org/api/query", params={
-                    "search_query": f"au:{surname}", "sortBy": "submittedDate", "sortOrder": "descending",
-                    "max_results": per_author})
-                if response.status_code not in (429, 503):
-                    break
-                time.sleep(3 * (attempt + 1))
+            response = with_retry(lambda: client.get("https://export.arxiv.org/api/query", params={
+                "search_query": f"au:{surname}", "sortBy": "submittedDate", "sortOrder": "descending",
+                "max_results": per_author}))
             if response.status_code != 200:
                 continue
             wanted = author_key(author)

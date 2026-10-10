@@ -10,13 +10,13 @@ S'y ajoutent les auteurs suivis et les mots-clés ; les articles proches de ceux
 import json
 import math
 import re
-import time
 import unicodedata
 from collections import Counter
 
 import httpx
 
 from . import db
+from .arxiv import with_retry
 from .config import PAPERS, USER_AGENT
 
 S2_BATCH = "https://api.semanticscholar.org/graph/v1/paper/batch"
@@ -69,10 +69,9 @@ def cosine_sparse(a, b):
     return sum(v * b.get(k, 0.0) for k, v in a.items())
 
 
-def cosine_dense(a, b):
-    dot = sum(x * y for x, y in zip(a, b))
-    norm = math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
-    return dot / norm if norm else 0.0
+def _unit(vector):
+    norm = math.sqrt(sum(x * x for x in vector))
+    return [x / norm for x in vector] if norm else None
 
 
 def author_key(name):
@@ -85,6 +84,10 @@ def author_key(name):
 
 # ---------- Vecteurs SPECTER (Semantic Scholar) ----------
 
+# Identifiant arXiv nouveau (2606.24503) ou ancien (math/0601001, math.DG/0601001)
+ARXIV_REF = re.compile(r"\d{4}\.\d{4,5}|[a-z\-]+(\.[A-Z]{2})?/\d{7}")
+
+
 def s2_key(arxiv_id=None, ref=None):
     if arxiv_id:
         return f"ArXiv:{arxiv_id}"
@@ -93,7 +96,7 @@ def s2_key(arxiv_id=None, ref=None):
             return ref[3:]
         if ref.startswith("10."):
             return f"DOI:{ref}"
-        if re.match(r"^\d{4}\.\d{4,5}$|/", ref):
+        if ARXIV_REF.fullmatch(ref):
             return f"ArXiv:{ref}"
     return None
 
@@ -124,11 +127,8 @@ def fetch_embeddings(keys, api_key=None):
     with httpx.Client(headers=headers, timeout=60) as client:
         for start in range(0, len(missing), 500):
             batch = missing[start:start + 500]
-            for attempt in range(4):
-                response = client.post(S2_BATCH, params={"fields": "embedding.specter_v2"}, json={"ids": batch})
-                if response.status_code != 429:
-                    break
-                time.sleep(2 * 2 ** attempt)
+            response = with_retry(lambda: client.post(S2_BATCH, params={"fields": "embedding.specter_v2"}, json={"ids": batch}),
+                                  retry_on=(429,), delays=(2, 4, 8))
             if response.status_code != 200:
                 return False
             with db.connect() as connection:
@@ -154,7 +154,7 @@ def profile_documents():
     for item in profile:
         if item["kind"] not in ("mine", "paper", "book"):
             continue
-        arxiv = item["ref"] if item["ref"] and re.match(r"^\d{4}\.\d{4,5}$|^[a-z\-]+(\.[A-Z]{2})?/\d{7}$", item["ref"]) else None
+        arxiv = item["ref"] if item["ref"] and ARXIV_REF.fullmatch(item["ref"]) else None
         positives.append({"label": item["label"], "text": f"{item['label']}. {item['text'] or ''}",
                           "s2": s2_key(arxiv, item["ref"]), "weight": 1.0})
         if arxiv:
@@ -214,14 +214,15 @@ def score_items(items):
     vectors = tfidf_vectors([f"{i['title']}. {i.get('abstract') or ''}" for i in items] + [d["text"] for d in references])
     item_vectors, ref_vectors = vectors[:len(items)], vectors[len(items):]
     keys = [s2_key(i.get("arxiv_id"), i.get("key")) for i in items]
-    embeddings = cached_embeddings(keys + [d["s2"] for d in references])
+    # vecteurs de sens normalisés une fois : la proximité devient un simple produit scalaire
+    embeddings = {k: _unit(v) for k, v in cached_embeddings(keys + [d["s2"] for d in references]).items() if v}
+    known = [embeddings.get(k) for k in keys]
 
     # proximité de chaque article à chaque référence : [référence][article]
     def closeness(offset, doc):
         local = [_scale(cosine_sparse(v, ref_vectors[offset]), 0.04, 0.25) for v in item_vectors]
         other = embeddings.get(doc["s2"])
-        known = [embeddings.get(k) for k in keys]
-        sims = [cosine_dense(e, other) if e and other else None for e in known]
+        sims = [sum(x * y for x, y in zip(e, other)) if e and other else None for e in known]
         present = [s for s in sims if s is not None]
         if len(present) < 8:
             return local
@@ -231,7 +232,7 @@ def score_items(items):
         weight = 0.7 if len(doc["text"]) > len(doc["label"]) + 40 else 0.4
         return [max(l, weight * s + (1 - weight) * l) if s is not None else l for l, s in zip(local, semantic)]
 
-    positive_rows = [closeness(len(items) * 0 + j, doc) for j, doc in enumerate(positives)]
+    positive_rows = [closeness(j, doc) for j, doc in enumerate(positives)]
     negative_rows = [closeness(len(positives) + j, doc) for j, doc in enumerate(negatives)]
 
     for index, item in enumerate(items):

@@ -32,6 +32,8 @@ def create(paper_id, kind, target=None, color=None, quote=None, note=None, state
     """Nouvelle annotation ; pour un énoncé, une preuve ou la fiche de lecture, met à jour l'existante."""
     if kind not in KINDS or (color and color not in COLORS) or (state and state not in STATES):
         raise ValueError("bad annotation")
+    if kind == "block" and not (target or {}).get("id"):
+        raise ValueError("block without target")  # sinon une nouvelle ligne à chaque enregistrement
     with db.connect() as connection:
         existing = None
         if kind == "general":

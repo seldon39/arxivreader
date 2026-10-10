@@ -94,27 +94,28 @@ def element_text(element):
     return _tidy("".join(out))
 
 
-_cache = {}
+# Dernier article lu : (clé, soupe, index des identifiants, texte entier), remplacé d'un seul coup
+_cached = (None, None, {}, "")
 
 
-def _soup(paper_id):
+def _load(paper_id):
+    global _cached
     path = library.paper_dir(paper_id) / "content.html"
     if not path.exists():
-        return None
+        return None, {}, ""
     key = (paper_id, path.stat().st_mtime)
-    if _cache.get("key") != key:
-        _cache.clear()
-        _cache.update(key=key, soup=BeautifulSoup(path.read_text(encoding="utf-8"), "html.parser"))
-    return _cache["soup"]
+    if _cached[0] != key:
+        soup = BeautifulSoup(path.read_text(encoding="utf-8"), "html.parser")
+        index = {}
+        for element in soup.find_all(id=True):
+            index.setdefault(element["id"], element)
+        _cached = (key, soup, index, element_text(soup))
+    _, soup, index, text = _cached
+    return soup, index, text
 
 
 def paper_text(paper_id):
-    soup = _soup(paper_id)
-    return element_text(soup) if soup else ""
-
-
-def _by_id(soup, element_id):
-    return soup.find(id=element_id) if soup and element_id else None
+    return _load(paper_id)[2]
 
 
 # ---------- Consignes ----------
@@ -182,25 +183,25 @@ fixed. Then note any unclear definitions or notation. Do not invent problems; sa
 }
 
 
-def _node_text(soup, structure, node):
-    statement = _by_id(soup, node["id"])
+def _node_text(soup, index, structure, node):
+    statement = index.get(node["id"])
     parts = []
     if statement is not None:
         parts.append(f'<focus kind="statement" label="{node["label"]}">\n{element_text(statement)}\n</focus>')
     for proof_id in node.get("proofs") or []:
-        proof = _by_id(soup, proof_id)
+        proof = index.get(proof_id)
         if proof is not None:
             parts.append(f'<focus kind="proof" of="{node["label"]}">\n{element_text(proof)}\n</focus>')
     passage = node.get("proofPassage")
     if passage:
         from .structure import passage_elements
-        text = "\n\n".join(element_text(e) for e in passage_elements(soup, passage["start"], passage["end"]))
+        text = "\n\n".join(element_text(e) for e in passage_elements(soup, passage["start"], passage["end"], index.get))
         parts.append(f'<focus kind="proof" of="{node["label"]}">\n{text}\n</focus>')
     if node.get("manual") == "immediate":
         parts.append(f"The author regards {node['label']} as immediate and gives no proof.")
     if node.get("manual") == "admitted":
         parts.append(f"{node['label']} is admitted in the paper (proved elsewhere); the paper does not prove it.")
-    justification = _by_id(soup, node.get("justifiedBy"))
+    justification = index.get(node.get("justifiedBy") or "")
     if justification is not None:
         parts.append(f'<focus kind="justification" of="{node["label"]}">\n{element_text(justification)}\n</focus>\n'
                      f"The paper gives no formal proof of {node['label']}: this sentence of the paper is its only justification.")
@@ -218,8 +219,7 @@ def _node_text(soup, structure, node):
 def build_prompt(paper, structure, task, target=None, quote=None, question=None, parent=None, language="fr"):
     if task not in TASKS:
         raise AIError("Unknown task")
-    soup = _soup(paper["id"])
-    text = element_text(soup) if soup else ""
+    soup, index, text = _load(paper["id"])
     if not text:  # pas de version HTML : titre et résumé seulement
         text = f"# {paper['title']}\n\n{', '.join(paper['authors'])}\n\nAbstract. {paper.get('abstract') or ''}"
     if len(text) > PAPER_LIMIT:
@@ -239,7 +239,7 @@ def build_prompt(paper, structure, task, target=None, quote=None, question=None,
 
     parts = [f'<paper title="{paper["title"]}" arxiv="{paper["arxiv_id"]}v{paper["version"]}">\n{text}\n</paper>']
     if node is not None:
-        parts.append(_node_text(soup, structure, node))
+        parts.append(_node_text(soup, index, structure, node))
     if quote:
         parts.append(f"<passage>\n{quote}\n</passage>")
     if parent:
