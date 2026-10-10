@@ -273,9 +273,34 @@ function attachScripts(math) {
       script.remove();
       continue;
     }
-    base.replaceWith(previous);
+    base.replaceWith(groupFences(previous) || previous);
     script.setAttribute("data-attached", "1");
   }
+}
+
+// « \left( … \right)^2 » : l'exposant porte sur tout le groupe, comme en TeX. Rattaché à la seule
+// parenthèse fermante, MathJax le placerait d'après sa taille normale (exposant à mi-hauteur d'une
+// parenthèse agrandie). Le groupe, de la parenthèse ouvrante assortie (même niveau) à la fermante,
+// est réuni dans un <mrow> ; sans ouvrante assortie, null (exposant sur la fermante seule).
+const OPENER_OF = { ")": "(", "]": "[", "}": "{", "⟩": "⟨" };
+
+function groupFences(closer) {
+  const close = closer.localName === "mo" ? closer.textContent.trim() : "";
+  const open = OPENER_OF[close];
+  if (!open) return null;
+  let depth = 0;
+  for (let node = closer.previousElementSibling; node; node = node.previousElementSibling) {
+    const text = node.localName === "mo" ? node.textContent.trim() : "";
+    if (text === close) depth++;
+    else if (text === open && depth-- === 0) {
+      const row = document.createElementNS(closer.namespaceURI, "mrow");
+      node.before(row);
+      while (row.nextElementSibling !== closer) row.append(row.nextElementSibling);
+      row.append(closer);
+      return row;
+    }
+  }
+  return null;
 }
 
 export function fixMathML(content, macros = []) {
