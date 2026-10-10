@@ -2,7 +2,7 @@
 
 import { api } from "./api.js";
 import { applyStatic, setLanguage, t } from "./i18n.js";
-import { h } from "./util.js";
+import { h, icons, toast } from "./util.js";
 
 const DEFAULTS = {
   language: "fr",
@@ -60,7 +60,7 @@ export async function saveSettings(values) {
 }
 
 function segmented(name, options, current) {
-  return h("div", { class: "segmented", role: "radiogroup" },
+  return h("div", { class: "segmented", role: "radiogroup", "aria-labelledby": `setting-${name}` },
     options.map(([value, label]) => h("label", {},
       h("input", { type: "radio", name, value, checked: value === current }),
       label,
@@ -71,18 +71,19 @@ function segmented(name, options, current) {
 export function openSettingsDialog() {
   const dialog = document.getElementById("settings-dialog");
   const form = h("form", { method: "dialog" },
-    h("h2", {}, t("settings.title")),
-    h("div", { class: "row" }, h("span", {}, t("settings.language")),
+    h("div", { class: "dialog-head" }, h("h2", {}, t("settings.title")),
+      h("button", { class: "icon-button", value: "close", title: t("settings.close"), "aria-label": t("settings.close"), html: icons.close })),
+    h("div", { class: "row" }, h("span", { id: "setting-language" }, t("settings.language")),
       segmented("language", [["fr", "Français"], ["en", "English"]], settings.language)),
-    h("div", { class: "row" }, h("span", {}, t("settings.theme")),
+    h("div", { class: "row" }, h("span", { id: "setting-theme" }, t("settings.theme")),
       segmented("theme", [["auto", t("settings.theme.auto")], ["light", t("settings.theme.light")], ["dark", t("settings.theme.dark")]], settings.theme)),
-    h("div", { class: "row" }, h("span", {}, `${t("settings.fontSize")} : `, h("output", { id: "font-size-value" }, `${settings.fontSize}px`)),
-      h("input", { type: "range", name: "fontSize", min: 14, max: 24, step: 1, value: settings.fontSize })),
-    h("div", { class: "row" }, h("span", {}, t("settings.width")),
+    h("div", { class: "row" }, h("span", { id: "setting-fontSize" }, t("settings.fontSize", { n: settings.fontSize })),
+      h("input", { type: "range", name: "fontSize", min: 14, max: 24, step: 1, value: settings.fontSize, "aria-labelledby": "setting-fontSize" })),
+    h("div", { class: "row" }, h("span", { id: "setting-readingWidth" }, t("settings.width")),
       segmented("readingWidth", [["narrow", t("settings.width.narrow")], ["normal", t("settings.width.normal")], ["wide", t("settings.width.wide")]], settings.readingWidth)),
-    h("div", { class: "row" }, h("span", {}, t("settings.paperFont")),
+    h("div", { class: "row" }, h("span", { id: "setting-paperFont" }, t("settings.paperFont")),
       segmented("paperFont", [["auto", t("settings.paperFont.auto")], ["charter", "Charter"], ["lm", "Computer Modern"]], settings.paperFont)),
-    h("div", { class: "row" }, h("span", {}, t("settings.math")),
+    h("div", { class: "row" }, h("span", { id: "setting-mathRenderer" }, t("settings.math")),
       segmented("mathRenderer", [["mathjax", t("settings.math.mathjax")], ["native", t("settings.math.native")]], settings.mathRenderer)),
     h("label", { class: "check" }, h("input", { type: "checkbox", name: "proofsCollapsed", checked: settings.proofsCollapsed }), t("settings.proofs")),
     h("label", { class: "check" }, h("input", { type: "checkbox", name: "marginMarks", checked: settings.marginMarks }), t("settings.marginMarks")),
@@ -90,7 +91,9 @@ export function openSettingsDialog() {
     h("label", { class: "row" }, h("span", {}, t("settings.feedCategories")),
       h("input", { class: "text-input", type: "text", name: "feedCategories", value: (settings.feedCategories || FEED_DEFAULT).join(", "), spellcheck: "false" })),
     h("label", { class: "row" }, h("span", {}, t("settings.s2Key")),
-      h("input", { class: "text-input", type: "password", name: "s2ApiKey", value: settings.s2ApiKey || "", autocomplete: "off", placeholder: t("settings.s2KeyPlaceholder") })),
+      // texte masqué plutôt que « password » : Safari ne propose pas d'enregistrer un mot de passe
+      h("input", { class: "text-input secret-input", type: "text", name: "s2ApiKey", value: settings.s2ApiKey || "", autocomplete: "off",
+        spellcheck: "false", placeholder: t("settings.s2KeyPlaceholder") })),
     h("p", { class: "hint", style: "margin: -6px 0 0" }, t("settings.s2KeyHint")),
     h("div", { class: "actions" }, h("button", { class: "button primary", value: "close" }, t("settings.close"))),
   );
@@ -99,15 +102,19 @@ export function openSettingsDialog() {
     if (!name) return;
     if (name === "feedCategories" || name === "s2ApiKey") return; // enregistrés à la sortie du champ
     const parsed = type === "checkbox" ? checked : name === "fontSize" ? Number(value) : value;
-    if (name === "fontSize") form.querySelector("#font-size-value").textContent = `${value}px`;
+    if (name === "fontSize") form.querySelector("#setting-fontSize").textContent = t("settings.fontSize", { n: value });
     saveSettings({ [name]: parsed });
-    if (name === "language") openSettingsDialog(); // re-dessine la fenêtre dans la nouvelle langue
+    if (name === "language") {
+      openSettingsDialog(); // re-dessine la fenêtre dans la nouvelle langue
+      dialog.querySelector('input[name="language"]:checked')?.focus();
+    }
   });
   form.addEventListener("change", (event) => {
     const { name, value } = event.target;
     if (name === "feedCategories") {
       const list = value.split(/[\s,;]+/).map((c) => c.trim()).filter(Boolean);
       saveSettings({ feedCategories: list.length ? list : FEED_DEFAULT });
+      toast(t("settings.feedCategoriesSaved"));
     } else if (name === "s2ApiKey") {
       saveSettings({ s2ApiKey: value.trim() });
     }

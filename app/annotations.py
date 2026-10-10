@@ -123,3 +123,13 @@ def proof_overrides(paper_id):
     with db.connect() as connection:
         rows = connection.execute("SELECT target FROM annotations WHERE paper_id = ? AND kind = 'proof'", (paper_id,)).fetchall()
     return {t["id"]: t for t in (json.loads(r["target"]) for r in rows)}
+
+
+def stats():
+    """Par article : passages surlignés, notes écrites, énoncés compris ou vérifiés (cartes de la bibliothèque)."""
+    with db.connect() as connection:
+        rows = connection.execute(
+            "SELECT paper_id, SUM(kind = 'highlight') AS highlights, "
+            "SUM(note IS NOT NULL AND TRIM(note) != '') AS notes, "
+            "SUM(state IN ('understood', 'verified')) AS done FROM annotations GROUP BY paper_id").fetchall()
+    return {r["paper_id"]: {"highlights": r["highlights"], "notes": r["notes"], "done": r["done"]} for r in rows}

@@ -1,8 +1,8 @@
 // Page « Bibliothèque » : import par identifiant arXiv et liste des articles.
 
 import { api } from "./api.js";
-import { t } from "./i18n.js";
-import { formatDate, h, icons, toast, withMath } from "./util.js";
+import { t, tn } from "./i18n.js";
+import { formatDate, h, icons, timeAgo, toast, toastError, withMath } from "./util.js";
 
 let filterText = "";
 
@@ -32,18 +32,24 @@ export async function renderLibrary(view) {
       toast(t("library.imported", { title: paper.title }));
       await refreshList();
     } catch (error) {
-      toast(t("error.generic", { message: error.message }), { error: true, duration: 6000 });
+      toastError(error);
     } finally {
       submit.disabled = false;
       status.hidden = true;
     }
   });
-  filter.addEventListener("input", () => { filterText = filter.value; refreshList(); });
+  filter.addEventListener("input", () => { filterText = filter.value; refreshList(false); }); // filtre local, sans requête
 
   let papers = [];
   async function refreshList(reload = true) {
     if (reload) {
-      try { papers = await api.papers(); } catch (error) { toast(error.message, { error: true }); }
+      try {
+        papers = await api.papers();
+      } catch (error) {
+        const retry = h("button", { class: "button small-button", type: "button", onclick: () => refreshList() }, t("common.retry"));
+        list.replaceChildren(h("p", { class: "notice" }, t("error.generic", { message: error.message }), retry));
+        return;
+      }
     }
     heading.textContent = t("library.papers", { n: papers.length });
     const needle = filterText.trim().toLowerCase();
@@ -67,23 +73,36 @@ export async function renderLibrary(view) {
     h("div", { class: "library-tools" }, heading, filter),
     list,
   ));
-  input.focus();
+  if (matchMedia("(hover: hover)").matches) input.focus(); // pas sur téléphone : le clavier s'ouvrirait à chaque visite
+  list.replaceChildren(h("div", { class: "busy" }, h("span", { class: "spinner" }), t("common.loading")));
   await refreshList();
 }
 
+// « Ouvert il y a 2 jours · 3 notes · 5 énoncés compris · 2 réponses de Claude »
+function readingLine(paper) {
+  const reading = paper.reading || {};
+  const parts = [
+    paper.opened_at ? t("library.opened", { when: timeAgo(paper.opened_at) }) : t("library.notOpened"),
+    reading.highlights ? tn("library.highlights", reading.highlights) : "",
+    reading.notes ? tn("library.notes", reading.notes) : "",
+    reading.done ? tn("library.done", reading.done) : "",
+    reading.answers ? tn("library.answers", reading.answers) : "",
+  ].filter(Boolean);
+  return h("div", { class: "card-reading muted small" }, parts.join(" · "));
+}
+
 function card(paper, refreshList) {
-  const open = () => { location.hash = `#/paper/${encodeURIComponent(paper.id)}`; };
+  const href = `#/paper/${encodeURIComponent(paper.id)}`;
   const action = (icon, title, handler) => h("button", {
     class: "icon-button", type: "button", title, "aria-label": title, html: icon,
-    onclick: (event) => { event.stopPropagation(); handler(); },
+    onclick: (event) => handler(event.currentTarget),
   });
   const authors = paper.authors.length > 6 ? [...paper.authors.slice(0, 6), "…"] : paper.authors;
-  return h("article", {
-    class: "card", tabindex: 0, role: "link",
-    onclick: open, onkeydown: (event) => { if (event.key === "Enter") open(); },
-  },
-    h("h3", { class: "card-title" }, withMath(paper.title)),
+  // Le titre est un vrai lien (⌘-clic, copier le lien…) qui couvre toute la carte ; les boutons restent au-dessus
+  return h("article", { class: "card" },
+    h("h3", { class: "card-title" }, h("a", { class: "card-link", href }, withMath(paper.title))),
     h("div", { class: "card-authors" }, authors.join(", ")),
+    readingLine(paper),
     h("div", { class: "card-meta" },
       paper.primary_category && h("span", { class: "chip category" }, paper.primary_category),
       h("span", { class: "chip" }, `arXiv:${paper.arxiv_id}v${paper.version}`),
@@ -91,16 +110,25 @@ function card(paper, refreshList) {
       paper.source === "none" && h("span", { class: "chip" }, t("library.pdfOnly")),
     ),
     h("div", { class: "card-actions" },
-      action(icons.external, "arXiv", () => window.open(`https://arxiv.org/abs/${paper.arxiv_id}`, "_blank", "noopener")),
-      action(icons.refresh, t("library.refresh"), async () => {
+      h("a", { class: "icon-button", href: `https://arxiv.org/abs/${paper.arxiv_id}`, target: "_blank", rel: "noopener noreferrer",
+        title: "arXiv", "aria-label": "arXiv", html: icons.external }),
+      action(icons.refresh, t("library.refresh"), async (button) => {
+        button.disabled = true;
+        button.classList.add("spinning");
         try { await api.refresh(paper.id); toast(t("library.updated")); refreshList(); }
-        catch (error) { toast(error.message, { error: true }); }
+        catch (error) { toastError(error); }
+        finally { button.disabled = false; button.classList.remove("spinning"); }
       }),
+      // Retirer de la bibliothèque (annulable) : l'article reste en cache, ses notes et réponses sont gardées
       action(icons.trash, t("library.delete"), async () => {
-        if (!confirm(t("library.confirmDelete", { title: paper.title }))) return;
-        await api.remove(paper.id);
-        toast(t("library.deleted"));
-        refreshList();
+        try {
+          await api.setInLibrary(paper.id, false);
+          refreshList();
+          toast(t("library.deleted"), { action: { label: t("common.undo"),
+            onClick: () => api.setInLibrary(paper.id, true).then(() => refreshList(), toastError) } });
+        } catch (error) {
+          toastError(error);
+        }
       }),
     ),
   );

@@ -401,6 +401,12 @@ def delete_for(paper_id):
         connection.execute("DELETE FROM ai_exchanges WHERE paper_id = ?", (paper_id,))
 
 
+def counts():
+    with db.connect() as connection:
+        return {r["paper_id"]: r["n"] for r in connection.execute(
+            "SELECT paper_id, COUNT(*) AS n FROM ai_exchanges GROUP BY paper_id")}
+
+
 def papers_with_exchanges():
     with db.connect() as connection:
         return {row["paper_id"] for row in connection.execute("SELECT DISTINCT paper_id FROM ai_exchanges")}

@@ -5,39 +5,39 @@ import { getLanguage, t, tn } from "./i18n.js";
 import { typesetTex } from "./math.js";
 import { renderProfile } from "./profile.js";
 import { saveSettings, settings } from "./settings.js";
-import { h, icons, toast, toggleIcon, withMath } from "./util.js";
+import { debounce, h, hoursSince, icons, timeAgo, toast, toastError, toggleIcon, withMath } from "./util.js";
 
 const TABS = [["arxiv", "#/feed"], ["recommended", "#/feed/recommended"], ["profile", "#/feed/profile"], ["import", "#/feed/import"]];
 const COMPACT_BELOW = 0.12;
 const TYPES = ["new", "cross", "replace", "replace-cross"];
 const STALE_ARXIV_HOURS = 3;
 const STALE_S2_HOURS = 24;
+// Ce qu'on retrouve en revenant d'un article : jour affiché, recherche, catégories, articles écartés visibles
+const memory = { day: null, search: "", categories: new Set(), showHidden: false };
 
 export async function renderFeed(view, tab) {
   const body = h("div", { class: "feed-body" });
   view.replaceChildren(h("section", { class: "feed" },
     h("div", { class: "feed-head" },
       h("h1", {}, t("feed.title")),
-      h("nav", { class: "feed-tabs", role: "tablist" }, TABS.map(([key, href]) =>
-        h("a", { href, role: "tab", "aria-selected": String(key === tab) }, t(`feed.tab.${key}`))))),
+      h("nav", { class: "feed-tabs" }, TABS.map(([key, href]) =>
+        h("a", { href, "aria-current": key === tab ? "page" : undefined }, t(`feed.tab.${key}`))))),
     body));
-  if (tab === "import") renderImport(body);
-  else if (tab === "profile") await renderProfile(body);
-  else await renderList(body, tab);
+  if (tab === "import") return renderImport(body);
+  if (tab === "profile") return renderProfile(body);
+  return renderList(body, tab);
+}
+
+// Touche ←/→ pendant la saisie, dans un menu ou avec la fenêtre des réglages ouverte : pas pour nous
+function typing(event) {
+  return event.target.closest?.("input, textarea, select, [contenteditable]") || document.querySelector("dialog[open]")
+    || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey;
 }
 
 // ---------- Listes (arXiv, recommandations) ----------
 
-function hoursSince(stamp) {
-  return stamp ? (Date.now() - Date.parse(`${stamp.replace(" ", "T")}Z`)) / 3.6e6 : Infinity;
-}
-
 function ago(stamp) {
-  if (!stamp) return t("feed.never");
-  const hours = hoursSince(stamp);
-  if (hours < 1) return t("feed.minutesAgo", { n: Math.max(1, Math.round(hours * 60)) });
-  if (hours < 48) return t("feed.hoursAgo", { n: Math.round(hours) });
-  return t("feed.daysAgo", { n: Math.round(hours / 24) });
+  return stamp ? timeAgo(stamp) : t("feed.never");
 }
 
 function errorText(message) {
@@ -52,9 +52,12 @@ async function renderList(body, tab) {
   const list = h("div", { class: "feed-list" });
   const notice = h("div", {});
   body.replaceChildren(h("div", { class: "feed-toolbar" }, status, refresh), notice, filters, list);
+  list.replaceChildren(h("div", { class: "busy" }, h("span", { class: "spinner" }), t("common.loading")));
 
-  let data = await api.feed(tab);
+  let data = await api.feed(tab, tab === "arxiv" ? memory.day : null);
   let loadingDay = false;
+  let generation = 0; // change à chaque changement de jour : une mise à jour plus ancienne n'écrase rien
+  const remember = () => { memory.day = data.day && data.day !== data.latestDay ? data.day : null; };
 
   // Jour d'annonce précédent ou suivant (du lundi au vendredi ; jours fériés sautés au chargement)
   const shiftDay = (iso, step) => {
@@ -67,6 +70,7 @@ async function renderList(body, tab) {
     let target = shiftDay(data.day, step);
     if (step > 0 && data.latestDay && target > data.latestDay) return;
     loadingDay = true;
+    generation++;
     // Barre de jour collée en haut (on lisait la liste) : on ira au début de la liste du nouveau jour ;
     // sinon, la page ne bouge pas.
     const nav = list.querySelector(".day-nav");
@@ -75,13 +79,16 @@ async function renderList(body, tab) {
     const keepY = scrollY;
     dayLabel?.replaceChildren(h("span", { class: "spinner" }), " ", t("feed.loadingDay"));
     try {
+      // jour sans annonce (férié) : sauté, dans les deux sens ; en avant, jamais au-delà du dernier jour
       for (let attempt = 0; attempt < 5; attempt++) {
         const next = await api.feed(tab, target);
-        if (next.items.some((i) => i.in_arxiv) || step > 0 || attempt === 4) { data = next; break; }
-        target = shiftDay(target, step);  // jour sans annonce (férié) : on continue
+        const last = step > 0 && (!data.latestDay || shiftDay(target, step) > data.latestDay);
+        if (next.items.some((i) => i.in_arxiv) || last || attempt === 4) { data = next; break; }
+        target = shiftDay(target, step);
       }
+      remember();
     } catch (error) {
-      toast(t("error.generic", { message: error.message }), { error: true, duration: 6000 });
+      toastError(error);
     } finally {
       loadingDay = false;
       draw();
@@ -95,20 +102,25 @@ async function renderList(body, tab) {
   };
   let dayLabel = null;
   const onKey = (event) => {
-    if (tab !== "arxiv" || event.target.matches("input, textarea") || event.metaKey || event.ctrlKey || event.altKey) return;
-    if (!document.body.contains(list)) { removeEventListener("keydown", onKey); return; }
+    if (tab !== "arxiv" || typing(event)) return;
     if (event.key === "ArrowLeft") goToDay(-1);
     if (event.key === "ArrowRight") goToDay(1);
   };
   addEventListener("keydown", onKey);
-  const state = { search: "", categories: new Set(), types: new Set(settings.feedTypes || ["new", "cross"]), showHidden: false, sort: settings.feedSort || "relevance" };
+  // la recherche, les catégories et les articles écartés sont ceux de la mémoire (gardés d'une visite à l'autre)
+  const state = Object.assign(memory, { types: new Set(settings.feedTypes || ["new", "cross"]), sort: settings.feedSort || "relevance" });
 
   const doRefresh = async (automatic = false) => {
     refresh.disabled = true;
     status.replaceChildren(h("span", { class: "spinner" }), " ", t(tab === "recommended" ? "feed.loadingS2" : "feed.loadingArxiv"));
+    const started = generation;
     try {
       await api.refreshFeed(tab);
-      data = await api.feed(tab);
+      const viewing = tab === "arxiv" && data.day !== data.latestDay ? data.day : null;
+      const next = await api.feed(tab, viewing);
+      if (started !== generation || !document.body.contains(list)) return; // on a changé de jour entre-temps
+      data = next;
+      remember();
       draw();
     } catch (error) {
       notice.replaceChildren(h("p", { class: "notice" }, errorText(error.message)));
@@ -133,7 +145,8 @@ async function renderList(body, tab) {
     const matches = (item) => (item.status !== "disliked" || state.showHidden)
       && (!needle || `${item.title} ${item.authors.join(" ")} ${item.abstract}`.toLowerCase().includes(needle));
     const inCategories = (item) => !state.categories.size || item.categories.some((c) => state.categories.has(c));
-    if (!data.items.length) {
+    // rien du tout (premier lancement) ; un jour sans annonce garde ses flèches
+    if (!data.items.length && (tab !== "arxiv" || !data.day)) {
       list.replaceChildren(h("div", { class: "empty" }, t(tab === "recommended" ? "feed.emptyS2" : "feed.emptyArxiv")));
       return;
     }
@@ -179,17 +192,21 @@ async function renderList(body, tab) {
   draw();
   const stale = hoursSince(data.refreshed?.[tab]) > (tab === "recommended" ? STALE_S2_HOURS : STALE_ARXIV_HOURS);
   if (stale) doRefresh(true);
+  return () => removeEventListener("keydown", onKey);
 }
 
 function renderFilters(filters, tab, data, state, draw) {
+  const disliked = data.items.filter((i) => i.status === "disliked").length;
   if (filters.dataset.ready) {
     // les compteurs changent ; le reste du formulaire est conservé
-    filters.querySelector(".hidden-count").textContent = t("feed.hiddenCount", { n: data.items.filter((i) => i.status === "disliked").length });
+    filters.querySelector(".hidden-count").textContent = t("feed.hiddenCount", { n: disliked });
+    filters.querySelector(".hidden-toggle").hidden = !disliked && !state.showHidden;
     return;
   }
   filters.dataset.ready = "1";
-  const search = h("input", { class: "text-input", type: "search", placeholder: t("feed.search"), "aria-label": t("feed.search") });
-  search.addEventListener("input", () => { state.search = search.value; draw(); });
+  const search = h("input", { class: "text-input", type: "search", value: state.search, placeholder: t("feed.search"), "aria-label": t("feed.search") });
+  const redraw = debounce(draw, 150);
+  search.addEventListener("input", () => { state.search = search.value; redraw(); });
   const chip = (label, active, onToggle) => {
     const button = h("button", { class: "kind-filter", type: "button", "aria-pressed": String(active) }, label);
     button.addEventListener("click", () => {
@@ -214,19 +231,37 @@ function renderFilters(filters, tab, data, state, draw) {
       return button;
     });
     row.push(h("span", { class: "filter-group" }, h("span", { class: "muted small sort-label" }, t("feed.sortLabel")), sortButtons));
-    row.push(h("span", { class: "filter-group" }, TYPES.map((type) => chip(t(`feed.type.${type}`), state.types.has(type), (on) => {
-      if (on) state.types.add(type); else state.types.delete(type);
-      saveSettings({ feedTypes: [...state.types] });
-    }))));
-    row.push(h("span", { class: "filter-group" }, (data.categories || []).map((category) => chip(category, false, (on) => {
-      if (on) state.categories.add(category); else state.categories.delete(category);
-    }))));
   }
-  const hidden = h("label", { class: "check small" }, h("input", { type: "checkbox" }), h("span", { class: "hidden-count" },
-    t("feed.hiddenCount", { n: data.items.filter((i) => i.status === "disliked").length })));
+  const hidden = h("label", { class: "check small hidden-toggle", hidden: !disliked && !state.showHidden }, h("input", { type: "checkbox", checked: state.showHidden }),
+    h("span", { class: "hidden-count" }, t("feed.hiddenCount", { n: disliked })));
   hidden.querySelector("input").addEventListener("change", (event) => { state.showHidden = event.target.checked; draw(); });
-  row.push(hidden);
-  filters.replaceChildren(...row);
+  if (tab !== "arxiv") {
+    filters.replaceChildren(...row, hidden);
+    return;
+  }
+  // Types d'annonce et catégories : repliés sur petit écran, avec le résumé des filtres actifs
+  const summary = h("span", { class: "muted small" });
+  const describe = () => {
+    const types = state.types.size === TYPES.length ? t("feed.allTypes")
+      : state.types.size ? TYPES.filter((type) => state.types.has(type)).map((type) => t(`feed.type.${type}`)).join(", ") : t("feed.noType");
+    const categories = state.categories.size ? [...state.categories].join(", ") : t("feed.allCategories");
+    summary.textContent = `${types} · ${categories}`;
+  };
+  const more = h("details", { class: "feed-more", open: innerWidth >= 700 },
+    h("summary", {}, h("span", { class: "feed-more-title" }, t("feed.filters")), summary),
+    h("div", { class: "feed-more-body" },
+      h("span", { class: "filter-group" }, TYPES.map((type) => chip(t(`feed.type.${type}`), state.types.has(type), (on) => {
+        if (on) state.types.add(type); else state.types.delete(type);
+        saveSettings({ feedTypes: [...state.types] });
+        describe();
+      }))),
+      h("span", { class: "filter-group" }, (data.categories || []).map((category) => chip(category, state.categories.has(category), (on) => {
+        if (on) state.categories.add(category); else state.categories.delete(category);
+        describe();
+      }))),
+      hidden));
+  describe();
+  filters.replaceChildren(...row, more);
 }
 
 function capitalize(text) {
@@ -238,25 +273,35 @@ function formatDay(iso) {
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString(getLanguage() === "fr" ? "fr-FR" : "en-GB", { weekday: "long", day: "numeric", month: "long" });
 }
 
-export function feedCard(item, onChange = () => {}, { compact = false } = {}) {
+function feedCard(item, onChange = () => {}, { compact = false } = {}) {
   const authors = item.authors.length > 8 ? [...item.authors.slice(0, 8), t("feed.etAl")] : item.authors;
-  const abstract = h("p", { class: "feed-abstract" }, item.abstract || "");
-  abstract.addEventListener("click", () => abstract.classList.toggle("open"));
+  // Résumé coupé à trois lignes : clic, Entrée ou Espace pour le déplier
+  const abstract = h("p", { class: "feed-abstract", tabindex: 0, role: "button", "aria-expanded": "false" }, item.abstract || "");
+  const toggleAbstract = () => abstract.setAttribute("aria-expanded", String(abstract.classList.toggle("open")));
+  abstract.addEventListener("click", toggleAbstract);
+  abstract.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggleAbstract(); } });
 
+  const thumbs = [];
   const statusButton = (value, label, icon) => {
     // Pouce à la YouTube : contour au repos, plein une fois choisi
-    const button = h("button", { class: `icon-button thumb thumb-${icon}`, type: "button", title: label, "aria-label": label, "aria-pressed": String(item.status === value) },
-      h("span", { class: "thumb-off", html: icons.thumbOff }), h("span", { class: "thumb-on", html: icons.thumbOn }));
+    const button = toggleIcon(icons.thumbOff, icons.thumbOn, { pressed: item.status === value, label, className: `thumb-${icon}` });
+    thumbs.push(button);
+    const set = async (next) => {
+      await api.feedStatus(item.key, next);
+      item.status = next;
+      thumbs.forEach((b) => b.setAttribute("aria-pressed", "false"));
+      if (next) button.setAttribute("aria-pressed", "true");
+    };
     button.addEventListener("click", async () => {
       const next = item.status === value ? null : value;
       try {
-        await api.feedStatus(item.key, next);
-        item.status = next;
-        button.closest(".feed-card").querySelectorAll("[aria-pressed]").forEach((b) => b.setAttribute("aria-pressed", "false"));
-        if (next) button.setAttribute("aria-pressed", "true");
-        if (next === "disliked") onChange();
+        await set(next);
+        if (next === "disliked") {
+          onChange(); // la carte disparaît de la liste…
+          toast(t("feed.hiddenOne"), { action: { label: t("common.undo"), onClick: () => set(null).then(onChange, toastError) } }); // …annulable
+        }
       } catch (error) {
-        toast(error.message, { error: true });
+        toastError(error);
       }
     });
     return button;
@@ -281,7 +326,7 @@ export function feedCard(item, onChange = () => {}, { compact = false } = {}) {
         const paper = await api.importPaper(item.arxiv_id, false);
         location.hash = `#/paper/${encodeURIComponent(paper.id)}`;
       } catch (error) {
-        toast(t("error.generic", { message: error.message }), { error: true, duration: 6000 });
+        toastError(error);
       } finally {
         delete title.dataset.loading;
         spinner.remove();
@@ -292,9 +337,9 @@ export function feedCard(item, onChange = () => {}, { compact = false } = {}) {
   const reasons = (item.reasons || []).map((reason) => h("span", { class: `reason reason-${reason.kind}` },
     h("span", { class: "reason-icon", html: icons[reason.kind === "author" ? "person" : reason.kind === "keyword" ? "key" : "similar"] }),
     h("span", { class: "reason-text" },
-      reason.kind === "author" ? `${t("feed.reason.author")} : ${reason.label}`
+      reason.kind === "author" ? t("feed.reason.author", { name: reason.label })
         : reason.kind === "keyword" ? reason.label
-          : [`${t("feed.reason.similar")} : `, h("i", {}, withMath(reason.label.length > 90 ? `${reason.label.slice(0, 88)}…` : reason.label)),
+          : [`${t("feed.reason.similar")} `, h("i", {}, withMath(reason.label.length > 90 ? `${reason.label.slice(0, 88)}…` : reason.label)),
             reason.via === "reference" ? ` (${t("feed.reason.reference")})` : reason.via === "liked" ? ` (${t("feed.reason.liked")})` : ""])));
   const level = item.relevance === undefined ? null : item.relevance >= 0.6 ? "high" : item.relevance >= 0.25 ? "medium" : item.relevance >= COMPACT_BELOW ? "low" : "none";
   const meter = level && level !== "none" && h("span", { class: `relevance relevance-${level}`, title: t("feed.relevanceHint", { n: Math.round(item.relevance * 100) }) },
@@ -316,18 +361,24 @@ export function feedCard(item, onChange = () => {}, { compact = false } = {}) {
     h("div", { class: "feed-actions" },
       statusButton("liked", t("feed.like"), "up"),
       statusButton("disliked", t("feed.dislike"), "down"),
-      item.arxiv_id && libraryButton(item, onChange),
+      item.arxiv_id && libraryButton(item),
       h("span", { class: "spacer" }),
       item.link && h("a", { class: "icon-button", href: item.link, target: "_blank", rel: "noopener noreferrer", title: item.arxiv_id ? "arXiv" : "Semantic Scholar", html: icons.external }),
       item.arxiv_id && h("a", { class: "icon-button", href: `https://arxiv.org/pdf/${item.arxiv_id}`, target: "_blank", rel: "noopener noreferrer", title: "PDF", html: icons.pdf })));
   // Article peu pertinent : une ligne ; un clic sur le titre déplie la carte
   // Carte réduite à une ligne : le titre ouvre l'article, un clic ailleurs sur la ligne la déplie
-  if (compact) card.addEventListener("click", (event) => { if (!event.target.closest("a, button")) card.classList.remove("compact"); });
+  if (compact) {
+    const expand = () => { card.classList.remove("compact"); card.removeAttribute("tabindex"); card.removeAttribute("aria-expanded"); };
+    card.tabIndex = 0;
+    card.setAttribute("aria-expanded", "false");
+    card.addEventListener("click", (event) => { if (!event.target.closest("a, button")) expand(); });
+    card.addEventListener("keydown", (event) => { if (event.target === card && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); expand(); } });
+  }
   return card;
 }
 
-// Signet : ajouter l'article à la bibliothèque (ou l'en retirer) sans quitter le feed
-function libraryButton(item, onChange) {
+// Signet : ajouter l'article à la bibliothèque (ou l'en retirer) sans quitter le feed ni redessiner la liste
+function libraryButton(item) {
   const label = () => t(item.libraryId ? "feed.removeFromLibrary" : "feed.addToLibrary");
   const button = toggleIcon(icons.bookmarkOff, icons.bookmarkOn, { pressed: Boolean(item.libraryId), label: label(), className: "bookmark" });
   button.addEventListener("click", async () => {
@@ -345,9 +396,12 @@ function libraryButton(item, onChange) {
         item.libraryId = item.readId = paper.id;
       }
       toast(t(item.libraryId ? "feed.added" : "feed.removed"));
-      onChange();
+      button.setAttribute("aria-pressed", String(Boolean(item.libraryId)));
+      button.title = label();
+      button.setAttribute("aria-label", label());
     } catch (error) {
-      toast(t("error.generic", { message: error.message }), { error: true, duration: 6000 });
+      toastError(error);
+    } finally {
       button.disabled = false;
     }
   });
@@ -417,11 +471,11 @@ function showResults(results, { papers, missing }) {
         failures.push(`${paper.arxiv_id} (${error.message})`);
       }
     }
-    progress.replaceChildren(failures.length ? t("import.failures", { list: failures.join(", ") }) : t("import.done", { n: chosen.length }));
+    progress.replaceChildren(failures.length ? t("import.failures", { list: failures.join(", ") }) : tn("import.done", chosen.length));
     label();
   });
   results.replaceChildren(
-    h("h2", { class: "import-heading" }, t("import.found", { n: papers.length })),
+    h("h2", { class: "import-heading" }, tn("import.found", papers.length)),
     h("div", { class: "import-list" }, papers.map((paper, i) => h("label", { class: `import-row${paper.libraryId ? " done" : ""}` },
       boxes[i],
       h("span", { class: "import-text" },

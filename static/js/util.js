@@ -1,5 +1,7 @@
 // Petits outils communs : création d'éléments, icônes, messages.
 
+import { t } from "./i18n.js";
+
 export function h(tag, attrs = {}, ...children) {
   const el = document.createElement(tag);
   for (const [key, value] of Object.entries(attrs)) {
@@ -30,7 +32,6 @@ export const icons = {
   pdf: path("M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm8 1.5V8h4.5M8 13h2.5a1.5 1.5 0 0 1 0 3H9v2H8zm1 1v1h1.5a.5.5 0 0 0 0-1zm4-1h2a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2h-2zm1 1v3h1a1 1 0 0 0 1-1v-1a1 1 0 0 0-1-1z"),
   refresh: path("M17.7 6.3A8 8 0 1 0 20 12h-2a6 6 0 1 1-1.8-4.2L13 11h7V4z"),
   trash: path("M9 3h6l1 2h4v2H4V5h4zm-3 6h12l-1 12H7zm4 2v8h1.5v-8zm3.5 0v8H15v-8z"),
-  expand: path("M4 4h6v2H6v4H4zm10 0h6v6h-2V6h-4zM4 14h2v4h4v2H4zm14 0h2v6h-6v-2h4z"),
   thumbOff: path("M9 21h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.58 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2zM9 9l4.34-4.34L12 10h9v2l-3 7H9V9zM1 9h4v12H1z"),
   thumbOn: path("M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"),
   bookmarkOff: path("M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2zm0 15-5-2.18L7 18V5h10v13z"),
@@ -48,13 +49,24 @@ export const icons = {
 };
 
 let toastTimer;
-export function toast(message, { error = false, duration = 3500 } = {}) {
+// Message bref en bas de l'écran ; `action` ajoute un bouton (« Annuler » une suppression…)
+export function toast(message, { error = false, duration = 3500, action = null } = {}) {
   const el = document.getElementById("toast");
-  el.textContent = message;
+  el.replaceChildren(h("span", {}, message));
+  if (action) {
+    const button = h("button", { class: "toast-action", type: "button" }, h("span", { html: icons.undo }), action.label);
+    button.addEventListener("click", () => { el.classList.remove("visible"); action.onClick(); });
+    el.append(button);
+  }
   el.classList.toggle("error", error);
+  el.classList.toggle("has-action", Boolean(action));
   el.classList.add("visible");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove("visible"), duration);
+  toastTimer = setTimeout(() => el.classList.remove("visible"), action ? Math.max(duration, 7000) : duration);
+}
+
+export function toastError(error) {
+  toast(t("error.generic", { message: error?.message || String(error) }), { error: true, duration: 6000 });
 }
 
 export function debounce(fn, delay) {
@@ -63,6 +75,18 @@ export function debounce(fn, delay) {
     clearTimeout(timer);
     timer = setTimeout(() => fn(...args), delay);
   };
+}
+
+// Horodatage SQLite (UTC, « 2026-10-10 06:30:00 ») → heures écoulées
+export function hoursSince(stamp) {
+  return stamp ? (Date.now() - Date.parse(`${stamp.replace(" ", "T")}Z`)) / 3.6e6 : Infinity;
+}
+
+export function timeAgo(stamp) {
+  const hours = hoursSince(stamp);
+  if (hours < 1) return t("time.minutesAgo", { n: Math.max(1, Math.round(hours * 60)) });
+  if (hours < 48) return t("time.hoursAgo", { n: Math.round(hours) });
+  return t("time.daysAgo", { n: Math.round(hours / 24) });
 }
 
 export function formatDate(iso) {

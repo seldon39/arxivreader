@@ -75,8 +75,9 @@ def resolve(kind, query, api_key=None):
     query = query.strip()
     if kind == "author":
         data = _get_s2("/author/search", {"query": query, "fields": "name,affiliations,paperCount", "limit": 6}, api_key)
+        # mots affichés (« articles », « livre ») : traduits par l'interface
         return [{"label": a["name"], "ref": f"s2author:{a['authorId']}",
-                 "detail": ", ".join(a.get("affiliations") or []) or f"{a.get('paperCount', 0)} articles"}
+                 "detail": ", ".join(a.get("affiliations") or []), "paperCount": a.get("paperCount", 0)}
                 for a in (data or {}).get("data", [])]
     try:
         arxiv_id, _ = parse_arxiv_id(query)
@@ -100,7 +101,8 @@ def resolve(kind, query, api_key=None):
             "label": paper.get("title") or "", "ref": ref, "year": str(paper.get("year") or ""),
             "authors": [a.get("name", "") for a in paper.get("authors") or []], "text": paper.get("abstract") or "",
             "detail": " · ".join(filter(None, [", ".join(a.get("name", "") for a in (paper.get("authors") or [])[:4]),
-                                               str(paper.get("year") or ""), "livre" if "Book" in (paper.get("publicationTypes") or []) else ""])),
+                                               str(paper.get("year") or "")])),
+            "book": "Book" in (paper.get("publicationTypes") or []),
         })
     return candidates
 

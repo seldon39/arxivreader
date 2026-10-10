@@ -145,7 +145,11 @@ class PrefillRequest(BaseModel):
 
 @app.get("/api/papers")
 def papers():
-    return db.list_papers()
+    # avec, pour chaque article, où en est la lecture (notes, énoncés compris, réponses de Claude)
+    notes, answers = annotations.stats(), ai.counts()
+    empty = {"highlights": 0, "notes": 0, "done": 0}
+    return [{**paper, "reading": {**notes.get(paper["id"], empty), "answers": answers.get(paper["id"], 0)}}
+            for paper in db.list_papers()]
 
 
 @app.post("/api/papers")
