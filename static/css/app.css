@@ -967,8 +967,8 @@ dialog.figure-viewer::backdrop { background: rgba(20, 20, 24, .6); -webkit-backd
 .card-title { font-size: 18.5px; }
 .card-authors { color: var(--text); opacity: .82; font-size: 14.5px; -webkit-line-clamp: 1; }
 .card-reading { margin-top: 0; font-size: 13px; }
-/* boutons à droite, visibles au survol (toujours sur écran tactile) */
-.card-actions { grid-column: 2; grid-row: 1 / span 4; align-self: center; margin: 0; opacity: 0; transition: opacity .15s; }
+/* boutons en bas à droite, comme dans le feed ; visibles au survol (toujours sur écran tactile) */
+.card-actions { grid-column: 2; grid-row: 1 / span 4; align-self: end; margin: 0 -6px -6px 0; opacity: 0; transition: opacity .15s; }
 .card:hover .card-actions, .card:focus-within .card-actions { opacity: 1; }
 @media (hover: none) { .card-actions { opacity: 1; } }
 .resume-link { color: var(--accent); position: relative; z-index: 2; }
