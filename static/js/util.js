@@ -170,6 +170,16 @@ export function tidyTitle(title) {
   }).join("");
 }
 
+// Titre d'article pour MathJax : formules $…$ ou \(…\) gardées, hors formules les tirets et espaces
+// de TeX (« -- », « --- », « \ », « ~ ») remplacés par les caractères correspondants
+export function titleTex(title) {
+  return tidyTitle(title).split(/(\$[^$]*\$|\\\(.*?\\\))/).map((part, i) => (i % 2 ? part
+    : part.replace(/---/g, "—").replace(/--/g, "–").replace(/\\ /g, " ").replace(/~/g, " "))).join("");
+}
+
+// Dernière page de liste visitée (bibliothèque ou onglet du feed) : où revient la flèche du lecteur
+export const navigation = { listHash: "#/" };
+
 // Bouton à bascule à la YouTube (contour au repos, plein une fois activé)
 export function toggleIcon(off, on, { pressed = false, label = "", className = "" } = {}) {
   return h("button", { class: `icon-button thumb ${className}`, type: "button", title: label, "aria-label": label, "aria-pressed": String(pressed) },

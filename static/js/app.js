@@ -7,7 +7,7 @@ import { renderReader } from "./reader.js";
 import { loadSettings, onSettingsChange, openSettingsDialog, settings } from "./settings.js";
 import { refreshUpdates } from "./updates.js";
 import { api } from "./api.js";
-import { h } from "./util.js";
+import { h, navigation } from "./util.js";
 
 const view = document.getElementById("view");
 let cleanup = null;
@@ -27,6 +27,7 @@ async function route() {
   const match = location.hash.match(/^#\/paper\/(.+)$/);
   const feedMatch = location.hash.match(/^#\/feed(?:\/(recommended|import|profile))?$/);
   const section = match ? "paper" : feedMatch ? "#/feed" : "#/";
+  if (!match) navigation.listHash = location.hash || "#/";
   document.querySelectorAll(".topnav a").forEach((a) => {
     const active = a.getAttribute("href") === section;
     a.classList.toggle("active", active);

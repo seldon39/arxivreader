@@ -16,7 +16,7 @@ import { typesetFragment, typesetMath, typesetTex } from "./math.js";
 const typesetTexSafe = (element) => typesetTex([element]).catch(() => {});
 import { t } from "./i18n.js";
 import { DEFAULT_FONT_SIZE, onSettingsChange, saveSettings, settings } from "./settings.js";
-import { debounce, formatDate, h, icons, toast, toggleIcon, withMath } from "./util.js";
+import { debounce, formatDate, h, icons, navigation, titleTex, toast, toggleIcon, withMath } from "./util.js";
 
 const NEEDS_PROOF = new Set(["theorem", "proposition", "lemma", "corollary", "claim"]);
 const WIDE = 1280;
@@ -359,8 +359,9 @@ class Reader {
 
     const toolbar = this.toolbar = h("div", { class: "reader-toolbar" },
       this.tocButton,
-      h("a", { class: "icon-button", href: "#/", title: t("reader.back"), "aria-label": t("reader.back"), html: icons.back }),
-      h("div", { class: "title", title: paper.title }, withMath(paper.title)),
+      // retour à la page d'où l'article a été ouvert (bibliothèque ou feed)
+      h("a", { class: "icon-button", href: navigation.listHash, title: t("reader.back"), "aria-label": t("reader.back"), html: icons.back }),
+      this.toolbarTitle = h("div", { class: "title", title: paper.title }, titleTex(paper.title)),
       button(icons.minus, "reader.smaller", () => this.changeFont(-1), { class: "wide-only html-only" }),
       this.zoomButton = h("button", { class: "zoom-reset wide-only html-only", type: "button", onclick: () => { if (settings.fontSize !== DEFAULT_FONT_SIZE) saveSettings({ fontSize: DEFAULT_FONT_SIZE }); } }),
       button(icons.plus, "reader.larger", () => this.changeFont(1), { class: "wide-only html-only" }),
@@ -377,6 +378,8 @@ class Reader {
 
       this.panelButton,
     );
+    // formules du titre composées par MathJax (une fois la page en place : typesetTex attend son tour)
+    typesetTex([this.toolbarTitle]).catch(() => {});
 
     this.toc = h("aside", { class: "toc", "aria-label": t("reader.contents") });
     this.panel = h("aside", { class: "panel", "aria-label": t("reader.panel") });
@@ -416,10 +419,11 @@ class Reader {
     } else if (paper.source === "none") {
       this.article.append(
         h("div", { class: "notice" }, t("reader.noHtml")),
-        h("h1", { class: "ltx_title_document" }, withMath(paper.title)),
+        this.paperTitle = h("h1", { class: "ltx_title_document" }, titleTex(paper.title)),
         h("div", { class: "ltx_authors" }, paper.authors.join(", ")),
         h("div", { class: "ltx_abstract" }, h("h6", { class: "ltx_title_abstract" }, t("reader.abstract")), h("p", {}, paper.abstract)),
       );
+      typesetTex([this.paperTitle]).catch(() => {});
     } else {
       this.content.innerHTML = html; // HTML nettoyé côté serveur ; scripts bloqués par la CSP
       this.article.append(this.content);
