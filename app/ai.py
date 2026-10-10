@@ -16,7 +16,7 @@ from bs4 import BeautifulSoup, Comment, NavigableString, Tag
 from . import db, library
 from .config import LIBRARY
 
-TASKS = ("explain", "detail", "audit", "passage", "ask", "summary", "review")
+TASKS = ("explain", "detail", "audit", "annotate", "passage", "ask", "summary", "review")
 MODELS = ("opus", "sonnet")
 PAPER_LIMIT = 400_000  # caractères (~110 000 jetons) ; au-delà, l'article est tronqué (l'énoncé visé reste entier)
 
@@ -139,6 +139,17 @@ Format: Markdown, with short headings (###) when the answer is long. Mathematics
 for displays (never \\[…\\] or code blocks for math). Refer to statements and equations by their labels in the \
 paper, e.g. "Lemma 2.3", "(2.11)".
 
+Annotations. When the reader asks you to annotate, highlight or mark something in the paper (or when the task \
+says so), end your answer with ONE fenced code block whose info string is `annotations`, containing a JSON array. \
+The reader's application shows these proposals and applies the ones the reader accepts. Each item is either
+  {{"quote": "<excerpt copied VERBATIM from <paper>, 4 to 40 words, formulas written exactly as in <paper> between $…$>", \
+"color": "yellow|green|blue|pink", "note": "<short Markdown note, possibly empty>"}}
+or
+  {{"statement": "<label exactly as in the paper, e.g. Lemma 2.1>", "on": "statement|proof", "note": "<Markdown note>"}}
+Colours: yellow = key idea or step, green = hypothesis or definition being used, blue = use of an earlier result or \
+reference, pink = gap, error or point to check. Quotes must be exact and specific enough to occur only once; never \
+paraphrase inside "quote". Do not output this block unless annotations are wanted.
+
 Write in {language}."""
 
 TASK_PROMPTS = {
@@ -165,6 +176,10 @@ is correct, it does not belong here. If you find none, say so.
 Which hypotheses of {label} are actually used, and where; any that seem unused or insufficient.
 ### Dependencies
 Which earlier results and outside facts the proof relies on.""",
+    "annotate": """Annotate {label} and its proof directly in the paper (see "Annotations" in your instructions): \
+highlight the key steps and ideas, where each hypothesis is used, the uses of earlier results, and any delicate or \
+doubtful point, each with a short note; add a note on the statement summarising the structure of the proof. \
+Before the annotations block, write only a few lines describing what you marked.""",
     "passage": "Explain the passage below: what it says, the notation it uses, and why it holds or why it matters \
 here. Unpack any computation it contains.",
     "ask": "Answer the question below.",
@@ -226,7 +241,7 @@ def build_prompt(paper, structure, task, target=None, quote=None, question=None,
         text = text[:PAPER_LIMIT] + "\n\n[… the rest of the paper is cut: too long …]"
 
     node = next((n for n in structure.get("nodes", []) if n["id"] == target), None) if target else None
-    if task in ("explain", "detail", "audit") and node is None:
+    if task in ("explain", "detail", "audit", "annotate") and node is None:
         raise AIError("Unknown statement")
     has_text = node is not None and (node.get("proofs") or node.get("justifiedBy") or node.get("proofPassage"))
     immediate = node is not None and node.get("manual") == "immediate"
@@ -260,7 +275,7 @@ def build_prompt(paper, structure, task, target=None, quote=None, question=None,
 def _describe(exchange, structure):
     labels = {n["id"]: n["label"] for n in structure.get("nodes", [])}
     label = labels.get(exchange.get("target") or "", "")
-    what = {"explain": f"Explain {label}", "detail": f"Detail the proof of {label}",
+    what = {"explain": f"Explain {label}", "detail": f"Detail the proof of {label}", "annotate": f"Annotate {label}",
             "audit": f"Audit the proof of {label}", "passage": "Explain a passage",
             "summary": "Summarise the paper", "review": "Review the paper"}.get(exchange["task"], "")
     return " — ".join(x for x in (what, exchange.get("question") or "", exchange.get("quote") or "") if x)
@@ -382,6 +397,12 @@ def create(paper_id, task, target, quote, question, parent_id, model):
 def finish(exchange_id, answer, status):
     with db.connect() as connection:
         connection.execute("UPDATE ai_exchanges SET answer = ?, status = ? WHERE id = ?", (answer, status, exchange_id))
+    return get(exchange_id)
+
+
+def set_applied(exchange_id, applied):
+    with db.connect() as connection:
+        connection.execute("UPDATE ai_exchanges SET applied = ? WHERE id = ?", (1 if applied else 0, exchange_id))
     return get(exchange_id)
 
 

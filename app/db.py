@@ -117,6 +117,12 @@ def init():
         columns = {row["name"] for row in db.execute("PRAGMA table_info(papers)")}
         if "in_library" not in columns:
             db.execute("ALTER TABLE papers ADD COLUMN in_library INTEGER DEFAULT 1")
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(annotations)")}
+        if "author" not in columns:  # « claude » : annotation proposée par Claude et acceptée
+            db.execute("ALTER TABLE annotations ADD COLUMN author TEXT")
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(ai_exchanges)")}
+        if "applied" not in columns:  # annotations proposées par la réponse déjà appliquées à l'article
+            db.execute("ALTER TABLE ai_exchanges ADD COLUMN applied INTEGER DEFAULT 0")
 
 
 @contextmanager

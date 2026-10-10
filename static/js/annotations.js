@@ -78,6 +78,60 @@ function locate(box, offset, preferNext) {
   return last ? { unit: last, offset: size(last) } : null;
 }
 
+// ---------- Passage cité (par Claude) → plage du texte ----------
+// Texte de l'article mis à plat, chaque caractère relié à sa place (texte ou formule). Deux versions :
+// formules écrites $tex$ (comme dans le texte envoyé à Claude), ou réduites à un seul signe (repli,
+// si Claude a recopié une formule autrement).
+const sameChars = (text) => text.replace(/[\u2018\u2019\u2032]/g, "'").replace(/[\u201C\u201D]/g, '"')
+  .replace(/[\u2013\u2014\u2212]/g, "-").replace(/\u00a0/g, " ");
+const FORMULA = "\u2217";
+
+function flatten(root, withTex) {
+  const chars = [];
+  const where = [];
+  let space = true;
+  const push = (ch, unit, offset) => {
+    if (/\s/.test(ch)) { if (space) return; ch = " "; space = true; } else space = false;
+    chars.push(ch);
+    where.push([unit, offset]);
+  };
+  for (const unit of units(root)) {
+    if (unit.nodeType === 3) {
+      const data = sameChars(unit.data);
+      for (let i = 0; i < data.length; i++) push(data[i], unit, i);
+    } else {
+      const body = withTex ? `$${texOf(unit).replace(/\s+/g, " ").trim()}$` : FORMULA;
+      for (const ch of body) push(ch, unit, -1);
+    }
+  }
+  return { text: chars.join(""), where };
+}
+
+function simplifyQuote(quote, withTex) {
+  let text = sameChars(String(quote)).replace(/\$\$/g, "$");
+  text = withTex ? text.replace(/\$([^$]*)\$/g, (_, tex) => `$${tex.replace(/\s+/g, " ").trim()}$`)
+    : text.replace(/\$[^$]*\$/g, FORMULA);
+  return text.replace(/\s+/g, " ").trim();
+}
+
+// Plage DOM d'un extrait recopié de l'article, ou null s'il est introuvable
+export function rangeForQuote(root, quote) {
+  for (const withTex of [true, false]) {
+    const needle = simplifyQuote(quote, withTex);
+    if (needle.length < 3) return null;
+    const { text, where } = flatten(root, withTex);
+    const index = text.indexOf(needle);
+    if (index < 0) continue;
+    const [startUnit, startOffset] = where[index];
+    const [endUnit, endOffset] = where[index + needle.length - 1];
+    const range = document.createRange();
+    if (startOffset < 0) range.setStartBefore(startUnit); else range.setStart(startUnit, startOffset);
+    if (endOffset < 0) range.setEndAfter(endUnit); else range.setEnd(endUnit, endOffset + 1);
+    return range;
+  }
+  return null;
+}
+
 // ---------- Surlignage dans le DOM ----------
 
 function paint(root, annotation) {
@@ -144,6 +198,13 @@ function quoteOf(range, limit = 1500) {
     }
   }
   return parts.join("").replace(/\s+/g, " ").trim().slice(0, limit);
+}
+
+// Annotation proposée par Claude (et acceptée) : signalée comme telle
+function authorBadge(annotation) {
+  return annotation.author === "claude"
+    ? h("span", { class: "badge ai-badge", title: t("ai.byClaude") }, h("span", { class: "ai-icon", html: icons.sparkle }), "Claude")
+    : null;
 }
 
 // ---------- Éditeur de note (Markdown + LaTeX) ----------
@@ -348,20 +409,11 @@ export class Annotator {
     if (!this.content.contains(range.commonAncestorContainer) || !range.toString().trim() && !range.cloneContents().querySelector("mjx-container, math")) return;
     this.hideToolbar();
     const create = async (color, withNote) => {
-      const startBox = container(range.startContainer, this.content);
-      const endBox = container(range.endContainer, this.content);
-      const target = {
-        start: { id: startBox === this.content ? "" : startBox.id, offset: offsetOf(startBox, range.startContainer, range.startOffset, false) },
-        end: { id: endBox === this.content ? "" : endBox.id, offset: offsetOf(endBox, range.endContainer, range.endOffset, true) },
-      };
-      const quote = quoteOf(range);
+      const saved = range.cloneRange();
       selection.removeAllRanges();
       this.hideToolbar();
       try {
-        const annotation = await api.addAnnotation(this.paperId, { kind: "highlight", target, color, quote });
-        this.items.push(annotation);
-        paint(this.content, annotation);
-        this.onChange();
+        const annotation = await this.highlightRange(saved, { color });
         if (withNote) {
           const mark = this.content.querySelector(`mark.hl[data-annotation="${annotation.id}"]`);
           if (mark) this.openHighlight(annotation.id, mark, true);
@@ -386,6 +438,36 @@ export class Annotator {
   }
 
   hideToolbar() { this.toolbar?.remove(); this.toolbar = null; }
+
+  // Passage surligné à partir d'une plage du texte (sélection, ou extrait proposé par Claude)
+  async highlightRange(range, { color = "yellow", note = null, author = null } = {}) {
+    const startBox = container(range.startContainer, this.content);
+    const endBox = container(range.endContainer, this.content);
+    const target = {
+      start: { id: startBox === this.content ? "" : startBox.id, offset: offsetOf(startBox, range.startContainer, range.startOffset, false) },
+      end: { id: endBox === this.content ? "" : endBox.id, offset: offsetOf(endBox, range.endContainer, range.endOffset, true) },
+    };
+    const annotation = await api.addAnnotation(this.paperId, { kind: "highlight", target, color, quote: quoteOf(range), note, author });
+    this.items.push(annotation);
+    paint(this.content, annotation);
+    this.onChange();
+    return annotation;
+  }
+
+  async deleteBlock(annotationId) {
+    await api.deleteAnnotation(annotationId);
+    this.items = this.items.filter((a) => a.id !== annotationId);
+    this.refreshBadges();
+    this.onChange();
+  }
+
+  // Suppression d'un passage surligné (annulation des annotations de Claude)
+  async removeHighlight(id) {
+    await api.deleteAnnotation(id);
+    unpaint(this.content, id);
+    this.items = this.items.filter((a) => a.id !== id);
+    this.onChange();
+  }
 
   openHighlight(id, anchor, focus = false) {
     const annotation = this.items.find((a) => a.id === id);
@@ -412,7 +494,7 @@ export class Annotator {
       this.onChange();
     });
     this.openPopover(anchor, [
-      h("div", { class: "popover-head" }, colors, h("span", { class: "spacer" }), remove),
+      h("div", { class: "popover-head" }, colors, authorBadge(annotation), h("span", { class: "spacer" }), remove),
       noteEditor({ value: annotation.note || "", placeholder: t("notes.placeholderHighlight"), autofocus: focus,
         onSave: async (note) => { Object.assign(annotation, await api.updateAnnotation(id, { note })); this.onChange(); } }),
     ]);
@@ -492,7 +574,7 @@ export class Annotator {
     if (annotation.note) note.innerHTML = markdownToHtml(annotation.note);
     return h("div", { class: `note-card${element ? "" : " orphan"}`, role: "button", tabindex: 0, onclick: go,
       onkeydown: (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); go(); } }, title: element ? t("panel.showInText") : t("notes.orphan") },
-      head, annotation.note && note, !element && h("span", { class: "badge warn" }, t("notes.orphan")));
+      head, annotation.note && note, authorBadge(annotation), !element && h("span", { class: "badge warn" }, t("notes.orphan")));
   }
 
   destroy() {

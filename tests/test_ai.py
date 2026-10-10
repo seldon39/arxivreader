@@ -63,7 +63,10 @@ class AI(unittest.TestCase):
                                     parent={"task": "summary", "answer": "It is about kernels."})
         self.assertIn("<previous_exchange>", prompt)
         self.assertIn("Question: Why?", prompt)
-        for task, target in (("detail", "nope"), ("ask", None), ("passage", None), ("hack", None)):
+        system, prompt = ai.build_prompt(self.paper, STRUCTURE, "annotate", "S1.Thm1")
+        self.assertIn("`annotations`", system)  # format des propositions d'annotations
+        self.assertIn("Annotate Lemma 1.1", prompt)
+        for task, target in (("detail", "nope"), ("ask", None), ("passage", None), ("hack", None), ("annotate", None)):
             with self.assertRaises(ai.AIError):
                 ai.build_prompt(self.paper, STRUCTURE, task, target)
 

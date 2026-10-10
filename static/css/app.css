@@ -803,3 +803,18 @@ mark.hl:hover { filter: brightness(.95); }
   background: var(--surface); color: var(--text); border: 1px solid var(--accent); box-shadow: var(--shadow); font: 14px var(--font-ui);
 }
 .pick-banner span { flex: 1 1 260px; }
+
+/* Annotations proposées par Claude */
+.ai-proposals { border: 1px solid var(--border); border-radius: 8px; padding: 10px; background: var(--surface-soft); display: flex; flex-direction: column; gap: 8px; }
+.ai-proposals-head { display: flex; align-items: center; gap: 6px; font: 600 13.5px var(--font-ui); }
+.ai-proposals-head .ai-icon { color: var(--accent); }
+.ai-proposals-list { display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow: auto; }
+.ai-proposal { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: start; cursor: pointer; }
+.ai-proposal input { margin-top: 4px; }
+.ai-proposal.missing { opacity: .6; cursor: default; }
+.ai-proposal-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ai-proposal-body .note-quote { font-size: 14px; }
+.ai-proposal-target { display: flex; align-items: center; gap: 6px; font: 500 13.5px var(--font-ui); }
+.ai-proposal-note { font-size: 14px; color: var(--muted); }
+.ai-badge { display: inline-flex; align-items: center; gap: 3px; }
+.ai-badge .ai-icon, .ai-badge .ai-icon svg { width: 12px; height: 12px; color: var(--accent); }

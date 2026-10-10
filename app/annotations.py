@@ -28,10 +28,15 @@ def get(annotation_id):
     return _row(row) if row else None
 
 
-def create(paper_id, kind, target=None, color=None, quote=None, note=None, state=None):
+AUTHORS = (None, "claude")
+
+
+def create(paper_id, kind, target=None, color=None, quote=None, note=None, state=None, author=None):
     """Nouvelle annotation ; pour un énoncé, une preuve ou la fiche de lecture, met à jour l'existante."""
     if kind not in KINDS or (color and color not in COLORS) or (state and state not in STATES):
         raise ValueError("bad annotation")
+    if author not in AUTHORS:
+        raise ValueError("bad author")
     if kind == "block" and not (target or {}).get("id"):
         raise ValueError("block without target")  # sinon une nouvelle ligne à chaque enregistrement
     with db.connect() as connection:
@@ -45,8 +50,8 @@ def create(paper_id, kind, target=None, color=None, quote=None, note=None, state
                 (paper_id, (target or {}).get("id"))).fetchone()
         if not existing:
             cursor = connection.execute(
-                "INSERT INTO annotations (paper_id, kind, target, color, quote, note, state) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (paper_id, kind, json.dumps(target) if target else None, color, quote, note, state))
+                "INSERT INTO annotations (paper_id, kind, target, color, quote, note, state, author) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (paper_id, kind, json.dumps(target) if target else None, color, quote, note, state, author))
             created = cursor.lastrowid
     if not existing:
         return get(created)  # relu après l'enregistrement (fin du bloc « with »)

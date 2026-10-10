@@ -2,6 +2,7 @@
 // Claude ne reçoit que le texte de l'article (aucun outil, aucun accès au réseau) ; ses réponses sont à vérifier.
 
 import { api, streamAI } from "./api.js";
+import { COLORS, rangeForQuote } from "./annotations.js";
 import { markdownToHtml } from "./markdown.js";
 import { typesetTex } from "./math.js";
 import { t } from "./i18n.js";
@@ -97,7 +98,8 @@ export class Assistant {
     return h("div", { class: "ai-actions" },
       action("explain", t("ai.task.explain")),
       hasText || node.manual === "immediate" ? action("detail", t("ai.task.detail")) : null,
-      hasText ? action("audit", t("ai.task.audit")) : null);
+      hasText ? action("audit", t("ai.task.audit")) : null,
+      action("annotate", t("ai.task.annotate")));
   }
 
   // Passage sélectionné dans l'article : il accompagne la prochaine question
@@ -172,7 +174,7 @@ export class Assistant {
     const header = `**Claude · ${this.title(exchange)}** — *${exchange.created_at.slice(0, 10)}, ${t("ai.unverified")}*`;
     const asked = exchange.question ? `\n\n> ${exchange.question.replace(/\n/g, " ")}` : "";
     try {
-      await this.annotator.appendNote(id, `${header}${asked}\n\n${exchange.answer.trim()}`);
+      await this.annotator.appendNote(id, `${header}${asked}\n\n${parseProposals(exchange.answer).text.trim()}`);
       toast(id ? t("ai.savedBlock", { label: node.label }) : t("ai.savedGeneral"));
     } catch (error) {
       toast(t("error.generic", { message: error.message }), { error: true });
@@ -303,14 +305,126 @@ export class Assistant {
         exchange.answer && h("button", { class: "button small-button", type: "button",
           onclick: () => { this.pending.parent = exchange; this.onChange({ focus: true }); } }, t("ai.followUp")),
         exchange.answer && h("button", { class: "button small-button", type: "button",
-          onclick: () => navigator.clipboard.writeText(exchange.answer).then(() => toast(t("ai.copied")), toastError) }, t("ai.copy")));
+          onclick: () => navigator.clipboard.writeText(parseProposals(exchange.answer).text.trim()).then(() => toast(t("ai.copied")), toastError) }, t("ai.copy")));
+      const proposals = parseProposals(exchange.answer || "").items;
+      if (proposals.length && exchange.status === "done") foot.push(this.proposalBox(exchange, proposals));
       foot.push(actions, h("p", { class: "ai-disclaimer" }, t("ai.disclaimer", { model: modelName(exchange.model) })));
     }
     return h("article", { class: `ai-card status-${exchange.status}` }, head, ...context, answer, ...foot);
   }
 
+  // ---------- Annotations proposées par Claude ----------
+
+  // Aperçu des propositions : chacune est retrouvée dans l'article (sinon signalée), cochée par défaut ;
+  // « Appliquer » crée les passages surlignés et les notes, marqués « Claude », et s'annule d'un clic.
+  proposalBox(exchange, proposals) {
+    const content = this.annotator.content;
+    const byLabel = new Map(this.structure.nodes.map((n) => [n.label.toLowerCase(), n]));
+    const rows = proposals.map((proposal) => {
+      if (proposal.quote) {
+        const found = Boolean(rangeForQuote(content, proposal.quote));
+        return { proposal, found, kind: "highlight" };
+      }
+      const node = byLabel.get(String(proposal.statement || "").trim().toLowerCase());
+      const proofId = node?.proofs[0];
+      const id = node && (proposal.on === "proof" && proofId && this.find(proofId)?.matches(".ltx_proof") ? proofId : node.id);
+      return { proposal, found: Boolean(id && this.find(id)), kind: "note", id, node };
+    });
+    const applied = Boolean(exchange.applied);
+    const boxes = rows.map((row) => h("input", { type: "checkbox", checked: row.found && !applied, disabled: !row.found || applied }));
+    const count = () => boxes.filter((b) => b.checked && !b.disabled).length;
+    const apply = h("button", { class: "button small-button primary", type: "button" });
+    const label = () => {
+      apply.textContent = exchange.applied ? t("ai.proposals.applied") : t("ai.proposals.apply", { n: count() });
+      apply.disabled = Boolean(exchange.applied) || !count();
+    };
+    boxes.forEach((box) => box.addEventListener("change", label));
+    label();
+    apply.addEventListener("click", async () => {
+      apply.disabled = true;
+      const chosen = rows.filter((_, i) => boxes[i].checked && !boxes[i].disabled);
+      const undo = await this.applyProposals(chosen);
+      if (!undo) { label(); return; }
+      exchange.applied = 1;
+      api.setAIApplied(exchange.id, true).catch(() => {});
+      this.onChange();
+      toast(t("ai.proposals.done", { n: undo.count }), { action: { label: t("common.undo"), onClick: async () => {
+        await undo.run();
+        exchange.applied = 0;
+        api.setAIApplied(exchange.id, false).catch(() => {});
+        this.onChange();
+      } } });
+    });
+    const list = h("div", { class: "ai-proposals-list" }, rows.map((row, i) => {
+      const { proposal } = row;
+      const what = row.kind === "highlight"
+        ? h("blockquote", { class: `note-quote hl-border-${COLORS.includes(proposal.color) ? proposal.color : "yellow"}` }, proposal.quote)
+        : h("div", { class: "ai-proposal-target" }, h("span", { class: "ai-icon", html: icons.note }),
+          t(proposal.on === "proof" ? "ai.proposals.onProof" : "ai.proposals.onStatement", { label: row.node?.label || proposal.statement || "?" }));
+      const note = proposal.note ? h("div", { class: "markdown ai-proposal-note" }) : null;
+      if (note) note.innerHTML = markdownToHtml(proposal.note, { refs: this.refs });
+      return h("label", { class: `ai-proposal${row.found ? "" : " missing"}` }, boxes[i],
+        h("span", { class: "ai-proposal-body" }, what, note, !row.found && h("span", { class: "badge warn" }, t("ai.proposals.notFound"))));
+    }));
+    typesetTex([list]).catch(() => {});
+    return h("div", { class: "ai-proposals" },
+      h("div", { class: "ai-proposals-head" }, h("span", { class: "ai-icon", html: icons.sparkle }), t("ai.proposals.title", { n: proposals.length })),
+      list, h("div", { class: "ai-card-actions" }, apply));
+  }
+
+  // Crée les annotations choisies ; renvoie de quoi tout annuler (ou null si rien n'a pu être fait)
+  async applyProposals(rows) {
+    const created = [];
+    const previousNotes = new Map();
+    for (const row of rows) {
+      const { proposal } = row;
+      try {
+        if (row.kind === "highlight") {
+          const range = rangeForQuote(this.annotator.content, proposal.quote); // retrouvé à nouveau : le texte a pu changer
+          if (!range) continue;
+          const color = COLORS.includes(proposal.color) ? proposal.color : "yellow";
+          created.push((await this.annotator.highlightRange(range, { color, note: proposal.note || null, author: "claude" })).id);
+        } else if (proposal.note) {
+          if (!previousNotes.has(row.id)) previousNotes.set(row.id, this.annotator.block(row.id)?.note || "");
+          await this.annotator.appendNote(row.id, `**Claude** — *${t("ai.unverified")}*\n\n${proposal.note}`);
+        }
+      } catch (error) {
+        toastError(error);
+      }
+    }
+    const count = created.length + previousNotes.size;
+    if (!count) return null;
+    return {
+      count,
+      run: async () => {
+        for (const id of created) await this.annotator.removeHighlight(id).catch(toastError);
+        for (const [id, note] of previousNotes) {
+          const block = this.annotator.block(id);
+          // note créée par l'application seule (ni note ni état avant) : supprimée plutôt que vidée
+          if (!note && block && !block.state) await this.annotator.deleteBlock(block.id).catch(toastError);
+          else await this.annotator.saveBlock(id, { note }).catch(toastError);
+        }
+      },
+    };
+  }
+
   destroy() {
     this.stop();
+  }
+}
+
+// Réponse de Claude : texte, et propositions d'annotations (bloc ```annotations``` en JSON, retiré du texte).
+// Pendant l'écriture, le bloc commencé est simplement masqué.
+export function parseProposals(answer) {
+  const match = answer.match(/```annotations[^\n]*\n([\s\S]*?)(```|$)/);
+  if (!match) return { text: answer, items: [] };
+  const text = answer.slice(0, match.index).trimEnd() + answer.slice(match.index + match[0].length);
+  if (match[2] !== "```") return { text, items: [] };
+  try {
+    const items = JSON.parse(match[1]);
+    return { text, items: Array.isArray(items) ? items.filter((item) => item && (item.quote || item.statement)) : [] };
+  } catch {
+    return { text, items: [] };
   }
 }
 
@@ -328,7 +442,7 @@ class LiveAnswer {
   }
 
   update(text, final) {
-    const blocks = splitBlocks(text);
+    const blocks = splitBlocks(parseProposals(text).text);
     const complete = final ? blocks.length : Math.max(0, blocks.length - 1);
     const added = [];
     for (; this.done < complete; this.done++) {

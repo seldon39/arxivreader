@@ -41,6 +41,13 @@ class Annotations(unittest.TestCase):
         with self.assertRaises(ValueError):
             annotations.set_proof("p", "S1.Thm1", "section")
 
+    def test_author(self):
+        mark = annotations.create("p", "highlight", {"start": {"id": "a", "offset": 0}, "end": {"id": "a", "offset": 3}},
+                                  "pink", "abc", "point à vérifier", author="claude")
+        self.assertEqual(mark["author"], "claude")
+        with self.assertRaises(ValueError):
+            annotations.create("p", "general", note="x", author="someone")
+
     def test_validation(self):
         with self.assertRaises(ValueError):
             annotations.create("p", "highlight", color="purple")

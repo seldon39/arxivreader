@@ -2,9 +2,13 @@
 
 import { t } from "./i18n.js";
 
+// Attributs « vrai ou faux » : présents seulement si la valeur est vraie (0 ou "" ne les posent pas)
+const BOOLEAN_ATTRIBUTES = new Set(["disabled", "checked", "hidden", "open", "selected", "required", "readonly", "multiple", "autofocus"]);
+
 export function h(tag, attrs = {}, ...children) {
   const el = document.createElement(tag);
   for (const [key, value] of Object.entries(attrs)) {
+    if (BOOLEAN_ATTRIBUTES.has(key)) { if (value) el.setAttribute(key, ""); continue; }
     if (key.startsWith("aria-") && typeof value === "boolean") { el.setAttribute(key, String(value)); continue; } // aria-pressed="false"
     if (value === undefined || value === null || value === false) continue;
     if (key === "class") el.className = value;

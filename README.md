@@ -94,6 +94,10 @@ Les articles déjà importés sont ré-analysés automatiquement quand cette ana
 - Réponses en direct, formules rendues, renvois (« Lemma 2.3 », « (2.11) ») cliquables ; *Ajouter à mes
   notes* les copie dans la note de l'énoncé ou de la preuve (sinon dans la fiche de lecture). Modèle
   Opus ou Sonnet au choix dans l'onglet IA. Les réponses sont conservées avec l'article.
+- **Annotations proposées par Claude** : bouton *Annoter* sur un énoncé, ou toute demande du type « surligne… /
+  annote… ». Claude joint une liste d'annotations (passages cités mot pour mot, couleur, note ; notes sur un
+  énoncé ou une preuve) : chaque passage est retrouvé dans l'article, vous cochez ce que vous gardez,
+  *Appliquer* les crée (marquées « Claude ») et *Annuler* les retire. Claude n'écrit jamais lui-même.
 - Claude ne reçoit que le texte de l'article (le texte invisible est retiré) et la demande : aucun outil,
   ni fichiers, ni réseau, ni commandes, ni réglages Claude Code personnels ; rien n'est gardé côté Claude Code.
 

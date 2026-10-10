@@ -93,6 +93,11 @@ class AnnotationRequest(BaseModel):
     quote: str | None = None
     note: str | None = None
     state: str | None = None
+    author: str | None = None  # « claude » : proposée par Claude, acceptée par vous
+
+
+class AppliedRequest(BaseModel):
+    applied: bool
 
 
 class AnnotationUpdate(BaseModel):
@@ -215,7 +220,7 @@ def add_annotation(paper_id: str, body: AnnotationRequest):
     checked_paper(paper_id)
     try:
         return annotations.create(paper_id, body.kind, body.target, body.color, (body.quote or "")[:5000] or None,
-                                  (body.note or "")[:100000] if body.note is not None else None, body.state)
+                                  (body.note or "")[:100000] if body.note is not None else None, body.state, body.author)
     except ValueError:
         raise HTTPException(400, "Bad annotation")
 
@@ -314,6 +319,13 @@ async def ask_ai(paper_id: str, body: AIRequest):
         yield json.dumps({"done": True, "exchange": final}) + "\n"
 
     return StreamingResponse(lines(), media_type="application/x-ndjson", headers={"Cache-Control": "no-store"})
+
+
+@app.put("/api/ai/{exchange_id}/applied")
+def set_applied(exchange_id: int, body: AppliedRequest):
+    if not ai.get(exchange_id):
+        raise HTTPException(404, "Unknown exchange")
+    return ai.set_applied(exchange_id, body.applied)
 
 
 @app.delete("/api/ai/{exchange_id}")
