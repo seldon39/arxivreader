@@ -70,6 +70,19 @@ class AI(unittest.TestCase):
             with self.assertRaises(ai.AIError):
                 ai.build_prompt(self.paper, STRUCTURE, task, target)
 
+    def test_export_for_the_claude_app(self):
+        first = ai.create("p1", "explain", "S1.Thm1", None, None, None, "opus")
+        ai.finish(first["id"], "Le lemme dit que $P(z,z)=1$.", "done")
+        follow = ai.create("p1", "ask", None, None, "Et pourquoi ?", first["id"], "opus")
+        ai.finish(follow["id"], "Parce que...\n```annotations\n[]\n```", "done")
+        text = ai.export_text(ai.get(follow["id"]), self.paper, STRUCTURE, "fr")
+        self.assertIn("https://arxiv.org/abs/2601.00001v1", text)
+        self.assertIn('<excerpt kind="statement" label="Lemma 1.1">', text)
+        self.assertLess(text.index("$P(z,z)=1$"), text.index("Et pourquoi ?"))  # échanges dans l'ordre
+        self.assertNotIn("```annotations", text)
+        client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
+        self.assertIn("Et pourquoi", client.get(f"/api/ai/{follow['id']}/export").json()["text"])
+
     def test_stream_endpoint(self):
         async def fake(system, prompt, model):
             yield "Le lemme "

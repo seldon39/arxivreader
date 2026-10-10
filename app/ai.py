@@ -5,6 +5,7 @@ d'API). Il ne reçoit que le texte de l'article et n'a aucun outil : ni fichiers
 """
 
 import contextlib
+import re
 import json
 import os
 import shutil
@@ -272,13 +273,60 @@ def build_prompt(paper, structure, task, target=None, quote=None, question=None,
     return system, "\n\n".join(parts)
 
 
-def _describe(exchange, structure):
+DESCRIBE = {
+    "en": {"explain": "Explain {label}", "detail": "Detail the proof of {label}", "audit": "Audit the proof of {label}",
+           "annotate": "Annotate {label}", "passage": "Explain a passage", "summary": "Summarise the paper",
+           "review": "Review the paper"},
+    "fr": {"explain": "Explique {label}", "detail": "Détaille la preuve de {label}", "audit": "Audite la preuve de {label}",
+           "annotate": "Annote {label}", "passage": "Explique ce passage", "summary": "Résume l'article",
+           "review": "Fais une relecture critique de l'article"},
+}
+
+
+def _describe(exchange, structure, language="en"):
     labels = {n["id"]: n["label"] for n in structure.get("nodes", [])}
     label = labels.get(exchange.get("target") or "", "")
-    what = {"explain": f"Explain {label}", "detail": f"Detail the proof of {label}", "annotate": f"Annotate {label}",
-            "audit": f"Audit the proof of {label}", "passage": "Explain a passage",
-            "summary": "Summarise the paper", "review": "Review the paper"}.get(exchange["task"], "")
+    what = DESCRIBE.get(language, DESCRIBE["en"]).get(exchange["task"], "").format(label=label)
     return " — ".join(x for x in (what, exchange.get("question") or "", exchange.get("quote") or "") if x)
+
+
+# ---------- Export vers l'application Claude ----------
+
+EXPORT_INTRO = {
+    "fr": "Je lis l'article ci-dessous et j'aimerais poursuivre avec toi la discussion que j'ai commencée à son sujet.",
+    "en": "I am reading the paper below and would like to continue with you the discussion I started about it.",
+}
+
+
+def export_text(exchange, paper, structure, language="fr"):
+    """Message pour une nouvelle conversation dans l'application Claude : l'article (références et lien),
+    l'énoncé et la preuve visés, puis les échanges, du premier au dernier. Formules en LaTeX ($…$)."""
+    soup, index, _ = _load(paper["id"])
+    chain = [exchange]
+    while chain[0].get("parent_id"):
+        parent = get(chain[0]["parent_id"])
+        if not parent or parent in chain:
+            break
+        chain.insert(0, parent)
+    parts = [EXPORT_INTRO.get(language, EXPORT_INTRO["en"]),
+             f"**{paper['title']}** — {', '.join(paper['authors'])}\n"
+             f"https://arxiv.org/abs/{paper['arxiv_id']}v{paper['version']}"]
+    target = next((item["target"] for item in chain if item.get("target")), None)  # suite d'un échange : son énoncé
+    node = next((n for n in structure.get("nodes", []) if n["id"] == target), None)
+    if node is not None and soup is not None:
+        focus = _node_text(soup, index, structure, node).replace("<focus", "<excerpt").replace("</focus>", "</excerpt>")
+        parts.append(focus[:6000] + ("\n[…]" if len(focus) > 6000 else ""))
+    for item in chain:
+        asked = _describe(item, structure, language)
+        parts.append(f"### {'Ma demande' if language == 'fr' else 'My request'}\n{asked}")
+        parts.append(f"### {'Réponse de Claude (dans arXivReader)' if language == 'fr' else 'Claude’s answer (in arXivReader)'}\n"
+                     f"{_strip_proposals(item.get('answer') or '').strip()}")
+    return "\n\n".join(parts)
+
+
+def _strip_proposals(answer):
+    """Bloc ```annotations``` (propositions d'annotations pour l'application) : retiré."""
+    return re.sub(r"```annotations[\s\S]*?(```|$)", "", answer)
 
 
 # ---------- Appel à Claude ----------

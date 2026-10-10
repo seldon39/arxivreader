@@ -304,6 +304,9 @@ export class Assistant {
           h("span", { class: "ai-icon", html: icons.note }), t("ai.saveToNotes")),
         exchange.answer && h("button", { class: "button small-button", type: "button",
           onclick: () => { this.pending.parent = exchange; this.onChange({ focus: true }); } }, t("ai.followUp")),
+        exchange.answer && typeof exchange.id === "number" && h("button", { class: "button small-button", type: "button",
+          title: t("ai.continueHint"), onclick: () => this.continueInClaude(exchange) },
+          h("span", { class: "ai-icon", html: icons.external }), t("ai.continue")),
         exchange.answer && h("button", { class: "button small-button", type: "button",
           onclick: () => navigator.clipboard.writeText(parseProposals(exchange.answer).text.trim()).then(() => toast(t("ai.copied")), toastError) }, t("ai.copy")));
       const proposals = parseProposals(exchange.answer || "").items;
@@ -311,6 +314,18 @@ export class Assistant {
       foot.push(actions, h("p", { class: "ai-disclaimer" }, t("ai.disclaimer", { model: modelName(exchange.model) })));
     }
     return h("article", { class: `ai-card status-${exchange.status}` }, head, ...context, answer, ...foot);
+  }
+
+  // Nouvelle conversation dans l'application Claude, pré-remplie (non envoyée) avec l'article et l'échange.
+  // Le lien est limité à ~14 000 caractères : le texte complet est aussi copié dans le presse-papiers.
+  async continueInClaude(exchange) {
+    let text;
+    try { ({ text } = await api.exportAI(exchange.id)); } catch (error) { toastError(error); return; }
+    const LIMIT = 13000;
+    const copied = await navigator.clipboard.writeText(text).then(() => true, () => false);
+    const prefill = text.length > LIMIT ? `${text.slice(0, LIMIT)}\n\n[…] ${t("ai.continueCut")}` : text;
+    location.href = `claude://claude.ai/new?q=${encodeURIComponent(prefill)}`;
+    toast(t(text.length > LIMIT ? "ai.continueLong" : copied ? "ai.continueDone" : "ai.continueOpened"), { duration: 8000 });
   }
 
   // ---------- Annotations proposées par Claude ----------

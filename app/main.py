@@ -338,6 +338,16 @@ async def ask_ai(paper_id: str, body: AIRequest):
     return StreamingResponse(lines(), media_type="application/x-ndjson", headers={"Cache-Control": "no-store"})
 
 
+@app.get("/api/ai/{exchange_id}/export")
+def export_ai(exchange_id: int):
+    exchange = ai.get(exchange_id)
+    if not exchange:
+        raise HTTPException(404, "Unknown exchange")
+    paper = checked_paper(exchange["paper_id"])
+    structure = library.load_structure(paper["id"]) or {}
+    return {"text": ai.export_text(exchange, paper, structure, db.get_settings().get("language", "fr"))}
+
+
 @app.put("/api/ai/{exchange_id}/applied")
 def set_applied(exchange_id: int, body: AppliedRequest):
     if not ai.get(exchange_id):

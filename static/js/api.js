@@ -44,6 +44,7 @@ export const api = {
   clearProof: (id, nodeId) => request("DELETE", `/api/papers/${encodeURIComponent(id)}/proofs/${encodeURIComponent(nodeId)}`),
   aiStatus: () => request("GET", "/api/ai/status"),
   aiExchanges: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/ai`),
+  exportAI: (exchangeId) => request("GET", `/api/ai/${exchangeId}/export`),
   setAIApplied: (exchangeId, applied) => request("PUT", `/api/ai/${exchangeId}/applied`, { applied }),
   deleteAIExchange: (exchangeId) => request("DELETE", `/api/ai/${exchangeId}`),
   settings: () => request("GET", "/api/settings"),
