@@ -1,7 +1,8 @@
-"""Claude sur un article : expliquer un énoncé, détailler ou auditer une preuve, répondre aux questions.
+"""L'IA sur un article : expliquer un énoncé, détailler ou auditer une preuve, répondre aux questions.
 
-Claude est appelé par le SDK Claude Agent avec la connexion Claude de l'utilisateur (pas de clé
+Par défaut Claude, appelé par le SDK Claude Agent avec la connexion Claude de l'utilisateur (pas de clé
 d'API). Il ne reçoit que le texte de l'article et n'a aucun outil : ni fichiers, ni réseau, ni commandes.
+Autres assistants possibles (réglages) : Codex, Gemini, modèle local, voir providers.py.
 """
 
 import contextlib
@@ -14,7 +15,7 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup, Comment, NavigableString, Tag
 
-from . import db, library
+from . import db, library, providers
 from .config import LIBRARY
 
 TASKS = ("explain", "detail", "audit", "annotate", "passage", "ask", "summary", "review")
@@ -232,14 +233,15 @@ def _node_text(soup, index, structure, node):
     return "\n\n".join(parts)
 
 
-def build_prompt(paper, structure, task, target=None, quote=None, question=None, parent=None, language="fr"):
+def build_prompt(paper, structure, task, target=None, quote=None, question=None, parent=None, language="fr",
+                 limit=PAPER_LIMIT):
     if task not in TASKS:
         raise AIError("Unknown task")
     soup, index, text = _load(paper["id"])
     if not text:  # pas de version HTML : titre et résumé seulement
         text = f"# {paper['title']}\n\n{', '.join(paper['authors'])}\n\nAbstract. {paper.get('abstract') or ''}"
-    if len(text) > PAPER_LIMIT:
-        text = text[:PAPER_LIMIT] + "\n\n[… the rest of the paper is cut: too long …]"
+    if len(text) > limit:
+        text = text[:limit] + "\n\n[… the rest of the paper is cut: too long …]"
 
     node = next((n for n in structure.get("nodes", []) if n["id"] == target), None) if target else None
     if task in ("explain", "detail", "audit", "annotate") and node is None:
@@ -290,7 +292,7 @@ def _describe(exchange, structure, language="en"):
     return " — ".join(x for x in (what, exchange.get("question") or "", exchange.get("quote") or "") if x)
 
 
-# ---------- Export vers l'application Claude ----------
+# ---------- Export vers une conversation (application Claude, ou autre assistant) ----------
 
 EXPORT_INTRO = {
     "fr": "Je lis l'article ci-dessous et j'aimerais poursuivre avec toi la discussion que j'ai commencée à son sujet.",
@@ -319,7 +321,8 @@ def export_text(exchange, paper, structure, language="fr"):
     for item in chain:
         asked = _describe(item, structure, language)
         parts.append(f"### {'Ma demande' if language == 'fr' else 'My request'}\n{asked}")
-        parts.append(f"### {'Réponse de Claude (dans arXivReader)' if language == 'fr' else 'Claude’s answer (in arXivReader)'}\n"
+        name = assistant_name(item.get("model"))
+        parts.append(f"### {f'Réponse de {name} (dans arXivReader)' if language == 'fr' else f'Answer from {name} (in arXivReader)'}\n"
                      f"{_strip_proposals(item.get('answer') or '').strip()}")
     return "\n\n".join(parts)
 
@@ -349,7 +352,35 @@ def _environment():
     return env
 
 
-def status():
+def current_model(settings):
+    """Modèle enregistré avec chaque échange : opus ou sonnet (Claude), codex, gemini, local:<nom>."""
+    provider = settings.get("aiProvider")
+    if provider in ("codex", "gemini"):
+        return provider
+    if provider == "local":
+        return f"local:{settings.get('aiLocalModel') or ''}"
+    model = settings.get("aiModel")
+    return model if model in MODELS else "opus"
+
+
+def paper_limit(model):
+    return providers.LOCAL_LIMIT if providers.provider_of(model) == "local" else PAPER_LIMIT
+
+
+def assistant_name(model):
+    if providers.provider_of(model) == "local":
+        return model.split(":", 1)[1] or "IA"
+    return providers.NAMES[providers.provider_of(model)]
+
+
+def status(settings):
+    model = current_model(settings)
+    provider = providers.provider_of(model)
+    info = _claude_status() if provider == "claude" else providers.status(provider, settings)
+    return {**info, "provider": provider, "model": model}
+
+
+def _claude_status():
     cli = cli_path()
     if not cli:
         return {"available": False, "loggedIn": False}
@@ -365,6 +396,25 @@ def status():
 
 async def stream_answer(system, prompt, model):
     """Morceaux de texte de la réponse, au fil de l'eau."""
+    provider = providers.provider_of(model)
+    if provider == "claude":
+        stream = _stream_claude(system, prompt, model)
+    elif provider == "codex":
+        stream = providers.stream_codex(system, prompt)
+    elif provider == "gemini":
+        stream = providers.stream_gemini(system, prompt)
+    else:
+        url = db.get_settings().get("aiLocalUrl") or providers.LOCAL_URL
+        stream = providers.stream_local(system, prompt, model.split(":", 1)[1], url)
+    try:
+        async with contextlib.aclosing(stream) as chunks:
+            async for text in chunks:
+                yield text
+    except providers.ProviderError as error:
+        raise AIError(str(error), error.code)
+
+
+async def _stream_claude(system, prompt, model):
     try:
         from claude_agent_sdk import ClaudeAgentOptions, query
         from claude_agent_sdk.types import AssistantMessage, ResultMessage, StreamEvent, TextBlock

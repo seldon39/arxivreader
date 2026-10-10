@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Str
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import ai, alerts, annotations, db, feed, library, profile, relevance
+from . import ai, alerts, annotations, db, feed, library, profile, providers, relevance
 from .arxiv import ArxivError, fetch_metadata, parse_arxiv_id
 from .config import HOST, PORT, STATIC
 
@@ -290,7 +290,7 @@ def _checked_node(paper_id, node_id):
 
 @app.get("/api/ai/status")
 async def ai_status():
-    return {**await run_in_threadpool(ai.status), "model": _ai_model()}
+    return await run_in_threadpool(ai.status, db.get_settings())
 
 
 @app.get("/api/papers/{paper_id}/ai")
@@ -312,11 +312,11 @@ async def ask_ai(paper_id: str, body: AIRequest):
     question = (body.question or "")[:20000] or None
     target = (body.target or "")[:200] or None
     try:
+        model = ai.current_model(settings)
         system, prompt = await run_in_threadpool(ai.build_prompt, paper, structure, body.task, target, quote, question,
-                                                 parent, settings.get("language", "fr"))
+                                                 parent, settings.get("language", "fr"), ai.paper_limit(model))
     except ai.AIError as error:
         return JSONResponse({"error": str(error)}, status_code=400)
-    model = _ai_model()
     exchange = ai.create(paper_id, body.task, target, quote, question, parent["id"] if parent else None, model)
 
     async def lines():
@@ -359,11 +359,6 @@ def set_applied(exchange_id: int, body: AppliedRequest):
 def remove_ai(exchange_id: int):
     ai.delete(exchange_id)
     return {"ok": True}
-
-
-def _ai_model():
-    model = db.get_settings().get("aiModel")
-    return model if model in ai.MODELS else "opus"
 
 
 @app.put("/api/papers/{paper_id}/position")
@@ -531,7 +526,8 @@ def settings():
 @app.put("/api/settings")
 def update_settings(values: dict):
     allowed = {"language", "theme", "fontSize", "readingWidth", "proofsCollapsed", "tocOpen", "panelOpen", "panelWidth", "tocWidth", "paperFont", "marginMarks", "mathRenderer",
-               "feedCategories", "feedTypes", "s2ApiKey", "feedSort", "feedSortS2", "aiModel", "notifyFollowed"}
+               "feedCategories", "feedTypes", "s2ApiKey", "feedSort", "feedSortS2", "aiModel", "notifyFollowed",
+               "aiProvider", "aiLocalUrl", "aiLocalModel"}
     values = {k: v for k, v in values.items() if k in allowed}
     if not all(_valid_setting(k, v) for k, v in values.items()):
         raise HTTPException(400, "Bad setting")
@@ -546,6 +542,7 @@ def update_settings(values: dict):
 SETTING_CHOICES = {
     "language": {"fr", "en"}, "theme": {"auto", "light", "dark"}, "readingWidth": {"narrow", "normal", "wide"},
     "paperFont": {"auto", "charter", "lm"}, "mathRenderer": {"mathjax", "native"}, "aiModel": set(ai.MODELS),
+    "aiProvider": set(providers.PROVIDERS),
     "feedSort": {"relevance", "arxiv"}, "feedSortS2": {"relevance", "s2"},
 }
 BOOLEAN_SETTINGS = {"proofsCollapsed", "tocOpen", "panelOpen", "marginMarks", "notifyFollowed"}
@@ -560,6 +557,10 @@ def _valid_setting(key, value):
         return isinstance(value, int) and 10 <= value <= 32
     if key in ("panelWidth", "tocWidth"):
         return value is None or (isinstance(value, (int, float)) and 100 <= value <= 2000)
+    if key == "aiLocalUrl":
+        return isinstance(value, str) and (value == "" or providers.valid_local_url(value))
+    if key == "aiLocalModel":
+        return isinstance(value, str) and len(value) <= 200 and value.isprintable()
     if key == "s2ApiKey":
         return isinstance(value, str) and len(value) <= 200 and value.isascii() and value.isprintable()
     if key == "feedTypes":

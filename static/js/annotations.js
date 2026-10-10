@@ -6,6 +6,7 @@
 // même que les formules soient rendues par MathJax ou par le navigateur. Le texte surligné est gardé
 // pour l'afficher dans la liste des notes.
 
+import { authorName } from "./aiproviders.js";
 import { api } from "./api.js";
 import { t } from "./i18n.js";
 import { markdownToHtml } from "./markdown.js";
@@ -236,10 +237,11 @@ function quoteOf(range, limit = 1500) {
   return parts.join("").replace(/\s+/g, " ").trim().slice(0, limit);
 }
 
-// Annotation proposée par Claude (et acceptée) : signalée comme telle
+// Annotation proposée par l'IA (et acceptée) : signalée comme telle, avec le nom de l'assistant
 function authorBadge(annotation) {
-  return annotation.author === "claude"
-    ? h("span", { class: "badge ai-badge", title: t("ai.byClaude") }, h("span", { class: "ai-icon", html: icons.sparkle }), "Claude")
+  return annotation.author
+    ? h("span", { class: "badge ai-badge", title: t("ai.byAI", { name: authorName(annotation.author) }) },
+      h("span", { class: "ai-icon", html: icons.sparkle }), authorName(annotation.author))
     : null;
 }
 

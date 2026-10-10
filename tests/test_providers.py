@@ -1,0 +1,185 @@
+"""Autres assistants : Codex et Gemini (programmes simulés), modèle local (serveur simulé), réglages."""
+
+import asyncio
+import json
+import os
+import pathlib
+import stat
+import tempfile
+import threading
+import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+from fastapi.testclient import TestClient
+
+from app import ai, db, main, providers
+
+# Programme simulé : note ses arguments, son entrée et son environnement, puis écrit les événements donnés
+FAKE = """#!/usr/bin/env python3
+import json, os, sys
+open(os.environ["FAKE_LOG"], "w").write(json.dumps({"argv": sys.argv[1:], "stdin": sys.stdin.read(),
+    "system": os.environ.get("GEMINI_SYSTEM_MD"), "settings": os.environ.get("GEMINI_CLI_SYSTEM_SETTINGS_PATH"),
+    "key": os.environ.get("OPENAI_API_KEY"), "cwd": os.getcwd()}))
+sys.stdout.write(os.environ["FAKE_OUT"])
+sys.stderr.write(os.environ.get("FAKE_ERR", ""))
+sys.exit(int(os.environ.get("FAKE_EXIT", "0")))
+"""
+
+
+async def collect(stream):
+    return [text async for text in stream]
+
+
+class Providers(unittest.TestCase):
+    def setUp(self):
+        self.tmp = pathlib.Path(tempfile.mkdtemp())
+        self.saved = (providers.find, providers.LIBRARY, dict(os.environ))
+        providers.LIBRARY = self.tmp / "library"
+        script = self.tmp / "fake"
+        script.write_text(FAKE)
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+        providers.find = lambda command: str(script)
+        os.environ["FAKE_LOG"] = str(self.tmp / "log.json")
+        os.environ["OPENAI_API_KEY"] = "sk-should-not-pass"
+
+    def tearDown(self):
+        providers.find, providers.LIBRARY = self.saved[:2]
+        os.environ.clear()
+        os.environ.update(self.saved[2])
+
+    def log(self):
+        return json.loads((self.tmp / "log.json").read_text())
+
+    def events(self, *events, exit=0, err=""):
+        os.environ["FAKE_OUT"] = "".join(json.dumps(e) + "\n" for e in events) + "not json\n"
+        os.environ["FAKE_EXIT"], os.environ["FAKE_ERR"] = str(exit), err
+
+    def test_codex(self):
+        self.events({"type": "thread.started"}, {"type": "item.completed", "item": {"type": "reasoning", "text": "hmm"}},
+                    {"type": "item.completed", "item": {"type": "agent_message", "text": "Le lemme dit $P=1$."}},
+                    {"type": "turn.completed"})
+        chunks = asyncio.run(collect(providers.stream_codex("SYSTEM", "PROMPT")))
+        self.assertEqual(chunks, ["Le lemme dit $P=1$."])
+        log = self.log()
+        self.assertEqual(log["stdin"], "PROMPT")
+        self.assertIn("features.shell_tool=false", log["argv"])  # aucune commande
+        self.assertIn('web_search="disabled"', log["argv"])
+        self.assertIn("--ignore-user-config", log["argv"])        # ni serveurs MCP ni réglages de l'utilisateur
+        self.assertEqual(pathlib.Path(log["cwd"]).resolve(), (providers.LIBRARY / "ai" / "codex").resolve())
+        self.assertIsNone(log["key"])                             # compte ChatGPT, pas une clé d'API
+        instructions = next(a for a in log["argv"] if a.startswith("model_instructions_file="))
+        self.assertEqual(pathlib.Path(json.loads(instructions.split("=", 1)[1])).read_text(), "SYSTEM")
+
+    def test_codex_errors(self):
+        self.events({"type": "error", "message": "Not logged in"}, exit=1)
+        with self.assertRaises(providers.ProviderError) as caught:
+            asyncio.run(collect(providers.stream_codex("S", "P")))
+        self.assertEqual(caught.exception.code, "login")
+        self.events({"type": "turn.failed", "error": {"message": "usage limit reached"}})
+        with self.assertRaises(providers.ProviderError) as caught:
+            asyncio.run(collect(providers.stream_codex("S", "P")))
+        self.assertEqual(caught.exception.code, "limit")
+
+    def test_gemini(self):
+        self.events({"type": "init"}, {"type": "message", "role": "user", "content": "PROMPT"},
+                    {"type": "message", "role": "assistant", "content": "Une ", "delta": True},
+                    {"type": "message", "role": "assistant", "content": "réponse.", "delta": True},
+                    {"type": "result", "status": "success"})
+        self.assertEqual(asyncio.run(collect(providers.stream_gemini("SYSTEM", "PROMPT"))), ["Une ", "réponse."])
+        log = self.log()
+        self.assertEqual(pathlib.Path(log["system"]).read_text(), "SYSTEM")
+        settings = json.loads(pathlib.Path(log["settings"]).read_text())
+        self.assertIn("run_shell_command", settings["tools"]["exclude"])
+        self.assertEqual(settings["mcpServers"], {})
+        self.assertIn("stream-json", log["argv"])
+
+    def test_dispatch_and_model(self):
+        self.events({"type": "item.completed", "item": {"type": "agent_message", "text": "ok"}})
+        self.assertEqual(asyncio.run(collect(ai.stream_answer("S", "P", "codex"))), ["ok"])
+        self.events(exit=2, err="boom\n")
+        with self.assertRaises(ai.AIError):
+            asyncio.run(collect(ai.stream_answer("S", "P", "gemini")))
+        self.assertEqual(ai.current_model({"aiProvider": "local", "aiLocalModel": "qwen3"}), "local:qwen3")
+        self.assertEqual(ai.current_model({"aiProvider": "claude", "aiModel": "sonnet"}), "sonnet")
+        self.assertEqual(ai.current_model({}), "opus")
+        self.assertEqual((ai.assistant_name("local:qwen3"), ai.assistant_name("gemini"), ai.assistant_name("opus")),
+                         ("qwen3", "Gemini", "Claude"))
+        self.assertEqual(ai.paper_limit("local:qwen3"), providers.LOCAL_LIMIT)
+
+
+class Local(unittest.TestCase):
+    def setUp(self):
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                payload = json.dumps({"data": [{"id": "qwen3"}, {"id": "llama3"}]}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                Handler.received = body
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.end_headers()
+                for text in ("<think>", "réfléchir…", "</think>\n\n", "La ", "réponse."):
+                    chunk = {"choices": [{"delta": {"content": text}}]}
+                    self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
+                self.wfile.write(b"data: [DONE]\n\n")
+
+        self.handler = Handler
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.url = f"http://127.0.0.1:{self.server.server_port}/v1"
+
+    def tearDown(self):
+        if self.server:
+            self.server.shutdown()
+            self.server.server_close()
+
+    def test_stream_and_status(self):
+        chunks = asyncio.run(collect(providers.stream_local("SYSTEM", "PROMPT", "qwen3", self.url)))
+        self.assertEqual("".join(chunks), "La réponse.")  # raisonnement <think> non affiché
+        self.assertEqual(self.handler.received["messages"][0], {"role": "system", "content": "SYSTEM"})
+        self.assertEqual(self.handler.received["model"], "qwen3")
+        info = providers.status("local", {"aiLocalUrl": self.url})
+        self.assertEqual((info["loggedIn"], info["models"]), (True, ["llama3", "qwen3"]))
+
+    def test_refusals(self):
+        with self.assertRaises(providers.ProviderError):  # serveur hors de cet ordinateur
+            asyncio.run(collect(providers.stream_local("S", "P", "m", "http://example.com/v1")))
+        self.server.shutdown()
+        self.server.server_close()
+        with self.assertRaises(providers.ProviderError) as caught:
+            asyncio.run(collect(providers.stream_local("S", "P", "m", self.url)))
+        self.assertEqual(caught.exception.code, "offline")
+        self.server = None
+        self.assertFalse(providers.status("local", {"aiLocalUrl": self.url})["available"])
+
+
+class Settings(unittest.TestCase):
+    def setUp(self):
+        self.saved = (db.DB_PATH, db.LIBRARY)
+        self.tmp = pathlib.Path(tempfile.mkdtemp())
+        db.DB_PATH, db.LIBRARY = self.tmp / "test.db", self.tmp
+        db.init()
+        self.client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
+
+    def tearDown(self):
+        db.DB_PATH, db.LIBRARY = self.saved
+
+    def test_validation(self):
+        put = lambda values: self.client.put("/api/settings", json=values).status_code  # noqa: E731
+        self.assertEqual(put({"aiProvider": "codex"}), 200)
+        self.assertEqual(put({"aiProvider": "skynet"}), 400)
+        self.assertEqual(put({"aiLocalUrl": "http://localhost:1234/v1", "aiLocalModel": "qwen3:32b"}), 200)
+        self.assertEqual(put({"aiLocalUrl": "http://192.168.1.5:11434/v1"}), 400)  # sur cet ordinateur seulement
+        self.assertEqual(put({"aiLocalUrl": "https://api.openai.com/v1"}), 400)
+
+
+if __name__ == "__main__":
+    unittest.main()

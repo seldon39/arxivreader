@@ -109,6 +109,25 @@ il suffit de la fermer et d'aller dans le feed.
 - Claude ne reçoit que le texte de l'article (le texte invisible est retiré) et la demande : aucun outil,
   ni fichiers, ni réseau, ni commandes, ni réglages Claude Code personnels ; rien n'est gardé côté Claude Code.
 
+### Autres assistants (Réglages → Assistant IA)
+
+Pour un collègue sans abonnement Claude, l'onglet IA fonctionne aussi avec :
+
+- **Codex** (OpenAI, compte ChatGPT) : `npm install -g @openai/codex`, puis `codex login`. Appelé par
+  `codex exec` sans commandes ni recherche web, sans réglages personnels ni session enregistrée, dans un
+  dossier vide, bac à sable en lecture seule.
+- **Gemini** (Google, compte Google) : `npm install -g @google/gemini-cli`, puis lancer `gemini` une fois pour
+  se connecter. Appelé avec ses outils, extensions et serveurs MCP désactivés, consignes d'arXivReader à la
+  place des siennes.
+- **Modèle local** (Ollama, LM Studio, llama.cpp… : tout serveur compatible OpenAI sur `127.0.0.1`) : rien ne
+  quitte l'ordinateur. Prévoir un contexte d'au moins 32 000 jetons (`OLLAMA_CONTEXT_LENGTH=32768 ollama serve`) ;
+  seul le début des longs articles (~120 000 caractères) est transmis. Les petits modèles sont nettement moins
+  fiables en mathématiques.
+
+Codex et Gemini sont des agents : leurs outils sont coupés par leurs propres réglages, une garantie moins
+forte que pour Claude (appelé sans aucun outil). Leur intégration suit leur documentation (versions
+d'octobre 2026) mais n'a pas été essayée avec un vrai compte.
+
 ## Sécurité
 
 - Serveur sur `127.0.0.1` seulement ; noms d'hôte étrangers et requêtes d'autres sites refusés.
@@ -128,6 +147,7 @@ app/            serveur Python (FastAPI)
   profile.py    profil de recherche, pré-remplissage, auteurs suivis ; relevance.py : tri par pertinence
   annotations.py  surlignages, notes, état de lecture
   ai.py         texte de l'article et consignes pour Claude, appel sans outils (SDK Claude Agent)
+  providers.py  autres assistants : Codex, Gemini (en ligne de commande), modèle local (Ollama, LM Studio)
   library.py    import d'un article ; db.py : base SQLite ; main.py : routes web
 static/         interface (HTML, CSS, JavaScript sans compilation) ;
                 vendor/mathjax (MathJax 3.2.2) et fonts/ (Latin Modern) copiés localement

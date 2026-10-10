@@ -28,7 +28,7 @@ def get(annotation_id):
     return _row(row) if row else None
 
 
-AUTHORS = (None, "claude")
+AUTHORS = (None, "claude", "codex", "gemini", "local")  # annotation proposée par l'IA, acceptée
 
 
 def create(paper_id, kind, target=None, color=None, quote=None, note=None, state=None, author=None):

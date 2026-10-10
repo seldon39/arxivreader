@@ -1,7 +1,9 @@
-// Onglet « IA » du lecteur : Claude explique un énoncé, détaille ou audite une preuve, répond aux questions.
-// Claude ne reçoit que le texte de l'article (aucun outil, aucun accès au réseau) ; ses réponses sont à vérifier.
+// Onglet « IA » du lecteur : l'assistant choisi dans les réglages (Claude par défaut) explique un énoncé,
+// détaille ou audite une preuve, répond aux questions. Il ne reçoit que le texte de l'article (aucun outil) ;
+// ses réponses sont à vérifier.
 
 import { api, streamAI } from "./api.js";
+import { authorName, currentModel as modelFor, modelLabel, providerOf, setupNotice } from "./aiproviders.js";
 import { COLORS, rangeForQuote } from "./annotations.js";
 import { markdownToHtml } from "./markdown.js";
 import { typesetTex } from "./math.js";
@@ -48,7 +50,18 @@ export class Assistant {
   }
 
   async refreshStatus() {
-    try { this.status = await api.aiStatus(); } catch { this.status = { available: false, loggedIn: false }; }
+    const expected = currentModel();
+    if (this.checking && this.statusFor === expected) return; // vérification déjà en cours
+    this.statusFor = expected;
+    this.checking = true;
+    try { this.status = await api.aiStatus(); } catch { this.status = { available: false, loggedIn: false, provider: providerOf(expected), model: expected }; }
+    const models = this.status.models || [];
+    if (this.status.provider === "local" && models.length && !models.includes(settings.aiLocalModel)) {
+      await saveSettings({ aiLocalModel: models[0] }); // modèle local pas encore choisi (ou disparu) : le premier
+      this.status.model = `local:${models[0]}`;
+      this.statusFor = currentModel();
+    }
+    this.checking = false;
     this.onChange();
   }
 
@@ -120,7 +133,7 @@ export class Assistant {
     }
     const controller = new AbortController();
     const local = { id: `local-${Date.now()}`, task, target, quote, question, parent_id: parent?.id ?? null, answer: "", status: "running",
-      model: this.status?.model || settings.aiModel || "opus", created_at: new Date().toISOString().slice(0, 19).replace("T", " ") };
+      model: this.status?.model || currentModel(), created_at: new Date().toISOString().slice(0, 19).replace("T", " ") };
     this.exchanges.push(local);
     this.running = { exchange: local, controller };
     this.pending = { quote: null, parent: null, question: "" };
@@ -142,7 +155,7 @@ export class Assistant {
       else { local.status = "error"; local.error = error.message; }
     }
     if (local.status === "running") local.status = local.error ? "error" : "done";
-    if (local.error && local.errorCode === "login") this.status = { ...(this.status || {}), loggedIn: false };
+    if (local.error && ["login", "missing", "offline"].includes(local.errorCode)) this.status = { ...(this.status || {}), loggedIn: false };
     this.running = null;
     this.onChange();
   }
@@ -171,7 +184,7 @@ export class Assistant {
       // note de la preuve si c'est un bloc « Proof. » ; sinon (section à part, justification) celle de l'énoncé
       id = ["detail", "audit"].includes(exchange.task) && proofId && this.find(proofId)?.matches(".ltx_proof") ? proofId : node.id;
     }
-    const header = `**Claude · ${this.title(exchange)}** — *${exchange.created_at.slice(0, 10)}, ${t("ai.unverified")}*`;
+    const header = `**${modelLabel(exchange.model)} · ${this.title(exchange)}** — *${exchange.created_at.slice(0, 10)}, ${t("ai.unverified")}*`;
     const asked = exchange.question ? `\n\n> ${exchange.question.replace(/\n/g, " ")}` : "";
     try {
       await this.annotator.appendNote(id, `${header}${asked}\n\n${parseProposals(exchange.answer).text.trim()}`);
@@ -190,9 +203,9 @@ export class Assistant {
   // ---------- Onglet ----------
 
   renderPanel(body, { focus = false } = {}) {
-    if (!this.status) this.refreshStatus();
+    if ((!this.status && !this.checking) || this.statusFor !== currentModel()) this.refreshStatus(); // assistant changé dans les réglages
     const status = this.status;
-    if (status && !status.loggedIn) body.append(this.loginNotice(status));
+    if (status && !status.loggedIn) body.append(setupNotice(status, () => { this.status = null; this.onChange(); }));
 
     body.append(this.askBox(focus));
 
@@ -200,15 +213,7 @@ export class Assistant {
     this.live = null;
     body.append(h("div", { class: "ai-list" }, list.length ? list.map((e) => this.card(e))
       : h("p", { class: "hint" }, t("ai.empty"))));
-    body.append(h("p", { class: "hint ai-privacy" }, t("ai.privacy")));
-  }
-
-  loginNotice(status) {
-    return h("div", { class: "notice ai-login" },
-      h("strong", {}, t(status.available ? "ai.login.title" : "ai.missing.title")),
-      h("p", {}, t(status.available ? "ai.login.text" : "ai.missing.text")),
-      h("code", { class: "ai-command" }, "./arxivreader login"),
-      h("button", { class: "button small-button", type: "button", onclick: () => { this.status = null; this.onChange(); } }, t("ai.login.check")));
+    body.append(h("p", { class: "hint ai-privacy" }, t(`ai.privacy.${providerOf(currentModel())}`)));
   }
 
   askBox(focus) {
@@ -245,20 +250,32 @@ export class Assistant {
       : h("button", { class: "button primary", type: "button", onclick: send }, pending.quote && !pending.question.trim() ? t("ai.explainPassage") : t("ai.send"));
     const paperAction = (task) => h("button", { class: "button small-button", type: "button", disabled: running,
       onclick: () => this.ask({ task }) }, t(`ai.task.${task}`));
-    const model = h("select", { class: "ai-model", "aria-label": t("ai.model"), title: t("ai.model") },
-      [["opus", "Opus"], ["sonnet", "Sonnet"]].map(([value, label]) => h("option", { value, selected: (settings.aiModel || "opus") === value }, label)));
-    model.addEventListener("change", () => {
-      saveSettings({ aiModel: model.value });
-      if (this.status) this.status.model = model.value;
-    });
+    const model = this.modelPicker();
     const box = h("div", { class: "panel-section ai-ask" },
       ...chips, area,
-      h("div", { class: "ai-ask-row" }, model, h("span", { class: "spacer" }), sendButton),
+      h("div", { class: "ai-ask-row" }, model || h("span", { class: "muted small" }, modelLabel(currentModel())), h("span", { class: "spacer" }), sendButton),
       h("p", { class: "hint ai-hint" }, t("ai.hint")),
       h("div", { class: "ai-ask-row" }, h("span", { class: "muted small" }, t("ai.wholePaper")), paperAction("summary"), paperAction("review")));
     requestAnimationFrame(() => { grow(); if (focus) area.focus(); });
     typesetTex(chips).catch(() => {});
     return box;
+  }
+
+  // Choix du modèle : Opus ou Sonnet pour Claude, modèles installés pour un modèle local (sinon rien)
+  modelPicker() {
+    const provider = providerOf(currentModel());
+    const options = provider === "claude" ? [["opus", "Opus"], ["sonnet", "Sonnet"]]
+      : provider === "local" ? (this.status?.models || []).map((name) => [name, name]) : [];
+    if (!options.length) return null;
+    const current = provider === "local" ? settings.aiLocalModel : settings.aiModel || "opus";
+    const select = h("select", { class: "ai-model", "aria-label": t("ai.model"), title: t("ai.model") },
+      options.map(([value, label]) => h("option", { value, selected: current === value }, label)));
+    select.addEventListener("change", async () => {
+      await saveSettings(provider === "local" ? { aiLocalModel: select.value } : { aiModel: select.value });
+      if (this.status) this.status.model = currentModel();
+      this.onChange();
+    });
+    return select;
   }
 
   card(exchange) {
@@ -296,7 +313,7 @@ export class Assistant {
     } else {
       if (exchange.status === "stopped") foot.push(h("span", { class: "badge warn" }, t("ai.stopped")));
       if (exchange.status === "error" || exchange.error) {
-        foot.push(h("div", { class: "notice small" }, t(exchange.errorCode === "login" ? "ai.error.login" : exchange.errorCode === "limit" ? "ai.error.limit" : "ai.error.other",
+        foot.push(h("div", { class: "notice small" }, t(ERROR_KEYS[exchange.errorCode] || "ai.error.other",
           { message: exchange.error || "" })));
       }
       const actions = h("div", { class: "ai-card-actions" },
@@ -304,14 +321,16 @@ export class Assistant {
           h("span", { class: "ai-icon", html: icons.note }), t("ai.saveToNotes")),
         exchange.answer && h("button", { class: "button small-button", type: "button",
           onclick: () => { this.pending.parent = exchange; this.onChange({ focus: true }); } }, t("ai.followUp")),
-        exchange.answer && typeof exchange.id === "number" && h("button", { class: "button small-button", type: "button",
-          title: t("ai.continueHint"), onclick: () => this.continueInClaude(exchange) },
-          h("span", { class: "ai-icon", html: icons.external }), t("ai.continue")),
+        exchange.answer && typeof exchange.id === "number" && (providerOf(currentModel()) === "claude"
+          ? h("button", { class: "button small-button", type: "button", title: t("ai.continueHint"), onclick: () => this.continueInClaude(exchange) },
+            h("span", { class: "ai-icon", html: icons.external }), t("ai.continue"))
+          : h("button", { class: "button small-button", type: "button", title: t("ai.exportCopyHint"), onclick: () => this.copyExchange(exchange) },
+            t("ai.exportCopy"))),
         exchange.answer && h("button", { class: "button small-button", type: "button",
           onclick: () => navigator.clipboard.writeText(parseProposals(exchange.answer).text.trim()).then(() => toast(t("ai.copied")), toastError) }, t("ai.copy")));
       const proposals = parseProposals(exchange.answer || "").items;
       if (proposals.length && exchange.status === "done") foot.push(this.proposalBox(exchange, proposals));
-      foot.push(actions, h("p", { class: "ai-disclaimer" }, t("ai.disclaimer", { model: modelName(exchange.model) })));
+      foot.push(actions, h("p", { class: "ai-disclaimer" }, t("ai.disclaimer", { model: modelLabel(exchange.model) })));
     }
     return h("article", { class: `ai-card status-${exchange.status}` }, head, ...context, answer, ...foot);
   }
@@ -326,6 +345,17 @@ export class Assistant {
     const prefill = text.length > LIMIT ? `${text.slice(0, LIMIT)}\n\n[…] ${t("ai.continueCut")}` : text;
     location.href = `claude://claude.ai/new?q=${encodeURIComponent(prefill)}`;
     toast(t(text.length > LIMIT ? "ai.continueLong" : copied ? "ai.continueDone" : "ai.continueOpened"), { duration: 8000 });
+  }
+
+  // Autres assistants : le même texte, copié, à coller dans une nouvelle conversation
+  async copyExchange(exchange) {
+    try {
+      const { text } = await api.exportAI(exchange.id);
+      await navigator.clipboard.writeText(text);
+      toast(t("ai.exportCopied"));
+    } catch (error) {
+      toastError(error);
+    }
   }
 
   // ---------- Annotations proposées par Claude ----------
@@ -365,7 +395,7 @@ export class Assistant {
     apply.addEventListener("click", async () => {
       apply.disabled = true;
       const chosen = rows.filter((_, i) => boxes[i].checked && !boxes[i].disabled);
-      const undo = await this.applyProposals(chosen, this.scopesOf(exchange));
+      const undo = await this.applyProposals(chosen, this.scopesOf(exchange), providerOf(exchange.model));
       if (!undo) { label(); return; }
       exchange.applied = 1;
       api.setAIApplied(exchange.id, true).catch(toastError);
@@ -405,7 +435,7 @@ export class Assistant {
   }
 
   // Crée les annotations choisies ; renvoie de quoi tout annuler (ou null si rien n'a pu être fait)
-  async applyProposals(rows, scopes = []) {
+  async applyProposals(rows, scopes = [], author = "claude") {
     const created = [];
     const previousNotes = new Map();
     for (const row of rows) {
@@ -415,10 +445,10 @@ export class Assistant {
           const range = rangeForQuote(this.annotator.content, proposal.quote, scopes); // retrouvé à nouveau : le texte a pu changer
           if (!range) continue;
           const color = COLORS.includes(proposal.color) ? proposal.color : "yellow";
-          created.push((await this.annotator.highlightRange(range, { color, note: proposal.note || null, author: "claude" })).id);
+          created.push((await this.annotator.highlightRange(range, { color, note: proposal.note || null, author })).id);
         } else if (proposal.note) {
           if (!previousNotes.has(row.id)) previousNotes.set(row.id, this.annotator.block(row.id)?.note || "");
-          await this.annotator.appendNote(row.id, `**Claude** — *${t("ai.unverified")}*\n\n${proposal.note}`);
+          await this.annotator.appendNote(row.id, `**${authorName(author)}** — *${t("ai.unverified")}*\n\n${proposal.note}`);
         }
       } catch (error) {
         toastError(error);
@@ -464,7 +494,8 @@ export function parseProposals(answer) {
   }
 }
 
-const modelName = (model) => ({ opus: "Opus", sonnet: "Sonnet" }[model] || model || "Claude");
+const currentModel = () => modelFor(settings);
+const ERROR_KEYS = { login: "ai.error.login", missing: "ai.error.login", limit: "ai.error.limit", offline: "ai.error.offline" };
 
 // Rendu progressif : les paragraphes terminés sont mis en forme (MathJax) une seule fois,
 // seul le dernier, encore en cours d'écriture, est redessiné.

@@ -1,7 +1,8 @@
 // Réglages de l'interface, enregistrés côté serveur (library/arxivreader.db).
 
+import { PROVIDERS, assistantName, setupNotice } from "./aiproviders.js";
 import { api } from "./api.js";
-import { applyStatic, setLanguage, t } from "./i18n.js";
+import { applyStatic, setAIName, setLanguage, t } from "./i18n.js";
 import { h, icons, toast } from "./util.js";
 
 export const DEFAULT_FONT_SIZE = 18;
@@ -19,7 +20,10 @@ const DEFAULTS = {
   paperFont: "auto",
   marginMarks: true,
   mathRenderer: "mathjax",
+  aiProvider: "claude",
+  aiLocalUrl: "",     // vide : Ollama (http://127.0.0.1:11434/v1)
 };
+const LOCAL_URL = "http://127.0.0.1:11434/v1";
 const FEED_DEFAULT = ["math.DG", "math.CV", "math.SP", "math-ph"];
 const WIDTHS = { narrow: "42rem", normal: "56rem", wide: "72rem" };
 
@@ -48,6 +52,7 @@ export function applySettings() {
   root.style.setProperty("--font-size", `${settings.fontSize}px`);
   root.style.setProperty("--reading-width", WIDTHS[settings.readingWidth] || WIDTHS.normal);
   setLanguage(settings.language);
+  setAIName(assistantName(settings)); // après la langue : « IA locale » / « local AI »
   listeners.forEach((fn) => fn(settings));
 }
 
@@ -59,6 +64,34 @@ export async function saveSettings(values) {
   } catch {
     // réglage appliqué localement même si l'enregistrement échoue
   }
+}
+
+// Assistant IA choisi : à quoi il sert, s'il est prêt (sinon la marche à suivre), et pour un modèle
+// local, l'adresse du serveur et le modèle
+let aiCheck = 0;
+async function renderAISettings(holder) {
+  const provider = settings.aiProvider || "claude";
+  const check = ++aiCheck;
+  const line = h("p", { class: "hint", "aria-live": "polite" }, t("settings.aiChecking"));
+  holder.replaceChildren(h("p", { class: "hint" }, t(`settings.aiHint.${provider}`)), line);
+  let status;
+  try { status = await api.aiStatus(); } catch { status = { provider, available: false, loggedIn: false }; }
+  if (check !== aiCheck || !holder.isConnected) return; // réglage changé entre-temps
+  const models = status.models || [];
+  if (provider === "local" && models.length && !models.includes(settings.aiLocalModel)) {
+    await saveSettings({ aiLocalModel: models[0] });
+  }
+  const fields = provider !== "local" ? [] : [
+    h("label", { class: "row" }, h("span", {}, t("settings.aiLocalUrl")),
+      h("input", { class: "text-input", type: "text", name: "aiLocalUrl", value: settings.aiLocalUrl || "", placeholder: LOCAL_URL,
+        spellcheck: "false", autocomplete: "off" })),
+    models.length > 0 && h("label", { class: "row" }, h("span", {}, t("settings.aiLocalModel")),
+      h("select", { class: "text-input", name: "aiLocalModel" },
+        models.map((model) => h("option", { value: model, selected: model === settings.aiLocalModel }, model)))),
+  ];
+  line.replaceWith(...fields.filter(Boolean),
+    status.loggedIn ? h("p", { class: "hint ai-ready" }, `✓ ${t("settings.aiReady")}`)
+      : setupNotice({ ...status, provider }, () => renderAISettings(holder)));
 }
 
 function segmented(name, options, current) {
@@ -96,6 +129,11 @@ export function openSettingsDialog() {
       segmented("mathRenderer", [["mathjax", t("settings.math.mathjax")], ["native", t("settings.math.native")]], settings.mathRenderer)),
     h("label", { class: "check" }, h("input", { type: "checkbox", name: "proofsCollapsed", checked: settings.proofsCollapsed }), t("settings.proofs")),
     h("label", { class: "check" }, h("input", { type: "checkbox", name: "marginMarks", checked: settings.marginMarks }), t("settings.marginMarks")),
+    h("h3", { class: "settings-section" }, t("settings.ai")),
+    h("div", { class: "row" }, h("span", { id: "setting-aiProvider" }, t("settings.aiProvider")),
+      segmented("aiProvider", PROVIDERS.map((p) => [p, p === "local" ? t("settings.aiProvider.local") : { claude: "Claude", codex: "Codex", gemini: "Gemini" }[p]]),
+        settings.aiProvider || "claude")),
+    h("div", { class: "ai-settings" }),
     h("h3", { class: "settings-section" }, t("settings.feed")),
     h("label", { class: "check" }, h("input", { type: "checkbox", name: "notifyFollowed", checked: settings.notifyFollowed !== false }), t("settings.notifyFollowed")),
     h("p", { class: "hint", style: "margin: -10px 0 0" }, t("settings.notifyFollowedHint")),
@@ -111,10 +149,11 @@ export function openSettingsDialog() {
   form.addEventListener("input", (event) => {
     const { name, value, checked, type } = event.target;
     if (!name) return;
-    if (name === "feedCategories" || name === "s2ApiKey") return; // enregistrés à la sortie du champ
+    if (name === "feedCategories" || name === "s2ApiKey" || name === "aiLocalUrl") return; // enregistrés à la sortie du champ
     const parsed = type === "checkbox" ? checked : name === "fontSize" ? Number(value) : value;
     if (name === "fontSize") form.querySelector("#setting-fontSize").textContent = t("settings.fontSize", { n: value });
-    saveSettings({ [name]: parsed });
+    const saved = saveSettings({ [name]: parsed });
+    if (name === "aiProvider" || name === "aiLocalModel") saved.then(() => renderAISettings(form.querySelector(".ai-settings")));
     if (name === "language") {
       openSettingsDialog(); // re-dessine la fenêtre dans la nouvelle langue
       dialog.querySelector('input[name="language"]:checked')?.focus();
@@ -128,8 +167,16 @@ export function openSettingsDialog() {
       toast(t("settings.feedCategoriesSaved"));
     } else if (name === "s2ApiKey") {
       saveSettings({ s2ApiKey: value.trim() });
+    } else if (name === "aiLocalUrl") {
+      const url = value.trim().replace(/\/+$/, "");
+      if (url && !/^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(\/|$)/.test(url)) {
+        toast(t("settings.aiLocalUrlBad"), { error: true });
+        return;
+      }
+      saveSettings({ aiLocalUrl: url }).then(() => renderAISettings(form.querySelector(".ai-settings")));
     }
   });
+  renderAISettings(form.querySelector(".ai-settings"));
   dialog.replaceChildren(form);
   applyStatic(dialog);
   if (!dialog.open) dialog.showModal();
