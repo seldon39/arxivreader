@@ -7,6 +7,7 @@ import { updatesSection } from "./updates.js";
 import { h, icons, toast } from "./util.js";
 
 export const DEFAULT_FONT_SIZE = 18;
+export const DEFAULT_AI_FONT_SIZE = 15; // réponses de l'IA
 
 const DEFAULTS = {
   language: "fr",
@@ -51,6 +52,7 @@ export function applySettings() {
   else root.dataset.theme = settings.theme;
   root.dataset.paperFont = settings.paperFont;
   root.style.setProperty("--font-size", `${settings.fontSize}px`);
+  root.style.setProperty("--ai-font-size", `${settings.aiFontSize || DEFAULT_AI_FONT_SIZE}px`);
   root.style.setProperty("--reading-width", WIDTHS[settings.readingWidth] || WIDTHS.normal);
   setLanguage(settings.language);
   setAIName(assistantName(settings)); // après la langue : « IA locale » / « local AI »

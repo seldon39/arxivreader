@@ -8,7 +8,7 @@ import { COLORS, rangeForQuote } from "./annotations.js";
 import { markdownToHtml } from "./markdown.js";
 import { typesetTex } from "./math.js";
 import { t } from "./i18n.js";
-import { saveSettings, settings } from "./settings.js";
+import { DEFAULT_AI_FONT_SIZE, saveSettings, settings } from "./settings.js";
 import { h, icons, toast, toastError } from "./util.js";
 
 // Mots qui précèdent un numéro d'énoncé dans les réponses (anglais et français)
@@ -216,6 +216,7 @@ export class Assistant {
 
     const list = [...this.exchanges].reverse(); // la plus récente en haut, juste sous la question
     this.live = null;
+    if (list.length) body.append(this.textSizeBar());
     body.append(h("div", { class: "ai-list" }, list.length ? list.map((e) => this.card(e))
       : h("p", { class: "hint" }, t("ai.empty"))));
     body.append(h("p", { class: "hint ai-privacy" }, t(`ai.privacy.${providerOf(currentModel())}`)));
@@ -264,6 +265,26 @@ export class Assistant {
     requestAnimationFrame(() => { grow(); if (focus) area.focus(); });
     typesetTex(chips).catch(() => {});
     return box;
+  }
+
+  // Taille du texte des réponses (A− / taille / A+ ; clic sur la taille : taille par défaut)
+  textSizeBar() {
+    const size = () => settings.aiFontSize || DEFAULT_AI_FONT_SIZE;
+    const value = h("button", { class: "zoom-reset", type: "button", title: t("ai.textSizeReset") }, `${size()} px`);
+    const set = (next) => {
+      next = Math.max(11, Math.min(26, next));
+      if (next === size()) return;
+      saveSettings({ aiFontSize: next });
+      value.textContent = `${next} px`;
+      value.setAttribute("aria-disabled", String(next === DEFAULT_AI_FONT_SIZE));
+    };
+    value.setAttribute("aria-disabled", String(size() === DEFAULT_AI_FONT_SIZE));
+    value.addEventListener("click", () => set(DEFAULT_AI_FONT_SIZE));
+    const button = (icon, key, step) => h("button", { class: "icon-button small", type: "button", title: t(key), "aria-label": t(key), html: icon,
+      onclick: () => set(size() + step) });
+    return h("div", { class: "ai-text-size", role: "group", "aria-label": t("ai.textSize") },
+      h("span", { class: "muted small" }, t("ai.textSize")), h("span", { class: "spacer" }),
+      button(icons.minus, "ai.textSmaller", -1), value, button(icons.plus, "ai.textLarger", 1));
   }
 
   // Choix du modèle : Opus ou Sonnet pour Claude, modèles installés pour un modèle local (sinon rien)

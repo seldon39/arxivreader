@@ -825,9 +825,13 @@ mark.hl:hover { filter: brightness(.95); }
 .ai-card-title { min-width: 0; overflow-wrap: anywhere; }
 .ai-context { margin: 0; }
 .ai-asked { margin: 0; font-size: 14.5px; font-weight: 500; white-space: pre-wrap; }
-.ai-answer { font-size: 15px; overflow-wrap: anywhere; min-width: 0; }
+.ai-answer { font-size: var(--ai-font-size, 15px); overflow-wrap: anywhere; min-width: 0; }
+.ai-text-size { display: flex; align-items: center; gap: 2px; margin: 2px 0 -4px; }
+.ai-text-size .spacer { flex: 1; }
+.ai-text-size .zoom-reset { min-width: 48px; height: 28px; font-size: 12px; }
 .ai-answer .ai-block + .ai-block, .ai-answer .ai-block + .ai-tail:not(:empty) { margin-top: .55em; }
-.ai-answer h4, .ai-answer h5, .ai-answer h6 { font-family: var(--font-ui); font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: .9em 0 .3em; }
+.ai-answer h4, .ai-answer h5, .ai-answer h6 { font-family: var(--font-ui); font-size: .87em; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: .9em 0 .3em; }
+.ai-answer :is(h4, h5, h6) mjx-container { text-transform: none; letter-spacing: normal; } /* formules d'un titre : telles quelles */
 .ai-answer .ai-block:first-child h4:first-child, .ai-answer .ai-block:first-child h5:first-child, .ai-answer .ai-block:first-child h6:first-child { margin-top: 0; }
 .ai-answer mjx-container[display="true"] { overflow-x: auto; overflow-y: hidden; max-width: 100%; }
 .ai-answer a.ai-ref { color: var(--link); text-decoration: none; border-bottom: 1px dotted currentColor; }
