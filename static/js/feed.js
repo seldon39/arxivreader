@@ -1,7 +1,7 @@
 // Page « Feed » : nouveautés arXiv, recommandations Semantic Scholar, import d'un texte collé.
 
 import { api } from "./api.js";
-import { getLanguage, t } from "./i18n.js";
+import { getLanguage, t, tn } from "./i18n.js";
 import { typesetTex } from "./math.js";
 import { renderProfile } from "./profile.js";
 import { saveSettings, settings } from "./settings.js";
@@ -147,7 +147,7 @@ async function renderList(body, tab) {
         .sort((a, b) => (b.announced || "").localeCompare(a.announced || ""));
       if (followed.length) {
         sections.push(h("section", { class: "feed-day followed-section" },
-          h("h2", { class: "feed-date" }, `${t("feed.followedTitle")} · ${t("feed.count", { n: followed.length })}`),
+          h("h2", { class: "feed-date" }, `${t("feed.followedTitle")} · ${tn("feed.count", followed.length)}`),
           followed.map(card)));
       }
       shown = data.items.filter((i) => i.in_arxiv && state.types.has(i.announce_type) && inCategories(i) && matches(i));
@@ -158,7 +158,7 @@ async function renderList(body, tab) {
     if (tab === "arxiv") {
       const close = shown.filter((i) => i.relevance >= 0.25).length;
       dayLabel = h("span", { class: "day-label" }, data.day
-        ? capitalize(`${t("feed.announced", { date: formatDay(data.day) })} · ${t("feed.count", { n: shown.length })}${close ? ` · ${t("feed.closeCount", { n: close })}` : ""}`)
+        ? capitalize(`${t("feed.announced", { date: formatDay(data.day) })} · ${tn("feed.count", shown.length)}${close ? ` · ${tn("feed.closeCount", close)}` : ""}`)
         : t("feed.emptyArxiv"));
       const previous = h("button", { class: "icon-button day-arrow", type: "button", title: t("feed.previousDay"), "aria-label": t("feed.previousDay"), html: icons.chevronLeft });
       const next = h("button", { class: "icon-button day-arrow", type: "button", title: t("feed.nextDay"), "aria-label": t("feed.nextDay"),
@@ -290,10 +290,12 @@ export function feedCard(item, onChange = () => {}, { compact = false } = {}) {
   }
 
   const reasons = (item.reasons || []).map((reason) => h("span", { class: `reason reason-${reason.kind}` },
-    reason.kind === "author" ? `👤 ${t("feed.reason.author")} : ${reason.label}`
-      : reason.kind === "keyword" ? `🔑 ${reason.label}`
-        : [`≈ ${t("feed.reason.similar")} : `, h("i", {}, withMath(reason.label.length > 90 ? `${reason.label.slice(0, 88)}…` : reason.label)),
-          reason.via === "reference" ? ` (${t("feed.reason.reference")})` : reason.via === "liked" ? ` (${t("feed.reason.liked")})` : ""]));
+    h("span", { class: "reason-icon", html: icons[reason.kind === "author" ? "person" : reason.kind === "keyword" ? "key" : "similar"] }),
+    h("span", { class: "reason-text" },
+      reason.kind === "author" ? `${t("feed.reason.author")} : ${reason.label}`
+        : reason.kind === "keyword" ? reason.label
+          : [`${t("feed.reason.similar")} : `, h("i", {}, withMath(reason.label.length > 90 ? `${reason.label.slice(0, 88)}…` : reason.label)),
+            reason.via === "reference" ? ` (${t("feed.reason.reference")})` : reason.via === "liked" ? ` (${t("feed.reason.liked")})` : ""])));
   const level = item.relevance === undefined ? null : item.relevance >= 0.6 ? "high" : item.relevance >= 0.25 ? "medium" : item.relevance >= COMPACT_BELOW ? "low" : "none";
   const meter = level && level !== "none" && h("span", { class: `relevance relevance-${level}`, title: t("feed.relevanceHint", { n: Math.round(item.relevance * 100) }) },
     h("span", { class: "relevance-bar" }, h("span", { style: `width: ${Math.round(item.relevance * 100)}%` })), t(`feed.level.${level}`));

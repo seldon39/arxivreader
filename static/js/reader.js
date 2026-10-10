@@ -62,6 +62,7 @@ class Reader {
     }
     if (this.destroyed) return;
     layoutFigures(this.figures);
+    this.markWideMath();
     this.anchors = null;
     this.restorePosition();
   }
@@ -105,7 +106,7 @@ class Reader {
     this.panel = h("aside", { class: "panel", "aria-label": t("reader.panel") });
     this.content = h("div", { class: "paper-content" });
     this.article = h("article", { class: "paper", dataset: { marks: settings.marginMarks ? "on" : "off" } });
-    this.backButton = h("button", { class: "back-button", type: "button", onclick: () => this.goBack() }, `↩ ${t("reader.returnTo")}`);
+    this.backButton = h("button", { class: "back-button", type: "button", onclick: () => this.goBack() }, h("span", { class: "reason-icon", html: icons.undo }), t("reader.returnTo"));
     this.scroller = h("div", { class: "paper-scroll" }, this.article, this.backButton);
 
     const meta = h("div", { class: "paper-meta" },
@@ -124,7 +125,7 @@ class Reader {
         const on = this.article.classList.toggle("reveal-hidden");
         toggle.textContent = on ? t("reader.conceal") : t("reader.reveal");
       });
-      this.article.append(h("div", { class: "notice" }, `⚠ ${t("reader.hiddenText", { n: this.structure.hiddenText })}`, toggle));
+      this.article.append(h("div", { class: "notice" }, h("span", { class: "reason-icon", html: icons.warning }), t("reader.hiddenText", { n: this.structure.hiddenText }), toggle));
     }
 
     if (paper.source === "none") {
@@ -243,6 +244,15 @@ class Reader {
     if (!last) return;
     last.data = last.data.replace(/\s*∎\s*$/, "").replace("∎", "");
     last.after(h("span", { class: "qed", "aria-hidden": "true" }, "□"));
+  }
+
+  // Formule en ligne plus large que la colonne (téléphone) : défilement dans la formule
+  markWideMath() {
+    const width = this.content.getBoundingClientRect().width;
+    this.content.querySelectorAll("mjx-container:not([display])").forEach((math) => {
+      math.classList.remove("wide-inline");
+      if (math.getBoundingClientRect().width > width) math.classList.add("wide-inline");
+    });
   }
 
   setProof(proof, collapsed) {
@@ -711,6 +721,7 @@ class Reader {
     const onResize = debounce(() => {
       this.anchors = null;
       layoutFigures(this.figures);
+      this.markWideMath();
       if (layout() === currentLayout) return;
       currentLayout = layout();
       // Changement de format : volets remis dans leur état par défaut pour cette largeur

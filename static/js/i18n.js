@@ -9,7 +9,7 @@ const STRINGS = {
     "feed.loadingDay": "Chargement des annonces de ce jour…",
     "feed.previousDay": "Jour précédent (←)",
     "feed.nextDay": "Jour suivant (→)",
-    "feed.closeCount": "{n} proche(s) de vos sujets",
+    "feed.closeCount.one": "{n} proche de vos sujets", "feed.closeCount.other": "{n} proches de vos sujets",
     "feed.tab.profile": "Profil",
     "feed.followedTitle": "Nouveaux articles de vos auteurs suivis",
     "feed.sortLabel": "Tri :",
@@ -74,7 +74,7 @@ const STRINGS = {
     "feed.emptyS2": "Aucune recommandation pour l'instant. Cliquez sur « Mettre à jour ».",
     "feed.noMatch": "Aucun article ne correspond aux filtres.",
     "feed.announced": "Annonce du {date}",
-    "feed.count": "{n} articles",
+    "feed.count.one": "{n} article", "feed.count.other": "{n} articles",
     "feed.search": "Chercher dans les titres, auteurs, résumés…",
     "feed.type.new": "Nouveaux",
     "feed.type.cross": "Croisés",
@@ -209,7 +209,7 @@ const STRINGS = {
     "feed.loadingDay": "Loading this day's announcements…",
     "feed.previousDay": "Previous day (←)",
     "feed.nextDay": "Next day (→)",
-    "feed.closeCount": "{n} close to your topics",
+    "feed.closeCount.one": "{n} close to your topics", "feed.closeCount.other": "{n} close to your topics",
     "feed.tab.profile": "Profile",
     "feed.followedTitle": "New papers by followed authors",
     "feed.sortLabel": "Sort:",
@@ -274,7 +274,7 @@ const STRINGS = {
     "feed.emptyS2": "No recommendation yet. Click “Refresh”.",
     "feed.noMatch": "No paper matches the filters.",
     "feed.announced": "Announced {date}",
-    "feed.count": "{n} papers",
+    "feed.count.one": "{n} paper", "feed.count.other": "{n} papers",
     "feed.search": "Search titles, authors, abstracts…",
     "feed.type.new": "New",
     "feed.type.cross": "Cross-lists",
@@ -413,6 +413,12 @@ export function setLanguage(value) {
 
 export function getLanguage() {
   return language;
+}
+
+// Accord en nombre : clé.one pour 0 et 1 en français (1 seul en anglais), clé.other sinon
+export function tn(key, n, params = {}) {
+  const one = language === "fr" ? n <= 1 : n === 1;
+  return t(`${key}.${one ? "one" : "other"}`, { n, ...params });
 }
 
 export function t(key, params = {}) {
