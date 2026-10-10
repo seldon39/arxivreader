@@ -304,15 +304,16 @@ svg { fill: currentColor; }
 
 /* Preuves : le bouton de repli vit dans la marge ; repliée, la preuve tient sur une ligne « Proof. (afficher) » */
 .proof-toggle {
-  position: absolute; left: -24px; top: .25em; width: 20px; height: 20px; padding: 0;
+  position: absolute; left: -28px; top: .2em; width: 24px; height: 24px; padding: 0;
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   border: 0; border-radius: 4px; background: transparent; color: var(--muted); font: 12px var(--font-ui); cursor: pointer;
-  opacity: .55; text-indent: 0;
+  opacity: .75; text-indent: 0;
 }
 .ltx_proof:hover > .proof-toggle, .proof-toggle:focus-visible { opacity: 1; }
 .proof-toggle:hover { background: var(--surface-hover); color: var(--text); }
 .proof-toggle .text { display: none; }
-.proof-toggle .caret { transition: transform .15s; display: inline-block; }
+.proof-toggle .caret { transition: transform .15s; display: inline-flex; width: 18px; height: 18px; }
+.proof-toggle .caret svg { width: 18px; height: 18px; }
 .ltx_proof:not(.collapsed) > .proof-toggle .caret { transform: rotate(90deg); }
 .ltx_proof.collapsed > :not(.proof-toggle) { display: none; }
 .ltx_proof.collapsed > .proof-toggle {
@@ -472,7 +473,11 @@ svg.graph { color: var(--border-strong); }
 .feed-more { flex: 1 1 100%; }
 .feed-more > summary { display: flex; align-items: baseline; gap: 10px; cursor: pointer; padding: 4px 0; list-style: none; min-height: 28px; }
 .feed-more > summary::-webkit-details-marker { display: none; }
-.feed-more > summary::before { content: "▸"; color: var(--muted); transition: transform .15s; display: inline-block; }
+.feed-more > summary::before {
+  content: ""; width: 16px; height: 16px; flex: none; align-self: center; background: var(--muted); transition: transform .15s;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9.5 5.5 16 12l-6.5 6.5' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9.5 5.5 16 12l-6.5 6.5' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+}
 .feed-more[open] > summary::before { transform: rotate(90deg); }
 .feed-more-title { font-size: 14px; font-weight: 600; }
 .feed-more-body { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding-top: 6px; }

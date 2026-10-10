@@ -334,7 +334,7 @@ class Reader {
       const title = proof.querySelector(".ltx_title_proof")?.textContent.trim() || "Proof.";
       const state = h("span", { class: "state" });
       const toggle = h("button", { class: "proof-toggle", type: "button", "aria-expanded": "true", title: detected ? t("reader.proofDetected") : t("reader.proof") },
-        h("span", { class: "caret" }, "▸"), h("span", { class: "text" }, title), state);
+        h("span", { class: "caret", html: icons.chevronRight }), h("span", { class: "text" }, title), state);
       toggle.addEventListener("click", () => this.setProof(proof, !proof.classList.contains("collapsed")));
       proof.prepend(toggle);
       this.setProof(proof, settings.proofsCollapsed, { update: false });
