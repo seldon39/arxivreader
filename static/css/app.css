@@ -312,7 +312,7 @@ svg { fill: currentColor; }
 .ltx_proof:hover > .proof-toggle, .proof-toggle:focus-visible { opacity: 1; }
 .proof-toggle:hover { background: var(--surface-hover); color: var(--text); }
 .proof-toggle .text { display: none; }
-.proof-toggle .caret { transition: transform .15s; display: inline-flex; width: 18px; height: 18px; }
+.proof-toggle .caret { transition: transform .2s ease; display: inline-flex; width: 18px; height: 18px; }
 .proof-toggle .caret svg { width: 18px; height: 18px; }
 .ltx_proof:not(.collapsed) > .proof-toggle .caret { transform: rotate(90deg); }
 .ltx_proof.collapsed > :not(.proof-toggle) { display: none; }
@@ -322,7 +322,9 @@ svg { fill: currentColor; }
 }
 .ltx_proof.collapsed > .proof-toggle .text { display: inline; }
 .ltx_proof.collapsed > .proof-toggle .state { font: .8em var(--font-ui); color: var(--link); }
-.ltx_proof.collapsed > .proof-toggle .caret { display: none; }
+/* repliée : la flèche reste dans la marge, au même endroit, tournée vers la droite (rotation animée) */
+.ltx_proof.collapsed > .proof-toggle .caret { position: absolute; left: -28px; top: .3em; color: var(--muted); opacity: .75; }
+.ltx_proof.collapsed > .proof-toggle:hover .caret { color: var(--text); opacity: 1; }
 
 .paper-content a, .preview a { color: inherit; text-decoration: none; }
 .paper-content a.ltx_ref, .preview a.ltx_ref { color: var(--link); }
