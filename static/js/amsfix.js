@@ -232,24 +232,44 @@ const TALL = ":scope > mtable, :scope > mrow > mtable";
 // Rattachés au symbole (ou à la parenthèse fermante) qui précède ; indice puis exposant réunis en
 // <msubsup>. Un préfixe voulu ({}^{t}A), placé après un opérateur ou en tête, n'est pas touché.
 const CLOSERS = new Set([")", "]", "}", "|", "‖", "⟩", "′", "″", "*", "∗", "!"]);
+// Grands opérateurs : indices et exposants dessous et dessus (en display, comme \sum_{r\ge1} en TeX),
+// à côté en ligne (movablelimits) ; intégrales : toujours à côté
+const LIMIT_OPERATORS = new Set(["∑", "∏", "∐", "⋃", "⋂", "⨁", "⨂", "⨆", "⋁", "⋀", "⨄"]);
+const SIDE_OPERATORS = new Set(["∫", "∬", "∭", "∮", "⨌"]);
 
 function attachScripts(math) {
+  const ns = math.namespaceURI;
   for (const script of [...math.querySelectorAll("msub, msup, msubsup")]) {
     const base = script.firstElementChild;
     if (!base || base.localName !== "mrow" || base.childElementCount || base.textContent.trim()) continue;
     const previous = script.previousElementSibling;
     if (!previous || previous.localName === "mspace") continue;
-    if (previous.localName === "mo" && !CLOSERS.has(previous.textContent.trim())) continue;
     const merged = previous.getAttribute("data-attached");
-    if (merged && previous.localName !== script.localName && previous.localName !== "msubsup" && script.localName !== "msubsup") {
-      // x_a^b : msub(x, a) déjà rattaché, suivi de msup(vide, b) → msubsup(x, a, b)
-      const both = document.createElementNS(math.namespaceURI, "msubsup");
-      const [prevBase, prevScript] = [...previous.children];
-      const ownScript = script.children[1];
-      const [sub, sup] = previous.localName === "msub" ? [prevScript, ownScript] : [ownScript, prevScript];
-      both.append(prevBase, sub, sup);
+    // rôles (indice, exposant) du script courant
+    const [sub, sup] = script.localName === "msub" ? [script.children[1], null]
+      : script.localName === "msup" ? [null, script.children[1]] : [script.children[1], script.children[2]];
+    if (merged) {
+      // x_a^b, ∑_{a}^{b} : premier script déjà rattaché, le second se joint à lui
+      const [prevBase, ...prevScripts] = [...previous.children];
+      const limits = previous.localName.startsWith("mu") || previous.localName === "mover";
+      const prevSub = ["msub", "munder"].includes(previous.localName) ? prevScripts[0] : null;
+      const prevSup = ["msup", "mover"].includes(previous.localName) ? prevScripts[0] : null;
+      if ((prevSub && sub) || (prevSup && sup) || prevScripts.length > 1) continue;
+      const both = document.createElementNS(ns, limits ? "munderover" : "msubsup");
+      both.append(prevBase, prevSub || sub, prevSup || sup);
       both.setAttribute("data-attached", "1");
       previous.replaceWith(both);
+      script.remove();
+      continue;
+    }
+    const text = previous.localName === "mo" ? previous.textContent.trim() : "";
+    if (previous.localName === "mo" && !CLOSERS.has(text) && !LIMIT_OPERATORS.has(text) && !SIDE_OPERATORS.has(text)) continue;
+    if (LIMIT_OPERATORS.has(text)) {
+      const kind = { msub: "munder", msup: "mover", msubsup: "munderover" }[script.localName];
+      const limits = document.createElementNS(ns, kind);
+      limits.append(previous.cloneNode(true), ...[...script.children].slice(1));
+      limits.setAttribute("data-attached", "1");
+      previous.replaceWith(limits);
       script.remove();
       continue;
     }
