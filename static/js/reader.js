@@ -20,18 +20,44 @@ const PICKABLE = [".ltx_para", ".ltx_theorem", ".ltx_proof", ".ltx_equation", ".
   .map((c) => `${c}[id]`).join(", ");
 const MEDIUM = 900;
 
-export async function renderReader(view, paperId, isCurrent = () => true) {
+// `at` : énoncé à afficher à l'ouverture (« #/paper/<id>/<énoncé> », renvoi depuis un autre article)
+export async function renderReader(view, paperId, at, isCurrent = () => true) {
+  if (typeof at === "function") [at, isCurrent] = [undefined, at];
   view.replaceChildren(h("div", { class: "library" }, h("div", { class: "busy" }, h("span", { class: "spinner" }))));
   const { paper, structure } = await api.paper(paperId);
   const html = paper.source === "none" ? "" : await api.content(paperId);
   if (!isCurrent()) return () => {}; // page déjà quittée pendant le chargement : rien n'est affiché
-  const reader = new Reader(view, paper, structure || { toc: [], nodes: [], bibliography: [], hiddenText: 0 }, html);
+  const reader = new Reader(view, paper, structure || { toc: [], nodes: [], bibliography: [], hiddenText: 0 }, html, at);
   return () => reader.destroy();
 }
 
+// Énoncé visé par la note d'une citation : « [12, Theorem 4.3] », « [12, Thm. 4.3(2)] », « [12, Lemma 2.1] »
+const CITE_KINDS = [
+  [/^(?:theorems?|thm|th[ée]or[èe]mes?)$/i, "theorem"], [/^(?:lemmas?|lem|lemmes?|lemmata)$/i, "lemma"],
+  [/^(?:propositions?|prop)$/i, "proposition"], [/^(?:corollar(?:y|ies)|cor|corollaires?)$/i, "corollary"],
+  [/^(?:definitions?|def|d[ée]finitions?)$/i, "definition"], [/^(?:remarks?|rem|remarques?)$/i, "remark"],
+  [/^(?:examples?|ex|exemples?)$/i, "example"], [/^(?:claims?)$/i, "claim"], [/^(?:conjectures?|conj)$/i, "conjecture"],
+];
+
+function citedStatement(link, nodes) {
+  let note = "";
+  for (let next = link.nextSibling; next && !(next.nodeType === 1 && next.matches("a")); next = next.nextSibling) {
+    note += next.textContent;
+    if (note.includes("]") || note.includes(";")) break;
+  }
+  const match = note.match(/^\s*,?\s*([A-Za-zÀ-ÿ]+)\.?\s*(\d+(?:\.\d+)*)/);
+  if (!match) return null;
+  const kind = CITE_KINDS.find(([pattern]) => pattern.test(match[1]))?.[1];
+  const number = match[2];
+  const numbered = nodes.filter((n) => (n.label.match(/(\d+(?:\.\d+)*)\s*$/) || [])[1] === number);
+  if (kind) return numbered.find((n) => n.kind === kind) || null;
+  return numbered.length === 1 ? numbered[0] : null; // « [12, 4.3] » : seulement si le numéro est sans ambiguïté
+}
+
 class Reader {
-  constructor(view, paper, structure, html) {
+  constructor(view, paper, structure, html, at = null) {
     this.paper = paper;
+    this.startAt = at;
     this.structure = structure;
     this.nodes = structure.nodes;
     this.byId = new Map(this.nodes.map((n) => [n.id, n]));
@@ -99,7 +125,35 @@ class Reader {
     this.annotator.apply();
     this.renderPanel(); // avec les états de lecture, chargés seulement maintenant
     this.anchors = null;
-    this.restorePosition();
+    if (this.startAt && this.find(this.startAt)) {
+      this.reveal(this.find(this.startAt));
+      requestAnimationFrame(() => this.navigate(this.startAt));
+    } else {
+      this.restorePosition();
+    }
+    this.loadCrossLinks();
+  }
+
+  // ---------- Renvois vers les autres articles lus ici ----------
+
+  // « [12, Theorem 4.3] » : la référence [12] est un article de la bibliothèque ; son « Theorem 4.3 »
+  // s'affiche au survol et s'ouvre d'un clic. La référence elle-même, dans la bibliographie, mène à l'article.
+  async loadCrossLinks() {
+    try { this.crosslinks = await api.crosslinks(this.paper.id); } catch { return; }
+    if (this.destroyed || !Object.keys(this.crosslinks).length) return;
+    for (const link of this.content.querySelectorAll('a.ltx_ref[href^="#bib"]')) {
+      const entry = this.crosslinks[link.getAttribute("href").slice(1)];
+      if (!entry) continue;
+      link.classList.add("cross-cite");
+      link.dataset.crossPaper = entry.paper;
+      const node = citedStatement(link, entry.nodes);
+      if (node) link.dataset.crossNode = node.id;
+    }
+    for (const [bibId, entry] of Object.entries(this.crosslinks)) {
+      const item = this.find(bibId);
+      if (!item || item.querySelector(".cross-badge")) continue;
+      item.append(h("a", { class: "cross-badge", href: `#/paper/${encodeURIComponent(entry.paper)}`, title: entry.title }, t("reader.crossOpen")));
+    }
   }
 
   // ---------- Construction ----------
@@ -806,6 +860,7 @@ class Reader {
     const theorem = target.closest(".ltx_theorem");
     if (theorem) return { body: this.clean(theorem), id: theorem.id, label: this.byId.get(theorem.id)?.label };
     const bibitem = target.closest(".ltx_bibitem");
+    if (bibitem && link.dataset.crossPaper) return this.crossPreview(link, bibitem);
     if (bibitem) return { body: this.clean(bibitem), id: bibitem.id, extra: this.bibActions(this.bib.get(bibitem.id)) };
     const equation = target.closest(".eq-scroll") || target.closest("table");
     if (equation && equation.querySelector(".ltx_tag_equation")) {
@@ -820,6 +875,31 @@ class Reader {
       return { body: h("div", {}, heading && this.clean(heading), para && this.clean(para)), id };
     }
     return { body: this.clean(target.closest(".ltx_para") || target), id };
+  }
+
+  // Aperçu d'une référence qui est un article lu ici : l'énoncé cité (« Theorem 4.3 »), chargé à la demande
+  crossPreview(link, bibitem) {
+    const entry = this.crosslinks[bibitem.id];
+    const nodeId = link.dataset.crossNode;
+    const node = nodeId && entry.nodes.find((n) => n.id === nodeId);
+    const open = h("a", { class: "button small-button", href: `#/paper/${encodeURIComponent(entry.paper)}${node ? `/${encodeURIComponent(node.id)}` : ""}` },
+      node ? t("reader.crossOpenStatement", { label: node.label }) : t("reader.crossOpen"));
+    const head = h("div", { class: "cross-head muted small" }, t("reader.crossIn", { title: entry.title }));
+    if (!node) return { body: h("div", {}, head, this.clean(bibitem)), extra: open };
+    const holder = h("div", { class: "cross-statement" }, h("div", { class: "busy small" }, h("span", { class: "spinner" })));
+    return {
+      body: h("div", {}, head, holder), extra: open,
+      load: async () => {
+        const found = await api.statement(entry.paper, node.id);
+        const html = found.html ? new DOMParser().parseFromString(found.html, "text/html").body.firstElementChild : null;
+        if (html) {
+          html.querySelectorAll("[id]").forEach((el) => el.removeAttribute("id"));
+          html.removeAttribute("id");
+          fixMathML(html, []);
+        }
+        holder.replaceChildren(html || h("p", {}, found.label));
+      },
+    };
   }
 
   clean(element) {
@@ -850,6 +930,7 @@ class Reader {
   interceptLinks = (event) => {
     const link = event.target.closest('a[href^="#"]');
     if (!link || event.defaultPrevented || link.matches(".ai-ref") || link.closest(".tabs")) return;
+    if (link.getAttribute("href").startsWith("#/")) { this.hidePreview(); return; } // autre page de l'application (autre article)
     event.preventDefault();
     this.hidePreview();
     this.navigate(decodeURIComponent(link.getAttribute("href").slice(1)));
@@ -869,6 +950,15 @@ class Reader {
     box.addEventListener("mouseleave", () => this.scheduleHide());
     document.body.append(box);
     typesetFragment(box);
+    // contenu chargé ensuite (énoncé d'un autre article) : mis en forme et la bulle recalée
+    preview.load?.().then(() => {
+      if (this.previewBox !== box) return;
+      typesetFragment(box);
+      const height = box.offsetHeight;
+      const rect = link.getBoundingClientRect();
+      const below = rect.bottom + 8 + height < innerHeight;
+      box.style.top = `${below ? rect.bottom + 8 : Math.max(8, rect.top - height - 8)}px`;
+    }).catch(() => box.querySelector(".cross-statement")?.replaceChildren(h("p", { class: "muted small" }, t("reader.crossUnavailable"))));
     const rect = link.getBoundingClientRect();
     const width = box.offsetWidth;
     const height = box.offsetHeight;

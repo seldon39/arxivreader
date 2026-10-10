@@ -149,6 +149,13 @@ def list_papers():
     return [row_to_paper(r) for r in rows]
 
 
+def list_all_papers():
+    """Articles de la bibliothèque et articles seulement ouverts (encore en cache)."""
+    with connect() as db:
+        rows = db.execute("SELECT * FROM papers").fetchall()
+    return [row_to_paper(r) for r in rows]
+
+
 def get_paper(paper_id):
     with connect() as db:
         row = db.execute("SELECT * FROM papers WHERE id = ?", (paper_id,)).fetchone()

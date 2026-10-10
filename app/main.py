@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Str
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import ai, alerts, annotations, db, feed, library, profile, providers, relevance, updates
+from . import ai, alerts, annotations, crossrefs, db, feed, library, profile, providers, relevance, updates
 from .arxiv import ArxivError, fetch_metadata, parse_arxiv_id
 from .config import HOST, PORT, STATIC
 
@@ -241,6 +241,22 @@ def asset(paper_id: str, name: str):
 def set_library(paper_id: str, body: LibraryRequest):
     checked_paper(paper_id)
     return library.set_in_library(paper_id, body.in_library)
+
+
+@app.get("/api/papers/{paper_id}/crosslinks")
+def crosslinks(paper_id: str):
+    """Références de la bibliographie qui sont des articles lus ici (avec leurs énoncés)."""
+    checked_paper(paper_id)
+    return crossrefs.links(paper_id)
+
+
+@app.get("/api/papers/{paper_id}/statements/{node_id}")
+def statement(paper_id: str, node_id: str):
+    paper = checked_paper(paper_id)
+    found = crossrefs.statement(paper_id, node_id[:200])
+    if found is None:
+        raise HTTPException(404, "Unknown statement")
+    return {**found, "paper": paper_id, "title": paper["title"]}
 
 
 @app.get("/api/papers/{paper_id}/annotations")
