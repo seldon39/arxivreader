@@ -158,6 +158,9 @@ table.ltx_eqn_table { width: 100%; border-collapse: collapse; margin: .55em 0; d
   box-sizing: border-box; line-height: normal; text-indent: 0; text-align: left;
 }
 .figure-card > svg.ltx_picture { display: block; max-width: 100%; height: auto; overflow: visible; }
+/* dessin centré dans la source : bloc centré, sans retrait de paragraphe */
+.figure-block { display: block; text-align: center; text-indent: 0; margin: .6em 0; }
+.figure-card.centered:not(.figure-block .figure-card) { display: table; margin-left: auto; margin-right: auto; }
 .figure-label {
   position: absolute; left: 0; top: 0; translate: var(--shift-x, 14px) var(--shift-y, 14px);
   white-space: nowrap; line-height: 1; text-indent: 0; text-align: left; color: #000;

@@ -54,6 +54,14 @@ export function prepareFigures(root) {
   for (const svg of root.querySelectorAll("svg.ltx_picture")) {
     const card = document.createElement("span");
     card.className = "figure-card";
+    // Dessin centré dans la source (\centering, diagramme seul sur sa ligne) : bloc centré, sans retrait
+    // de paragraphe, même quand LaTeXML l'a placé dans une boîte en ligne (ltx_inline-block)
+    if (svg.classList.contains("ltx_centering")) {
+      card.classList.add("centered");
+      const box = svg.parentElement?.closest(".ltx_inline-block");
+      const alone = box && [...box.childNodes].every((node) => node.contains?.(svg) || (node.nodeType === 3 && !node.data.trim()));
+      if (alone) box.classList.add("figure-block");
+    }
     svg.replaceWith(card);
     card.append(svg);
     for (const fo of svg.querySelectorAll("foreignObject")) {
