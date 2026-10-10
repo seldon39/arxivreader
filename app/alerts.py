@@ -27,9 +27,11 @@ stop = threading.Event()  # arrêt du serveur : la vérification en cours s'inte
 
 
 def recent_followed():
+    """Articles récents des auteurs suivis, et articles qui citent les vôtres trouvés récemment."""
     with db.connect() as connection:
         return [dict(r) for r in connection.execute(
-            f"SELECT key, title, authors, announced FROM feed_items WHERE followed = 1 AND announced >= {WINDOW}")]
+            f"""SELECT key, title, authors, announced FROM feed_items WHERE (followed = 1 AND announced >= {WINDOW})
+                   OR (citing IS NOT NULL AND cited_found >= {WINDOW})""")]
 
 
 def _followed_names():
@@ -96,11 +98,16 @@ def notify(items):
     else:
         messages = [("arXivReader", f"{who(i)} — nouvel article", i["title"]) for i in items]
     for title, subtitle, body in messages:
-        script = f"display notification {_quote(body[:240])} with title {_quote(title)} subtitle {_quote(subtitle)}"
-        try:
-            subprocess.run(["osascript", "-e", script], timeout=10, check=False, capture_output=True)
-        except (OSError, subprocess.TimeoutExpired):
-            log.warning("notification macOS impossible")
+        display(title, subtitle, body)
+
+
+def display(title, subtitle, body):
+    """Notification macOS (Centre de notifications)."""
+    script = f"display notification {_quote(body[:240])} with title {_quote(title)} subtitle {_quote(subtitle)}"
+    try:
+        subprocess.run(["osascript", "-e", script], timeout=10, check=False, capture_output=True)
+    except (OSError, subprocess.TimeoutExpired):
+        log.warning("notification macOS impossible")
 
 
 def unseen():
@@ -132,4 +139,9 @@ async def loop():
             await run_in_threadpool(check, db.get_settings().get("feedCategories") or None)
         except Exception:
             log.exception("vérification des auteurs suivis impossible")  # nouvel essai au prochain passage
+        try:
+            from . import citations
+            await run_in_threadpool(citations.check, db.get_settings().get("s2ApiKey") or None)  # une fois par jour
+        except Exception:
+            log.exception("vérification des citations impossible")
         await asyncio.sleep(CHECK_EVERY)

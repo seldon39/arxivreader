@@ -114,6 +114,9 @@ def init():
         columns = {row["name"] for row in db.execute("PRAGMA table_info(feed_items)")}
         if "followed" not in columns:
             db.execute("ALTER TABLE feed_items ADD COLUMN followed INTEGER DEFAULT 0")
+        if "citing" not in columns:  # article qui cite les vôtres : titres de vos articles cités (JSON)
+            db.execute("ALTER TABLE feed_items ADD COLUMN citing TEXT")
+            db.execute("ALTER TABLE feed_items ADD COLUMN cited_found TEXT")
         columns = {row["name"] for row in db.execute("PRAGMA table_info(papers)")}
         if "in_library" not in columns:
             db.execute("ALTER TABLE papers ADD COLUMN in_library INTEGER DEFAULT 1")

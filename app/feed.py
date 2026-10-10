@@ -316,6 +316,7 @@ def list_items(view, announce_types=None, day=None):
             rows = connection.execute(
                 f"""SELECT * FROM feed_items WHERE (in_arxiv = 1 AND announce_type IN ({marks}) AND announced = ?)
                        OR (followed = 1 AND announced >= date('now', '-{FOLLOWED_DAYS} days'))
+                       OR (citing IS NOT NULL AND cited_found >= date('now', '-{FOLLOWED_DAYS} days'))
                     ORDER BY CASE announce_type WHEN 'new' THEN 0 WHEN 'cross' THEN 1 ELSE 2 END, arxiv_id DESC""",
                 [*types, day],
             ).fetchall()
@@ -324,6 +325,7 @@ def list_items(view, announce_types=None, day=None):
         item = dict(row)
         item["authors"] = json.loads(item["authors"] or "[]")
         item["categories"] = json.loads(item["categories"] or "[]")
+        item["citing"] = json.loads(item.get("citing") or "[]")
         item["status"] = status.get(item["key"])
         item["libraryId"] = library.get(item["arxiv_id"])
         item["readId"] = cached.get(item["arxiv_id"])  # déjà téléchargé (lu), dans la bibliothèque ou non

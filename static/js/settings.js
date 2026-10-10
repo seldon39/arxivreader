@@ -152,6 +152,8 @@ export function openSettingsDialog({ section = null } = {}) {
     h("h3", { class: "settings-section" }, t("settings.feed")),
     h("label", { class: "check" }, h("input", { type: "checkbox", name: "notifyFollowed", checked: settings.notifyFollowed !== false }), t("settings.notifyFollowed")),
     h("p", { class: "hint", style: "margin: -10px 0 0" }, t("settings.notifyFollowedHint")),
+    h("label", { class: "check" }, h("input", { type: "checkbox", name: "notifyCitations", checked: settings.notifyCitations !== false }), t("settings.notifyCitations")),
+    h("p", { class: "hint", style: "margin: -10px 0 0" }, t("settings.notifyCitationsHint")),
     h("label", { class: "row" }, h("span", {}, t("settings.feedCategories")),
       h("input", { class: "text-input", type: "text", name: "feedCategories", value: (settings.feedCategories || FEED_DEFAULT).join(", "), spellcheck: "false" })),
     h("label", { class: "row" }, h("span", {}, t("settings.s2Key")),

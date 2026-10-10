@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Str
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import ai, alerts, annotations, crossrefs, db, feed, library, profile, providers, relevance, updates
+from . import ai, alerts, annotations, citations, crossrefs, db, feed, library, profile, providers, relevance, updates
 from .arxiv import ArxivError, fetch_metadata, parse_arxiv_id
 from .config import HOST, PORT, STATIC
 
@@ -463,6 +463,10 @@ async def feed_refresh(body: RefreshRequest):
         else:
             count = await run_in_threadpool(feed.refresh_arxiv, settings.get("feedCategories") or None,
                                             settings.get("s2ApiKey") or None)
+            try:  # citations de vos articles (une fois par jour au plus)
+                await run_in_threadpool(citations.check, settings.get("s2ApiKey") or None)
+            except Exception:
+                pass
     except feed.FeedError as error:
         return JSONResponse({"error": str(error)}, status_code=400)
     except Exception as error:  # réseau
@@ -594,7 +598,7 @@ def settings():
 def update_settings(values: dict):
     allowed = {"language", "theme", "fontSize", "readingWidth", "proofsCollapsed", "tocOpen", "panelOpen", "panelWidth", "tocWidth", "paperFont", "marginMarks", "mathRenderer",
                "feedCategories", "feedTypes", "s2ApiKey", "feedSort", "feedSortS2", "aiModel", "notifyFollowed",
-               "aiProvider", "aiLocalUrl", "aiLocalModel", "checkUpdates", "aiFontSize"}
+               "aiProvider", "aiLocalUrl", "aiLocalModel", "checkUpdates", "aiFontSize", "notifyCitations"}
     values = {k: v for k, v in values.items() if k in allowed}
     if not all(_valid_setting(k, v) for k, v in values.items()):
         raise HTTPException(400, "Bad setting")
@@ -612,7 +616,7 @@ SETTING_CHOICES = {
     "aiProvider": set(providers.PROVIDERS),
     "feedSort": {"relevance", "arxiv"}, "feedSortS2": {"relevance", "s2"},
 }
-BOOLEAN_SETTINGS = {"proofsCollapsed", "tocOpen", "panelOpen", "marginMarks", "notifyFollowed", "checkUpdates"}
+BOOLEAN_SETTINGS = {"proofsCollapsed", "tocOpen", "panelOpen", "marginMarks", "notifyFollowed", "checkUpdates", "notifyCitations"}
 
 
 def _valid_setting(key, value):

@@ -166,14 +166,23 @@ async function renderList(body, tab) {
     }
     const byRelevance = state.sort === "relevance";
     const card = (item) => feedCard(item, draw, { fresh: fresh.has(item.key), showDate: Boolean(item.followed && item.in_arxiv && item.announced !== data.day),
-      compact: byRelevance && item.relevance < COMPACT_BELOW && !item.libraryId && item.status !== "liked" && !fresh.has(item.key) });
+      compact: byRelevance && item.relevance < COMPACT_BELOW && !item.libraryId && item.status !== "liked" && !fresh.has(item.key)
+        && !item.citing?.length });
     const sections = [];
     let shown;
     if (tab === "arxiv") {
       // Nouveaux articles des auteurs suivis, hors des annonces de vos catégories
       // tous les articles récents des auteurs suivis, sauf ceux de l'annonce affichée (ils y sont déjà)
       const inDayList = (i) => i.in_arxiv && i.announced === data.day && state.types.has(i.announce_type) && inCategories(i);
-      const followed = data.items.filter((i) => i.followed && !inDayList(i) && matches(i))
+      // Articles qui citent les vôtres (Semantic Scholar), trouvés ces dernières semaines
+      const citing = data.items.filter((i) => i.citing?.length && !inDayList(i) && matches(i))
+        .sort((a, b) => (b.cited_found || "").localeCompare(a.cited_found || "") || (b.announced || "").localeCompare(a.announced || ""));
+      if (citing.length) {
+        sections.push(h("section", { class: "feed-day followed-section citing-section" },
+          h("h2", { class: "feed-date" }, `${t("feed.citingTitle")} · ${tn("feed.count", citing.length)}`),
+          citing.map(card)));
+      }
+      const followed = data.items.filter((i) => i.followed && !i.citing?.length && !inDayList(i) && matches(i))
         .sort((a, b) => (b.announced || "").localeCompare(a.announced || ""));
       if (followed.length) {
         sections.push(h("section", { class: "feed-day followed-section" },
@@ -375,6 +384,8 @@ function feedCard(item, onChange = () => {}, { compact = false, fresh = false, s
       (!item.announce_type || showDate) && item.announced && h("span", { class: "chip" }, item.announced),
       item.announce_type && item.s2_rank !== null && item.s2_rank !== undefined && h("span", { class: "chip recommended-chip", title: t("feed.recommendedHint") }, t("feed.recommended")),
       !item.arxiv_id && h("span", { class: "chip off-arxiv", title: t("feed.offArxivHint") }, t("feed.offArxiv")),
+      ...(item.citing || []).map((cited) => h("span", { class: "chip citing-chip", title: t("feed.citingHint", { title: cited }) },
+        t("feed.cites", { title: cited.length > 48 ? `${cited.slice(0, 46)}…` : cited }))),
     ),
     reasons.length ? h("div", { class: "reasons" }, reasons) : null,
     item.abstract && abstract,
