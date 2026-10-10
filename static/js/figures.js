@@ -91,3 +91,79 @@ export function layoutFigures(cards) {
   // Deux passes : l'agrandissement du cadre peut réduire l'échelle du dessin dans une colonne étroite
   for (let pass = 0; pass < 2; pass++) cards.forEach((card) => { if (card.isConnected) layoutFigure(card); });
 }
+
+// ---------- Figure en grand ----------
+// Fenêtre superposée (<dialog> modal) : l'article reste visible, grisé, derrière ; × , Échap ou un clic
+// sur le fond la ferment. Un dessin TikZ est recopié puis remis en page à la nouvelle taille
+// (ses étiquettes HTML sont recalculées) ; une image est simplement agrandie.
+export function openFigure(target, { closeLabel = "Close" } = {}) {
+  const opener = document.activeElement;
+  const figure = target.closest(".ltx_figure");
+  const caption = figure?.querySelector(".ltx_caption");
+  const frame = document.createElement("div");
+  frame.className = "figure-viewer-frame";
+  let card = null;
+  if (target.matches(".figure-card")) {
+    card = target.cloneNode(true);
+    // propriétés de mise en page des étiquettes (non recopiées par cloneNode)
+    const originals = target.querySelectorAll(":scope > .figure-label");
+    card.querySelectorAll(":scope > .figure-label").forEach((label, i) => {
+      Object.assign(label, { matrix: originals[i].matrix, geometry: originals[i].geometry, basePx: originals[i].basePx });
+    });
+    card.classList.remove("centered");
+    frame.append(card);
+  } else {
+    const image = target.cloneNode(true);
+    image.removeAttribute("width");
+    image.removeAttribute("height");
+    image.className = "figure-viewer-image";
+    frame.append(image);
+  }
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "icon-button figure-viewer-close";
+  close.title = closeLabel;
+  close.setAttribute("aria-label", closeLabel);
+  close.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4L12 13.4 6.4 19 5 17.6 10.6 12 5 6.4z"/></svg>';
+  const dialog = document.createElement("dialog");
+  dialog.className = "figure-viewer";
+  dialog.setAttribute("aria-label", caption?.textContent.trim().slice(0, 120) || closeLabel);
+  dialog.append(close, frame);
+  if (caption) {
+    const text = caption.cloneNode(true);
+    text.classList.add("figure-viewer-caption");
+    dialog.append(text);
+  }
+  close.addEventListener("click", () => dialog.close());
+  dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); }); // clic sur le fond
+  dialog.addEventListener("close", () => {
+    removeEventListener("resize", fit);
+    dialog.remove();
+    opener?.focus?.({ preventScroll: true });
+  });
+  document.body.append(dialog);
+  dialog.showModal();
+  close.focus();
+
+  // dessin agrandi pour tenir dans la fenêtre (marges, légende et bouton compris)
+  function fit() {
+    if (!card) return;
+    const svg = card.querySelector(":scope > svg");
+    const box = svg.viewBox?.baseVal;
+    if (!box?.width) return;
+    // place disponible (marges du cadre et étiquettes qui débordent du dessin comprises)
+    const room = { w: Math.min(innerWidth * 0.96, 1480) - 130, h: innerHeight * 0.92 - 150 - (caption ? 60 : 0) };
+    const width = Math.max(120, Math.min(room.w, (room.h * box.width) / box.height));
+    svg.style.width = `${Math.round(width)}px`;
+    svg.style.maxWidth = "none";
+    layoutFigures([card]);
+    // étiquettes débordant du dessin : le cadre s'élargit ; s'il dépasse la fenêtre, le dessin rétrécit d'autant
+    const over = card.getBoundingClientRect().width - frame.clientWidth;
+    if (over > 0) {
+      svg.style.width = `${Math.max(100, Math.round(width - over - 2))}px`;
+      layoutFigures([card]);
+    }
+  }
+  fit();
+  addEventListener("resize", fit);
+}

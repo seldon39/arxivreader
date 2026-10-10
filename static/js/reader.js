@@ -5,7 +5,7 @@ import { closure, renderGraph } from "./graph.js";
 import { Annotator, noteEditor } from "./annotations.js";
 import { Assistant } from "./ai.js";
 import { alignNumberColumns, amsBibliography, fixMathML, splitLongInlineMath, markItalicStatements, moveTitleNotes, normalizeFontScale, placeEquationNumbers, relabelLists } from "./amsfix.js";
-import { layoutFigures, prepareFigures } from "./figures.js";
+import { layoutFigures, openFigure, prepareFigures } from "./figures.js";
 import { typesetFragment, typesetMath, typesetTex } from "./math.js";
 import { t } from "./i18n.js";
 import { DEFAULT_FONT_SIZE, onSettingsChange, saveSettings, settings } from "./settings.js";
@@ -297,6 +297,13 @@ class Reader {
 
     if (!this.content.querySelector("[lang]")) this.content.lang = "en"; // césure à l'anglaise
     this.figures = prepareFigures(this.content);
+    // Figures cliquables (et au clavier) : affichage en grand par-dessus l'article
+    this.content.querySelectorAll(".figure-card, img.ltx_graphics").forEach((figure) => {
+      figure.tabIndex = 0;
+      figure.setAttribute("role", "button");
+      figure.setAttribute("aria-label", t("reader.figureZoom"));
+      figure.title = t("reader.figureZoom");
+    });
 
     normalizeFontScale(this.content);
     fixMathML(this.content, this.structure.tex?.stretchyMacros || []);
@@ -1152,6 +1159,17 @@ class Reader {
     const onWindowScroll = () => { this.hidePreview(); this.annotator?.hideToolbar(); onScroll(); };
     addEventListener("scroll", onWindowScroll, { passive: true });
     this.cleanups.push(() => removeEventListener("scroll", onWindowScroll));
+
+    const zoom = (event) => {
+      const figure = event.target.closest?.(".figure-card, img.ltx_graphics");
+      if (!figure || !this.content.contains(figure) || this.picking || !getSelection().isCollapsed) return;
+      if (event.type === "keydown" && event.key !== "Enter" && event.key !== " ") return;
+      if (event.target.closest("a")) return; // lien dans une étiquette
+      event.preventDefault();
+      openFigure(figure, { closeLabel: t("reader.figureClose") });
+    };
+    this.content.addEventListener("click", zoom);
+    this.content.addEventListener("keydown", zoom);
 
     // Renvois internes (#…) dans l'article, le panneau (énoncé recopié) ou un aperçu : on reste dans le lecteur
     this.scroller.addEventListener("click", this.interceptLinks);

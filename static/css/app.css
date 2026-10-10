@@ -872,3 +872,19 @@ mark.hl:hover { filter: brightness(.95); }
 .followed-section .feed-card.fresh { border-left-color: var(--accent); box-shadow: none; }
 .fresh-badge { display: inline-block; margin-right: 8px; padding: 1px 7px; border-radius: 999px; background: var(--button-primary); color: #fff;
   font: 600 12px var(--font-ui); vertical-align: 3px; }
+
+/* Figure en grand : par-dessus l'article grisé */
+.paper-content .figure-card, .paper-content img.ltx_graphics { cursor: zoom-in; transition: box-shadow .15s, border-color .15s; }
+.paper-content .figure-card:hover, .paper-content img.ltx_graphics:hover { border-color: var(--border-strong); box-shadow: var(--shadow); }
+.paper-content .figure-card:focus-visible, .paper-content img.ltx_graphics:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+dialog.figure-viewer {
+  max-width: min(96vw, 1480px); max-height: 94vh; padding: 48px clamp(10px, 3vw, 28px) 22px; border: 0; border-radius: 14px;
+  background: var(--surface); color: var(--text); box-shadow: 0 20px 60px rgba(0, 0, 0, .35); overflow: auto;
+}
+dialog.figure-viewer::backdrop { background: rgba(20, 20, 24, .6); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
+.figure-viewer-frame { display: flex; justify-content: center; }
+.figure-viewer-frame .figure-card { cursor: default; max-width: none; flex: none; }
+.figure-viewer-image { max-width: calc(96vw - 80px); max-height: calc(94vh - 160px); width: auto; height: auto; background: #fff; border-radius: 10px; border: 1px solid var(--border); padding: 14px; }
+.figure-viewer-close { position: absolute; top: 8px; right: 8px; width: 38px; height: 38px; }
+.figure-viewer-close svg { width: 22px; height: 22px; fill: currentColor; }
+.figure-viewer-caption { margin-top: 14px; text-align: center; font-family: var(--paper-font); font-size: 16px; }
