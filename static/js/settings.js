@@ -4,10 +4,12 @@ import { api } from "./api.js";
 import { applyStatic, setLanguage, t } from "./i18n.js";
 import { h, icons, toast } from "./util.js";
 
+export const DEFAULT_FONT_SIZE = 18;
+
 const DEFAULTS = {
   language: "fr",
   theme: "auto",
-  fontSize: 18,
+  fontSize: DEFAULT_FONT_SIZE,
   readingWidth: "normal",
   proofsCollapsed: false,
   tocOpen: true,
@@ -78,7 +80,14 @@ export function openSettingsDialog() {
     h("div", { class: "row" }, h("span", { id: "setting-theme" }, t("settings.theme")),
       segmented("theme", [["auto", t("settings.theme.auto")], ["light", t("settings.theme.light")], ["dark", t("settings.theme.dark")]], settings.theme)),
     h("div", { class: "row" }, h("span", { id: "setting-fontSize" }, t("settings.fontSize", { n: settings.fontSize })),
-      h("input", { type: "range", name: "fontSize", min: 14, max: 24, step: 1, value: settings.fontSize, "aria-labelledby": "setting-fontSize" })),
+      h("div", { class: "range-row" },
+        h("input", { type: "range", name: "fontSize", min: 14, max: 24, step: 1, value: settings.fontSize, "aria-labelledby": "setting-fontSize" }),
+        h("button", { class: "button small-button", type: "button", name: "resetFontSize", onclick: (event) => {
+          const range = form.querySelector('input[name="fontSize"]');
+          range.value = DEFAULT_FONT_SIZE;
+          range.dispatchEvent(new Event("input", { bubbles: true }));
+          event.currentTarget.blur();
+        } }, t("settings.default")))),
     h("div", { class: "row" }, h("span", { id: "setting-readingWidth" }, t("settings.width")),
       segmented("readingWidth", [["narrow", t("settings.width.narrow")], ["normal", t("settings.width.normal")], ["wide", t("settings.width.wide")]], settings.readingWidth)),
     h("div", { class: "row" }, h("span", { id: "setting-paperFont" }, t("settings.paperFont")),

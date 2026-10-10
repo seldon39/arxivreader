@@ -8,7 +8,7 @@ import { amsBibliography, markItalicStatements, moveTitleNotes, normalizeFontSca
 import { layoutFigures, prepareFigures } from "./figures.js";
 import { typesetFragment, typesetMath, typesetTex } from "./math.js";
 import { t } from "./i18n.js";
-import { onSettingsChange, saveSettings, settings } from "./settings.js";
+import { DEFAULT_FONT_SIZE, onSettingsChange, saveSettings, settings } from "./settings.js";
 import { debounce, formatDate, h, icons, toast, toggleIcon, withMath } from "./util.js";
 
 const NEEDS_PROOF = new Set(["theorem", "proposition", "lemma", "corollary", "claim"]);
@@ -126,6 +126,7 @@ class Reader {
       h("a", { class: "icon-button", href: "#/", title: t("reader.back"), "aria-label": t("reader.back"), html: icons.back }),
       h("div", { class: "title", title: paper.title }, withMath(paper.title)),
       button(icons.minus, "reader.smaller", () => this.changeFont(-1), { class: "wide-only" }),
+      this.zoomButton = h("button", { class: "zoom-reset wide-only", type: "button", onclick: () => saveSettings({ fontSize: DEFAULT_FONT_SIZE }) }),
       button(icons.plus, "reader.larger", () => this.changeFont(1), { class: "wide-only" }),
       this.foldButton,
       h("span", { class: "sep wide-only" }),
@@ -601,6 +602,17 @@ class Reader {
     this.foldButton.title = label;
     this.foldButton.setAttribute("aria-label", label);
     this.foldButton.hidden = proofs.length === 0;
+  }
+
+  // Zoom du texte par rapport à la taille par défaut ; un clic y revient
+  updateZoomButton() {
+    const percent = Math.round((100 * settings.fontSize) / DEFAULT_FONT_SIZE);
+    const atDefault = settings.fontSize === DEFAULT_FONT_SIZE;
+    this.zoomButton.textContent = `${percent} %`;
+    this.zoomButton.disabled = atDefault;
+    const label = atDefault ? t("reader.zoomDefault") : t("reader.zoomReset", { n: percent });
+    this.zoomButton.title = label;
+    this.zoomButton.setAttribute("aria-label", label);
   }
 
   changeFont(delta) {
@@ -1187,7 +1199,9 @@ class Reader {
     addEventListener("resize", onResize);
     // Taille, largeur ou police changées : même passage à l'écran après la nouvelle mise en page
     let look = `${settings.fontSize}/${settings.readingWidth}/${settings.paperFont}`;
+    this.updateZoomButton();
     const unsubscribe = onSettingsChange(() => {
+      this.updateZoomButton();
       this.article.dataset.marks = settings.marginMarks ? "on" : "off";
       const now = `${settings.fontSize}/${settings.readingWidth}/${settings.paperFont}`;
       if (now !== look) { look = now; this.keepReadingPosition(); } else this.anchors = null;

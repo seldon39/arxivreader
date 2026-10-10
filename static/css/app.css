@@ -188,6 +188,14 @@ svg { fill: currentColor; }
   background: var(--surface); border-bottom: 1px solid var(--border); min-width: 0;
 }
 .reader-toolbar .title { flex: 1; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 8px; }
+.zoom-reset {
+  min-width: 52px; height: 32px; padding: 0 6px; border: 0; border-radius: 6px; background: transparent;
+  font: 500 13px var(--font-ui); color: var(--text); cursor: pointer; font-variant-numeric: tabular-nums;
+}
+.zoom-reset:hover:not(:disabled) { background: var(--surface-hover); }
+.zoom-reset:disabled { color: var(--muted); cursor: default; }
+.range-row { display: flex; align-items: center; gap: 10px; }
+.range-row input[type="range"] { flex: 1; }
 .reader-toolbar .sep { width: 1px; height: 22px; background: var(--border); margin: 0 4px; }
 .toc, .panel {
   background: var(--surface); overflow: auto; min-width: 0; align-self: start;
