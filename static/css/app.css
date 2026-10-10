@@ -395,7 +395,7 @@ svg { fill: currentColor; }
   flex: 1 1 auto; border: 0; background: transparent; padding: 12px 6px 10px; cursor: pointer; color: var(--muted); white-space: nowrap;
   border-bottom: 2px solid transparent; font-size: 14px; font-weight: 500;
 }
-.tabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+.tabs button[aria-selected="true"] { color: var(--accent); }
 .panel-body { padding: 12px 10px 40px; flex: 1; }
 .panel-section { margin-bottom: 18px; }
 .filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 4px 10px; }
@@ -499,7 +499,15 @@ svg.graph { color: var(--border-strong); }
 .feed-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
 .feed-tabs a { padding: 8px 12px 9px; color: var(--muted); border-bottom: 2px solid transparent; font-weight: 500; }
 .feed-tabs a:hover { color: var(--text); text-decoration: none; }
-.feed-tabs a[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+.feed-tabs a[aria-current="page"] { color: var(--accent); }
+/* Onglets (feed, panneau du lecteur) : soulignement qui se déploie au survol, rouge sur l'onglet actif */
+.feed-tabs a, .tabs button { position: relative; }
+.feed-tabs a::after, .tabs button::after {
+  content: ""; position: absolute; left: 8px; right: 8px; bottom: -2px; height: 2px; border-radius: 2px;
+  background: var(--border-strong); transform: scaleX(0); transition: transform .2s ease, background-color .2s ease;
+}
+.feed-tabs a:hover::after, .tabs button:hover::after { transform: scaleX(1); }
+.feed-tabs a[aria-current="page"]::after, .tabs button[aria-selected="true"]::after { transform: scaleX(1); background: var(--accent); }
 .feed-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 6px 0 12px; }
 .feed-toolbar .muted { display: inline-flex; align-items: center; gap: 6px; }
 .button-icon svg { width: 17px; height: 17px; display: block; }
