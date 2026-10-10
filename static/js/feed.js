@@ -468,7 +468,7 @@ function foldableSection(settingKey, title, cards, { extraClass = "", collapsedB
   const section = h("section", { class: `feed-day followed-section foldable ${extraClass}`.trim() });
   const toggle = h("button", { class: "section-toggle", type: "button",
     onclick: () => { const collapsed = !section.classList.contains("collapsed"); setCollapsed(collapsed); saveSettings({ [settingKey]: collapsed }); } },
-    h("span", { class: "title" }, title), h("span", { class: "count" }, tn("feed.count", cards.length)),
+    h("span", { class: "label" }, title, h("span", { class: "count" }, tn("feed.count", cards.length))),
     h("span", { class: "chevron", html: icons.chevronRight }));
   const setCollapsed = (collapsed) => {
     section.classList.toggle("collapsed", collapsed);
