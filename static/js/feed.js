@@ -308,7 +308,7 @@ export function feedCard(item, onChange = () => {}, { compact = false } = {}) {
       item.arxiv_id && h("span", { class: "chip" }, `arXiv:${item.arxiv_id}`),
       !item.announce_type && item.announced && h("span", { class: "chip" }, item.announced),
       item.announce_type && item.s2_rank !== null && item.s2_rank !== undefined && h("span", { class: "chip recommended-chip", title: t("feed.recommendedHint") }, t("feed.recommended")),
-      item.libraryId && h("span", { class: "chip in-library-chip" }, t("feed.inLibrary"))),
+    ),
     reasons.length ? h("div", { class: "reasons" }, reasons) : null,
     item.abstract && abstract,
     h("div", { class: "feed-actions" },
