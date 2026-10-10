@@ -25,6 +25,7 @@ ALLOWED_ORIGINS = {f"http://{h}" for h in ALLOWED_HOSTS}
 PAPER_ID = re.compile(r"[A-Za-z0-9.\-_]+")          # comparés en entier (fullmatch)
 ASSET_NAME = re.compile(r"[0-9a-f]{16}(\.[a-z]+)?")
 
+PDF_CSP = "default-src 'self'; frame-ancestors 'self'"
 CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; "
@@ -80,7 +81,8 @@ async def local_only(request: Request, call_next):
         if request.method != "DELETE" and content_type != "application/json":
             return PlainTextResponse("JSON expected", status_code=415)
     response = await call_next(request)
-    response.headers["Content-Security-Policy"] = CSP
+    # le PDF d'un article s'affiche dans un cadre de la page du lecteur (même origine)
+    response.headers["Content-Security-Policy"] = PDF_CSP if request.url.path.endswith("/pdf") else CSP
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "no-referrer"
     if request.url.path == "/" or request.url.path.startswith("/static/"):
@@ -241,6 +243,16 @@ def asset(paper_id: str, name: str):
 def set_library(paper_id: str, body: LibraryRequest):
     checked_paper(paper_id)
     return library.set_in_library(paper_id, body.in_library)
+
+
+@app.get("/api/papers/{paper_id}/pdf")
+def paper_pdf(paper_id: str):
+    """PDF d'un article sans version HTML (affiché dans le lecteur)."""
+    checked_paper(paper_id)
+    path = library.paper_dir(paper_id) / "paper.pdf"
+    if not path.exists():
+        raise HTTPException(404, "No PDF")
+    return FileResponse(path, media_type="application/pdf")
 
 
 @app.get("/api/papers/{paper_id}/crosslinks")

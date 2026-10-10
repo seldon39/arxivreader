@@ -261,6 +261,13 @@ a.button.primary { text-decoration: none; }
 .cross-badge:hover { background: var(--surface-hover); }
 .cross-head { margin-bottom: 6px; font-family: var(--font-ui); }
 .cross-statement .ltx_theorem { margin: 0; }
+/* Article lu dans le PDF (pas de version HTML) */
+.paper.pdf-mode { max-width: none; padding: 10px 12px 0; }
+.pdf-notice { margin: 0 0 8px; }
+.pdf-frame { display: block; width: 100%; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-soft);
+  height: calc(100vh - var(--topbar-h) - var(--toolbar-h) - 120px); height: calc(100dvh - var(--topbar-h) - var(--toolbar-h) - 120px); }
+.tex-statements, .tex-macros { position: fixed; left: -20000px; top: 0; width: 40rem; visibility: hidden; pointer-events: none; }
+.tex-item-label { font-style: normal; }
 .find-dock { position: sticky; top: calc(var(--topbar-h) + var(--toolbar-h)); height: 0; z-index: 14; display: flex; justify-content: flex-end; }
 .find-bar {
   display: flex; align-items: center; gap: 2px; margin: 10px 14px 0 auto; height: 40px; padding: 0 4px 0 10px;

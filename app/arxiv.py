@@ -150,6 +150,22 @@ def fetch_source(arxiv_id, version):
     return b"".join(chunks)
 
 
+def fetch_pdf(arxiv_id, version):
+    """PDF de l'article (articles sans version HTML : lus dans le PDF), ou None."""
+    with _client() as client:
+        with client.stream("GET", f"https://arxiv.org/pdf/{arxiv_id}v{version}") as response:
+            if response.status_code != 200:
+                return None
+            chunks, size = [], 0
+            for chunk in response.iter_bytes():
+                size += len(chunk)
+                if size > MAX_SOURCE_BYTES:
+                    return None
+                chunks.append(chunk)
+    data = b"".join(chunks)
+    return data if data[:5] == b"%PDF-" else None
+
+
 MAX_ASSET_BYTES = 20_000_000
 
 

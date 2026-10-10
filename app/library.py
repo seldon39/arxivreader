@@ -12,8 +12,8 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup
 
-from . import annotations, db
-from .arxiv import fetch_asset, fetch_html, fetch_metadata, fetch_source, open_client, paper_key, parse_arxiv_id
+from . import annotations, db, texstructure
+from .arxiv import fetch_asset, fetch_html, fetch_metadata, fetch_pdf, fetch_source, open_client, paper_key, parse_arxiv_id
 from .config import PAPERS
 from .sanitize import sanitize_document
 from .structure import STRUCTURE_VERSION, extract_structure
@@ -112,13 +112,31 @@ def _fill(staging, paper_id, arxiv_id, meta):
                 if content_type.split(";")[0].strip() in ALLOWED_ASSET_TYPES:
                     (staging / "assets" / local_name).write_bytes(data)
                 time.sleep(0.05)
-    structure["source"] = source
     # Source TeX : options que la version HTML perd (numéros d'équation, police, étiquettes de listes)
     try:
         data = fetch_source(arxiv_id, meta.version)
-        structure["tex"] = analyze_source(data) if data else None
     except Exception:
-        structure["tex"] = None
+        data = None
+    try:
+        tex_options = analyze_source(data) if data else None
+    except Exception:
+        tex_options = None
+    if source == "none" and data:
+        # Pas de version HTML : lecture dans le PDF, énoncés et dépendances lus dans la source TeX
+        try:
+            found = texstructure.from_source(data)
+        except Exception:
+            found = None
+        if found:
+            structure, text = found
+            source = "tex"
+            (staging / "source.tex").write_text(text, encoding="utf-8")
+            pdf = fetch_pdf(arxiv_id, meta.version)
+            if pdf:
+                (staging / "paper.pdf").write_bytes(pdf)
+                texstructure.locate_pages(structure, pdf)
+    structure["source"] = source
+    structure["tex"] = tex_options
     (staging / "structure.json").write_text(json.dumps(structure, ensure_ascii=False), encoding="utf-8")
     return source
 
@@ -141,6 +159,15 @@ def reanalyze(paper_id, previous):
     folder = paper_dir(paper_id)
     content = folder / "content.html"
     with paper_lock(paper_id):
+        if not content.exists() and (folder / "source.tex").exists():  # article lu dans le PDF : source TeX
+            structure = texstructure.extract((folder / "source.tex").read_text(encoding="utf-8"))
+            pdf = folder / "paper.pdf"
+            if pdf.exists():
+                texstructure.locate_pages(structure, pdf.read_bytes())
+            structure["source"] = previous.get("source")
+            structure["tex"] = previous.get("tex")
+            write_atomic(folder / "structure.json", json.dumps(structure, ensure_ascii=False))
+            return structure
         if not content.exists():
             return previous
         fragment = BeautifulSoup(content.read_text(encoding="utf-8"), "html.parser")

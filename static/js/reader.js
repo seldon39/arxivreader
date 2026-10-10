@@ -8,7 +8,10 @@ import { alignNumberColumns, amsBibliography, fixMathML, splitLongInlineMath, ma
 import { currentModel } from "./aiproviders.js";
 import { layoutFigures, openFigure, prepareFigures } from "./figures.js";
 import { findBar, setFindHandler } from "./find.js";
+import { defineMacros, statementElement, statementsContainer } from "./texview.js";
 import { typesetFragment, typesetMath, typesetTex } from "./math.js";
+
+const typesetTexSafe = (element) => typesetTex([element]).catch(() => {});
 import { t } from "./i18n.js";
 import { DEFAULT_FONT_SIZE, onSettingsChange, saveSettings, settings } from "./settings.js";
 import { debounce, formatDate, h, icons, toast, toggleIcon, withMath } from "./util.js";
@@ -25,7 +28,7 @@ export async function renderReader(view, paperId, at, isCurrent = () => true) {
   if (typeof at === "function") [at, isCurrent] = [undefined, at];
   view.replaceChildren(h("div", { class: "library" }, h("div", { class: "busy" }, h("span", { class: "spinner" }))));
   const { paper, structure } = await api.paper(paperId);
-  const html = paper.source === "none" ? "" : await api.content(paperId);
+  const html = paper.source === "none" || paper.source === "tex" ? "" : await api.content(paperId);
   if (!isCurrent()) return () => {}; // page déjà quittée pendant le chargement : rien n'est affiché
   const reader = new Reader(view, paper, structure || { toc: [], nodes: [], bibliography: [], hiddenText: 0 }, html, at);
   return () => reader.destroy();
@@ -125,6 +128,14 @@ class Reader {
     this.annotator.apply();
     this.renderPanel(); // avec les états de lecture, chargés seulement maintenant
     this.anchors = null;
+    if (this.pdfFrame) {
+      await defineMacros(this.structure.macros);
+      await typesetTexSafe(this.content);
+      if (this.destroyed) return;
+      if (this.startAt) this.showInPdf(this.startAt);
+      this.loadCrossLinks();
+      return;
+    }
     if (this.startAt && this.find(this.startAt)) {
       this.reveal(this.find(this.startAt));
       requestAnimationFrame(() => this.navigate(this.startAt));
@@ -132,6 +143,16 @@ class Reader {
       this.restorePosition();
     }
     this.loadCrossLinks();
+  }
+
+  // Article lu dans le PDF : page de l'énoncé, de la section ou de la preuve, et énoncé choisi dans le panneau
+  showInPdf(id) {
+    const node = this.byId.get(id);
+    const item = node || this.structure.toc.find((s) => s.id === id)
+      || (this.structure.proofBlocks || []).find((p) => p.id === id);
+    if (!item?.page) { if (node) this.select(id, { openPanel: true }); return; }
+    this.pdfFrame.src = `${this.pdfUrl}?page=${item.page}#page=${item.page}`; // nouvelle adresse : le PDF va à la page
+    if (node) this.select(id, { openPanel: true });
   }
 
   // ---------- Renvois vers les autres articles lus ici ----------
@@ -221,7 +242,15 @@ class Reader {
       this.article.append(h("div", { class: "notice" }, h("span", { class: "reason-icon", html: icons.warning }), t("reader.hiddenText", { n: this.structure.hiddenText }), toggle));
     }
 
-    if (paper.source === "none") {
+    if (paper.source === "tex") {
+      // Pas de version HTML : lecture dans le PDF ; énoncés (rendus depuis la source TeX) pour le panneau
+      this.pdfUrl = `/api/papers/${encodeURIComponent(paper.id)}/pdf`;
+      this.pdfFrame = h("iframe", { class: "pdf-frame", title: paper.title, src: `${this.pdfUrl}#page=1` });
+      this.article.classList.add("pdf-mode");
+      this.article.append(h("div", { class: "notice small pdf-notice" }, t("reader.pdfMode")), this.pdfFrame);
+      this.content = statementsContainer(this.structure);
+      this.article.append(this.content);
+    } else if (paper.source === "none") {
       this.article.append(
         h("div", { class: "notice" }, t("reader.noHtml")),
         h("h1", { class: "ltx_title_document" }, withMath(paper.title)),
@@ -507,7 +536,8 @@ class Reader {
     const line = h("div", { class: "small proof-info" });
     const draw = () => {
       const info = this.proofInfo(node);
-      const editable = NEEDS_PROOF.has(node.kind) || node.manual || this.hasProof(node);
+      // article lu dans le PDF : pas de texte où désigner une preuve à la main
+      const editable = !this.pdfFrame && (NEEDS_PROOF.has(node.kind) || node.manual || this.hasProof(node));
       const button = editable && h("button", { class: "link-button", type: "button", onclick: () => line.replaceChildren(this.proofEditor(node, draw)) },
         t(node.manual ? "panel.changeProof" : "panel.setProof"));
       line.replaceChildren(h("span", {}, info), button ? " " : "", button || "");
@@ -754,6 +784,7 @@ class Reader {
   }
 
   navigate(id, options) {
+    if (this.pdfFrame) { this.showInPdf(id); return; }
     const target = this.find(id);
     if (target) this.navigateElement(target.closest(".ltx_theorem, .ltx_para, .ltx_bibitem, .ltx_equation, .eq-scroll, section") || target, options);
   }
@@ -816,7 +847,7 @@ class Reader {
   }
 
   onScroll() {
-    if (this.article.classList.contains("typesetting")) return; // article pas encore en page : position inconnue
+    if (this.article.classList.contains("typesetting") || this.pdfFrame) return; // article pas en page, ou lu dans le PDF
     const anchor = this.currentAnchor();
     if (!anchor) return;
     // Section courante dans le sommaire : la dernière dont le début est au-dessus de la ligne de lecture
@@ -891,6 +922,13 @@ class Reader {
       body: h("div", {}, head, holder), extra: open,
       load: async () => {
         const found = await api.statement(entry.paper, node.id);
+        if (!found.html && found.tex !== undefined) { // article lu dans le PDF : énoncé rendu depuis la source TeX
+          const element = statementElement({ ...node, tex: found.tex || "" });
+          element.removeAttribute("id");
+          holder.replaceChildren(element);
+          await typesetTexSafe(holder);
+          return;
+        }
         const html = found.html ? new DOMParser().parseFromString(found.html, "text/html").body.firstElementChild : null;
         if (html) {
           html.querySelectorAll("[id]").forEach((el) => el.removeAttribute("id"));
@@ -1281,7 +1319,7 @@ class Reader {
         return ranges.findIndex((range) => range.getBoundingClientRect().bottom > top);
       },
     });
-    this.cleanups.push(setFindHandler((command) => this.finder.command(command)), () => this.finder.close());
+    if (!this.pdfFrame) this.cleanups.push(setFindHandler((command) => this.finder.command(command)), () => this.finder.close());
 
     const zoom = (event) => {
       const figure = event.target.closest?.(".figure-card, img.ltx_graphics");

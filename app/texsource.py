@@ -30,7 +30,7 @@ FONT_PACKAGES = [
 AMS_CLASSES = {"amsart", "amsbook", "amsproc"}
 
 
-def _read_archive(data):
+def _read_archive(data, extensions=(".tex", ".ltx")):
     """Fichiers .tex de l'archive {chemin: texte} ; None si la source n'est pas du TeX (PDF seul…)."""
     files = {}
     try:
@@ -39,7 +39,7 @@ def _read_archive(data):
             for member in archive:
                 if len(files) >= MAX_FILES:
                     break
-                if not member.isfile() or not member.name.lower().endswith((".tex", ".ltx")):
+                if not member.isfile() or not member.name.lower().endswith(extensions):
                     continue
                 if member.size > MAX_FILE_BYTES or total + member.size > MAX_TOTAL_BYTES:
                     continue

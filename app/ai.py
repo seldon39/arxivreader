@@ -104,6 +104,9 @@ def _load(paper_id):
     global _cached
     path = library.paper_dir(paper_id) / "content.html"
     if not path.exists():
+        tex = library.paper_dir(paper_id) / "source.tex"  # article lu dans le PDF : texte de sa source TeX
+        if tex.exists():
+            return None, {}, _tex_text(tex.read_text(encoding="utf-8"))
         return None, {}, ""
     key = (paper_id, path.stat().st_mtime)
     if _cached[0] != key:
@@ -200,9 +203,20 @@ fixed. Then note any unclear definitions or notation. Do not invent problems; sa
 }
 
 
+def _tex_text(text):
+    """Corps d'une source TeX (sans préambule) : l'IA lit le LaTeX tel quel."""
+    begin = text.find("\\begin{document}")
+    body = text[begin + len("\\begin{document}"):] if begin >= 0 else text
+    return body.split("\\end{document}")[0].strip()
+
+
 def _node_text(soup, index, structure, node):
     statement = index.get(node["id"])
     parts = []
+    if statement is None and node.get("tex"):  # article lu dans le PDF : énoncé et preuve en LaTeX
+        parts.append(f'<focus kind="statement" label="{node["label"]}">\n{node["tex"]}\n</focus>')
+        if node.get("proofTex"):
+            parts.append(f'<focus kind="proof" of="{node["label"]}">\n{node["proofTex"]}\n</focus>')
     if statement is not None:
         parts.append(f'<focus kind="statement" label="{node["label"]}">\n{element_text(statement)}\n</focus>')
     for proof_id in node.get("proofs") or []:

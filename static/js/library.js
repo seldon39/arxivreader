@@ -32,8 +32,9 @@ function matches(paper) {
   }
   if (view.categories.size && !paper.categories.some((c) => view.categories.has(c))) return false;
   if (view.years.size && !view.years.has((paper.published || "").slice(0, 4))) return false;
-  if (view.source === "html" && paper.source === "none") return false;
-  if (view.source === "pdf" && paper.source !== "none") return false;
+  const pdf = paper.source === "none" || paper.source === "tex"; // lu dans le PDF (énoncés tirés du TeX ou non)
+  if (view.source === "html" && pdf) return false;
+  if (view.source === "pdf" && !pdf) return false;
   if (view.reading.size) {
     const states = readingStates(paper);
     if (![...view.reading].some((state) => states[state])) return false;
@@ -268,6 +269,7 @@ function card(paper, refreshList) {
       h("span", { class: "chip" }, `arXiv:${paper.arxiv_id}v${paper.version}`),
       h("span", { class: "chip" }, formatDate(paper.published)),
       paper.source === "none" && h("span", { class: "chip" }, t("library.pdfOnly")),
+      paper.source === "tex" && h("span", { class: "chip", title: t("library.pdfTexHint") }, t("library.pdfTex")),
     ),
     h("div", { class: "card-actions" },
       h("a", { class: "icon-button", href: `https://arxiv.org/abs/${paper.arxiv_id}`, target: "_blank", rel: "noopener noreferrer",
