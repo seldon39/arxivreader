@@ -59,8 +59,10 @@ export function prepareFigures(root) {
     if (svg.classList.contains("ltx_centering")) {
       card.classList.add("centered");
       const box = svg.parentElement?.closest(".ltx_inline-block");
-      const alone = box && [...box.childNodes].every((node) => node.contains?.(svg) || (node.nodeType === 3 && !node.data.trim()));
-      if (alone) box.classList.add("figure-block");
+      // seul dans sa boîte (aucun texte à côté), et pas une minipage ni une boîte de largeur fixée (côte à côte)
+      const textOutside = box && box.textContent.replace(svg.textContent, "").trim();
+      const sideBySide = box && (box.closest(".ltx_minipage") || /width/.test(box.getAttribute("style") || ""));
+      if (box && !textOutside && !sideBySide) box.classList.add("figure-block");
     }
     svg.replaceWith(card);
     card.append(svg);

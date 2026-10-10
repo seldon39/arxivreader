@@ -86,25 +86,45 @@ const sameChars = (text) => text.replace(/[\u2018\u2019\u2032]/g, "'").replace(/
   .replace(/[\u2013\u2014\u2212]/g, "-").replace(/\u00a0/g, " ");
 const FORMULA = "\u2217";
 
+// Texte mis à plat : `text`, et pour chaque caractère son morceau (`units`) et sa position dans le morceau
+// (-1 : formule entière). Tableaux typés (un article fait un million de caractères) ; gardé en cache
+// tant que le texte n'est pas modifié (surlignage ajouté ou retiré).
+let textVersion = 0;
+const flatCache = new WeakMap();
+
 function flatten(root, withTex) {
+  const cached = flatCache.get(root)?.[withTex ? "tex" : "plain"];
+  if (cached && cached.version === textVersion) return cached;
   const chars = [];
-  const where = [];
+  const list = [];
+  let unitIndex = new Int32Array(1 << 16);
+  let offsets = new Int32Array(1 << 16);
   let space = true;
   const push = (ch, unit, offset) => {
     if (/\s/.test(ch)) { if (space) return; ch = " "; space = true; } else space = false;
+    if (chars.length === unitIndex.length) {
+      const grow = (array) => { const next = new Int32Array(array.length * 2); next.set(array); return next; };
+      unitIndex = grow(unitIndex);
+      offsets = grow(offsets);
+    }
+    unitIndex[chars.length] = list.length - 1;
+    offsets[chars.length] = offset;
     chars.push(ch);
-    where.push([unit, offset]);
   };
   for (const unit of units(root)) {
+    list.push(unit);
     if (unit.nodeType === 3) {
       const data = sameChars(unit.data);
       for (let i = 0; i < data.length; i++) push(data[i], unit, i);
     } else {
+      // par unités UTF-16, comme le texte (sinon un symbole hors BMP décalerait tout ce qui suit)
       const body = withTex ? `$${texOf(unit).replace(/\s+/g, " ").trim()}$` : FORMULA;
-      for (const ch of body) push(ch, unit, -1);
+      for (let i = 0; i < body.length; i++) push(body[i], unit, -1);
     }
   }
-  return { text: chars.join(""), where };
+  const flat = { text: chars.join(""), units: list, unitIndex, offsets, version: textVersion };
+  flatCache.set(root, { ...flatCache.get(root), [withTex ? "tex" : "plain"]: flat });
+  return flat;
 }
 
 function simplifyQuote(quote, withTex) {
@@ -114,20 +134,31 @@ function simplifyQuote(quote, withTex) {
   return text.replace(/\s+/g, " ").trim();
 }
 
-// Plage DOM d'un extrait recopié de l'article, ou null s'il est introuvable
-export function rangeForQuote(root, quote) {
+function rangeAt(flat, index, length) {
+  const range = document.createRange();
+  const startUnit = flat.units[flat.unitIndex[index]];
+  const endUnit = flat.units[flat.unitIndex[index + length - 1]];
+  const startOffset = flat.offsets[index];
+  const endOffset = flat.offsets[index + length - 1];
+  if (startOffset < 0) range.setStartBefore(startUnit); else range.setStart(startUnit, startOffset);
+  if (endOffset < 0) range.setEndAfter(endUnit); else range.setEnd(endUnit, endOffset + 1);
+  return range;
+}
+
+// Plage DOM d'un extrait recopié de l'article, ou null s'il est introuvable. Cherché d'abord dans
+// `scopes` (l'énoncé et la preuve visés), puis dans tout l'article. Sans les formules (repli quand
+// Claude a recopié une formule autrement), l'extrait doit être unique et garder assez de texte.
+export function rangeForQuote(root, quote, scopes = []) {
   for (const withTex of [true, false]) {
     const needle = simplifyQuote(quote, withTex);
-    if (needle.length < 3) return null;
-    const { text, where } = flatten(root, withTex);
-    const index = text.indexOf(needle);
-    if (index < 0) continue;
-    const [startUnit, startOffset] = where[index];
-    const [endUnit, endOffset] = where[index + needle.length - 1];
-    const range = document.createRange();
-    if (startOffset < 0) range.setStartBefore(startUnit); else range.setStart(startUnit, startOffset);
-    if (endOffset < 0) range.setEndAfter(endUnit); else range.setEnd(endUnit, endOffset + 1);
-    return range;
+    if (needle.replaceAll(FORMULA, "").replace(/\s/g, "").length < (withTex ? 3 : 12)) continue;
+    for (const scope of [...scopes.filter(Boolean), root]) {
+      const flat = flatten(scope, withTex);
+      const index = flat.text.indexOf(needle);
+      if (index < 0) continue;
+      if (!withTex && flat.text.indexOf(needle, index + 1) >= 0) continue; // ambigu : on ne devine pas
+      return rangeAt(flat, index, needle.length);
+    }
   }
   return null;
 }
@@ -135,6 +166,7 @@ export function rangeForQuote(root, quote) {
 // ---------- Surlignage dans le DOM ----------
 
 function paint(root, annotation) {
+  textVersion++;
   const { start, end } = annotation.target || {};
   const startBox = start && (start.id ? root.querySelector(`[id="${CSS.escape(start.id)}"]`) : root);
   const endBox = end && (end.id ? root.querySelector(`[id="${CSS.escape(end.id)}"]`) : root);
@@ -177,6 +209,7 @@ function paint(root, annotation) {
 }
 
 function unpaint(root, id) {
+  textVersion++;
   root.querySelectorAll(`mark.hl[data-annotation="${id}"]`).forEach((mark) => {
     const parent = mark.parentNode;
     mark.replaceWith(...mark.childNodes);

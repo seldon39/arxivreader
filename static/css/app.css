@@ -219,8 +219,8 @@ svg { fill: currentColor; }
   min-width: 52px; height: 32px; padding: 0 6px; border: 0; border-radius: 6px; background: transparent;
   font: 500 13px var(--font-ui); color: var(--text); cursor: pointer; font-variant-numeric: tabular-nums;
 }
-.zoom-reset:hover:not(:disabled) { background: var(--surface-hover); }
-.zoom-reset:disabled { color: var(--muted); cursor: default; }
+.zoom-reset:hover:not([aria-disabled="true"]) { background: var(--surface-hover); }
+.zoom-reset[aria-disabled="true"] { color: var(--muted); cursor: default; }
 .range-row { display: flex; align-items: center; gap: 10px; }
 .range-row input[type="range"] { flex: 1; }
 .reader-toolbar .sep { width: 1px; height: 22px; background: var(--border); margin: 0 4px; }
@@ -360,6 +360,9 @@ svg { fill: currentColor; }
 /* repliée : la flèche reste dans la marge, au même endroit, tournée vers la droite (rotation animée) */
 .ltx_proof.collapsed > .proof-toggle .caret { position: absolute; left: -28px; top: .3em; color: var(--muted); opacity: .75; }
 .ltx_proof.collapsed > .proof-toggle:hover .caret { color: var(--text); opacity: 1; }
+@media (max-width: 899px) { /* marge de l'article plus étroite : la flèche reste visible */
+  .proof-toggle, .ltx_proof.collapsed > .proof-toggle .caret { left: -25px; }
+}
 
 .paper-content a, .preview a { color: inherit; text-decoration: none; }
 .paper-content a.ltx_ref, .preview a.ltx_ref { color: var(--link); }

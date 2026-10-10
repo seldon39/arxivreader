@@ -114,6 +114,35 @@ def _plain(text):
     return text.replace("{", "").replace("}", "").strip()
 
 
+MACRO_HEAD = re.compile(r"\\(?:(?:re|provide)?newcommand\*?\s*\{?\\([A-Za-z]+)\}?\s*(?:\[\d\])?\s*(?:\[[^\]]*\])?"
+                        r"|[egx]?def\s*\\([A-Za-z]+)[^{]*)\{")
+PAIRED = re.compile(r"\\DeclarePairedDelimiter[XPP]*\*?\s*\{?\\([A-Za-z]+)")
+
+
+def _braced(text, start):
+    """Contenu entre l'accolade ouvrante qui précède `start` et sa fermante."""
+    depth = 1
+    for index in range(start, min(len(text), start + 5000)):
+        char = text[index]
+        if char == "{" and text[index - 1] != "\\":
+            depth += 1
+        elif char == "}" and text[index - 1] != "\\":
+            depth -= 1
+            if depth == 0:
+                return text[start:index]
+    return ""
+
+
+def stretchy_macros(text):
+    """Macros de l'auteur qui produisent des délimiteurs extensibles (\\left…\\right, \\middle,
+    \\DeclarePairedDelimiter) : leurs délimiteurs doivent grandir, même si la formule ne montre que la macro."""
+    names = set(PAIRED.findall(text))
+    for match in MACRO_HEAD.finditer(text):
+        if re.search(r"\\(left|right|middle)\b", _braced(text, match.end())):
+            names.add(match.group(1) or match.group(2))
+    return sorted(names)
+
+
 def analyze_source(data):
     files = _read_archive(data)
     if not files:
@@ -142,4 +171,5 @@ def analyze_source(data):
         "eqno": eqno,
         "font": font,
         "enumerate": enumerate_labels,
+        "stretchyMacros": stretchy_macros(text.split("\\begin{document}", 1)[0]),
     }

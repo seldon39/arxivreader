@@ -317,18 +317,25 @@ export class Assistant {
 
   // Aperçu des propositions : chacune est retrouvée dans l'article (sinon signalée), cochée par défaut ;
   // « Appliquer » crée les passages surlignés et les notes, marqués « Claude », et s'annule d'un clic.
+  // Énoncé et preuves visés par la réponse : les extraits y sont cherchés d'abord
+  scopesOf(exchange) {
+    const node = this.byId.get(exchange.target);
+    return node ? [node.id, ...node.proofs].map((id) => this.find(id)) : [];
+  }
+
   proposalBox(exchange, proposals) {
     const content = this.annotator.content;
-    const byLabel = new Map(this.structure.nodes.map((n) => [n.label.toLowerCase(), n]));
-    const rows = proposals.map((proposal) => {
-      if (proposal.quote) {
-        const found = Boolean(rangeForQuote(content, proposal.quote));
-        return { proposal, found, kind: "highlight" };
-      }
-      const node = byLabel.get(String(proposal.statement || "").trim().toLowerCase());
+    const normalize = (label) => String(label || "").toLowerCase().replace(/[.\s]+$/, "").replace(/\s+/g, " ").trim();
+    const byLabel = new Map(this.structure.nodes.map((n) => [normalize(n.label), n]));
+    // résultat de la recherche gardé avec la réponse (l'onglet se redessine souvent)
+    exchange.found ||= proposals.map((proposal) => (proposal.quote ? Boolean(rangeForQuote(content, proposal.quote, this.scopesOf(exchange))) : null));
+    const rows = proposals.map((proposal, i) => {
+      if (proposal.quote) return { proposal, found: exchange.found[i], kind: "highlight" };
+      const node = byLabel.get(normalize(proposal.statement));
       const proofId = node?.proofs[0];
-      const id = node && (proposal.on === "proof" && proofId && this.find(proofId)?.matches(".ltx_proof") ? proofId : node.id);
-      return { proposal, found: Boolean(id && this.find(id)), kind: "note", id, node };
+      const onProof = Boolean(proposal.on === "proof" && proofId && this.find(proofId)?.matches(".ltx_proof"));
+      const id = node && (onProof ? proofId : node.id);
+      return { proposal, found: Boolean(id && this.find(id)), kind: "note", id, node, onProof };
     });
     const applied = Boolean(exchange.applied);
     const boxes = rows.map((row) => h("input", { type: "checkbox", checked: row.found && !applied, disabled: !row.found || applied }));
@@ -343,15 +350,19 @@ export class Assistant {
     apply.addEventListener("click", async () => {
       apply.disabled = true;
       const chosen = rows.filter((_, i) => boxes[i].checked && !boxes[i].disabled);
-      const undo = await this.applyProposals(chosen);
+      const undo = await this.applyProposals(chosen, this.scopesOf(exchange));
       if (!undo) { label(); return; }
       exchange.applied = 1;
-      api.setAIApplied(exchange.id, true).catch(() => {});
+      api.setAIApplied(exchange.id, true).catch(toastError);
       this.onChange();
+      let undone = false; // le bouton Annuler ne sert qu'une fois
       toast(t("ai.proposals.done", { n: undo.count }), { action: { label: t("common.undo"), onClick: async () => {
-        await undo.run();
+        if (undone) return;
+        undone = true;
+        const failures = await undo.run();
+        if (failures) { toast(t("ai.proposals.undoPartial"), { error: true }); return; } // gardé « appliqué » : rien en double
         exchange.applied = 0;
-        api.setAIApplied(exchange.id, false).catch(() => {});
+        api.setAIApplied(exchange.id, false).catch(toastError);
         this.onChange();
       } } });
     });
@@ -360,12 +371,18 @@ export class Assistant {
       const what = row.kind === "highlight"
         ? h("blockquote", { class: `note-quote hl-border-${COLORS.includes(proposal.color) ? proposal.color : "yellow"}` }, proposal.quote)
         : h("div", { class: "ai-proposal-target" }, h("span", { class: "ai-icon", html: icons.note }),
-          t(proposal.on === "proof" ? "ai.proposals.onProof" : "ai.proposals.onStatement", { label: row.node?.label || proposal.statement || "?" }));
+          t(row.onProof ? "ai.proposals.onProof" : "ai.proposals.onStatement", { label: row.node?.label || proposal.statement || "?" }));
       const note = proposal.note ? h("div", { class: "markdown ai-proposal-note" }) : null;
       if (note) note.innerHTML = markdownToHtml(proposal.note, { refs: this.refs });
       return h("label", { class: `ai-proposal${row.found ? "" : " missing"}` }, boxes[i],
         h("span", { class: "ai-proposal-body" }, what, note, !row.found && h("span", { class: "badge warn" }, t("ai.proposals.notFound"))));
     }));
+    list.addEventListener("click", (event) => {
+      const ref = event.target.closest("a.ai-ref");
+      if (!ref) return;
+      event.preventDefault(); // la case ne se coche pas et on reste dans le lecteur
+      this.navigate(ref.dataset.ref);
+    });
     typesetTex([list]).catch(() => {});
     return h("div", { class: "ai-proposals" },
       h("div", { class: "ai-proposals-head" }, h("span", { class: "ai-icon", html: icons.sparkle }), t("ai.proposals.title", { n: proposals.length })),
@@ -373,14 +390,14 @@ export class Assistant {
   }
 
   // Crée les annotations choisies ; renvoie de quoi tout annuler (ou null si rien n'a pu être fait)
-  async applyProposals(rows) {
+  async applyProposals(rows, scopes = []) {
     const created = [];
     const previousNotes = new Map();
     for (const row of rows) {
       const { proposal } = row;
       try {
         if (row.kind === "highlight") {
-          const range = rangeForQuote(this.annotator.content, proposal.quote); // retrouvé à nouveau : le texte a pu changer
+          const range = rangeForQuote(this.annotator.content, proposal.quote, scopes); // retrouvé à nouveau : le texte a pu changer
           if (!range) continue;
           const color = COLORS.includes(proposal.color) ? proposal.color : "yellow";
           created.push((await this.annotator.highlightRange(range, { color, note: proposal.note || null, author: "claude" })).id);
@@ -396,14 +413,18 @@ export class Assistant {
     if (!count) return null;
     return {
       count,
+      // renvoie le nombre d'échecs (0 : tout est annulé)
       run: async () => {
-        for (const id of created) await this.annotator.removeHighlight(id).catch(toastError);
+        let failures = 0;
+        const attempt = (promise) => promise.catch((error) => { failures++; toastError(error); });
+        for (const id of created) await attempt(this.annotator.removeHighlight(id));
         for (const [id, note] of previousNotes) {
           const block = this.annotator.block(id);
           // note créée par l'application seule (ni note ni état avant) : supprimée plutôt que vidée
-          if (!note && block && !block.state) await this.annotator.deleteBlock(block.id).catch(toastError);
-          else await this.annotator.saveBlock(id, { note }).catch(toastError);
+          if (!note && block && !block.state) await attempt(this.annotator.deleteBlock(block.id));
+          else await attempt(this.annotator.saveBlock(id, { note }));
         }
+        return failures;
       },
     };
   }
@@ -422,7 +443,7 @@ export function parseProposals(answer) {
   if (match[2] !== "```") return { text, items: [] };
   try {
     const items = JSON.parse(match[1]);
-    return { text, items: Array.isArray(items) ? items.filter((item) => item && (item.quote || item.statement)) : [] };
+    return { text, items: Array.isArray(items) ? items.filter((item) => item && (item.quote || (item.statement && item.note))) : [] };
   } catch {
     return { text, items: [] };
   }

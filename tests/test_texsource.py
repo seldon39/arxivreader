@@ -57,5 +57,15 @@ class TexSource(unittest.TestCase):
         self.assertIsNone(_label_format(None))
 
 
+class StretchyMacros(unittest.TestCase):
+    def test_author_macros_with_left_right(self):
+        from app.texsource import stretchy_macros
+        preamble = r"""\newcommand{\norm}[1]{\left\| #1 \right\|}
+\newcommand\abs[1]{|#1|}
+\def\set#1{\left\{ #1 \right\}}
+\DeclarePairedDelimiter\inner{\langle}{\rangle}"""
+        self.assertEqual(stretchy_macros(preamble), ["inner", "norm", "set"])
+
+
 if __name__ == "__main__":
     unittest.main()

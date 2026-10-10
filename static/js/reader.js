@@ -126,7 +126,7 @@ class Reader {
       h("a", { class: "icon-button", href: "#/", title: t("reader.back"), "aria-label": t("reader.back"), html: icons.back }),
       h("div", { class: "title", title: paper.title }, withMath(paper.title)),
       button(icons.minus, "reader.smaller", () => this.changeFont(-1), { class: "wide-only" }),
-      this.zoomButton = h("button", { class: "zoom-reset wide-only", type: "button", onclick: () => saveSettings({ fontSize: DEFAULT_FONT_SIZE }) }),
+      this.zoomButton = h("button", { class: "zoom-reset wide-only", type: "button", onclick: () => { if (settings.fontSize !== DEFAULT_FONT_SIZE) saveSettings({ fontSize: DEFAULT_FONT_SIZE }); } }),
       button(icons.plus, "reader.larger", () => this.changeFont(1), { class: "wide-only" }),
       this.foldButton,
       h("span", { class: "sep wide-only" }),
@@ -299,7 +299,7 @@ class Reader {
     this.figures = prepareFigures(this.content);
 
     normalizeFontScale(this.content);
-    fixMathML(this.content);
+    fixMathML(this.content, this.structure.tex?.stretchyMacros || []);
 
     // Ce que la version HTML perd par rapport au PDF (lu dans la source TeX à l'import)
     const tex = this.structure.tex;
@@ -610,7 +610,8 @@ class Reader {
     const percent = Math.round((100 * settings.fontSize) / DEFAULT_FONT_SIZE);
     const atDefault = settings.fontSize === DEFAULT_FONT_SIZE;
     this.zoomButton.textContent = `${percent} %`;
-    this.zoomButton.disabled = atDefault;
+    // pas « disabled » : le focus clavier resterait perdu juste après le clic
+    this.zoomButton.setAttribute("aria-disabled", String(atDefault));
     const label = atDefault ? t("reader.zoomDefault") : t("reader.zoomReset", { n: percent });
     this.zoomButton.title = label;
     this.zoomButton.setAttribute("aria-label", label);
@@ -909,10 +910,13 @@ class Reader {
 
   // Pastilles d'état et d'emploi des énoncés listés dans le panneau, mises à jour sur place
   refreshNodeItems() {
+    const focused = this.panel.contains(document.activeElement) && document.activeElement.matches(".node-item[data-id]")
+      ? document.activeElement.dataset.id : null;
     this.panel.querySelectorAll(".node-item[data-id]").forEach((element) => {
       const node = this.byId.get(element.dataset.id);
       if (node) element.replaceWith(this.nodeItem(node));
     });
+    if (focused) this.panel.querySelector(`.node-item[data-id="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
   }
 
   renderPanel({ focus = false } = {}) {

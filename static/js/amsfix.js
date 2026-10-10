@@ -132,7 +132,13 @@ export function normalizeFontScale(content) {
   const outermost = sized.filter((element) => percent(element) && element.closest(".ltx_para") && !sizedParent(element));
   const share = new Map();
   for (const element of outermost) share.set(percent(element), (share.get(percent(element)) || 0) + element.textContent.length);
-  const total = [...content.querySelectorAll(".ltx_para")].reduce((n, para) => n + para.textContent.length, 0);
+  // texte des paragraphes hors formules (les formules ne sont jamais dans les morceaux agrandis)
+  let total = 0;
+  for (const para of content.querySelectorAll(".ltx_para")) {
+    const walker = document.createTreeWalker(para, NodeFilter.SHOW_TEXT,
+      { acceptNode: (node) => (node.parentElement.closest("math") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
+    while (walker.nextNode()) total += walker.currentNode.data.length;
+  }
   const [scale, covered] = [...share].sort((a, b) => b[1] - a[1])[0] || [];
   if (!scale || scale === 100 || covered < 0.6 * total) return;
   for (const element of sized) {
@@ -154,9 +160,16 @@ export function normalizeFontScale(content) {
   for (const element of content.querySelectorAll("[mathsize]")) {
     if (!element.parentElement?.closest("[mathsize]")) rescale(element, "mathsize"); // imbriqué : relatif au parent
   }
+  // délimiteurs : seule la taille égale à l'agrandissement global est retirée ; \big, \Big… gardent la leur
+  const isScale = (value) => {
+    const [, number, unit] = String(value || "").match(/^([\d.]+)(em|%)$/) || [];
+    return number && Math.abs((unit === "%" ? number / 100 : Number(number)) - scale / 100) < 0.01;
+  };
   for (const element of content.querySelectorAll("mo[minsize], mo[maxsize]")) {
-    if (element.hasAttribute("minsize")) rescale(element, "minsize");
-    if (element.hasAttribute("maxsize")) rescale(element, "maxsize");
+    if (isScale(element.getAttribute("minsize")) && (!element.hasAttribute("maxsize") || isScale(element.getAttribute("maxsize")))) {
+      element.removeAttribute("minsize");
+      element.removeAttribute("maxsize");
+    }
   }
 }
 
@@ -188,17 +201,24 @@ const FENCES = new Set(["(", ")", "[", "]", "{", "}", "⟨", "⟩", "|", "‖", 
 // Caractères absents des polices de MathJax, remplacés par leur équivalent TeX
 const GLYPHS = { "⟂": "⊥" };
 
-export function fixMathML(content) {
+// Délimiteurs d'une matrice ou d'un tableau : toujours extensibles. (Pas les fractions : sans \left, TeX
+// garde de petites parenthèses autour d'une fraction, et les agrandir élargirait les équations.)
+const TALL = ":scope > mtable, :scope > mrow > mtable";
+
+// `macros` : macros de l'auteur qui produisent \left…\right (lues dans la source TeX à l'import)
+export function fixMathML(content, macros = []) {
+  const authorSized = macros.length ? new RegExp(`\\\\(${macros.join("|")})(?![A-Za-z])`) : null;
   for (const math of content.querySelectorAll("math")) {
     const tex = math.getAttribute("alttext") || "";
-    // délimiteurs voulus extensibles : \left…\right, \middle, matrices et cas (pmatrix, cases…), \binom
-    const sized = /\\left\b|\\middle\b|\\right\b|\\begin\{[pbBvV]?matrix\*?\}|\\begin\{cases\}|\\[dt]?binom\b|\\genfrac\b/.test(tex);
+    // délimiteurs voulus extensibles : \left…\right, \middle, matrices et cas, \binom, \choose…, macros de l'auteur
+    const sized = /\\left\b|\\middle\b|\\right\b|\\begin\{[pbBvV]?matrix\*?\}|\\begin\{cases\}|\\[dt]?binom\b|\\genfrac\b|\\choose\b|\\brace\b|\\brack\b|\\atopwithdelims\b/.test(tex)
+      || Boolean(authorSized?.test(tex));
     for (const mo of math.querySelectorAll("mo")) {
       const text = mo.textContent.trim();
       // parenthèse ouverte hors de la formule (source déséquilibrée) : LaTeXML laisse « OPEN » ou « CLOSE »
       if ((text === "OPEN" || text === "CLOSE") && mo.getAttribute("fence") === "true") { mo.remove(); continue; }
       if (GLYPHS[text]) mo.textContent = GLYPHS[text];
-      const aroundTable = mo.parentElement?.querySelector(":scope > mtable, :scope > mrow > mtable");
+      const aroundTable = mo.parentElement?.querySelector(TALL);
       if (!sized && !aroundTable && FENCES.has(text) && !mo.hasAttribute("minsize") && !mo.hasAttribute("maxsize")
           && mo.getAttribute("stretchy") !== "false") {
         mo.setAttribute("stretchy", "false");
@@ -213,6 +233,7 @@ export function fixMathML(content) {
       const tokens = [...cell.querySelectorAll("mi, mo, mn, mtext")].filter((token) => token.textContent.trim());
       const last = tokens.at(-1);
       if (last?.localName !== "mo" || last.textContent.trim() !== ",") continue;
+      if (!["mrow", "mtd", "mstyle", "mpadded"].includes(last.parentElement?.localName)) continue;
       let next = cell.nextElementSibling;
       while (next && !next.textContent.trim()) next = next.nextElementSibling;
       if (!next || /^[=<>≤≥≈∼≃≅≡∈∉⊂⊆⊃⊇→↦⟶:]/.test(next.textContent.trim())) continue;
