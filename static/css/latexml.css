@@ -116,8 +116,6 @@ section.ltx_subsection, section.ltx_subsubsection, section.ltx_paragraph { margi
 .ltx_theorem { margin: .9em 0; position: relative; }
 .ltx_title_theorem { font-weight: 400; }
 .ltx_title_theorem .ltx_tag_theorem, .ltx_title_theorem .ltx_font_bold { font-weight: 700; }
-.ltx_font_medium { font-weight: 400; }
-.ltx_font_serif { font-family: var(--paper-font); }
 .ltx_proof { margin: .5em 0 .9em; position: relative; }
 .ltx_title_proof { font-style: italic; font-weight: 400; }
 .qed { float: right; margin-left: 1em; font-family: var(--font-math); }

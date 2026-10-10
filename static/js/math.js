@@ -108,8 +108,17 @@ export function typesetFragment(root) {
   refreshStylesheet(window.MathJax);
 }
 
-// Texte contenant du TeX entre $…$ (titres, résumés) : mise en forme par MathJax.
-export async function typesetTex(elements) {
-  const MathJax = await loadMathJax();
-  await MathJax.typesetPromise(elements);
+// Texte contenant du TeX entre $…$ (titres, résumés, notes) : mise en forme par MathJax.
+// Les demandes passent une à une (MathJax garde un état partagé), les éléments déjà retirés de la page
+// sont ignorés, et MathJax oublie ensuite les formules traitées (sinon sa liste grossit sans fin).
+let queue = Promise.resolve();
+export function typesetTex(elements) {
+  queue = queue.then(async () => {
+    const live = elements.filter((element) => element?.isConnected);
+    if (!live.length) return;
+    const MathJax = await loadMathJax();
+    await MathJax.typesetPromise(live);
+    MathJax.typesetClear?.(live);
+  }).catch(() => {});
+  return queue;
 }

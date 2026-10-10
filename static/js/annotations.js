@@ -10,7 +10,7 @@ import { api } from "./api.js";
 import { t } from "./i18n.js";
 import { markdownToHtml } from "./markdown.js";
 import { typesetTex } from "./math.js";
-import { debounce, h, icons, toast } from "./util.js";
+import { debounce, h, icons, toast, toastError } from "./util.js";
 
 export const COLORS = ["yellow", "green", "blue", "pink"];
 export const STATES = ["understood", "review", "verified"];
@@ -90,7 +90,10 @@ function paint(root, annotation) {
   if (!from || !to) return false;
   const segments = [];
   let inside = false;
-  for (const unit of units(root)) {
+  // parcours limité au plus petit bloc qui contient le passage, pas à tout l'article
+  let scope = startBox;
+  while (scope !== root && !scope.contains(endBox)) scope = scope.parentElement;
+  for (const unit of units(scope)) {
     if (unit === from.unit) inside = true;
     if (inside) {
       const a = unit === from.unit ? from.offset : 0;
@@ -184,7 +187,7 @@ export function noteEditor({ value = "", placeholder = "", onSave, autofocus = f
   });
   const element = h("div", { class: "note-editor" },
     h("div", { class: "note-tabs" }, write, show, h("span", { class: "spacer" }), status), area, preview,
-    h("div", { class: "hint note-help tex2jax_ignore" }, t("notes.help")));  // pas de rendu MathJax pour l'aide
+    h("div", { class: "hint note-help mathjax_ignore" }, t("notes.help")));  // pas de rendu MathJax pour l'aide
   requestAnimationFrame(() => { grow(); if (autofocus) area.focus(); });
   element.flush = save;
   return element;
@@ -315,6 +318,14 @@ export class Annotator {
     const onUp = () => setTimeout(() => this.showToolbar(), 0);
     this.content.addEventListener("mouseup", onUp);
     this.content.addEventListener("keyup", (event) => { if (event.shiftKey) onUp(); });
+    // iPhone, iPad : une sélection au doigt ne déclenche pas « mouseup »
+    if (matchMedia("(pointer: coarse)").matches) {
+      this.onSelection = debounce(() => {
+        const selection = getSelection();
+        if (selection.rangeCount && !selection.isCollapsed && this.content.contains(selection.getRangeAt(0).commonAncestorContainer)) this.showToolbar();
+      }, 350);
+      document.addEventListener("selectionchange", this.onSelection);
+    }
     this.content.addEventListener("click", (event) => {
       const mark = event.target.closest("mark.hl");
       if (!mark || !getSelection().isCollapsed) return;
@@ -383,7 +394,8 @@ export class Annotator {
       const button = h("button", { type: "button", class: `hl-dot hl-${color}`, "aria-pressed": String(annotation.color === color),
         title: t(`notes.color.${color}`), "aria-label": t(`notes.color.${color}`) });
       button.addEventListener("click", async () => {
-        const updated = await api.updateAnnotation(id, { color });
+        let updated;
+        try { updated = await api.updateAnnotation(id, { color }); } catch (error) { toastError(error); return; }
         Object.assign(annotation, updated);
         this.content.querySelectorAll(`mark.hl[data-annotation="${id}"]`).forEach((m) => { m.className = `hl hl-${color}`; });
         colors.querySelectorAll(".hl-dot").forEach((b) => b.setAttribute("aria-pressed", String(b.classList.contains(`hl-${color}`))));
@@ -393,7 +405,7 @@ export class Annotator {
     }));
     const remove = h("button", { class: "button small-button danger", type: "button" }, t("notes.deleteHighlight"));
     remove.addEventListener("click", async () => {
-      await api.deleteAnnotation(id);
+      try { await api.deleteAnnotation(id); } catch (error) { toastError(error); return; }
       unpaint(this.content, id);
       this.items = this.items.filter((a) => a.id !== id);
       this.closePopover();
@@ -479,7 +491,7 @@ export class Annotator {
     const note = h("div", { class: "markdown note-body" });
     if (annotation.note) note.innerHTML = markdownToHtml(annotation.note);
     return h("div", { class: `note-card${element ? "" : " orphan"}`, role: "button", tabindex: 0, onclick: go,
-      onkeydown: (event) => { if (event.key === "Enter") go(); }, title: element ? t("panel.showInText") : t("notes.orphan") },
+      onkeydown: (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); go(); } }, title: element ? t("panel.showInText") : t("notes.orphan") },
       head, annotation.note && note, !element && h("span", { class: "badge warn" }, t("notes.orphan")));
   }
 
@@ -488,5 +500,6 @@ export class Annotator {
     this.closePopover();
     if (this.onDocumentDown) document.removeEventListener("mousedown", this.onDocumentDown);
     if (this.onKey) document.removeEventListener("keydown", this.onKey);
+    if (this.onSelection) document.removeEventListener("selectionchange", this.onSelection);
   }
 }

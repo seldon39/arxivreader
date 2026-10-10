@@ -183,20 +183,34 @@ function layout(nodes, byId) {
 // Remarques, exemples, notations : affichés seulement si un autre énoncé s'en sert (ou sur demande)
 const SIDE_KINDS = new Set(["remark", "example", "notation", "other"]);
 
+// Disposition mémorisée : elle ne dépend pas de l'énoncé choisi, seulement des énoncés et des options
+// (une nouvelle structure, après « Indiquer la preuve », est un autre tableau : nouveau calcul).
+const layouts = new WeakMap();
+
+function cachedLayout(allNodes, byId, showIsolated, showRemarks) {
+  if (!layouts.has(allNodes)) layouts.set(allNodes, new Map());
+  const cache = layouts.get(allNodes);
+  const key = `${showIsolated}|${showRemarks}`;
+  if (!cache.has(key)) {
+    const visible = allNodes.filter((n) => showRemarks || !SIDE_KINDS.has(n.kind) || n.usedBy.some((u) => !SIDE_KINDS.has(byId.get(u)?.kind)));
+    const kept = new Set(visible.map((n) => n.id));
+    const linked = (n) => n.uses.some((u) => kept.has(u)) || n.usedBy.some((u) => kept.has(u));
+    const nodes = visible.filter((n) => showIsolated || linked(n));
+    cache.set(key, { nodes, ...(nodes.length ? layout(nodes, byId) : {}) });
+  }
+  return cache.get(key);
+}
+
 export function renderGraph(allNodes, { selected = null, showIsolated = false, showRemarks = false, onSelect = () => {} } = {}) {
   const byId = new Map(allNodes.map((n) => [n.id, n]));
-  const visible = allNodes.filter((n) => showRemarks || !SIDE_KINDS.has(n.kind) || n.usedBy.some((u) => !SIDE_KINDS.has(byId.get(u)?.kind)));
-  const kept = new Set(visible.map((n) => n.id));
-  const linked = (n) => n.uses.some((u) => kept.has(u)) || n.usedBy.some((u) => kept.has(u));
-  const nodes = visible.filter((n) => showIsolated || linked(n));
+  const { nodes, coords, waypoints, chains, width, height } = cachedLayout(allNodes, byId, showIsolated, showRemarks);
   if (!nodes.length) return null;
-  const { coords, waypoints, chains, width, height } = layout(nodes, byId);
 
   const ancestors = selected ? closure(byId, selected, "uses") : new Set();
   const descendants = selected ? closure(byId, selected, "usedBy") : new Set();
   const root = svg("svg", {
     class: `graph${selected && coords.has(selected) ? " focus" : ""}`,
-    width, height, viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": t("tabs.graph"),
+    width, height, viewBox: `0 0 ${width} ${height}`, role: "group", "aria-label": t("tabs.graph"),
   });
   // une pointe par couleur de flèche (normale, chaîne de dépendances, conséquences)
   const marker = (name) => svg("marker", { id: `arrow-${name}`, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" },
@@ -242,7 +256,9 @@ export function renderGraph(allNodes, { selected = null, showIsolated = false, s
       svg("rect", { width: NODE_W, height: NODE_H, rx: 6 }),
       svg("text", { x: NODE_W / 2, y: NODE_H / 2 + 4, "text-anchor": "middle" }, document.createTextNode(shortLabel(node))));
     group.addEventListener("click", () => onSelect(node.id));
-    group.addEventListener("keydown", (event) => { if (event.key === "Enter") onSelect(node.id); });
+    group.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(node.id); }
+    });
     root.append(group);
   }
   return root;

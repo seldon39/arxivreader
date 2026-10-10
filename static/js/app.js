@@ -32,7 +32,7 @@ async function route() {
   });
   try {
     const dispose = feedMatch ? await renderFeed(view, feedMatch[1] || "arxiv")
-      : match ? await renderReader(view, decodeURIComponent(match[1]))
+      : match ? await renderReader(view, decodeURIComponent(match[1]), () => token === routeToken)
         : await renderLibrary(view);
     if (token !== routeToken) { dispose?.(); return; } // page déjà quittée pendant le chargement
     cleanup = dispose || null;

@@ -6,7 +6,7 @@ import { markdownToHtml } from "./markdown.js";
 import { typesetTex } from "./math.js";
 import { t } from "./i18n.js";
 import { saveSettings, settings } from "./settings.js";
-import { h, icons, toast } from "./util.js";
+import { h, icons, toast, toastError } from "./util.js";
 
 // Mots qui précèdent un numéro d'énoncé dans les réponses (anglais et français)
 const KIND_WORDS = {
@@ -69,7 +69,8 @@ export class Assistant {
       return equations.get(label);
     };
     const words = Object.values(KIND_WORDS).join("|");
-    const statement = new RegExp(`\\b(${words})(\\s|&nbsp;| )+(${NUMBER})\\b`, "giu");
+    // pas de \b : il ne connaît que les lettres ASCII (« étape 3 » ne serait jamais repéré)
+    const statement = new RegExp(`(?<![\\p{L}\\p{N}])(${words})(\\s|&nbsp;| )+(${NUMBER})(?![\\p{L}\\p{N}])`, "giu");
     const equation = new RegExp(`\\((${NUMBER})\\)`, "g");
     const link = (id, text) => `<a href="#${encodeURIComponent(id)}" class="ai-ref" data-ref="${id.replace(/"/g, "&quot;")}">${text}</a>`;
     return (text) => text
@@ -149,7 +150,12 @@ export class Assistant {
   }
 
   async remove(exchange) {
-    if (typeof exchange.id === "number") await api.deleteAIExchange(exchange.id);
+    try {
+      if (typeof exchange.id === "number") await api.deleteAIExchange(exchange.id);
+    } catch (error) {
+      toastError(error);
+      return;
+    }
     this.exchanges = this.exchanges.filter((e) => e !== exchange);
     this.onChange();
   }
@@ -297,7 +303,7 @@ export class Assistant {
         exchange.answer && h("button", { class: "button small-button", type: "button",
           onclick: () => { this.pending.parent = exchange; this.onChange({ focus: true }); } }, t("ai.followUp")),
         exchange.answer && h("button", { class: "button small-button", type: "button",
-          onclick: () => navigator.clipboard.writeText(exchange.answer).then(() => toast(t("ai.copied"))) }, t("ai.copy")));
+          onclick: () => navigator.clipboard.writeText(exchange.answer).then(() => toast(t("ai.copied")), toastError) }, t("ai.copy")));
       foot.push(actions, h("p", { class: "ai-disclaimer" }, t("ai.disclaimer", { model: modelName(exchange.model) })));
     }
     return h("article", { class: `ai-card status-${exchange.status}` }, head, ...context, answer, ...foot);

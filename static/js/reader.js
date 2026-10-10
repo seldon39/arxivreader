@@ -18,10 +18,11 @@ const PICKABLE = [".ltx_para", ".ltx_theorem", ".ltx_proof", ".ltx_equation", ".
   .map((c) => `${c}[id]`).join(", ");
 const MEDIUM = 900;
 
-export async function renderReader(view, paperId) {
+export async function renderReader(view, paperId, isCurrent = () => true) {
   view.replaceChildren(h("div", { class: "library" }, h("div", { class: "busy" }, h("span", { class: "spinner" }))));
   const { paper, structure } = await api.paper(paperId);
   const html = paper.source === "none" ? "" : await api.content(paperId);
+  if (!isCurrent()) return () => {}; // page déjà quittée pendant le chargement : rien n'est affiché
   const reader = new Reader(view, paper, structure || { toc: [], nodes: [], bibliography: [], hiddenText: 0 }, html);
   return () => reader.destroy();
 }
@@ -51,7 +52,13 @@ class Reader {
     this.annotator = new Annotator({
       paperId: paper.id, content: this.content, nodes: this.nodes,
       navigate: (target) => (typeof target === "string" ? this.navigate(target) : this.navigateElement(target)),
-      onChange: () => { if (["notes", "statements", "dependencies"].includes(this.tab)) this.renderPanel(); },
+      // une note enregistrée ne redessine pas le panneau (l'éditeur en cours de saisie resterait perdu) :
+      // seules les pastilles d'état sont mises à jour, sauf dans l'onglet Notes qui résume tout
+      onChange: () => {
+        if (this.destroyed) return;
+        if (this.tab === "notes") this.renderPanel();
+        else this.refreshNodeItems();
+      },
       aiActions: (id) => this.assistant.actionsFor(id, { compact: true }),
       onAskAI: (quote) => this.assistant.setPassage(quote),
     });
@@ -88,7 +95,7 @@ class Reader {
     await Promise.all([this.annotator.load(), this.assistant.load()]);
     if (this.destroyed) return;
     this.annotator.apply();
-    if (this.tab !== "statements") this.renderPanel();
+    this.renderPanel(); // avec les états de lecture, chargés seulement maintenant
     this.anchors = null;
     this.restorePosition();
   }
@@ -199,17 +206,13 @@ class Reader {
       return Math.round(Math.min(max, Math.max(min, width)));
     };
     const commit = (width) => {
-      const anchor = this.currentAnchor();
-      const top = anchor?.getBoundingClientRect().top ?? 0;
-      pane.style[margin] = "";
-      handle.style[margin] = "";
-      if (width === null) this.root.style.removeProperty(variable);
-      else this.root.style.setProperty(variable, `${width}px`);
-      this.root.classList.remove("resizing");
-      if (anchor) scrollBy({ top: anchor.getBoundingClientRect().top - top, behavior: "instant" });
-      this.anchors = null;
-      layoutFigures(this.figures);
-      this.markWideMath();
+      this.keepReadingPosition(() => {
+        pane.style[margin] = "";
+        handle.style[margin] = "";
+        if (width === null) this.root.style.removeProperty(variable);
+        else this.root.style.setProperty(variable, `${width}px`);
+        this.root.classList.remove("resizing");
+      });
       handle.setAttribute("aria-valuenow", String(Math.round(pane.getBoundingClientRect().width)));
       saveSettings({ [key]: width });
     };
@@ -308,11 +311,10 @@ class Reader {
       const next = math.nextSibling;
       if (!next || next.nodeType !== Node.TEXT_NODE || !/^[.,;:)\]]/.test(next.data)) return;
       const length = next.data.match(/^[.,;:)\]]+/)[0].length;
-      const rest = next.splitText(length);
+      next.splitText(length); // la suite du texte reste hors du groupe
       const wrap = h("span", { class: "nobr" });
       math.replaceWith(wrap);
       wrap.append(math, next);
-      void rest;
     });
 
     // Comme dans amsart, la date rejoint les mots-clés et la classification (note de première page)
@@ -332,7 +334,7 @@ class Reader {
         h("span", { class: "caret" }, "▸"), h("span", { class: "text" }, title), state);
       toggle.addEventListener("click", () => this.setProof(proof, !proof.classList.contains("collapsed")));
       proof.prepend(toggle);
-      this.setProof(proof, settings.proofsCollapsed);
+      this.setProof(proof, settings.proofsCollapsed, { update: false });
     });
     this.updateFoldButton();
 
@@ -343,7 +345,11 @@ class Reader {
       const title = theorem.querySelector(".ltx_title_theorem, .ltx_title");
       if (!title || !this.byId.has(theorem.id)) return;
       title.title = t("tabs.dependencies");
-      title.addEventListener("click", () => this.select(theorem.id, { tab: "dependencies", openPanel: true }));
+      title.tabIndex = 0;
+      title.setAttribute("role", "button");
+      const open = () => this.select(theorem.id, { tab: "dependencies", openPanel: true });
+      title.addEventListener("click", open);
+      title.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } });
     });
   }
 
@@ -548,28 +554,40 @@ class Reader {
   }
 
   // Formule en ligne plus large que la colonne (téléphone) : défilement dans la formule
+  // écritures puis lectures groupées : une seule mise en page, pas une par formule
   markWideMath() {
-    const width = this.content.getBoundingClientRect().width;
-    this.content.querySelectorAll("mjx-container:not([display])").forEach((math) => {
-      math.classList.remove("wide-inline");
-      if (math.getBoundingClientRect().width > width) math.classList.add("wide-inline");
-    });
+    const maths = [...this.content.querySelectorAll("mjx-container:not([display])")];
+    maths.forEach((math) => math.classList.remove("wide-inline"));
+    const width = this.content.clientWidth;
+    maths.filter((math) => math.getBoundingClientRect().width > width).forEach((math) => math.classList.add("wide-inline"));
   }
 
-  setProof(proof, collapsed) {
+  // Changement de mise en page (volet, police, largeur) : figures et formules recalées, même passage à l'écran
+  keepReadingPosition(change = () => {}) {
+    const anchor = this.currentAnchor();
+    const top = anchor?.getBoundingClientRect().top;
+    change();
+    this.anchors = null;
+    layoutFigures(this.figures);
+    this.markWideMath();
+    if (anchor) scrollBy({ top: anchor.getBoundingClientRect().top - top, behavior: "instant" });
+  }
+
+  setProof(proof, collapsed, { update = true } = {}) {
     proof.classList.toggle("collapsed", collapsed);
     const toggle = proof.querySelector(":scope > .proof-toggle");
     toggle.setAttribute("aria-expanded", String(!collapsed));
     toggle.querySelector(".state").textContent = collapsed ? `(${t("reader.showProof")})` : "";
     toggle.setAttribute("aria-label", `${t("reader.proof")} — ${collapsed ? t("reader.showProof") : t("reader.hideProof")}`);
     this.anchors = null;
-    this.updateFoldButton();
+    if (update) this.updateFoldButton();
   }
 
   foldAll() {
     const proofs = [...this.content.querySelectorAll(".ltx_proof")];
     const collapse = proofs.some((p) => !p.classList.contains("collapsed"));
-    proofs.forEach((p) => this.setProof(p, collapse));
+    proofs.forEach((p) => this.setProof(p, collapse, { update: false }));
+    this.updateFoldButton();
   }
 
   updateFoldButton() {
@@ -592,11 +610,13 @@ class Reader {
   toggle(which) {
     const open = this.root.dataset[which] !== "open";
     if (open && innerWidth < WIDE) this.closeDrawers(which); // un seul tiroir à la fois sur petit écran
-    this.root.dataset[which] = open ? "open" : "closed";
-    (which === "toc" ? this.tocButton : this.panelButton).setAttribute("aria-pressed", String(open));
-    const remembered = which === "toc" ? innerWidth >= WIDE : innerWidth >= MEDIUM;
-    if (remembered) saveSettings({ [which === "toc" ? "tocOpen" : "panelOpen"]: open });
-    this.anchors = null;
+    const column = which === "toc" ? innerWidth >= WIDE : innerWidth >= MEDIUM; // colonne de la grille, pas tiroir
+    const change = () => {
+      this.root.dataset[which] = open ? "open" : "closed";
+      (which === "toc" ? this.tocButton : this.panelButton).setAttribute("aria-pressed", String(open));
+    };
+    if (column) this.keepReadingPosition(change); else { change(); this.anchors = null; }
+    if (column) saveSettings({ [which === "toc" ? "tocOpen" : "panelOpen"]: open });
   }
 
   setOpen(which, open) {
@@ -642,23 +662,19 @@ class Reader {
   // ---------- Navigation dans l'article ----------
 
   find(id) {
-    return id ? this.content.querySelector(`[id="${CSS.escape(id)}"]`) : null;
+    const element = id ? document.getElementById(id) : null; // accès direct, sans parcourir l'article
+    return element && this.content.contains(element) ? element : null;
   }
 
-  navigate(id, { remember = true } = {}) {
+  navigate(id, options) {
     const target = this.find(id);
-    if (!target) return;
-    const proof = target.closest(".ltx_proof.collapsed");
+    if (target) this.navigateElement(target.closest(".ltx_theorem, .ltx_para, .ltx_bibitem, .ltx_equation, .eq-scroll, section") || target, options);
+  }
+
+  // Élément dans une preuve repliée : la preuve est dépliée (sinon il n'a pas de position)
+  reveal(element) {
+    const proof = element.closest(".ltx_proof.collapsed");
     if (proof) this.setProof(proof, false);
-    if (remember) {
-      this.backStack.push(scrollY);
-      this.backButton.classList.add("visible");
-    }
-    const block = target.closest(".ltx_theorem, .ltx_para, .ltx_bibitem, .ltx_equation, .eq-scroll, section") || target;
-    this.scrollToElement(block);
-    block.classList.remove("flash");
-    void block.offsetWidth;
-    block.classList.add("flash");
   }
 
   // Bas des barres fixes (en-tête + barre d'outils) : le haut de la zone de lecture.
@@ -673,9 +689,12 @@ class Reader {
     scrollTo({ top: Math.round(scrollY + offset), behavior: smooth && near ? "smooth" : "instant" });
   }
 
-  navigateElement(element) {
-    this.backStack.push(scrollY);
-    this.backButton.classList.add("visible");
+  navigateElement(element, { remember = true } = {}) {
+    this.reveal(element);
+    if (remember) {
+      this.backStack.push(scrollY);
+      this.backButton.classList.add("visible");
+    }
     this.scrollToElement(element);
     element.classList.remove("flash");
     void element.offsetWidth;
@@ -719,7 +738,10 @@ class Reader {
       const entry = this.anchors.find((a) => a.el.id === id);
       if (entry && entry.y <= y) section = id;
     }
-    this.tocLinks.forEach((a, id) => a.classList.toggle("current", id === section));
+    this.tocLinks.forEach((a, id) => {
+      a.classList.toggle("current", id === section);
+      if (id === section) a.setAttribute("aria-current", "location"); else a.removeAttribute("aria-current");
+    });
     // Énoncé courant dans la liste
     const theorem = anchor.closest(".ltx_theorem");
     this.panel.querySelectorAll(".node-item.current").forEach((el) => el.classList.remove("current"));
@@ -730,6 +752,7 @@ class Reader {
   restorePosition() {
     const target = this.find(this.paper.position);
     if (!target) return;
+    this.reveal(target);
     requestAnimationFrame(() => {
       this.scrollToElement(target, false);
       toast(t("reader.resumed"));
@@ -789,6 +812,15 @@ class Reader {
     }, `${t("reader.import")} arXiv:${arxivId}`)));
   }
 
+  // Lien « #… » cliqué hors de l'article lui-même (énoncé recopié, aperçu) : navigation interne
+  interceptLinks = (event) => {
+    const link = event.target.closest('a[href^="#"]');
+    if (!link || event.defaultPrevented || link.matches(".ai-ref") || link.closest(".tabs")) return;
+    event.preventDefault();
+    this.hidePreview();
+    this.navigate(decodeURIComponent(link.getAttribute("href").slice(1)));
+  };
+
   showPreview(link) {
     if (this.picking) return;
     const preview = this.previewFor(link);
@@ -799,6 +831,7 @@ class Reader {
       preview.id && h("button", { type: "button", onclick: () => { this.hidePreview(); this.navigate(preview.id); } }, t("reader.goTo")));
     const box = h("div", { class: "preview", role: "tooltip" }, preview.body, footer);
     box.addEventListener("mouseenter", () => clearTimeout(this.hideTimer));
+    box.addEventListener("click", this.interceptLinks);
     box.addEventListener("mouseleave", () => this.scheduleHide());
     document.body.append(box);
     typesetFragment(box);
@@ -810,6 +843,7 @@ class Reader {
     box.style.left = `${left}px`;
     box.style.top = `${below ? rect.bottom + 8 : Math.max(8, rect.top - height - 8)}px`;
     this.previewBox = box;
+    this.previewLink = link;
   }
 
   scheduleHide() {
@@ -840,11 +874,29 @@ class Reader {
 
   // L'assistant demande à être affiché (nouvelle demande, passage à expliquer) ou a changé
   onAssistantChange({ show = false, focus = false } = {}) {
+    if (this.destroyed) return;
     if (show || focus) {
       this.tab = "ai";
       if (this.root.dataset.panel !== "open") this.toggle("panel");
     }
-    if (this.tab === "ai") this.renderPanel({ focus });
+    if (this.tab !== "ai") return;
+    // question en cours de saisie : curseur et sélection gardés malgré le nouveau rendu
+    const area = this.panel.querySelector(".ai-question");
+    const selection = area && area === document.activeElement ? [area.selectionStart, area.selectionEnd] : null;
+    this.renderPanel({ focus });
+    if (selection) {
+      const next = this.panel.querySelector(".ai-question");
+      next?.focus({ preventScroll: true });
+      next?.setSelectionRange(...selection);
+    }
+  }
+
+  // Pastilles d'état et d'emploi des énoncés listés dans le panneau, mises à jour sur place
+  refreshNodeItems() {
+    this.panel.querySelectorAll(".node-item[data-id]").forEach((element) => {
+      const node = this.byId.get(element.dataset.id);
+      if (node) element.replaceWith(this.nodeItem(node));
+    });
   }
 
   renderPanel({ focus = false } = {}) {
@@ -856,10 +908,11 @@ class Reader {
     const body = h("div", { class: "panel-body" });
     if (this.tab === "statements") this.renderStatements(body);
     else if (this.tab === "dependencies") this.renderDependencies(body);
-    else if (this.tab === "notes") this.annotator ? this.annotator.renderPanel(body) : null;
-    else if (this.tab === "ai") this.assistant ? this.assistant.renderPanel(body, { focus }) : null;
+    else if (this.tab === "notes") this.annotator?.renderPanel(body);
+    else if (this.tab === "ai") this.assistant?.renderPanel(body, { focus });
     else this.renderGraphTab(body);
     this.panel.replaceChildren(tabBar, body);
+    if (this.tab !== "ai" && this.assistant) this.assistant.live = null; // plus de rendu en direct hors de l'onglet
     this.setPanelWide(this.tab === "ai");
     const graph = this.tab === "graph" && body.querySelector(".graph-wrap");
     if (graph) this.centerGraph(graph);
@@ -868,14 +921,9 @@ class Reader {
   // Panneau élargi pour l'onglet IA, sans perdre l'endroit où l'on lit
   setPanelWide(wide) {
     if ((this.root.dataset.tab === "ai") === wide) return;
-    const anchor = this.root.dataset.panel === "open" && innerWidth >= MEDIUM ? this.currentAnchor() : null;
-    const before = anchor?.getBoundingClientRect().top;
-    if (wide) this.root.dataset.tab = "ai"; else delete this.root.dataset.tab;
-    if (!this.figures) return;
-    this.anchors = null;
-    layoutFigures(this.figures);
-    this.markWideMath();
-    if (anchor) scrollBy({ top: anchor.getBoundingClientRect().top - before, behavior: "instant" });
+    const apply = () => { if (wide) this.root.dataset.tab = "ai"; else delete this.root.dataset.tab; };
+    if (this.figures && this.root.dataset.panel === "open" && innerWidth >= MEDIUM) this.keepReadingPosition(apply);
+    else apply();
   }
 
   nodeItem(node) {
@@ -1009,17 +1057,13 @@ class Reader {
     const kinds = [...new Set(this.nodes.map((n) => n.kind))];
     body.append(
       h("div", { class: "graph-tools" }, h("label", {}, isolated, t("graph.isolated")), h("label", {}, remarks, t("graph.remarks")), expand),
-      graph ? this.graphWrap(graph) : h("p", { class: "hint" }, t("graph.empty")),
+      graph ? h("div", { class: "graph-wrap" }, graph) : h("p", { class: "hint" }, t("graph.empty")),
       h("div", { class: "legend" }, kinds.map((k) => h("span", { dataset: { kind: k } }, h("span", { class: "dot" }), t(`kind.${k}`)))),
       h("p", { class: "hint" }, t("graph.help")),
     );
   }
 
   // Graphe plus large que le panneau : on fait défiler jusqu'à l'énoncé choisi (sinon jusqu'au milieu)
-  graphWrap(graph) {
-    return h("div", { class: "graph-wrap" }, graph);
-  }
-
   centerGraph(wrap) {
     const box = wrap.getBoundingClientRect();
     const target = wrap.querySelector(".node.selected")?.getBoundingClientRect();
@@ -1031,21 +1075,32 @@ class Reader {
     }
   }
 
+  // Graphe en plein écran : vraie fenêtre modale (<dialog>) — le reste de la page est inerte,
+  // Échap la ferme, le focus y entre puis revient au bouton qui l'a ouverte
   openGraphOverlay() {
-    const close = () => { overlay.remove(); this.overlay = null; document.removeEventListener("keydown", onKey); };
-    const onKey = (event) => { if (event.key === "Escape") close(); };
+    const opener = document.activeElement;
     const draw = () => renderGraph(this.nodes, {
       selected: this.selected, showIsolated: this.showIsolated, showRemarks: this.showRemarks,
       onSelect: (id) => { this.select(id); wrap.replaceChildren(draw()); },
     }) || h("p", { class: "hint" }, t("graph.empty"));
     const wrap = h("div", { class: "graph-wrap" }, draw());
-    const overlay = h("div", { class: "graph-overlay", role: "dialog", "aria-modal": "true" },
-      h("header", {}, h("strong", {}, withMath(this.paper.title)), h("span", { style: "flex:1" }),
-        h("button", { class: "button", type: "button", onclick: () => { close(); if (this.selected) this.navigate(this.selected, { remember: false }); } }, t("graph.close"))),
+    const closeButton = h("button", { class: "button", type: "button" }, t("graph.close"));
+    const overlay = h("dialog", { class: "graph-overlay", "aria-label": t("tabs.graph") },
+      h("header", {}, h("strong", {}, withMath(this.paper.title)), h("span", { style: "flex:1" }), closeButton),
       wrap, h("p", { class: "hint", style: "margin: 0 16px 12px" }, t("graph.help")));
+    closeButton.addEventListener("click", () => {
+      overlay.close();
+      if (this.selected) this.navigate(this.selected, { remember: false });
+    });
+    overlay.addEventListener("close", () => {
+      overlay.remove();
+      this.overlay = null;
+      opener?.focus?.({ preventScroll: true });
+    });
     document.body.append(overlay);
-    document.addEventListener("keydown", onKey);
-    this.overlay = { remove: close };
+    overlay.showModal();
+    closeButton.focus();
+    this.overlay = { remove: () => overlay.close() };
   }
 
   // ---------- Événements ----------
@@ -1055,54 +1110,58 @@ class Reader {
     const onScroll = debounce(() => this.onScroll(), 120);
     // L'article défile avec la fenêtre (et non dans une zone intérieure) : Safari ne fait plus
     // trembler le texte d'un pixel à l'arrêt du défilement.
-    const onWindowScroll = () => { this.hidePreview(); onScroll(); };
+    const onWindowScroll = () => { this.hidePreview(); this.annotator?.hideToolbar(); onScroll(); };
     addEventListener("scroll", onWindowScroll, { passive: true });
     this.cleanups.push(() => removeEventListener("scroll", onWindowScroll));
 
-    this.scroller.addEventListener("click", (event) => {
-      const link = event.target.closest('a[href^="#"]');
-      if (!link || !this.content.contains(link)) return;
-      event.preventDefault();
-      this.hidePreview();
-      this.navigate(link.getAttribute("href").slice(1));
-    });
+    // Renvois internes (#…) dans l'article, le panneau (énoncé recopié) ou un aperçu : on reste dans le lecteur
+    this.scroller.addEventListener("click", this.interceptLinks);
+    this.panel.addEventListener("click", this.interceptLinks);
 
     const hoverable = 'a[href^="#"], .ltx_note_mark';
     this.scroller.addEventListener("mouseover", (event) => {
       const link = event.target.closest(hoverable);
-      if (!link || !this.content.contains(link)) return;
+      if (!link || !this.content.contains(link) || link.contains(event.relatedTarget)) return; // dans le même renvoi
+      if (this.previewBox && this.previewLink === link) { clearTimeout(this.hideTimer); return; }
       clearTimeout(this.hideTimer);
       clearTimeout(this.showTimer);
       this.showTimer = setTimeout(() => this.showPreview(link), 220);
     });
     this.scroller.addEventListener("mouseout", (event) => {
-      if (event.target.closest(hoverable)) {
+      const link = event.target.closest(hoverable);
+      if (link && !link.contains(event.relatedTarget)) {
         clearTimeout(this.showTimer);
         this.scheduleHide();
       }
     });
 
     const onKey = (event) => {
-      if (event.target.matches("input, textarea")) return;
+      if (event.target.closest?.("input, textarea, select, [contenteditable]")) return;
       if (event.key === "Escape") { this.hidePreview(); this.closeDrawers(); }
     };
     const layout = () => (innerWidth >= WIDE ? "wide" : innerWidth >= MEDIUM ? "medium" : "narrow");
     let currentLayout = layout();
+    let lastWidth = innerWidth;
     const onResize = debounce(() => {
-      this.anchors = null;
-      layoutFigures(this.figures);
-      this.markWideMath();
-      if (layout() === currentLayout) return;
-      currentLayout = layout();
-      // Changement de format : volets remis dans leur état par défaut pour cette largeur
-      this.setOpen("toc", currentLayout === "wide" && settings.tocOpen);
-      this.setOpen("panel", currentLayout !== "narrow" && settings.panelOpen);
+      // seule la largeur compte (sur iPhone, la hauteur change sans cesse avec les barres de Safari)
+      if (innerWidth === lastWidth) return;
+      lastWidth = innerWidth;
+      this.keepReadingPosition(() => {
+        if (layout() === currentLayout) return;
+        currentLayout = layout();
+        // Changement de format : volets remis dans leur état par défaut pour cette largeur
+        this.setOpen("toc", currentLayout === "wide" && settings.tocOpen);
+        this.setOpen("panel", currentLayout !== "narrow" && settings.panelOpen);
+      });
     }, 200);
     document.addEventListener("keydown", onKey);
     addEventListener("resize", onResize);
+    // Taille, largeur ou police changées : même passage à l'écran après la nouvelle mise en page
+    let look = `${settings.fontSize}/${settings.readingWidth}/${settings.paperFont}`;
     const unsubscribe = onSettingsChange(() => {
-      this.anchors = null;
       this.article.dataset.marks = settings.marginMarks ? "on" : "off";
+      const now = `${settings.fontSize}/${settings.readingWidth}/${settings.paperFont}`;
+      if (now !== look) { look = now; this.keepReadingPosition(); } else this.anchors = null;
     });
     this.cleanups.push(() => document.removeEventListener("keydown", onKey), () => removeEventListener("resize", onResize), unsubscribe);
   }
