@@ -17,7 +17,7 @@ async function route() {
   cleanup = null;
   scrollTo({ top: 0, behavior: "instant" });
   const match = location.hash.match(/^#\/paper\/(.+)$/);
-  const feedMatch = location.hash.match(/^#\/feed(?:\/(recommended|import))?$/);
+  const feedMatch = location.hash.match(/^#\/feed(?:\/(recommended|import|profile))?$/);
   const section = match ? "paper" : feedMatch ? "#/feed" : "#/";
   document.querySelectorAll(".topnav a").forEach((a) => a.classList.toggle("active", a.getAttribute("href") === section));
   try {

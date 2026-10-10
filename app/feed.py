@@ -11,7 +11,7 @@ from email.utils import parsedate_to_datetime
 
 import httpx
 
-from . import db
+from . import db, profile, relevance
 from .arxiv import ATOM, ARXIV_NS, extract_ids
 from .config import FEED_CATEGORIES, USER_AGENT
 
@@ -35,7 +35,7 @@ def tex_text(text):
     parts = re.split(r"(\$[^$]*\$)", text or "")
     for i in range(0, len(parts), 2):  # hors des formules $…$ seulement
         part = ACCENT.sub(lambda m: unicodedata.normalize("NFC", (m.group(2) or m.group(3)) + ACCENTS[m.group(1)]), parts[i])
-        part = part.replace("---", "—").replace("--", "–").replace("\\ ", " ").replace("\\&", "&")
+        part = part.replace("``", "“").replace("''", "”").replace("---", "—").replace("--", "–").replace("\\ ", " ").replace("\\&", "&")
         part = re.sub(r"\{\\(?:em|it|bf)\s+([^{}]*)\}", r"\1", part).replace("{", "").replace("}", "")
         parts[i] = part
     return " ".join("".join(parts).split())
@@ -65,7 +65,7 @@ def parse_rss(xml_text):
         except (TypeError, ValueError):
             announced = None
         categories = [c.text for c in item.findall("category") if c.text]
-        authors = [a.strip() for a in (item.findtext(f"{DC}creator") or "").split(",") if a.strip()]
+        authors = [tex_text(a) for a in (item.findtext(f"{DC}creator") or "").split(",") if a.strip()]
         items.append({
             "key": match.group(1),
             "arxiv_id": match.group(1),
@@ -82,7 +82,24 @@ def parse_rss(xml_text):
     return items
 
 
-def refresh_arxiv(categories=None):
+def _store(connection, item, followed=False):
+    connection.execute(
+        f"""INSERT INTO feed_items (key, arxiv_id, version, title, authors, abstract, categories,
+               primary_category, announce_type, announced, in_arxiv, followed, link, fetched_at)
+           VALUES (:key, :arxiv_id, :version, :title, :authors, :abstract, :categories,
+               :primary_category, :announce_type, :announced, :in_arxiv, :followed, :link, :fetched_at)
+           ON CONFLICT(key) DO UPDATE SET {"followed = 1" if followed else
+               "version = excluded.version, title = excluded.title, authors = excluded.authors, "
+               "abstract = excluded.abstract, categories = excluded.categories, "
+               "primary_category = excluded.primary_category, announce_type = excluded.announce_type, "
+               "announced = excluded.announced, in_arxiv = 1, link = excluded.link"}""",
+        {**item, "authors": json.dumps(item["authors"], ensure_ascii=False), "categories": json.dumps(item["categories"]),
+         "announce_type": item.get("announce_type"), "in_arxiv": 0 if followed else 1, "followed": 1 if followed else 0,
+         "fetched_at": _now()},
+    )
+
+
+def refresh_arxiv(categories=None, api_key=None):
     categories = categories or FEED_CATEGORIES
     with _client() as client:
         response = client.get(RSS_URL.format(categories="+".join(categories)))
@@ -90,18 +107,24 @@ def refresh_arxiv(categories=None):
     items = parse_rss(response.text)
     with db.connect() as connection:
         for item in items:
-            connection.execute(
-                """INSERT INTO feed_items (key, arxiv_id, version, title, authors, abstract, categories,
-                       primary_category, announce_type, announced, in_arxiv, link, fetched_at)
-                   VALUES (:key, :arxiv_id, :version, :title, :authors, :abstract, :categories,
-                       :primary_category, :announce_type, :announced, 1, :link, :fetched_at)
-                   ON CONFLICT(key) DO UPDATE SET version = excluded.version, title = excluded.title,
-                       authors = excluded.authors, abstract = excluded.abstract, categories = excluded.categories,
-                       primary_category = excluded.primary_category, announce_type = excluded.announce_type,
-                       announced = excluded.announced, in_arxiv = 1, link = excluded.link""",
-                {**item, "authors": json.dumps(item["authors"], ensure_ascii=False),
-                 "categories": json.dumps(item["categories"]), "fetched_at": _now()},
-            )
+            _store(connection, item)
+    # Articles récents des auteurs suivis, hors des catégories comprises
+    followed = []
+    try:
+        followed = profile.followed_author_papers(categories)
+        with db.connect() as connection:
+            for item in followed:
+                item["title"], item["abstract"] = tex_text(item["title"]), tex_text(item["abstract"])
+                _store(connection, item, followed=True)
+    except Exception:
+        pass
+    # Vecteurs de sens (Semantic Scholar) pour les nouveaux articles et le profil
+    positives, negatives, _, _ = relevance.profile_documents()
+    keys = [relevance.s2_key(i["arxiv_id"]) for i in items + followed] + [d["s2"] for d in positives + negatives]
+    try:
+        relevance.fetch_embeddings(keys, api_key)
+    except Exception:
+        pass
     db.save_settings({"feed.arxivRefreshed": _now()})
     return len(items)
 
@@ -161,6 +184,11 @@ def refresh_recommendations(api_key=None, limit=60):
                  tex_text(paper.get("abstract")), paper.get("publicationDate") or str(paper.get("year") or ""),
                  rank, f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else paper.get("url"), _now()),
             )
+    try:  # vecteurs de sens des recommandations, pour les comparer au profil
+        relevance.fetch_embeddings([relevance.s2_key((p.get("externalIds") or {}).get("ArXiv"), f"s2:{p['paperId']}")
+                                    for p in papers], api_key)
+    except Exception:
+        pass
     db.save_settings({"feed.s2Refreshed": _now(), "feed.s2Seeds": [len(positives), len(negatives)]})
     return len(papers)
 
@@ -177,7 +205,8 @@ def list_items(view, announce_types=None):
             types = announce_types or ["new", "cross"]
             marks = ",".join("?" * len(types))
             rows = connection.execute(
-                f"""SELECT * FROM feed_items WHERE in_arxiv = 1 AND announce_type IN ({marks})
+                f"""SELECT * FROM feed_items WHERE (in_arxiv = 1 AND announce_type IN ({marks}))
+                       OR (followed = 1 AND announced >= date('now', '-45 days'))
                     ORDER BY announced DESC, CASE announce_type WHEN 'new' THEN 0 WHEN 'cross' THEN 1 ELSE 2 END,
                     arxiv_id DESC LIMIT 1500""",
                 types,
@@ -190,7 +219,7 @@ def list_items(view, announce_types=None):
         item["status"] = status.get(item["key"])
         item["libraryId"] = library.get(item["arxiv_id"])
         items.append(item)
-    return items
+    return relevance.score_items(items)
 
 
 def set_status(key, status):

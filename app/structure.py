@@ -270,12 +270,17 @@ def extract_structure(fragment):
     for item in fragment.select(".ltx_bibitem"):
         tag = item.find(class_="ltx_tag_bibitem")
         text = squash(" ".join(plain(block) for block in item.select(".ltx_bibblock")))
-        doi = re.search(r"\b10\.\d{4,9}/[^\s\"<>]+", text)
+        # DOI et identifiants arXiv : dans le texte, ou dans les liens (« Document », « Link »)
+        links = " ".join(a.get("href", "") for a in item.select("a[href]"))
+        doi = re.search(r"\b10\.\d{4,9}/[^\s\"<>]+", f"{text} {links}")
+        arxiv_links = [m.group(1) for m in re.finditer(r"arxiv\.org/(?:abs|pdf)/([^\s\"?#]+?)(?:v\d+)?(?:\.pdf)?(?=[\s\"?#]|$)", links)]
+        title = item.select_one(".ltx_bib_title")
         bibliography.append({
             "id": ensure_id(item, "bib"),
             "label": squash(plain(tag)).strip("[]") if tag else "",
             "text": text,
-            "arxiv": extract_ids(text),
+            "title": squash(plain(title)) if title else "",
+            "arxiv": list(dict.fromkeys(extract_ids(text) + arxiv_links)),
             "doi": doi.group(0).rstrip(".,;") if doi else "",
         })
 

@@ -3,10 +3,12 @@
 import { api } from "./api.js";
 import { getLanguage, t } from "./i18n.js";
 import { typesetTex } from "./math.js";
+import { renderProfile } from "./profile.js";
 import { saveSettings, settings } from "./settings.js";
-import { h, icons, toast } from "./util.js";
+import { h, icons, toast, withMath } from "./util.js";
 
-const TABS = [["arxiv", "#/feed"], ["recommended", "#/feed/recommended"], ["import", "#/feed/import"]];
+const TABS = [["arxiv", "#/feed"], ["recommended", "#/feed/recommended"], ["profile", "#/feed/profile"], ["import", "#/feed/import"]];
+const COMPACT_BELOW = 0.12;
 const TYPES = ["new", "cross", "replace", "replace-cross"];
 const STALE_ARXIV_HOURS = 3;
 const STALE_S2_HOURS = 24;
@@ -20,6 +22,7 @@ export async function renderFeed(view, tab) {
         h("a", { href, role: "tab", "aria-selected": String(key === tab) }, t(`feed.tab.${key}`))))),
     body));
   if (tab === "import") renderImport(body);
+  else if (tab === "profile") await renderProfile(body);
   else await renderList(body, tab);
 }
 
@@ -51,7 +54,7 @@ async function renderList(body, tab) {
   body.replaceChildren(h("div", { class: "feed-toolbar" }, status, refresh), notice, filters, list);
 
   let data = await api.feed(tab);
-  const state = { search: "", categories: new Set(), types: new Set(settings.feedTypes || ["new", "cross"]), showHidden: false };
+  const state = { search: "", categories: new Set(), types: new Set(settings.feedTypes || ["new", "cross"]), showHidden: false, sort: settings.feedSort || "relevance" };
 
   const doRefresh = async (automatic = false) => {
     refresh.disabled = true;
@@ -80,19 +83,29 @@ async function renderList(body, tab) {
   const draw = () => {
     renderFilters(filters, tab, data, state, draw);
     const needle = state.search.trim().toLowerCase();
-    const shown = data.items.filter((item) => {
-      if (tab === "arxiv" && !state.types.has(item.announce_type)) return false;
-      if (state.categories.size && !item.categories.some((c) => state.categories.has(c))) return false;
-      if (item.status === "disliked" && !state.showHidden) return false;
-      return !needle || `${item.title} ${item.authors.join(" ")} ${item.abstract}`.toLowerCase().includes(needle);
-    });
+    const matches = (item) => (item.status !== "disliked" || state.showHidden)
+      && (!needle || `${item.title} ${item.authors.join(" ")} ${item.abstract}`.toLowerCase().includes(needle));
+    const inCategories = (item) => !state.categories.size || item.categories.some((c) => state.categories.has(c));
     if (!data.items.length) {
       list.replaceChildren(h("div", { class: "empty" }, t(tab === "recommended" ? "feed.emptyS2" : "feed.emptyArxiv")));
       return;
     }
-    if (!shown.length) {
-      list.replaceChildren(h("div", { class: "empty" }, t("feed.noMatch")));
-      return;
+    const byRelevance = tab === "arxiv" && state.sort === "relevance";
+    const card = (item) => feedCard(item, draw, { compact: byRelevance && item.relevance < COMPACT_BELOW && !item.libraryId && item.status !== "liked" });
+    const sections = [];
+    let shown;
+    if (tab === "arxiv") {
+      // Nouveaux articles des auteurs suivis, hors des annonces de vos catégories
+      const followed = data.items.filter((i) => i.followed && !i.in_arxiv && matches(i))
+        .sort((a, b) => (b.announced || "").localeCompare(a.announced || ""));
+      if (followed.length) {
+        sections.push(h("section", { class: "feed-day followed-section" },
+          h("h2", { class: "feed-date" }, `${t("feed.followedTitle")} · ${t("feed.count", { n: followed.length })}`),
+          followed.map(card)));
+      }
+      shown = data.items.filter((i) => i.in_arxiv && state.types.has(i.announce_type) && inCategories(i) && matches(i));
+    } else {
+      shown = data.items.filter((i) => inCategories(i) && matches(i));
     }
     const groups = new Map();
     for (const item of shown) {
@@ -100,9 +113,13 @@ async function renderList(body, tab) {
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(item);
     }
-    list.replaceChildren(...[...groups].map(([date, items]) => h("section", { class: "feed-day" },
-      date && h("h2", { class: "feed-date" }, capitalize(`${t("feed.announced", { date: formatDay(date) })} · ${t("feed.count", { n: items.length })}`)),
-      items.map((item) => feedCard(item, draw)))));
+    for (const [date, items] of groups) {
+      if (byRelevance) items.sort((a, b) => b.relevance - a.relevance);
+      sections.push(h("section", { class: "feed-day" },
+        date && h("h2", { class: "feed-date" }, capitalize(`${t("feed.announced", { date: formatDay(date) })} · ${t("feed.count", { n: items.length })}`)),
+        items.map(card)));
+    }
+    list.replaceChildren(...(sections.length ? sections : [h("div", { class: "empty" }, t("feed.noMatch"))]));
     typesetTex([list]).catch(() => {});
   };
 
@@ -133,6 +150,18 @@ function renderFilters(filters, tab, data, state, draw) {
   };
   const row = [search];
   if (tab === "arxiv") {
+    const keys = ["relevance", "arxiv"];
+    const sortButtons = keys.map((key) => {
+      const button = h("button", { class: "kind-filter", type: "button", "aria-pressed": String(state.sort === key) }, t(`feed.sort.${key}`));
+      button.addEventListener("click", () => {
+        state.sort = key;
+        sortButtons.forEach((b, i) => b.setAttribute("aria-pressed", String(keys[i] === key)));
+        saveSettings({ feedSort: key });
+        draw();
+      });
+      return button;
+    });
+    row.push(h("span", { class: "filter-group" }, h("span", { class: "muted small sort-label" }, t("feed.sortLabel")), sortButtons));
     row.push(h("span", { class: "filter-group" }, TYPES.map((type) => chip(t(`feed.type.${type}`), state.types.has(type), (on) => {
       if (on) state.types.add(type); else state.types.delete(type);
       saveSettings({ feedTypes: [...state.types] });
@@ -157,7 +186,7 @@ function formatDay(iso) {
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString(getLanguage() === "fr" ? "fr-FR" : "en-GB", { weekday: "long", day: "numeric", month: "long" });
 }
 
-export function feedCard(item, onChange = () => {}) {
+export function feedCard(item, onChange = () => {}, { compact = false } = {}) {
   const authors = item.authors.length > 8 ? [...item.authors.slice(0, 8), t("feed.etAl")] : item.authors;
   const abstract = h("p", { class: "feed-abstract" }, item.abstract || "");
   abstract.addEventListener("click", () => abstract.classList.toggle("open"));
@@ -194,8 +223,17 @@ export function feedCard(item, onChange = () => {}) {
     }
   });
 
-  return h("article", { class: `feed-card${item.libraryId ? " in-library" : ""}` },
-    h("h3", { class: "feed-title" }, item.title),
+  const reasons = (item.reasons || []).map((reason) => h("span", { class: `reason reason-${reason.kind}` },
+    reason.kind === "author" ? `👤 ${t("feed.reason.author")} : ${reason.label}`
+      : reason.kind === "keyword" ? `🔑 ${reason.label}`
+        : [`≈ ${t("feed.reason.similar")} : `, h("i", {}, withMath(reason.label.length > 90 ? `${reason.label.slice(0, 88)}…` : reason.label)),
+          reason.via === "reference" ? ` (${t("feed.reason.reference")})` : reason.via === "liked" ? " (👍)" : ""]));
+  const level = item.relevance === undefined ? null : item.relevance >= 0.6 ? "high" : item.relevance >= 0.25 ? "medium" : item.relevance >= COMPACT_BELOW ? "low" : "none";
+  const meter = level && level !== "none" && h("span", { class: `relevance relevance-${level}`, title: t("feed.relevanceHint", { n: Math.round(item.relevance * 100) }) },
+    h("span", { class: "relevance-bar" }, h("span", { style: `width: ${Math.round(item.relevance * 100)}%` })), t(`feed.level.${level}`));
+
+  const card = h("article", { class: `feed-card${item.libraryId ? " in-library" : ""}${compact ? " compact" : ""}` },
+    h("div", { class: "feed-title-row" }, h("h3", { class: "feed-title" }, item.title), meter),
     h("div", { class: "feed-authors" }, authors.join(", ")),
     h("div", { class: "card-meta" },
       item.primary_category && h("span", { class: "chip category" }, item.primary_category),
@@ -205,6 +243,7 @@ export function feedCard(item, onChange = () => {}) {
       !item.announce_type && item.announced && h("span", { class: "chip" }, item.announced),
       item.announce_type && item.s2_rank !== null && item.s2_rank !== undefined && h("span", { class: "chip recommended-chip", title: t("feed.recommendedHint") }, t("feed.recommended")),
       item.libraryId && h("span", { class: "chip in-library-chip" }, t("feed.inLibrary"))),
+    reasons.length ? h("div", { class: "reasons" }, reasons) : null,
     item.abstract && abstract,
     h("div", { class: "feed-actions" },
       read,
@@ -213,6 +252,9 @@ export function feedCard(item, onChange = () => {}) {
       h("span", { class: "spacer" }),
       item.link && h("a", { class: "icon-button", href: item.link, target: "_blank", rel: "noopener noreferrer", title: item.arxiv_id ? "arXiv" : "Semantic Scholar", html: icons.external }),
       item.arxiv_id && h("a", { class: "icon-button", href: `https://arxiv.org/pdf/${item.arxiv_id}`, target: "_blank", rel: "noopener noreferrer", title: "PDF", html: icons.pdf })));
+  // Article peu pertinent : une ligne ; un clic sur le titre déplie la carte
+  if (compact) card.querySelector(".feed-title-row").addEventListener("click", () => card.classList.remove("compact"));
+  return card;
 }
 
 // ---------- Import d'un texte collé ou d'un fichier ----------

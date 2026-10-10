@@ -35,19 +35,24 @@ un argument utilisé sans renvoi explicite n'apparaît pas.
 
 ## Feed (étape 2)
 
-Menu **Feed** en haut :
+Menu **Feed** en haut, quatre onglets :
 - **Nouveautés arXiv** : annonces quotidiennes des catégories suivies (math.DG, math.CV, math.SP,
-  math-ph par défaut, modifiables dans les réglages), d'après le flux RSS d'arXiv ; mise à jour
-  automatique toutes les 3 h à l'ouverture. Filtres : nouveaux / croisés / nouvelles versions,
-  catégorie, recherche. 👍 pertinent, 👎 pas pertinent (masqué). « Lire » importe et ouvre l'article.
-- **Recommandations** : API de recommandations de Semantic Scholar, à partir des articles de la
-  bibliothèque et des 👍 (les 👎 sont écartés) ; mise à jour automatique une fois par jour.
-  Sans clé d'API, Semantic Scholar limite fortement les requêtes : une clé gratuite
-  (semanticscholar.org/product/api) peut être saisie dans les réglages ; elle reste sur ce Mac.
+  math-ph par défaut, modifiables dans les réglages), **triées par pertinence pour votre profil**,
+  avec la raison affichée (« auteur suivi », « proche de … », mot-clé) ; les articles peu pertinents
+  sont réduits à une ligne (clic pour déplier). En tête : les nouveaux articles des **auteurs suivis**,
+  même hors de vos catégories. Tri « Ordre arXiv » possible. 👍 / 👎 affinent le tri.
+- **Recommandations** : Semantic Scholar (API publique, sans compte), à partir du profil et des 👍.
+- **Profil** : vos articles, articles et livres de référence, auteurs suivis, mots-clés.
+  « Pré-remplir » le construit à partir de la bibliothèque et des bibliographies de vos articles
+  (auteurs cités au moins deux fois, prénom complet retrouvé sur arXiv ; livres cités ; mots-clés).
+  Les références de vos articles servent aussi, en arrière-plan.
 - **Importer** : coller un e-mail de Scholar Inbox ou de Semantic Scholar, une liste de liens ou un
-  export BibTeX (ou choisir un fichier) ; les identifiants arXiv sont repérés, puis importés en lot.
+  export BibTeX ; les identifiants arXiv sont repérés puis importés en lot.
 
-Titres et résumés sont mis en forme par MathJax (TeX entre `$…$`).
+Calcul de la pertinence (app/relevance.py) : proximité de vocabulaire (TF-IDF des titres et résumés)
+et proximité de sens (vecteurs SPECTER de Semantic Scholar, comparés au lot du jour), meilleure
+référence du profil ; + auteurs suivis, mots-clés ; − proximité avec les articles 👎.
+Une clé d'API Semantic Scholar (gratuite, facultative) évite les limitations de requêtes.
 
 ## Étapes suivantes prévues
 
@@ -70,6 +75,7 @@ app/            serveur Python (FastAPI)
   structure.py  sommaire, énoncés, preuves, dépendances, bibliographie
   texsource.py  lecture de la source TeX (options de classe, police, étiquettes de listes)
   feed.py       nouveautés arXiv (RSS), recommandations Semantic Scholar, repérage d'identifiants
+  profile.py    profil de recherche, pré-remplissage, auteurs suivis ; relevance.py : tri par pertinence
   library.py    import d'un article ; db.py : base SQLite ; main.py : routes web
 static/         interface (HTML, CSS, JavaScript sans compilation) ;
                 vendor/mathjax (MathJax 3.2.2) et fonts/ (Latin Modern) copiés localement

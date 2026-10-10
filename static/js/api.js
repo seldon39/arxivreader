@@ -28,6 +28,11 @@ export const api = {
   refreshFeed: (view) => request("POST", "/api/feed/refresh", { view }),
   feedStatus: (key, status) => request("PUT", "/api/feed/status", { key, status }),
   lookup: (text) => request("POST", "/api/lookup", { text }),
+  profile: () => request("GET", "/api/profile"),
+  addProfileItem: (item) => request("POST", "/api/profile/items", item),
+  removeProfileItem: (id) => request("DELETE", `/api/profile/items/${id}`),
+  resolveProfile: (kind, query) => request("POST", "/api/profile/resolve", { kind, query }),
+  prefillProfile: (owner) => request("POST", "/api/profile/prefill", { owner }),
   settings: () => request("GET", "/api/settings"),
   saveSettings: (values) => request("PUT", "/api/settings", values),
 };

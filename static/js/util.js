@@ -72,6 +72,7 @@ function texToText(tex) {
   return tex
     .replace(/\\mathbb\{?([A-Z])\}?/g, (_, c) => BLACKBOARD[c] || c)
     .replace(/\\(?:mathcal|mathrm|mathbf|mathfrak|operatorname|text|mathit)\{([^}]*)\}/g, "$1")
+    .replace(/\\(?:rm|it|bf|sf|tt|cal|scriptstyle|displaystyle)\b\s*/g, "")
     .replace(/\\([A-Za-z]+)/g, (_, name) => TEX_SYMBOLS[name] ?? name)
     .replace(/\\[,;! ]/g, " ");
 }

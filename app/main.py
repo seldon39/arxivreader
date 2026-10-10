@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import db, feed, library
+from . import db, feed, library, profile, relevance
 from .arxiv import ArxivError
 from .config import HOST, PORT, STATIC
 
@@ -84,6 +84,24 @@ class StatusRequest(BaseModel):
 
 class LookupRequest(BaseModel):
     text: str
+
+
+class ProfileItem(BaseModel):
+    kind: str
+    label: str
+    ref: str | None = None
+    authors: list[str] | None = None
+    year: str | None = None
+    text: str | None = None
+
+
+class ResolveRequest(BaseModel):
+    kind: str
+    query: str
+
+
+class PrefillRequest(BaseModel):
+    owner: str
 
 
 @app.get("/api/papers")
@@ -166,7 +184,8 @@ async def feed_refresh(body: RefreshRequest):
         if body.view == "recommended":
             count = await run_in_threadpool(feed.refresh_recommendations, settings.get("s2ApiKey") or None)
         else:
-            count = await run_in_threadpool(feed.refresh_arxiv, settings.get("feedCategories") or None)
+            count = await run_in_threadpool(feed.refresh_arxiv, settings.get("feedCategories") or None,
+                                            settings.get("s2ApiKey") or None)
     except feed.FeedError as error:
         return JSONResponse({"error": str(error)}, status_code=400)
     except Exception as error:  # réseau
@@ -188,6 +207,53 @@ async def lookup(body: LookupRequest):
         return JSONResponse({"error": f"{type(error).__name__}: {error}"}, status_code=502)
 
 
+@app.get("/api/profile")
+def get_profile():
+    positives, *_ = relevance.profile_documents()
+    return {"items": profile.list_items(), "owner": db.get_settings().get("profileOwner", ""),
+            "references": sum(1 for d in positives if d.get("reference"))}
+
+
+@app.post("/api/profile/items")
+async def add_profile_item(body: ProfileItem):
+    ref = (body.ref or "")[:200] or None
+    try:
+        profile.add_item(body.kind, body.label[:400], ref, body.authors, body.year, (body.text or "")[:20000] or None)
+    except ValueError:
+        raise HTTPException(400, "Bad profile item")
+    key = relevance.s2_key(None, ref) if ref else None
+    if key:  # vecteur de sens tout de suite, pour que le tri en tienne compte
+        try:
+            await run_in_threadpool(relevance.fetch_embeddings, [key], db.get_settings().get("s2ApiKey") or None)
+        except Exception:
+            pass
+    return get_profile()
+
+
+@app.delete("/api/profile/items/{item_id}")
+def remove_profile_item(item_id: int):
+    profile.remove_item(item_id)
+    return get_profile()
+
+
+@app.post("/api/profile/resolve")
+async def resolve_profile_item(body: ResolveRequest):
+    try:
+        return await run_in_threadpool(profile.resolve, body.kind, body.query[:500], db.get_settings().get("s2ApiKey") or None)
+    except Exception as error:
+        return JSONResponse({"error": f"{type(error).__name__}: {error}"}, status_code=502)
+
+
+@app.post("/api/profile/prefill")
+async def prefill_profile(body: PrefillRequest):
+    db.save_settings({"profileOwner": body.owner.strip()[:200]})
+    try:
+        await run_in_threadpool(profile.prefill, body.owner.strip(), db.get_settings().get("s2ApiKey") or None)
+    except Exception as error:
+        return JSONResponse({"error": f"{type(error).__name__}: {error}"}, status_code=502)
+    return get_profile()
+
+
 @app.get("/api/settings")
 def settings():
     return db.get_settings()
@@ -196,7 +262,7 @@ def settings():
 @app.put("/api/settings")
 def update_settings(values: dict):
     allowed = {"language", "theme", "fontSize", "readingWidth", "proofsCollapsed", "tocOpen", "panelOpen", "paperFont", "marginMarks", "mathRenderer",
-               "feedCategories", "feedTypes", "s2ApiKey"}
+               "feedCategories", "feedTypes", "s2ApiKey", "feedSort"}
     db.save_settings({k: v for k, v in values.items() if k in allowed})
     return db.get_settings()
 

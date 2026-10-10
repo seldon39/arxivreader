@@ -43,8 +43,27 @@ CREATE TABLE IF NOT EXISTS feed_items (
     announce_type TEXT,              -- new, cross, replace, replace-cross
     announced TEXT,                  -- date d'annonce sur arXiv
     in_arxiv INTEGER DEFAULT 0,
+    followed INTEGER DEFAULT 0,      -- article récent d'un auteur suivi (requête arXiv par auteur)
     s2_rank INTEGER,                 -- rang dans la dernière recommandation, sinon NULL
     link TEXT,
+    fetched_at TEXT DEFAULT (datetime('now'))
+);
+-- Profil de recherche : articles, livres, auteurs suivis, mots-clés
+CREATE TABLE IF NOT EXISTS profile_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,              -- mine, paper, book, author, keyword
+    label TEXT NOT NULL,             -- titre, nom ou mot-clé
+    ref TEXT,                        -- identifiant arXiv, « s2:<paperId> », DOI…
+    authors TEXT,
+    year TEXT,
+    text TEXT,                       -- résumé ou description (sert au calcul de pertinence)
+    source TEXT DEFAULT 'manual',    -- manual, suggested
+    added_at TEXT DEFAULT (datetime('now'))
+);
+-- Vecteurs SPECTER de Semantic Scholar (proximité de sens entre articles), mis en cache
+CREATE TABLE IF NOT EXISTS embeddings (
+    key TEXT PRIMARY KEY,            -- identifiant demandé à Semantic Scholar (ArXiv:…, DOI:…, paperId)
+    vector TEXT,                     -- JSON, ou NULL si inconnu de Semantic Scholar
     fetched_at TEXT DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS feed_status (
@@ -61,6 +80,10 @@ def init():
     LIBRARY.mkdir(parents=True, exist_ok=True)
     with connect() as db:
         db.executescript(SCHEMA)
+        # Colonnes ajoutées après la création de la base
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(feed_items)")}
+        if "followed" not in columns:
+            db.execute("ALTER TABLE feed_items ADD COLUMN followed INTEGER DEFAULT 0")
 
 
 @contextmanager
