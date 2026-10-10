@@ -192,3 +192,6 @@ a.ams-title:hover { text-decoration: underline; }
   .paper-content, .ltx_abstract { text-align: left; }
   .ltx_abstract { margin: 0 .8em 1.6em; }
 }
+/* Formule en ligne coupée en morceaux (retours à la ligne après une relation, comme TeX) */
+.math-group, .nobr > .math-group { white-space: normal; }
+.math-group > mjx-container { white-space: nowrap; }

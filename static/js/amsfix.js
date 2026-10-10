@@ -227,9 +227,43 @@ const GLYPHS = { "⟂": "⊥" };
 const TALL = ":scope > mtable, :scope > mrow > mtable";
 
 // `macros` : macros de l'auteur qui produisent \left…\right (lues dans la source TeX à l'import)
+// Formule que LaTeXML n'a pas su analyser (souvent dans gathered, multline…) : indices et exposants
+// laissés sur une base vide (<msub><mrow/>…) après le symbole, d'où « Ψ ₛ », « exp ₓ₀ ^Vₛ » décalés.
+// Rattachés au symbole (ou à la parenthèse fermante) qui précède ; indice puis exposant réunis en
+// <msubsup>. Un préfixe voulu ({}^{t}A), placé après un opérateur ou en tête, n'est pas touché.
+const CLOSERS = new Set([")", "]", "}", "|", "‖", "⟩", "′", "″", "*", "∗", "!"]);
+
+function attachScripts(math) {
+  for (const script of [...math.querySelectorAll("msub, msup, msubsup")]) {
+    const base = script.firstElementChild;
+    if (!base || base.localName !== "mrow" || base.childElementCount || base.textContent.trim()) continue;
+    const previous = script.previousElementSibling;
+    if (!previous || previous.localName === "mspace") continue;
+    if (previous.localName === "mo" && !CLOSERS.has(previous.textContent.trim())) continue;
+    const merged = previous.getAttribute("data-attached");
+    if (merged && previous.localName !== script.localName && previous.localName !== "msubsup" && script.localName !== "msubsup") {
+      // x_a^b : msub(x, a) déjà rattaché, suivi de msup(vide, b) → msubsup(x, a, b)
+      const both = document.createElementNS(math.namespaceURI, "msubsup");
+      const [prevBase, prevScript] = [...previous.children];
+      const ownScript = script.children[1];
+      const [sub, sup] = previous.localName === "msub" ? [prevScript, ownScript] : [ownScript, prevScript];
+      both.append(prevBase, sub, sup);
+      both.setAttribute("data-attached", "1");
+      previous.replaceWith(both);
+      script.remove();
+      continue;
+    }
+    base.replaceWith(previous);
+    script.setAttribute("data-attached", "1");
+  }
+}
+
 export function fixMathML(content, macros = []) {
   const authorSized = macros.length ? new RegExp(`\\\\(${macros.join("|")})(?![A-Za-z])`) : null;
   for (const math of content.querySelectorAll("math")) {
+    attachScripts(math);
+    // Lignes d'un gathered/split/aligned : LaTeXML met rowspacing="0pt", TeX laisse \jot (3 pt ≈ 0,3 em)
+    math.querySelectorAll('mtable[displaystyle="true"][rowspacing="0pt"]').forEach((table) => table.setAttribute("rowspacing", "0.3em"));
     const tex = math.getAttribute("alttext") || "";
     // délimiteurs voulus extensibles : \left…\right, \middle, matrices et cas, \binom, \choose…, macros de l'auteur
     const sized = /\\left\b|\\middle\b|\\right\b|\\begin\{[pbBvV]?matrix\*?\}|\\begin\{cases\}|\\[dt]?binom\b|\\genfrac\b|\\choose\b|\\brace\b|\\brack\b|\\atopwithdelims\b/.test(tex)
@@ -281,5 +315,61 @@ export function fixMathML(content, macros = []) {
       last.after(document.createElementNS(last.namespaceURI, "mspace"));
       last.nextSibling.setAttribute("width", "0.167em");
     }
+  }
+}
+
+// Retours à la ligne dans les formules en ligne : comme TeX, une longue formule peut passer à la ligne
+// après une relation (=, ∈, →…) ou un + / − binaire, au premier niveau (hors parenthèses). Elle est
+// découpée en morceaux réunis dans un <span class="math-group"> qui compte pour UNE formule (repères
+// des surlignages, texte cité) ; <wbr> entre les morceaux : le navigateur peut y couper la ligne.
+const BREAK_AFTER = /^(?:[=<>≤≥≠≈≡∼≃≅∝∈∉∋⊂⊃⊆⊇→←↔⟶⟵↦⟼⇒⇐⇔⟹⟸⟺≔]|:=|[+−])$/;
+const OPEN_FENCES = new Set(["(", "[", "{", "⟨", "⌊", "⌈"]);
+const CLOSE_FENCES = new Set([")", "]", "}", "⟩", "⌋", "⌉"]);
+const MATHML = "http://www.w3.org/1998/Math/MathML";
+
+export function splitLongInlineMath(content) {
+  for (const math of [...content.querySelectorAll('math[display="inline"]')]) {
+    if (!math.closest(".ltx_p") || math.closest("td, .ltx_title, .figure-card, .ltx_note")) continue;
+    const tex = math.getAttribute("alttext") || "";
+    if (tex.length < 30) continue;
+    let row = math.querySelector(":scope > semantics")?.firstElementChild;
+    while (row?.localName === "mrow" && row.childElementCount === 1 && row.firstElementChild.localName === "mrow") row = row.firstElementChild;
+    if (row?.localName !== "mrow") continue;
+    const children = [...row.children];
+    const pieces = [[]];
+    let depth = 0;
+    children.forEach((child, i) => {
+      pieces.at(-1).push(child);
+      const text = child.localName === "mo" ? child.textContent.trim() : "";
+      if (OPEN_FENCES.has(text)) depth++;
+      else if (CLOSE_FENCES.has(text)) depth = Math.max(0, depth - 1);
+      const unary = (text === "+" || text === "−") && (i === 0 || children[i - 1].localName === "mo");
+      if (!depth && !unary && BREAK_AFTER.test(text) && i < children.length - 1 && i > 0) pieces.push([]);
+    });
+    if (pieces.length < 2) continue;
+    const group = document.createElement("span");
+    group.className = "math-group";
+    group.dataset.tex = tex;
+    pieces.forEach((nodes, index) => {
+      const piece = document.createElementNS(MATHML, "math");
+      piece.setAttribute("display", "inline");
+      piece.setAttribute("class", math.getAttribute("class") || "");
+      if (index === 0 && math.id) piece.id = math.id;
+      const semantics = document.createElementNS(MATHML, "semantics");
+      const mrow = document.createElementNS(MATHML, "mrow");
+      mrow.append(...nodes);
+      // relation ou opérateur en fin de morceau : son espace de droite (MathJax l'omet en bord de formule)
+      const last = nodes.at(-1);
+      if (index < pieces.length - 1 && last?.localName === "mo") {
+        const gap = document.createElementNS(MATHML, "mspace");
+        gap.setAttribute("width", /^[+−]$/.test(last.textContent.trim()) ? "0.2222em" : "0.2778em");
+        mrow.append(gap);
+      }
+      semantics.append(mrow);
+      piece.append(semantics);
+      if (index) group.append(document.createElement("wbr"));
+      group.append(piece);
+    });
+    math.replaceWith(group);
   }
 }

@@ -18,15 +18,18 @@ const UI = ".proof-toggle, .block-note, .state-pill, .proof-pointer";
 
 // ---------- Texte logique ----------
 
-const isMath = (node) => node.nodeType === 1 && node.matches("mjx-container, math");
+// Une formule : un rendu MathJax, une formule MathML, ou un groupe de morceaux (formule longue coupée)
+const MATH = ".math-group, mjx-container, math";
+const isMath = (node) => node.nodeType === 1 && node.matches(MATH) && !node.parentElement?.closest(".math-group");
+const mathOf = (element) => element?.closest(".math-group") || element?.closest("mjx-container, math");
 
 function* units(root) {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
     acceptNode(node) {
       const element = node.nodeType === 1 ? node : node.parentElement;
       if (element.closest(UI)) return NodeFilter.FILTER_REJECT;
-      if (node.nodeType === 3) return element.closest("mjx-container, math") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
-      if (node.parentElement?.closest("mjx-container, math")) return NodeFilter.FILTER_REJECT;
+      if (node.nodeType === 3) return element.closest(MATH) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+      if (node.parentElement?.closest(MATH)) return NodeFilter.FILTER_REJECT;
       return isMath(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
     },
   });
@@ -43,7 +46,7 @@ function container(node, root) {
 
 // Décalage (en texte logique, dans `box`) d'une extrémité de sélection DOM
 function offsetOf(box, node, offset, isEnd) {
-  const math = (node.nodeType === 3 ? node.parentElement : node).closest("mjx-container, math");
+  const math = mathOf(node.nodeType === 3 ? node.parentElement : node);
   let target = null;
   let inner = 0;
   if (math) { target = math; inner = isEnd ? 1 : 0; }

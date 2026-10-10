@@ -4,7 +4,7 @@ import { api } from "./api.js";
 import { closure, renderGraph } from "./graph.js";
 import { Annotator, noteEditor } from "./annotations.js";
 import { Assistant } from "./ai.js";
-import { alignNumberColumns, amsBibliography, fixMathML, markItalicStatements, moveTitleNotes, normalizeFontScale, placeEquationNumbers, relabelLists } from "./amsfix.js";
+import { alignNumberColumns, amsBibliography, fixMathML, splitLongInlineMath, markItalicStatements, moveTitleNotes, normalizeFontScale, placeEquationNumbers, relabelLists } from "./amsfix.js";
 import { layoutFigures, prepareFigures } from "./figures.js";
 import { typesetFragment, typesetMath, typesetTex } from "./math.js";
 import { t } from "./i18n.js";
@@ -300,6 +300,7 @@ class Reader {
 
     normalizeFontScale(this.content);
     fixMathML(this.content, this.structure.tex?.stretchyMacros || []);
+    splitLongInlineMath(this.content);
 
     // Ce que la version HTML perd par rapport au PDF (lu dans la source TeX à l'import)
     const tex = this.structure.tex;
@@ -312,7 +313,7 @@ class Reader {
     amsBibliography(this.content);
 
     // Ponctuation collée à la formule qui la précède (pas de « , » seule en début de ligne)
-    this.content.querySelectorAll("math").forEach((math) => {
+    this.content.querySelectorAll("math:not(.math-group math), .math-group").forEach((math) => {
       const next = math.nextSibling;
       if (!next || next.nodeType !== Node.TEXT_NODE || !/^[.,;:)\]]/.test(next.data)) return;
       const length = next.data.match(/^[.,;:)\]]+/)[0].length;
