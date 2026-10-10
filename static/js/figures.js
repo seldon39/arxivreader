@@ -1,6 +1,9 @@
 // Figures TikZ (SVG de LaTeXML) : cadre blanc aux bords arrondis, couleurs d'origine.
 // Les étiquettes (<foreignObject>) sont recalculées et posées en HTML au-dessus du dessin :
 // Safari ignore les transformations SVG pour ce contenu et empile toutes les étiquettes dans un coin.
+// MathJax ne compose pas les formules aux dimensions de TeX (plus hautes, parfois plus larges) : chaque
+// étiquette est posée sur la ligne de base prévue par LaTeX, centrée dans sa boîte, et réduite si elle
+// est plus large que la boîte, pour ne pas chevaucher les flèches et les points voisins.
 
 const PADDING = 14;
 
@@ -32,11 +35,36 @@ function layoutFigure(card) {
   for (const label of labels) {
     const { x, y, w, h } = label.geometry;
     const corners = [[x, y], [x + w, y], [x, y + h], [x + w, y + h]].map(([px, py]) => label.matrix.transformPoint(new DOMPoint(px, py)));
-    const left = (Math.min(...corners.map((p) => p.x)) - (box?.x || 0)) * scale;
-    const top = (Math.min(...corners.map((p) => p.y)) - (box?.y || 0)) * scale;
+    const boxLeft = (Math.min(...corners.map((p) => p.x)) - (box?.x || 0)) * scale;
+    const boxTop = (Math.min(...corners.map((p) => p.y)) - (box?.y || 0)) * scale;
+    const boxWidth = (Math.max(...corners.map((p) => p.x)) - Math.min(...corners.map((p) => p.x))) * scale;
+    const boxHeight = (Math.max(...corners.map((p) => p.y)) - Math.min(...corners.map((p) => p.y))) * scale;
+    let fontSize = label.basePx * scale;
+    label.style.fontSize = `${fontSize}px`;
+    let left = boxLeft;
+    let top = boxTop;
+    const { metrics } = label;
+    if (metrics && boxWidth > 0) {
+      // plus large que la boîte de TeX : réduite d'autant (au plus de moitié)
+      const width = label.offsetWidth;
+      if (width > boxWidth * 1.02) {
+        fontSize *= Math.max(0.5, boxWidth / width);
+        label.style.fontSize = `${fontSize}px`;
+      }
+      left = boxLeft + (boxWidth - label.offsetWidth) / 2;
+      // ligne de base : à la hauteur prévue par TeX (hauteur / (hauteur + profondeur) de la boîte)
+      const baseline = boxTop + boxHeight * (metrics.height / (metrics.height + metrics.depth || 1));
+      top = baseline - label.baselineMark.offsetTop;
+    }
+    // étiquette tournée (« \\subset » vertical d'un diagramme…) : centrée sur sa boîte, tournée du même angle
+    const { a, b } = label.matrix;
+    if (Math.abs(b) > 1e-6) {
+      label.style.rotate = `${Math.atan2(b, a)}rad`;
+      left = boxLeft + (boxWidth - label.offsetWidth) / 2;
+      top = boxTop + (boxHeight - label.offsetHeight) / 2;
+    }
     label.style.left = `${left}px`;
     label.style.top = `${top}px`;
-    label.style.fontSize = `${label.basePx * scale}px`;
     minX = Math.min(minX, left);
     minY = Math.min(minY, top);
     maxX = Math.max(maxX, left + label.offsetWidth);
@@ -64,21 +92,40 @@ export function prepareFigures(root) {
       const sideBySide = box && (box.closest(".ltx_minipage") || /width/.test(box.getAttribute("style") || ""));
       if (box && !textOutside && !sideBySide) box.classList.add("figure-block");
     }
+    // dans une cellule d'équation (diagramme numéroté) : la cellule prend la largeur de son
+    // contenu, une largeur en % du dessin y vaudrait 0 ; le dessin garde sa largeur, bornée par la colonne
+    if (svg.closest(".ltx_eqn_cell")) card.classList.add("in-cell");
     svg.replaceWith(card);
     card.append(svg);
     for (const fo of svg.querySelectorAll("foreignObject")) {
       const label = document.createElement("span");
       label.className = "figure-label";
       label.matrix = matrixTo(svg, fo);
+      // Cellule d'un diagramme (tikz-cd, matrice TikZ) : LaTeXML compte deux fois la hauteur du texte
+      // (ligne de la matrice déjà posée sur la ligne de base, plus la translation propre à l'étiquette) ;
+      // les nœuds remontent alors vers les flèches qui en partent. On retire cette translation.
+      const own = fo.transform?.baseVal?.consolidate?.()?.matrix;
+      if (fo.closest(".ltx_tikzmatrix_col") && own && own.a === 1 && own.b === 0 && own.c === 0 && own.d === -1 && own.e === 0) {
+        label.matrix = label.matrix.multiply(new DOMMatrix().translate(0, own.f));
+      }
       label.geometry = {
         x: fo.x?.baseVal?.value || 0,
         y: fo.y?.baseVal?.value || 0,
         w: fo.width?.baseVal?.value || 0,
         h: fo.height?.baseVal?.value || 0,
       };
-      const size = (fo.getAttribute("style") || "").match(/font-size:\s*([\d.]+)pt/);
+      const style = fo.getAttribute("style") || "";
+      const size = style.match(/font-size:\s*([\d.]+)pt/);
       label.basePx = size ? parseFloat(size[1]) * (4 / 3) : 13.33;
+      // dimensions de l'étiquette selon TeX (en em) ; seulement pour une étiquette ni tournée ni inclinée
+      const em = (name) => parseFloat(style.match(new RegExp(`--ltx-fo-${name}:\\s*([\\d.]+)em`))?.[1]);
+      const upright = Math.abs(label.matrix.b) < 1e-6 && Math.abs(label.matrix.c) < 1e-6;
+      if (upright && em("height") >= 0 && em("depth") >= 0) label.metrics = { height: em("height"), depth: em("depth") };
       label.append(...fo.childNodes);
+      // repère de hauteur nulle posé sur la ligne de base du texte
+      label.baselineMark = document.createElement("span");
+      label.baselineMark.className = "figure-baseline";
+      label.append(label.baselineMark);
       fo.remove();
       card.append(label);
     }
@@ -108,7 +155,8 @@ export function openFigure(target, { closeLabel = "Close", onLink = null } = {})
     // propriétés de mise en page des étiquettes (non recopiées par cloneNode)
     const originals = target.querySelectorAll(":scope > .figure-label");
     card.querySelectorAll(":scope > .figure-label").forEach((label, i) => {
-      Object.assign(label, { matrix: originals[i].matrix, geometry: originals[i].geometry, basePx: originals[i].basePx });
+      Object.assign(label, { matrix: originals[i].matrix, geometry: originals[i].geometry, basePx: originals[i].basePx,
+        metrics: originals[i].metrics, baselineMark: label.querySelector(":scope > .figure-baseline") });
     });
     card.classList.remove("centered");
     frame.append(card);

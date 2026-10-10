@@ -158,6 +158,10 @@ table.ltx_eqn_table { width: 100%; border-collapse: collapse; margin: .55em 0; d
   box-sizing: border-box; line-height: normal; text-indent: 0; text-align: left;
 }
 .figure-card > svg.ltx_picture { display: block; max-width: 100%; height: auto; overflow: visible; }
+/* dessin dans une cellule d'équation : largeur propre, au plus celle de la colonne de texte (unités de conteneur) */
+.paper-content { container-type: inline-size; }
+.figure-card.in-cell { max-width: none; }
+.figure-card.in-cell > svg.ltx_picture { max-width: calc(100cqw - 120px); }
 /* dessin centré dans la source : bloc centré, sans retrait de paragraphe */
 .figure-block { display: block; text-align: center; text-indent: 0; margin: .6em 0; }
 .figure-card.centered:not(.figure-block .figure-card) { display: table; margin-left: auto; margin-right: auto; }
@@ -166,6 +170,7 @@ table.ltx_eqn_table { width: 100%; border-collapse: collapse; margin: .55em 0; d
   white-space: nowrap; line-height: 1; text-indent: 0; text-align: left; color: #000;
 }
 .figure-label .ltx_foreignobject_container, .figure-label .ltx_foreignobject_content { display: inline-block; }
+.figure-baseline { display: inline-block; width: 0; height: 0; vertical-align: baseline; }
 
 /* ---- Notes de bas de page : affichées au survol ---- */
 .ltx_note_outer { display: none; }
