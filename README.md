@@ -104,6 +104,27 @@ ou *admis* ; *Détection automatique* annule ce choix. Le choix est gardé avec 
 compte pour les dépendances et pour Claude.
 Les articles déjà importés sont ré-analysés automatiquement quand cette analyse change.
 
+## D'un article à l'autre
+
+Quand une référence de la bibliographie est un article lu ici (même identifiant arXiv, même DOI, ou titre
+retrouvé dans la référence), « [12, Theorem 4.3] » affiche au survol le Theorem 4.3 de cet article, avec un
+bouton pour l'ouvrir à cet endroit ; dans la bibliographie, une pastille « Ouvrir l'article ».
+
+## Articles sans version HTML
+
+Quand arXiv ne propose pas de version HTML, l'article se lit dans son PDF, affiché dans le lecteur.
+Énoncés, preuves, dépendances, graphe et bibliographie sont tirés de la source TeX (environnements
+`\newtheorem`, numérotation simulée, `\ref`/`\eqref`/`\cref`) ; un énoncé choisi mène à sa page du PDF
+(ancres de hyperref, sinon recherche du texte). Comparé à la version HTML sur 42 articles : 99 % des
+énoncés et 97 % des liens retrouvés. Un article importé avant cette version : bouton « Mettre à jour
+depuis arXiv » de sa carte dans la bibliothèque.
+
+## Citations de vos articles
+
+Une fois par jour, Semantic Scholar donne les articles qui citent ceux du profil (« Mes articles ») ; les
+nouveaux apparaissent dans « Citent vos articles » sur le feed, comptent dans la pastille et, si le réglage
+le permet, déclenchent une notification macOS.
+
 ## Auteurs suivis : alertes
 
 Tant qu'arXivReader est lancé, il vérifie toutes les 3 heures (et une minute après le lancement) les
@@ -184,6 +205,8 @@ app/            serveur Python (FastAPI)
   profile.py    profil de recherche, pré-remplissage, auteurs suivis ; relevance.py : tri par pertinence
   annotations.py  surlignages, notes, état de lecture
   ai.py         texte de l'article et consignes pour Claude, appel sans outils (SDK Claude Agent)
+  crossrefs.py  références qui sont des articles lus ici ; citations.py : articles qui citent les vôtres
+  texstructure.py  structure tirée de la source TeX et pages du PDF (articles sans version HTML)
   providers.py  autres assistants : Codex, Gemini (en ligne de commande), modèle local (Ollama, LM Studio)
   library.py    import d'un article ; db.py : base SQLite ; main.py : routes web
 macos/          application Mac : main.swift (fenêtre, serveur), icon.swift, build.sh
