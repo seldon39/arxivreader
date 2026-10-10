@@ -5,7 +5,7 @@ import { getLanguage, t, tn } from "./i18n.js";
 import { typesetTex } from "./math.js";
 import { renderProfile } from "./profile.js";
 import { saveSettings, settings } from "./settings.js";
-import { debounce, h, hoursSince, icons, timeAgo, toast, toastError, toggleIcon, withMath } from "./util.js";
+import { debounce, h, hoursSince, icons, tidyTitle, timeAgo, toast, toastError, toggleIcon, withMath } from "./util.js";
 
 const TABS = [["arxiv", "#/feed"], ["recommended", "#/feed/recommended"], ["profile", "#/feed/profile"], ["import", "#/feed/import"]];
 const COMPACT_BELOW = 0.12;
@@ -313,8 +313,8 @@ function feedCard(item, onChange = () => {}, { compact = false } = {}) {
   // Article sans version arXiv (recommandation) : sa page Semantic Scholar.
   const known = () => item.libraryId || item.readId;
   const title = item.arxiv_id
-    ? h("a", { class: "feed-title-link", href: known() ? `#/paper/${encodeURIComponent(known())}` : `#/feed`, title: t("feed.read") }, item.title)
-    : h("a", { class: "feed-title-link", href: item.link, target: "_blank", rel: "noopener noreferrer" }, item.title);
+    ? h("a", { class: "feed-title-link", href: known() ? `#/paper/${encodeURIComponent(known())}` : `#/feed`, title: t("feed.read") }, tidyTitle(item.title))
+    : h("a", { class: "feed-title-link", href: item.link, target: "_blank", rel: "noopener noreferrer" }, tidyTitle(item.title));
   if (item.arxiv_id) {
     title.addEventListener("click", async (event) => {
       event.preventDefault();
@@ -341,7 +341,7 @@ function feedCard(item, onChange = () => {}, { compact = false } = {}) {
     h("span", { class: "reason-text" },
       reason.kind === "author" ? t("feed.reason.author", { name: reason.label })
         : reason.kind === "keyword" ? reason.label
-          : [`${t("feed.reason.similar")} `, h("i", {}, withMath(reason.label.length > 90 ? `${reason.label.slice(0, 88)}…` : reason.label)),
+          : [`${t("feed.reason.similar")} `, h("i", {}, withMath(tidyTitle(reason.label.length > 90 ? `${reason.label.slice(0, 88)}…` : reason.label))),
             reason.via === "reference" ? ` (${t("feed.reason.reference")})` : reason.via === "liked" ? ` (${t("feed.reason.liked")})` : ""])));
   const level = item.relevance === undefined ? null : item.relevance >= 0.6 ? "high" : item.relevance >= 0.25 ? "medium" : item.relevance >= COMPACT_BELOW ? "low" : "none";
   const meter = level && level !== "none" && h("span", { class: `relevance relevance-${level}`, title: t("feed.relevanceHint", { n: Math.round(item.relevance * 100) }) },

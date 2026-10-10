@@ -141,6 +141,27 @@ export function withMath(text) {
     part.startsWith("$") && part.endsWith("$") ? h("span", { class: "tex", title: part }, scripted(texToText(part.slice(1, -1)))) : part);
 }
 
+// Titre écrit tout en majuscules (certaines sources, Semantic Scholar…) : remis en casse de titre
+// usuelle, formules $…$ intactes. Les titres normaux ne sont pas touchés.
+const SMALL_WORDS = new Set(["a", "an", "the", "of", "on", "in", "and", "or", "for", "to", "with", "via", "by", "at", "from", "as", "into", "over", "under"]);
+
+export function tidyTitle(title) {
+  const text = String(title || "");
+  const letters = text.replace(/\$[^$]*\$/g, "").match(/\p{L}/gu) || [];
+  const upper = letters.filter((ch) => ch !== ch.toLowerCase()).length;
+  if (letters.length < 12 || upper < 0.85 * letters.length) return text;
+  let first = true;
+  return text.split(/(\$[^$]*\$)/).map((part) => {
+    if (part.startsWith("$")) { first = false; return part; }
+    return part.toLowerCase().replace(/[\p{L}\d][\p{L}\d'’]*/gu, (word, offset, whole) => {
+      const afterColon = /[:—–]\s*$/.test(whole.slice(0, offset));
+      const keepSmall = SMALL_WORDS.has(word) && !first && !afterColon;
+      first = false;
+      return keepSmall ? word : word.charAt(0).toUpperCase() + word.slice(1);
+    });
+  }).join("");
+}
+
 // Bouton à bascule à la YouTube (contour au repos, plein une fois activé)
 export function toggleIcon(off, on, { pressed = false, label = "", className = "" } = {}) {
   return h("button", { class: `icon-button thumb ${className}`, type: "button", title: label, "aria-label": label, "aria-pressed": String(pressed) },
