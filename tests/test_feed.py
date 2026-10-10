@@ -37,3 +37,33 @@ class Feed(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OaiDay(unittest.TestCase):
+    def test_classification(self):
+        from app.feed import parse_oai_day
+        xml = """<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/"><ListRecords>
+        <record><metadata><arXivRaw xmlns="http://arxiv.org/OAI/arXivRaw/"><id>2610.00001</id>
+          <version version="v1"><date>Wed, 07 Oct 2026 10:00:00 GMT</date></version>
+          <title>New in DG</title><authors>A. One, B. Two and C. Three</authors><categories>math.DG math.AP</categories>
+          <abstract>x</abstract></arXivRaw></metadata></record>
+        <record><metadata><arXivRaw xmlns="http://arxiv.org/OAI/arXivRaw/"><id>2610.00002</id>
+          <version version="v1"><date>Wed, 07 Oct 2026 10:00:00 GMT</date></version>
+          <title>Cross</title><authors>D. Four</authors><categories>math.AP math.SP</categories><abstract>x</abstract></arXivRaw></metadata></record>
+        <record><metadata><arXivRaw xmlns="http://arxiv.org/OAI/arXivRaw/"><id>2401.00003</id>
+          <version version="v1"><date>Mon, 01 Jan 2024 10:00:00 GMT</date></version>
+          <version version="v2"><date>Wed, 07 Oct 2026 10:00:00 GMT</date></version>
+          <title>Replaced</title><authors>E. Five</authors><categories>math.CV</categories><abstract>x</abstract></arXivRaw></metadata></record>
+        <record><metadata><arXivRaw xmlns="http://arxiv.org/OAI/arXivRaw/"><id>2401.00004</id>
+          <version version="v1"><date>Mon, 01 Jan 2024 10:00:00 GMT</date></version>
+          <version version="v2"><date>Mon, 01 Apr 2024 10:00:00 GMT</date></version>
+          <title>Metadata only</title><authors>F. Six</authors><categories>math.DG</categories><abstract>x</abstract></arXivRaw></metadata></record>
+        <record><metadata><arXivRaw xmlns="http://arxiv.org/OAI/arXivRaw/"><id>2610.00005</id>
+          <version version="v1"><date>Wed, 07 Oct 2026 10:00:00 GMT</date></version>
+          <title>Elsewhere</title><authors>G. Seven</authors><categories>math.NT</categories><abstract>x</abstract></arXivRaw></metadata></record>
+        </ListRecords></OAI-PMH>"""
+        items, token = parse_oai_day(xml, "2026-10-08", ["math.DG", "math.CV", "math.SP"])
+        self.assertEqual({i["arxiv_id"]: i["announce_type"] for i in items},
+                         {"2610.00001": "new", "2610.00002": "cross", "2401.00003": "replace"})
+        self.assertEqual(items[0]["authors"], ["A. One", "B. Two", "C. Three"])
+        self.assertIsNone(token)

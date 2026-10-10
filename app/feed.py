@@ -129,6 +129,106 @@ def refresh_arxiv(categories=None, api_key=None):
     return len(items)
 
 
+# ---------- Jours précédents : interface OAI-PMH d'arXiv ----------
+
+OAI_URL = "https://oaipmh.arxiv.org/oai"
+OAI = "{http://www.openarchives.org/OAI/2.0/}"
+RAW = "{http://arxiv.org/OAI/arXivRaw/}"
+
+
+def _oai_set(category):
+    """Ensemble OAI d'une catégorie (math-ph est aussi math.MP, donc dans « math »)."""
+    archive = category.split(".")[0]
+    if archive in ("math", "math-ph"):
+        return "math"
+    if archive in ("cs", "stat", "eess", "econ", "q-bio", "q-fin"):
+        return archive
+    return "physics"
+
+
+def _split_raw_authors(text):
+    parts = re.split(r",\s*(?:and\s+)?|\s+and\s+", " ".join((text or "").split()))
+    return [tex_text(p) for p in parts if p.strip()]
+
+
+def parse_oai_day(xml_text, day, categories):
+    """Notices arXivRaw d'une date d'annonce → articles de vos catégories, classés comme dans le RSS :
+    une seule version → nouveau (ou croisé si la catégorie principale n'est pas suivie) ;
+    version récente → nouvelle version ; sinon simple mise à jour des métadonnées, ignorée."""
+    wanted = set(categories)
+    root = ET.fromstring(xml_text)
+    items = []
+    for raw in root.iter(f"{RAW}arXivRaw"):
+        cats = (raw.findtext(f"{RAW}categories") or "").split()
+        if not wanted & set(cats):
+            continue
+        versions = raw.findall(f"{RAW}version")
+        try:
+            last = parsedate_to_datetime(versions[-1].findtext(f"{RAW}date")).date().isoformat()
+        except (TypeError, ValueError, IndexError):
+            continue
+        primary = cats[0] in wanted
+        if len(versions) == 1:
+            kind = "new" if primary else "cross"
+        elif (datetime.fromisoformat(day) - datetime.fromisoformat(last)).days <= 5:
+            kind = "replace" if primary else "replace-cross"
+        else:
+            continue
+        arxiv_id = raw.findtext(f"{RAW}id")
+        items.append({
+            "key": arxiv_id, "arxiv_id": arxiv_id, "version": len(versions),
+            "title": tex_text(raw.findtext(f"{RAW}title")), "authors": _split_raw_authors(raw.findtext(f"{RAW}authors")),
+            "abstract": tex_text(raw.findtext(f"{RAW}abstract")), "categories": cats, "primary_category": cats[0],
+            "announce_type": kind, "announced": day, "link": f"https://arxiv.org/abs/{arxiv_id}",
+        })
+    token = root.find(f".//{OAI}resumptionToken")
+    return items, (token.text.strip() if token is not None and token.text and token.text.strip() else None)
+
+
+def fetch_day(day, categories=None, api_key=None):
+    """Annonces d'un jour passé (date YYYY-MM-DD) ; 0 si arXiv n'a rien annoncé ce jour-là."""
+    categories = categories or FEED_CATEGORIES
+    items = []
+    with _client() as client:
+        for oai_set in sorted({_oai_set(c) for c in categories}):
+            params = {"verb": "ListRecords", "metadataPrefix": "arXivRaw", "set": oai_set, "from": day, "until": day}
+            while params:
+                for attempt in range(4):
+                    response = client.get(OAI_URL, params=params)
+                    if response.status_code != 503:
+                        break
+                    time.sleep(int(response.headers.get("Retry-After", "5")) + 1)
+                response.raise_for_status()
+                if "noRecordsMatch" in response.text[:3000]:
+                    break
+                page, token = parse_oai_day(response.text, day, categories)
+                items += page
+                params = {"verb": "ListRecords", "resumptionToken": token} if token else None
+                time.sleep(3.1)  # au plus une requête toutes les 3 s, comme le demande arXiv
+    with db.connect() as connection:
+        for item in items:
+            _store(connection, item)
+    try:
+        relevance.fetch_embeddings([relevance.s2_key(i["arxiv_id"]) for i in items], api_key)
+    except Exception:
+        pass
+    fetched = db.get_settings().get("feed.days") or {}
+    fetched[day] = len(items)
+    db.save_settings({"feed.days": fetched})
+    return len(items)
+
+
+def known_days():
+    """Jours d'annonce déjà en base (date → nombre d'articles), et jours vérifiés sans annonce."""
+    with db.connect() as connection:
+        rows = connection.execute(
+            "SELECT announced, COUNT(*) AS n FROM feed_items WHERE in_arxiv = 1 GROUP BY announced").fetchall()
+    days = {r["announced"]: r["n"] for r in rows if r["announced"]}
+    for day, count in (db.get_settings().get("feed.days") or {}).items():
+        days.setdefault(day, count)
+    return days
+
+
 # ---------- Recommandations Semantic Scholar ----------
 
 def _positive_negative():
@@ -195,21 +295,22 @@ def refresh_recommendations(api_key=None, limit=60):
 
 # ---------- Lecture du feed ----------
 
-def list_items(view, announce_types=None):
+def list_items(view, announce_types=None, day=None):
     with db.connect() as connection:
         library = {r["arxiv_id"]: r["id"] for r in connection.execute("SELECT id, arxiv_id FROM papers")}
         status = {r["key"]: r["status"] for r in connection.execute("SELECT key, status FROM feed_status")}
         if view == "recommended":
             rows = connection.execute("SELECT * FROM feed_items WHERE s2_rank IS NOT NULL ORDER BY s2_rank").fetchall()
         else:
+            # un seul jour d'annonce (le plus récent par défaut), plus les articles récents des auteurs suivis
             types = announce_types or ["new", "cross"]
             marks = ",".join("?" * len(types))
+            day = day or connection.execute("SELECT MAX(announced) FROM feed_items WHERE in_arxiv = 1").fetchone()[0]
             rows = connection.execute(
-                f"""SELECT * FROM feed_items WHERE (in_arxiv = 1 AND announce_type IN ({marks}))
-                       OR (followed = 1 AND announced >= date('now', '-45 days'))
-                    ORDER BY announced DESC, CASE announce_type WHEN 'new' THEN 0 WHEN 'cross' THEN 1 ELSE 2 END,
-                    arxiv_id DESC LIMIT 1500""",
-                types,
+                f"""SELECT * FROM feed_items WHERE (in_arxiv = 1 AND announce_type IN ({marks}) AND announced = ?)
+                       OR (followed = 1 AND in_arxiv = 0 AND announced >= date('now', '-45 days'))
+                    ORDER BY CASE announce_type WHEN 'new' THEN 0 WHEN 'cross' THEN 1 ELSE 2 END, arxiv_id DESC""",
+                [*types, day],
             ).fetchall()
     items = []
     for row in rows:

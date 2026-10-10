@@ -54,6 +54,42 @@ async function renderList(body, tab) {
   body.replaceChildren(h("div", { class: "feed-toolbar" }, status, refresh), notice, filters, list);
 
   let data = await api.feed(tab);
+  let loadingDay = false;
+
+  // Jour d'annonce précédent ou suivant (du lundi au vendredi ; jours fériés sautés au chargement)
+  const shiftDay = (iso, step) => {
+    const date = new Date(`${iso}T12:00:00Z`);
+    do date.setUTCDate(date.getUTCDate() + step); while ([0, 6].includes(date.getUTCDay()));
+    return date.toISOString().slice(0, 10);
+  };
+  const goToDay = async (step) => {
+    if (loadingDay || !data.day) return;
+    let target = shiftDay(data.day, step);
+    if (step > 0 && data.latestDay && target > data.latestDay) return;
+    loadingDay = true;
+    dayLabel?.replaceChildren(h("span", { class: "spinner" }), " ", t("feed.loadingDay"));
+    try {
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const next = await api.feed(tab, target);
+        if (next.items.some((i) => i.in_arxiv) || step > 0 || attempt === 4) { data = next; break; }
+        target = shiftDay(target, step);  // jour sans annonce (férié) : on continue
+      }
+      window.scrollTo({ top: 0 });
+    } catch (error) {
+      toast(t("error.generic", { message: error.message }), { error: true, duration: 6000 });
+    } finally {
+      loadingDay = false;
+      draw();
+    }
+  };
+  let dayLabel = null;
+  const onKey = (event) => {
+    if (tab !== "arxiv" || event.target.matches("input, textarea") || event.metaKey || event.ctrlKey || event.altKey) return;
+    if (!document.body.contains(list)) { removeEventListener("keydown", onKey); return; }
+    if (event.key === "ArrowLeft") goToDay(-1);
+    if (event.key === "ArrowRight") goToDay(1);
+  };
+  addEventListener("keydown", onKey);
   const state = { search: "", categories: new Set(), types: new Set(settings.feedTypes || ["new", "cross"]), showHidden: false, sort: settings.feedSort || "relevance" };
 
   const doRefresh = async (automatic = false) => {
@@ -107,17 +143,22 @@ async function renderList(body, tab) {
     } else {
       shown = data.items.filter((i) => inCategories(i) && matches(i));
     }
-    const groups = new Map();
-    for (const item of shown) {
-      const key = tab === "arxiv" ? item.announced || "" : "";
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(item);
-    }
-    for (const [date, items] of groups) {
-      if (byRelevance) items.sort((a, b) => b.relevance - a.relevance);
+    if (byRelevance) shown.sort((a, b) => b.relevance - a.relevance);
+    if (tab === "arxiv") {
+      const close = shown.filter((i) => i.relevance >= 0.25).length;
+      dayLabel = h("span", { class: "day-label" }, data.day
+        ? capitalize(`${t("feed.announced", { date: formatDay(data.day) })} · ${t("feed.count", { n: shown.length })}${close ? ` · ${t("feed.closeCount", { n: close })}` : ""}`)
+        : t("feed.emptyArxiv"));
+      const previous = h("button", { class: "icon-button day-arrow", type: "button", title: t("feed.previousDay"), "aria-label": t("feed.previousDay") }, "‹");
+      const next = h("button", { class: "icon-button day-arrow", type: "button", title: t("feed.nextDay"), "aria-label": t("feed.nextDay"),
+        disabled: !data.day || data.day >= data.latestDay }, "›");
+      previous.addEventListener("click", () => goToDay(-1));
+      next.addEventListener("click", () => goToDay(1));
       sections.push(h("section", { class: "feed-day" },
-        date && h("h2", { class: "feed-date" }, capitalize(`${t("feed.announced", { date: formatDay(date) })} · ${t("feed.count", { n: items.length })}`)),
-        items.map(card)));
+        h("div", { class: "day-nav" }, previous, dayLabel, next),
+        shown.length ? shown.map(card) : h("div", { class: "empty" }, t("feed.noMatch"))));
+    } else if (shown.length) {
+      sections.push(h("section", { class: "feed-day" }, shown.map(card)));
     }
     list.replaceChildren(...(sections.length ? sections : [h("div", { class: "empty" }, t("feed.noMatch"))]));
     typesetTex([list]).catch(() => {});

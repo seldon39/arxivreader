@@ -2,6 +2,10 @@
 
 const STRINGS = {
   fr: {
+    "feed.loadingDay": "Chargement des annonces de ce jour…",
+    "feed.previousDay": "Jour précédent (←)",
+    "feed.nextDay": "Jour suivant (→)",
+    "feed.closeCount": "{n} proche(s) de vos sujets",
     "feed.tab.profile": "Profil",
     "feed.followedTitle": "Nouveaux articles de vos auteurs suivis",
     "feed.sortLabel": "Tri :",
@@ -194,6 +198,10 @@ const STRINGS = {
     "kind.notation": "Notation", "kind.problem": "Question", "kind.other": "Autre",
   },
   en: {
+    "feed.loadingDay": "Loading this day's announcements…",
+    "feed.previousDay": "Previous day (←)",
+    "feed.nextDay": "Next day (→)",
+    "feed.closeCount": "{n} close to your topics",
     "feed.tab.profile": "Profile",
     "feed.followedTitle": "New papers by followed authors",
     "feed.sortLabel": "Sort:",

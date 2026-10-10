@@ -167,10 +167,25 @@ def remove(paper_id: str):
 
 
 @app.get("/api/feed")
-def feed_items(view: str = "arxiv"):
+async def feed_items(view: str = "arxiv", day: str | None = None):
     settings = db.get_settings()
+    days = feed.known_days()
+    if view == "arxiv" and day:
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", day):
+            raise HTTPException(400, "Bad day")
+        if day not in days and day <= _now()[:10]:  # jour pas encore chargé : demandé à l'OAI-PMH d'arXiv
+            try:
+                await run_in_threadpool(feed.fetch_day, day, settings.get("feedCategories") or None,
+                                        settings.get("s2ApiKey") or None)
+            except Exception as error:
+                return JSONResponse({"error": f"{type(error).__name__}: {error}"}, status_code=502)
+            days = feed.known_days()
+    latest = max((d for d, n in days.items() if n), default=None)
     return {
-        "items": feed.list_items(view, ["new", "cross", "replace", "replace-cross"]),
+        "day": day or latest,
+        "latestDay": latest,
+        "days": days,
+        "items": await run_in_threadpool(feed.list_items, view, ["new", "cross", "replace", "replace-cross"], day),
         "refreshed": {"arxiv": settings.get("feed.arxivRefreshed"), "recommended": settings.get("feed.s2Refreshed")},
         "seeds": settings.get("feed.s2Seeds"),
         "categories": settings.get("feedCategories") or feed.FEED_CATEGORIES,

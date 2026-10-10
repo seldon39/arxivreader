@@ -24,7 +24,7 @@ export const api = {
   savePosition: (id, anchor) => request("PUT", `/api/papers/${encodeURIComponent(id)}/position`, { anchor }),
   refresh: (id) => request("POST", `/api/papers/${encodeURIComponent(id)}/refresh`, {}),
   remove: (id) => request("DELETE", `/api/papers/${encodeURIComponent(id)}`),
-  feed: (view) => request("GET", `/api/feed?view=${encodeURIComponent(view)}`),
+  feed: (view, day) => request("GET", `/api/feed?view=${encodeURIComponent(view)}${day ? `&day=${day}` : ""}`),
   refreshFeed: (view) => request("POST", "/api/feed/refresh", { view }),
   feedStatus: (key, status) => request("PUT", "/api/feed/status", { key, status }),
   lookup: (text) => request("POST", "/api/lookup", { text }),
