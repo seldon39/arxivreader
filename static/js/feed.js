@@ -54,7 +54,12 @@ async function renderList(body, tab) {
   body.replaceChildren(h("div", { class: "feed-toolbar" }, status, refresh), notice, filters, list);
   list.replaceChildren(h("div", { class: "busy" }, h("span", { class: "spinner" }), t("common.loading")));
 
-  let data = await api.feed(tab, tab === "arxiv" ? memory.day : null);
+  const [first, alerts] = await Promise.all([api.feed(tab, tab === "arxiv" ? memory.day : null),
+    tab === "arxiv" ? api.alerts().catch(() => ({ unseen: [] })) : { unseen: [] }]);
+  let data = first;
+  const fresh = new Set(alerts.unseen); // articles d'auteurs suivis jamais vus : signalés cette fois-ci
+  // marqués vus seulement une fois affichés (voir draw)
+  const markSeen = (keys) => { if (keys.length) api.alertsSeen(keys).then(() => dispatchEvent(new Event("arxivreader:alerts"))).catch(() => {}); };
   let loadingDay = false;
   let generation = 0; // change à chaque changement de jour : une mise à jour plus ancienne n'écrase rien
   const remember = () => { memory.day = data.day && data.day !== data.latestDay ? data.day : null; };
@@ -153,19 +158,21 @@ async function renderList(body, tab) {
       return;
     }
     const byRelevance = state.sort === "relevance";
-    const card = (item) => feedCard(item, draw, { compact: byRelevance && item.relevance < COMPACT_BELOW && !item.libraryId && item.status !== "liked" });
+    const card = (item) => feedCard(item, draw, { fresh: fresh.has(item.key),
+      compact: byRelevance && item.relevance < COMPACT_BELOW && !item.libraryId && item.status !== "liked" && !fresh.has(item.key) });
     const sections = [];
     let shown;
     if (tab === "arxiv") {
       // Nouveaux articles des auteurs suivis, hors des annonces de vos catégories
-      const followed = data.items.filter((i) => i.followed && !i.in_arxiv && matches(i))
+      // tous les articles récents des auteurs suivis, sauf ceux de l'annonce affichée (ils y sont déjà)
+      const followed = data.items.filter((i) => i.followed && !(i.in_arxiv && i.announced === data.day) && matches(i))
         .sort((a, b) => (b.announced || "").localeCompare(a.announced || ""));
       if (followed.length) {
         sections.push(h("section", { class: "feed-day followed-section" },
           h("h2", { class: "feed-date" }, `${t("feed.followedTitle")} · ${tn("feed.count", followed.length)}`),
           followed.map(card)));
       }
-      shown = data.items.filter((i) => i.in_arxiv && state.types.has(i.announce_type) && inCategories(i) && matches(i));
+      shown = data.items.filter((i) => i.in_arxiv && i.announced === data.day && state.types.has(i.announce_type) && inCategories(i) && matches(i));
     } else {
       shown = data.items.filter((i) => inCategories(i) && matches(i));
     }
@@ -187,6 +194,7 @@ async function renderList(body, tab) {
       sections.push(h("section", { class: "feed-day" }, shown.map(card)));
     }
     list.replaceChildren(...(sections.length ? sections : [h("div", { class: "empty" }, t("feed.noMatch"))]));
+    markSeen(data.items.filter((i) => fresh.has(i.key) && list.querySelector(`.feed-card.fresh[data-key="${CSS.escape(i.key)}"]`)).map((i) => i.key));
     typesetTex([list]).catch(() => {});
   };
 
@@ -275,7 +283,7 @@ function formatDay(iso) {
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString(getLanguage() === "fr" ? "fr-FR" : "en-GB", { weekday: "long", day: "numeric", month: "long" });
 }
 
-function feedCard(item, onChange = () => {}, { compact = false } = {}) {
+function feedCard(item, onChange = () => {}, { compact = false, fresh = false } = {}) {
   const authors = item.authors.length > 8 ? [...item.authors.slice(0, 8), t("feed.etAl")] : item.authors;
   // Résumé coupé à trois lignes : clic, Entrée ou Espace pour le déplier
   const abstract = h("p", { class: "feed-abstract", tabindex: 0, role: "button", "aria-expanded": "false" }, item.abstract || "");
@@ -348,8 +356,8 @@ function feedCard(item, onChange = () => {}, { compact = false } = {}) {
     h("span", { class: "relevance-bar" }, h("span", { style: `width: ${Math.round(item.relevance * 100)}%` })), t(`feed.level.${level}`));
 
   const linker = item.arxiv_id ? null : arxivLinker(item, () => card);
-  const card = h("article", { class: `feed-card${compact ? " compact" : ""}` },
-    h("div", { class: "feed-title-row" }, h("h3", { class: "feed-title" }, title), meter),
+  const card = h("article", { class: `feed-card${compact ? " compact" : ""}${fresh ? " fresh" : ""}`, dataset: { key: item.key } },
+    h("div", { class: "feed-title-row" }, h("h3", { class: "feed-title" }, fresh && h("span", { class: "fresh-badge" }, t("alerts.new")), title), meter),
     h("div", { class: "feed-authors" }, authors.join(", ")),
     h("div", { class: "card-meta" },
       item.primary_category && h("span", { class: "chip category" }, item.primary_category),

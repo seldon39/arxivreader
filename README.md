@@ -70,6 +70,14 @@ ou *admis* ; *Détection automatique* annule ce choix. Le choix est gardé avec 
 compte pour les dépendances et pour Claude.
 Les articles déjà importés sont ré-analysés automatiquement quand cette analyse change.
 
+## Auteurs suivis : alertes
+
+Tant qu'arXivReader est lancé, il vérifie toutes les 3 heures (et une minute après le lancement) les
+nouveaux articles des auteurs suivis du profil : notification macOS pour chacun (réglage « Me notifier
+quand un auteur suivi publie »), pastille sur « Feed », et mention « Non vu » sur la carte jusqu'à ce
+qu'elle ait été affichée. Un clic sur la notification macOS ouvre l'Éditeur de script (limite d'osascript) :
+il suffit de la fermer et d'aller dans le feed.
+
 ## Notes et annotations (étape 3)
 
 - **Surligner** : sélectionner un passage (formules comprises) ; une barre propose 4 couleurs et

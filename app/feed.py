@@ -310,7 +310,7 @@ def list_items(view, announce_types=None, day=None):
             day = day or connection.execute("SELECT MAX(announced) FROM feed_items WHERE in_arxiv = 1").fetchone()[0]
             rows = connection.execute(
                 f"""SELECT * FROM feed_items WHERE (in_arxiv = 1 AND announce_type IN ({marks}) AND announced = ?)
-                       OR (followed = 1 AND in_arxiv = 0 AND announced >= date('now', '-45 days'))
+                       OR (followed = 1 AND announced >= date('now', '-45 days'))
                     ORDER BY CASE announce_type WHEN 'new' THEN 0 WHEN 'cross' THEN 1 ELSE 2 END, arxiv_id DESC""",
                 [*types, day],
             ).fetchall()

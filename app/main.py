@@ -1,6 +1,8 @@
 """Serveur web local d'arXivReader (127.0.0.1 uniquement)."""
 
+import asyncio
 import json
+import os
 import re
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
@@ -11,7 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Str
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import ai, annotations, db, feed, library, profile, relevance
+from . import ai, alerts, annotations, db, feed, library, profile, relevance
 from .arxiv import ArxivError
 from .config import HOST, PORT, STATIC
 
@@ -32,7 +34,11 @@ async def lifespan(_app):
     db.init()
     ai.stop_running()
     library.clean_cache()
+    # vérification périodique des auteurs suivis (ARXIVREADER_NO_ALERTS=1 pour la couper, par ex. en test)
+    task = None if os.environ.get("ARXIVREADER_NO_ALERTS") else asyncio.create_task(alerts.loop())
     yield
+    if task:
+        task.cancel()
 
 
 app = FastAPI(title="arXivReader", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
@@ -432,6 +438,21 @@ async def find_arxiv(body: FindArxivRequest):
     return {"arxiv_id": arxiv_id}
 
 
+@app.get("/api/alerts")
+def get_alerts():
+    return {"unseen": alerts.unseen()}
+
+
+class SeenRequest(BaseModel):
+    keys: list[str]
+
+
+@app.post("/api/alerts/seen")
+def alerts_seen(body: SeenRequest):
+    alerts.mark_seen([key[:100] for key in body.keys[:500]])
+    return {"unseen": alerts.unseen()}
+
+
 @app.post("/api/lookup")
 async def lookup(body: LookupRequest):
     try:
@@ -495,7 +516,7 @@ def settings():
 @app.put("/api/settings")
 def update_settings(values: dict):
     allowed = {"language", "theme", "fontSize", "readingWidth", "proofsCollapsed", "tocOpen", "panelOpen", "panelWidth", "tocWidth", "paperFont", "marginMarks", "mathRenderer",
-               "feedCategories", "feedTypes", "s2ApiKey", "feedSort", "feedSortS2", "aiModel"}
+               "feedCategories", "feedTypes", "s2ApiKey", "feedSort", "feedSortS2", "aiModel", "notifyFollowed"}
     values = {k: v for k, v in values.items() if k in allowed}
     categories = values.get("feedCategories")
     if categories is not None and not (isinstance(categories, list) and all(

@@ -860,3 +860,10 @@ mark.hl:hover { filter: brightness(.95); }
 .arxiv-add .button-icon svg { width: 16px; height: 16px; }
 .arxiv-finder-form { display: flex; gap: 8px; margin: 2px 0 2px; }
 .arxiv-finder-form .text-input { flex: 1; height: 34px; }
+
+/* Nouveaux articles d'auteurs suivis */
+.nav-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 6px;
+  border-radius: 999px; background: #fff; color: var(--topbar); font: 700 11.5px var(--font-ui); vertical-align: 2px; }
+.feed-card.fresh { box-shadow: inset 3px 0 0 var(--accent); }
+.fresh-badge { display: inline-block; margin-right: 8px; padding: 1px 7px; border-radius: 999px; background: var(--button-primary); color: #fff;
+  font: 600 12px var(--font-ui); vertical-align: 3px; }
