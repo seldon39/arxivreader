@@ -1,25 +1,42 @@
 # arXivReader
 
-Lecteur personnel d'articles arXiv, inspiré d'arXivpecker. Usage strictement local, sur ce Mac.
+Lecteur d'articles arXiv pour Mac, pensé pour les mathématiques : mise en page « papier AMS », énoncés et
+preuves navigables, graphe des dépendances, notes et surlignages, feed des nouveautés trié selon votre profil,
+et un assistant IA (Claude, Codex, Gemini ou un modèle local) qui ne voit que le texte de l'article.
+Tout reste sur votre Mac : le serveur n'écoute que sur 127.0.0.1.
 
-## Application Mac
+*A Mac reader for arXiv papers, built for mathematics: AMS-style layout, navigable statements and proofs,
+dependency graph, notes and highlights, a personalised feed, and an optional AI assistant. French and English
+interface. Download the app from the [Releases](https://github.com/seldon39/arxivreader/releases) page.*
 
-`macos/build.sh` construit `dist/arXivReader.dmg` (~170 Mo, Mac Apple Silicon,
-macOS 13 ou plus) : une application autonome, avec sa fenêtre (WebKit, comme Safari), qui embarque Python et
-ses paquets. Rien d'autre à installer.
+## Installer
 
-- **Installer** : ouvrir le `.dmg`, glisser arXivReader dans Applications. Quitter (⌘Q) arrête aussi le serveur.
+Télécharger `arXivReader.dmg` depuis la page [Releases](https://github.com/seldon39/arxivreader/releases)
+(Mac Apple Silicon, macOS 13 ou plus), l'ouvrir et glisser arXivReader dans Applications. L'application est
+autonome (Python et ses paquets sont inclus) ; rien d'autre à installer.
+
+- **Premier lancement** : l'application n'est pas signée par un compte développeur Apple, macOS la bloque.
+  Réglages Système → Confidentialité et sécurité → *Ouvrir quand même* (une seule fois).
+- **Mises à jour** : l'application vérifie une fois par jour s'il existe une nouvelle version sur GitHub
+  (réglable dans Réglages → Mises à jour) ; une pastille « Mise à jour » apparaît alors en haut à droite.
+  Remplacer l'application dans Applications ; la bibliothèque est conservée.
+
+## Application Mac : construction
+
+`macos/build.sh` construit `dist/arXivReader.dmg` (~200 Mo) : une application avec sa fenêtre (WebKit, comme
+Safari), qui embarque Python et ses paquets. `macos/release.sh` la publie comme nouvelle version (après avoir
+augmenté `VERSION` dans `app/version.py`) : étiquette Git, envoi sur GitHub, image disque jointe.
+
+- Quitter (⌘Q) arrête aussi le serveur.
 - **Bibliothèque** : `~/Library/Application Support/arXivReader` (menu arXivReader → Afficher la bibliothèque
   dans le Finder). À la première ouverture, l'application propose de recopier une bibliothèque existante (le
   dossier `library/` de ce projet) : quitter d'abord l'ancienne version. Ensuite, l'ancienne et la nouvelle ne
   partagent plus rien.
 - **Connexion des assistants IA** : bouton *Se connecter…* / *Lancer dans le Terminal* dans l'onglet IA.
-- **Chez un collègue** : l'application n'est pas signée par un compte développeur Apple. Au premier lancement,
-  macOS la bloque : Réglages Système → Confidentialité et sécurité → *Ouvrir quand même* (une seule fois).
 - Construire : outils en ligne de commande Xcode (`swiftc`), miniforge (`conda`, Python pris dans son cache) et
   `.venv` à jour (ses paquets sont recopiés). Construction dans `~/Library/Caches/arXivReader-build` (hors d'iCloud).
 
-## Lancer
+## Lancer depuis le code source
 
 - **Double-clic** sur `ArXivReader.command` dans le Finder : une fenêtre Terminal s'ouvre, puis le navigateur.
   Fermer la fenêtre Terminal (ou Ctrl+C) arrête l'application.
@@ -150,7 +167,10 @@ d'octobre 2026) mais n'a pas été essayée avec un vrai compte.
 - Serveur sur `127.0.0.1` seulement ; noms d'hôte étrangers et requêtes d'autres sites refusés.
 - HTML des articles nettoyé (scripts, formulaires, liens `javascript:` retirés) et politique CSP qui
   interdit tout script venant de l'article.
-- Données dans `library/` (base SQLite + un dossier par article), jamais ailleurs.
+- Données (base SQLite + un dossier par article) dans `~/Library/Application Support/arXivReader` pour
+  l'application, dans `library/` depuis le code source ; jamais ailleurs.
+- Connexions sortantes : arXiv (articles, nouveautés), Semantic Scholar (recommandations), GitHub (une fois par
+  jour, numéro de la dernière version ; désactivable), et l'assistant IA choisi.
 
 ## Organisation du code
 

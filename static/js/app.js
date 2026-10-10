@@ -5,6 +5,7 @@ import { renderFeed } from "./feed.js";
 import { renderLibrary } from "./library.js";
 import { renderReader } from "./reader.js";
 import { loadSettings, onSettingsChange, openSettingsDialog, settings } from "./settings.js";
+import { refreshUpdates } from "./updates.js";
 import { api } from "./api.js";
 import { h } from "./util.js";
 
@@ -70,8 +71,12 @@ onSettingsChange(() => {
     refreshAlerts();
   }
 });
-document.getElementById("settings-button").addEventListener("click", openSettingsDialog);
+document.getElementById("settings-button").addEventListener("click", () => openSettingsDialog());
+addEventListener("arxivreader:settings", (event) => openSettingsDialog({ section: event.detail }));
 addEventListener("hashchange", route);
 route();
 refreshAlerts();
 setInterval(refreshAlerts, 10 * 60 * 1000);
+// nouvelle version sur GitHub : vérifiée au lancement puis toutes les 6 heures (le serveur n'interroge GitHub qu'une fois par jour)
+refreshUpdates();
+setInterval(refreshUpdates, 6 * 3600 * 1000);

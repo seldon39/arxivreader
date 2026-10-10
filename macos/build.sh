@@ -16,7 +16,7 @@ RES=$APP/Contents/Resources
 CONDA=${CONDA:-$HOME/miniforge3/bin/conda}
 PYVER=$(.venv/bin/python -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')
 PYFULL=$(.venv/bin/python -c 'import platform; print(platform.python_version())')  # même Python que .venv
-VERSION=1.0
+VERSION=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' app/version.py)  # app/version.py
 BUILD_NUMBER=$(git rev-list --count HEAD 2>/dev/null || echo 1)
 
 rm -rf "$APP" "$DIST/arXivReader.dmg"

@@ -3,6 +3,7 @@
 import { PROVIDERS, assistantName, setupNotice } from "./aiproviders.js";
 import { api } from "./api.js";
 import { applyStatic, setAIName, setLanguage, t } from "./i18n.js";
+import { updatesSection } from "./updates.js";
 import { h, icons, toast } from "./util.js";
 
 export const DEFAULT_FONT_SIZE = 18;
@@ -115,7 +116,7 @@ function segmented(name, options, current) {
   );
 }
 
-export function openSettingsDialog() {
+export function openSettingsDialog({ section = null } = {}) {
   const dialog = document.getElementById("settings-dialog");
   const form = h("form", { method: "dialog" },
     h("div", { class: "dialog-head" }, h("h2", {}, t("settings.title")),
@@ -156,6 +157,9 @@ export function openSettingsDialog() {
       h("input", { class: "text-input secret-input", type: "text", name: "s2ApiKey", value: settings.s2ApiKey || "", autocomplete: "off",
         spellcheck: "false", placeholder: t("settings.s2KeyPlaceholder") })),
     h("p", { class: "hint", style: "margin: -6px 0 0" }, t("settings.s2KeyHint")),
+    h("h3", { class: "settings-section" }, t("settings.updates")),
+    h("label", { class: "check" }, h("input", { type: "checkbox", name: "checkUpdates", checked: settings.checkUpdates !== false }), t("settings.checkUpdates")),
+    updatesSection(),
     h("div", { class: "actions" }, h("button", { class: "button primary", value: "close" }, t("settings.close"))),
   );
   form.addEventListener("input", (event) => {
@@ -192,4 +196,5 @@ export function openSettingsDialog() {
   dialog.replaceChildren(form);
   applyStatic(dialog);
   if (!dialog.open) dialog.showModal();
+  if (section) dialog.querySelector(`#settings-${section}`)?.scrollIntoView({ block: "center" });
 }

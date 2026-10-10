@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Str
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import ai, alerts, annotations, db, feed, library, profile, providers, relevance
+from . import ai, alerts, annotations, db, feed, library, profile, providers, relevance, updates
 from .arxiv import ArxivError, fetch_metadata, parse_arxiv_id
 from .config import HOST, PORT, STATIC
 
@@ -486,6 +486,28 @@ class SeenRequest(BaseModel):
     keys: list[str]
 
 
+@app.get("/api/updates")
+def get_updates():
+    return updates.state()
+
+
+@app.post("/api/updates/check")
+def check_updates():
+    return updates.state(force=True)
+
+
+class DismissRequest(BaseModel):
+    version: str
+
+
+@app.post("/api/updates/dismiss")
+def dismiss_update(body: DismissRequest):
+    if not updates.parse(body.version):
+        raise HTTPException(400, "Bad version")
+    updates.dismiss(body.version)
+    return updates.state()
+
+
 @app.post("/api/alerts/seen")
 def alerts_seen(body: SeenRequest):
     alerts.mark_seen([key[:100] for key in body.keys[:500]])
@@ -556,7 +578,7 @@ def settings():
 def update_settings(values: dict):
     allowed = {"language", "theme", "fontSize", "readingWidth", "proofsCollapsed", "tocOpen", "panelOpen", "panelWidth", "tocWidth", "paperFont", "marginMarks", "mathRenderer",
                "feedCategories", "feedTypes", "s2ApiKey", "feedSort", "feedSortS2", "aiModel", "notifyFollowed",
-               "aiProvider", "aiLocalUrl", "aiLocalModel"}
+               "aiProvider", "aiLocalUrl", "aiLocalModel", "checkUpdates"}
     values = {k: v for k, v in values.items() if k in allowed}
     if not all(_valid_setting(k, v) for k, v in values.items()):
         raise HTTPException(400, "Bad setting")
@@ -574,7 +596,7 @@ SETTING_CHOICES = {
     "aiProvider": set(providers.PROVIDERS),
     "feedSort": {"relevance", "arxiv"}, "feedSortS2": {"relevance", "s2"},
 }
-BOOLEAN_SETTINGS = {"proofsCollapsed", "tocOpen", "panelOpen", "marginMarks", "notifyFollowed"}
+BOOLEAN_SETTINGS = {"proofsCollapsed", "tocOpen", "panelOpen", "marginMarks", "notifyFollowed", "checkUpdates"}
 
 
 def _valid_setting(key, value):
