@@ -188,18 +188,23 @@ svg { fill: currentColor; }
 }
 .toc { grid-area: toc; border-right: 1px solid var(--border); padding: 14px 8px 40px; }
 .panel { grid-area: panel; border-left: 1px solid var(--border); display: flex; flex-direction: column; }
-/* Poignée de largeur du panneau : sur son bord gauche, collée sous les barres comme le panneau */
-.panel-resizer {
-  grid-area: panel; justify-self: start; align-self: start; position: sticky; z-index: 5;
+/* Poignées de largeur : bord droit du sommaire, bord gauche du panneau ; collées sous les barres */
+.pane-resizer {
+  align-self: start; position: sticky; z-index: 6;
   top: calc(var(--topbar-h) + var(--toolbar-h)); height: calc(100vh - var(--topbar-h) - var(--toolbar-h));
-  width: 10px; margin-left: -5px; cursor: col-resize; touch-action: none;
+  width: 10px; cursor: col-resize; touch-action: none;
 }
-.panel-resizer::after { content: ""; position: absolute; inset: 0 4px; border-radius: 2px; transition: background .15s; }
-.panel-resizer:hover::after, .panel-resizer:focus-visible::after, .reader.resizing .panel-resizer::after { background: var(--accent); }
-.panel-resizer:focus-visible { outline: none; }
-.reader[data-panel="closed"] .panel-resizer { display: none; }
+.panel-resizer { grid-area: panel; justify-self: start; margin-left: -5px; }
+.toc-resizer { grid-area: toc; justify-self: end; margin-right: -5px; }
+.pane-resizer::after { content: ""; position: absolute; inset: 0 4px; border-radius: 2px; transition: background .15s; }
+.pane-resizer:hover::after, .pane-resizer:focus-visible::after { background: var(--accent); }
+.pane-resizer:focus-visible { outline: none; }
+.reader[data-panel="closed"] .panel-resizer, .reader[data-toc="closed"] .toc-resizer { display: none; }
+/* Pendant le glissement : le volet passe par-dessus l'article, rien d'autre ne réagit */
 .reader.resizing { cursor: col-resize; user-select: none; -webkit-user-select: none; }
 .reader.resizing .paper-scroll { pointer-events: none; }
+.reader.resizing .toc, .reader.resizing .panel { z-index: 4; box-shadow: var(--shadow); }
+.reader.resizing .pane-resizer::after { background: var(--accent); }
 .reader[data-toc="closed"] .toc, .reader[data-panel="closed"] .panel { visibility: hidden; border: 0; padding: 0; }
 .paper-scroll { grid-area: paper; position: relative; min-width: 0; background: var(--surface); }
 .paper {
@@ -210,6 +215,7 @@ svg { fill: currentColor; }
 
 @media (max-width: 1279px) {
   .reader { --toc-col: 0px; }
+  .toc-resizer { display: none; }
   .reader .toc {
     position: fixed; z-index: 25; top: calc(var(--topbar-h) + var(--toolbar-h)); bottom: 0; left: 0; height: auto;
     align-self: auto; /* sinon WebKit aligne le tiroir en haut de la grille, sous les barres */

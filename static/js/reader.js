@@ -166,63 +166,83 @@ class Reader {
       this.article.append(this.content);
     }
 
-    this.resizer = this.panelResizer();
-    this.root.append(toolbar, this.toc, this.scroller, this.panel, this.resizer,
+    this.root.append(toolbar, this.toc, this.paneResizer("toc"), this.scroller, this.panel, this.paneResizer("panel"),
       h("div", { class: "scrim", onclick: () => this.closeDrawers() }));
     // Police « comme l'article » : celle du paquet de police de la source TeX
     if (settings.panelWidth) this.root.style.setProperty("--panel-w", `${settings.panelWidth}px`);
+    if (settings.tocWidth) this.root.style.setProperty("--toc-w", `${settings.tocWidth}px`);
     if (settings.paperFont === "auto") this.root.dataset.paperFont = this.structure.tex?.font || "lm";
     view.replaceChildren(this.root);
   }
 
-  // Poignée sur le bord gauche du panneau de droite : glisser pour l'élargir ou le réduire,
-  // flèches du clavier, double-clic pour revenir à la largeur par défaut.
-  panelResizer() {
-    const handle = h("div", { class: "panel-resizer", role: "separator", tabindex: 0, "aria-orientation": "vertical",
-      "aria-label": t("reader.resizePanel"), title: t("reader.resizePanelHint") });
+  // Poignées de largeur : bord droit du sommaire, bord gauche du panneau. Glisser, flèches du clavier
+  // (Maj : pas plus grand), double-clic : largeur par défaut.
+  // Pendant le glissement, la grille ne bouge pas : le volet s'étend par-dessus l'article (marge négative),
+  // ce qui ne recompose que le volet (moins d'une milliseconde, contre plus de 100 ms pour l'article
+  // entier). L'article n'est recomposé qu'une fois, au relâchement, à la même position de lecture.
+  paneResizer(which) {
+    const isPanel = which === "panel";
+    const pane = isPanel ? this.panel : this.toc;
+    const variable = isPanel ? "--panel-w" : "--toc-w";
+    const key = isPanel ? "panelWidth" : "tocWidth";
+    const margin = isPanel ? "marginLeft" : "marginRight";
+    const handle = h("div", { class: `pane-resizer ${which}-resizer`, role: "separator", tabindex: 0, "aria-orientation": "vertical",
+      "aria-label": t(`reader.resize.${which}`), title: t(`reader.resizeHint.${which}`) });
     const limits = () => {
-      const tocWidth = this.root.dataset.toc === "open" && innerWidth >= WIDE ? this.toc.getBoundingClientRect().width : 0;
-      return [260, Math.max(260, Math.min(900, innerWidth - tocWidth - 420))]; // l'article garde au moins 420 px
+      const otherOpen = isPanel ? this.root.dataset.toc === "open" && innerWidth >= WIDE : this.root.dataset.panel === "open" && innerWidth >= MEDIUM;
+      const other = otherOpen ? (isPanel ? this.toc : this.panel).getBoundingClientRect().width : 0;
+      const [min, max] = isPanel ? [260, 900] : [160, 520];
+      return [min, Math.max(min, Math.min(max, innerWidth - other - 420))]; // l'article garde au moins 420 px
     };
-    const current = () => this.panel.getBoundingClientRect().width;
-    let anchor = null;
-    let anchorTop = 0;
-    const begin = () => {
-      anchor = this.currentAnchor();
-      anchorTop = anchor?.getBoundingClientRect().top ?? 0;
-      this.root.classList.add("resizing");
-    };
-    const apply = (width) => {
+    const clamp = (width) => {
       const [min, max] = limits();
-      const value = Math.round(Math.min(max, Math.max(min, width)));
-      this.root.style.setProperty("--panel-w", `${value}px`);
-      handle.setAttribute("aria-valuenow", String(value));
-      if (anchor) scrollBy({ top: anchor.getBoundingClientRect().top - anchorTop, behavior: "instant" }); // on reste au même endroit
-      return value;
+      return Math.round(Math.min(max, Math.max(min, width)));
     };
-    const end = (width) => {
+    const commit = (width) => {
+      const anchor = this.currentAnchor();
+      const top = anchor?.getBoundingClientRect().top ?? 0;
+      pane.style[margin] = "";
+      handle.style[margin] = "";
+      if (width === null) this.root.style.removeProperty(variable);
+      else this.root.style.setProperty(variable, `${width}px`);
       this.root.classList.remove("resizing");
+      if (anchor) scrollBy({ top: anchor.getBoundingClientRect().top - top, behavior: "instant" });
       this.anchors = null;
       layoutFigures(this.figures);
       this.markWideMath();
-      saveSettings({ panelWidth: width });
+      handle.setAttribute("aria-valuenow", String(Math.round(pane.getBoundingClientRect().width)));
+      saveSettings({ [key]: width });
     };
 
     handle.addEventListener("pointerdown", (event) => {
       if (event.button !== 0) return;
       event.preventDefault();
       try { handle.setPointerCapture(event.pointerId); } catch { /* pointeur déjà relâché */ }
-      begin();
-      const right = this.root.getBoundingClientRect().right;
+      const box = pane.getBoundingClientRect();
+      const start = box.width;
       const startX = event.clientX;
-      let width = null; // rien n'est enregistré pour un simple clic
-      const move = (e) => { if (width !== null || Math.abs(e.clientX - startX) > 2) width = apply(right - e.clientX); };
+      let width = null; // rien n'est appliqué pour un simple clic
+      let x = startX;
+      let frame = 0;
+      const draw = () => {
+        frame = 0;
+        width = clamp(isPanel ? box.right - x : x - box.left);
+        const shift = start - width; // négatif : le volet s'étend par-dessus l'article
+        pane.style[margin] = `${shift}px`;
+        handle.style[margin] = `${shift - 5}px`;
+      };
+      const move = (e) => {
+        x = e.clientX;
+        if (width === null && Math.abs(x - startX) <= 2) return;
+        if (width === null) this.root.classList.add("resizing");
+        if (!frame) frame = requestAnimationFrame(draw); // au plus un calcul par image
+      };
       const up = () => {
         handle.removeEventListener("pointermove", move);
         handle.removeEventListener("pointerup", up);
         handle.removeEventListener("pointercancel", up);
-        if (width === null) this.root.classList.remove("resizing");
-        else end(width);
+        if (frame) { cancelAnimationFrame(frame); draw(); }
+        if (width !== null) commit(width);
       };
       handle.addEventListener("pointermove", move);
       handle.addEventListener("pointerup", up);
@@ -230,18 +250,12 @@ class Reader {
     });
     handle.addEventListener("keydown", (event) => {
       const step = event.shiftKey ? 80 : 24;
-      const delta = { ArrowLeft: step, ArrowRight: -step }[event.key];
-      if (!delta) return;
+      const grow = isPanel ? { ArrowLeft: step, ArrowRight: -step } : { ArrowRight: step, ArrowLeft: -step };
+      if (!grow[event.key]) return;
       event.preventDefault();
-      begin();
-      end(apply(current() + delta));
+      commit(clamp(pane.getBoundingClientRect().width + grow[event.key]));
     });
-    handle.addEventListener("dblclick", () => {
-      begin();
-      this.root.style.removeProperty("--panel-w");
-      end(null);
-      if (anchor) scrollBy({ top: anchor.getBoundingClientRect().top - anchorTop, behavior: "instant" });
-    });
+    handle.addEventListener("dblclick", () => commit(null));
     return handle;
   }
 

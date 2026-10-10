@@ -13,6 +13,7 @@ const DEFAULTS = {
   tocOpen: true,
   panelOpen: true,
   panelWidth: null,   // largeur du panneau de droite choisie à la souris (sinon largeur par défaut)
+  tocWidth: null,     // largeur du sommaire, de même
   paperFont: "auto",
   marginMarks: true,
   mathRenderer: "mathjax",

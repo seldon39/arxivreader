@@ -444,7 +444,7 @@ def settings():
 
 @app.put("/api/settings")
 def update_settings(values: dict):
-    allowed = {"language", "theme", "fontSize", "readingWidth", "proofsCollapsed", "tocOpen", "panelOpen", "panelWidth", "paperFont", "marginMarks", "mathRenderer",
+    allowed = {"language", "theme", "fontSize", "readingWidth", "proofsCollapsed", "tocOpen", "panelOpen", "panelWidth", "tocWidth", "paperFont", "marginMarks", "mathRenderer",
                "feedCategories", "feedTypes", "s2ApiKey", "feedSort", "aiModel"}
     db.save_settings({k: v for k, v in values.items() if k in allowed})
     return db.get_settings()
