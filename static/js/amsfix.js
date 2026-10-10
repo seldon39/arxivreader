@@ -318,8 +318,10 @@ export function fixMathML(content, macros = []) {
       || Boolean(authorSized?.test(tex));
     for (const mo of math.querySelectorAll("mo")) {
       const text = mo.textContent.trim();
-      // parenthèse ouverte hors de la formule (source déséquilibrée) : LaTeXML laisse « OPEN » ou « CLOSE »
-      if ((text === "OPEN" || text === "CLOSE") && mo.getAttribute("fence") === "true") { mo.remove(); continue; }
+      // parenthèse ouverte hors de la formule (source déséquilibrée) : LaTeXML laisse « OPEN » ou « CLOSE »,
+      // en lettres mathématiques (« 𝑂𝑃𝐸𝑁 ») dans un énoncé en italique : comparé après normalisation NFKC
+      const marker = text.normalize("NFKC");
+      if ((marker === "OPEN" || marker === "CLOSE") && mo.getAttribute("fence") === "true") { mo.remove(); continue; }
       if (GLYPHS[text]) mo.textContent = GLYPHS[text];
       const aroundTable = mo.parentElement?.querySelector(TALL);
       if (!sized && !aroundTable && FENCES.has(text) && !mo.hasAttribute("minsize") && !mo.hasAttribute("maxsize")
