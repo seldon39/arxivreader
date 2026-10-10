@@ -214,3 +214,14 @@ static/         interface (HTML, CSS, JavaScript sans compilation) ;
                 vendor/mathjax (MathJax 3.2.2) et fonts/ (Latin Modern) copiés localement
 tests/          tests hors ligne : .venv/bin/python -m unittest discover tests
 ```
+
+## Inspiration
+
+arXivReader s'inspire en partie d'[arXivpecker](https://github.com/MingchenXia/arXivpecker) de Mingchen Xia,
+un lecteur d'articles de mathématiques local et assisté par IA. Les deux projets ne partagent pas de code :
+arXivReader a été écrit indépendamment (Python, HTML LaTeXML d'arXiv et MathJax), avec ses propres choix —
+rendu de l'HTML officiel, feed quotidien trié selon votre profil, assistant IA sans outils ni réseau,
+application Mac installable.
+
+*arXivReader was partly inspired by Mingchen Xia's [arXivpecker](https://github.com/MingchenXia/arXivpecker),
+a local AI-assisted reader for mathematics papers. The two projects share no code.*
