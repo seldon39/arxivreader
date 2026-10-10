@@ -7,7 +7,7 @@ from bs4 import NavigableString, Tag
 
 from .arxiv import extract_ids
 
-STRUCTURE_VERSION = 4  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
+STRUCTURE_VERSION = 5  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
 
 SECTION_LEVELS = {
     "ltx_part": 0, "ltx_chapter": 0, "ltx_section": 1, "ltx_appendix": 1,
@@ -247,14 +247,37 @@ def extract_structure(fragment, overrides=None):
                 found = theorem or found
         return found
 
+    def statement_before(element, limit=4):
+        """Énoncé à démontrer (théorème, lemme…) encore sans preuve, juste avant `element` : seules une
+        remarque, un exemple, une définition ou quelques paragraphes peuvent les séparer."""
+        for count, sibling in enumerate(element.find_previous_siblings(True)):
+            if count >= limit:
+                return None
+            if has_class(sibling, "ltx_theorem"):
+                node = nodes.get(sibling.get("id"))
+                if node is not None and node["kind"] in NEEDS_PROOF:
+                    return sibling if not node["proofs"] else None
+            elif has_class(sibling, "ltx_proof") or sibling.get("data-proof-of") or sibling.name == "section":
+                return None
+        return None
+
     def proof_target(element, title, last_theorem):
         target = theorem_of_ref(title) if title is not None else None
         if target is not None:
             return target
         previous = element.find_previous_sibling(True)
         if previous is not None and has_class(previous, "ltx_theorem"):
+            # « Théorème, Remarque, Preuve » : la preuve est celle du théorème (s'il n'en a pas déjà une)
+            if nodes[previous["id"]]["kind"] not in NEEDS_PROOF:
+                return statement_before(previous) or previous
             return previous
+        # deuxième preuve à la suite (« Second proof », « Algebraic proof ») : même énoncé que la première
+        if previous is not None and has_class(previous, "ltx_proof") and by_id(previous.get("data-proof-of")) is not None:
+            return by_id(previous["data-proof-of"])
         target = announced_theorem(element)
+        if target is not None:
+            return target
+        target = statement_before(element)
         if target is not None:
             return target
         if last_theorem is not None and not nodes[last_theorem["id"]]["proofs"]:
@@ -327,7 +350,13 @@ def extract_structure(fragment, overrides=None):
                 continue
             for theorem in theorems_of(heading, direct):
                 node = nodes[theorem["id"]]
-                if node["proofs"] or section.find(id=theorem["id"]) is not None:
+                # une sous-section plus précise l'a déjà, ou, dans une section commune à plusieurs énoncés (« 8. Proofs
+                # of Theorems 1.7 and 1.1 »), une preuve à lui (« Proof of Theorem 1.7 ») ; une esquisse trouvée
+                # ailleurs, ou le bloc final d'une section qui ne prouve que lui, n'empêchent rien
+                if node["proofSection"] or section.find(id=theorem["id"]) is not None:
+                    continue
+                shared = len(theorems_of(heading, True)) > 1
+                if shared and any(section.find(id=proof_id) is not None for proof_id in node["proofs"]):
                     continue
                 attach(section, theorem)
                 node["proofSection"] = True
@@ -411,8 +440,10 @@ def extract_structure(fragment, overrides=None):
         return found
 
     def in_block(element):
+        # le texte d'une section de preuve (« 7.1. Proof of Theorem 7.1 ») reste du texte courant : ses lemmes
+        # s'appuient sur les formules qui y sont obtenues
         return enclosing(element, lambda e: has_class(e, "ltx_theorem") or has_class(e, "ltx_proof")
-                         or e.get("data-proof-of") or has_class(e, "ltx_bibliography")) is not None
+                         or (e.get("data-proof-of") and e.name != "section") or has_class(e, "ltx_bibliography")) is not None
 
     # Équation obtenue dans le texte courant (hors énoncés et preuves) à partir d'énoncés cités juste avant,
     # dans le même paragraphe : « From (3.30) and the above lemma, we get (3.33) ». Un énoncé qui cite
@@ -471,7 +502,8 @@ def extract_structure(fragment, overrides=None):
                         continue
                     _add(node["usesEquations"], eq_id)
                     holder = proof_container(by_id(eq_id))
-                    if owner and holder is not None and any(parent is holder for parent in statement.parents):
+                    if (owner and holder is not None and holder.get("data-proof-of") == owner
+                            and any(parent is holder for parent in statement.parents)):
                         continue  # énoncé posé dans la preuve de `owner` : il n'en dépend pas
                     if owner:
                         _add(node["uses"], owner)

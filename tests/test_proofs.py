@@ -92,3 +92,72 @@ class ManualProofs(unittest.TestCase):
         ids = [e["id"] for e in passage_elements(fragment, "S1.p1", "S1.Thm4")]
         self.assertEqual(ids, ["S1.p1", "S1.Thm3", "S1.p2", "S1.Thm4"])  # paragraphes internes non répétés
         self.assertEqual([e["id"] for e in passage_elements(fragment, "S1.Thm4", "S1.p1")], ["S1.Thm4"])
+
+
+def proof(proof_id, body):
+    return f'<div id="{proof_id}" class="ltx_proof"><h6 class="ltx_title ltx_title_proof">Proof.</h6><div class="ltx_para"><p class="ltx_p">{body}</p></div></div>'
+
+
+def statement(number, kind, label):
+    return theorem(number, kind, label).replace('id="S1.Thm', 'id="S3.Thm')
+
+
+SEPARATED = f"""<article><section id="S3" class="ltx_section"><h2 class="ltx_title">3. Proofs at a distance</h2>
+{statement(1, "lemma", "Lemma 3.1")}
+{proof("S3.P1", "Direct.")}
+{statement(2, "theorem", "Theorem 3.2")}
+{statement(3, "remark", "Remark 3.3")}
+{proof("S3.P2", 'By <a class="ltx_ref" href="#S3.Thm1">Lemma 3.1</a>.')}
+{statement(4, "proposition", "Proposition 3.4")}
+<div id="S3.p1" class="ltx_para"><p class="ltx_p">We comment on the hypotheses.</p></div>
+{proof("S3.P3", "First argument.")}
+{proof("S3.P4", 'Second argument, by <a class="ltx_ref" href="#S3.Thm1">Lemma 3.1</a>.')}
+{statement(5, "lemma", "Lemma 3.5")}
+{proof("S3.P5", "Easy.")}
+{statement(6, "remark", "Remark 3.6")}
+{proof("S3.P6", "Of the remark.")}
+{statement(7, "theorem", "Theorem 3.7")}
+{proof("S3.P7", "Outline of the proof.")}
+</section>
+<section id="S4" class="ltx_section"><h2 class="ltx_title">4. Proof of <a class="ltx_ref" href="#S3.Thm7">Theorem 3.7</a></h2>
+<div id="S4.p1" class="ltx_para"><p class="ltx_p">By <a class="ltx_ref" href="#S3.Thm5">Lemma 3.5</a>.</p></div></section>
+<section id="S5" class="ltx_section"><h2 class="ltx_title">5. Statements</h2>
+{statement(8, "theorem", "Theorem 3.8")}
+{statement(9, "theorem", "Theorem 3.9")}
+</section>
+<section id="S6" class="ltx_section"><h2 class="ltx_title">6. Proofs of <a class="ltx_ref" href="#S3.Thm8">Theorem 3.8</a> and <a class="ltx_ref" href="#S3.Thm9">Theorem 3.9</a></h2>
+<div id="S6.p1" class="ltx_para"><p class="ltx_p">Common setting.</p></div>
+<div id="S6.P1" class="ltx_proof"><h6 class="ltx_title ltx_title_proof">Proof of <a class="ltx_ref" href="#S3.Thm8">Theorem 3.8</a>.</h6><div class="ltx_para"><p class="ltx_p">Done.</p></div></div>
+</section>
+<section id="S7" class="ltx_section"><h2 class="ltx_title">7. Proof of <a class="ltx_ref" href="#S3.Thm9">Theorem 3.9</a>, continued</h2>
+<div id="S7.p1" class="ltx_para"><p class="ltx_p">Setting.</p></div>
+</section></article>"""
+
+
+class SeparatedProofs(unittest.TestCase):
+    def setUp(self):
+        structure = extract_structure(BeautifulSoup(SEPARATED, "html.parser"))
+        self.nodes = {n["label"]: n for n in structure["nodes"]}
+
+    def test_remark_between_statement_and_proof(self):
+        self.assertEqual(self.nodes["Theorem 3.2"]["proofs"], ["S3.P2"])  # pas la remarque
+        self.assertIn("S3.Thm1", self.nodes["Theorem 3.2"]["uses"])
+        self.assertEqual(self.nodes["Remark 3.3"]["proofs"], [])
+
+    def test_paragraph_between_and_second_proof(self):
+        self.assertEqual(self.nodes["Proposition 3.4"]["proofs"], ["S3.P3", "S3.P4"])
+        self.assertIn("S3.Thm1", self.nodes["Proposition 3.4"]["uses"])
+
+    def test_remark_with_its_own_proof(self):
+        # le lemme d'avant a déjà sa preuve : celle qui suit la remarque est bien la sienne
+        self.assertEqual(self.nodes["Lemma 3.5"]["proofs"], ["S3.P5"])
+        self.assertEqual(self.nodes["Remark 3.6"]["proofs"], ["S3.P6"])
+
+    def test_shared_proof_section(self):
+        # « Proofs of Theorems 3.8 and 3.9 » contient une preuve propre à 3.8 : la section n'est attribuée qu'à 3.9
+        self.assertEqual(self.nodes["Theorem 3.8"]["proofs"], ["S6.P1"])
+        self.assertEqual(self.nodes["Theorem 3.9"]["proofs"], ["S6"])
+
+    def test_outline_then_proof_section(self):
+        self.assertEqual(self.nodes["Theorem 3.7"]["proofs"], ["S3.P7", "S4"])  # esquisse, puis la section de preuve
+        self.assertIn("S3.Thm5", self.nodes["Theorem 3.7"]["uses"])
