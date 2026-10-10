@@ -347,6 +347,7 @@ function feedCard(item, onChange = () => {}, { compact = false } = {}) {
   const meter = level && level !== "none" && h("span", { class: `relevance relevance-${level}`, title: t("feed.relevanceHint", { n: Math.round(item.relevance * 100) }) },
     h("span", { class: "relevance-bar" }, h("span", { style: `width: ${Math.round(item.relevance * 100)}%` })), t(`feed.level.${level}`));
 
+  const linker = item.arxiv_id ? null : arxivLinker(item, () => card);
   const card = h("article", { class: `feed-card${compact ? " compact" : ""}` },
     h("div", { class: "feed-title-row" }, h("h3", { class: "feed-title" }, title), meter),
     h("div", { class: "feed-authors" }, authors.join(", ")),
@@ -361,11 +362,12 @@ function feedCard(item, onChange = () => {}, { compact = false } = {}) {
     ),
     reasons.length ? h("div", { class: "reasons" }, reasons) : null,
     item.abstract && abstract,
-    !item.arxiv_id && arxivFinder(item, () => card),
+    linker?.form,
     h("div", { class: "feed-actions" },
       statusButton("liked", t("feed.like"), "up"),
       statusButton("disliked", t("feed.dislike"), "down"),
       item.arxiv_id && libraryButton(item),
+      linker?.toggle,
       h("span", { class: "spacer" }),
       item.link && h("a", { class: "icon-button", href: item.link, target: "_blank", rel: "noopener noreferrer", title: item.arxiv_id ? "arXiv" : "Semantic Scholar", html: icons.external }),
       item.arxiv_id && h("a", { class: "icon-button", href: `https://arxiv.org/pdf/${item.arxiv_id}`, target: "_blank", rel: "noopener noreferrer", title: "PDF", html: icons.pdf })));
@@ -381,56 +383,44 @@ function feedCard(item, onChange = () => {}, { compact = false } = {}) {
   return card;
 }
 
-// Recommandation sans version arXiv connue : recherche sur arXiv par le titre, ou lien collé à la main.
+// Recommandation sans version arXiv connue : on peut coller son lien arXiv (champ déplié sous la carte).
 // Une fois reliée, la carte devient une carte arXiv ordinaire (lecture, signet, PDF).
-function arxivFinder(item, currentCard) {
-  const box = h("div", { class: "arxiv-finder" });
-  const linked = (arxivId) => {
-    item.arxiv_id = arxivId;
-    item.link = `https://arxiv.org/abs/${arxivId}`;
-    const next = feedCard(item);
-    currentCard().replaceWith(next);
-    typesetTex([next]).catch(() => {});
-    toast(t("feed.arxivLinked", { id: arxivId }));
+function arxivLinker(item, currentCard) {
+  const input = h("input", { class: "text-input", type: "text", placeholder: t("feed.arxivPaste"), "aria-label": t("feed.arxivPaste"),
+    autocomplete: "off", spellcheck: "false" });
+  const go = h("button", { class: "button small-button primary", type: "submit" }, t("feed.arxivLink"));
+  const cancel = h("button", { class: "button small-button", type: "button" }, t("panel.cancel"));
+  const form = h("form", { class: "arxiv-finder-form", hidden: true }, input, go, cancel);
+  const toggle = h("button", { class: "link-button small arxiv-add", type: "button", "aria-expanded": "false" },
+    h("span", { class: "button-icon", html: icons.add }), t("feed.arxivAdd"));
+  const show = (open) => {
+    form.hidden = !open;
+    toggle.hidden = open;
+    toggle.setAttribute("aria-expanded", String(open));
+    if (open) input.focus(); else toggle.focus();
   };
-  const manual = () => {
-    const input = h("input", { class: "text-input", type: "text", placeholder: t("feed.arxivPaste"), "aria-label": t("feed.arxivPaste"),
-      autocomplete: "off", spellcheck: "false" });
-    const go = h("button", { class: "button small-button primary", type: "submit" }, t("feed.arxivLink"));
-    const form = h("form", { class: "arxiv-finder-form" }, input, go);
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      if (!input.value.trim()) { input.focus(); return; }
-      go.disabled = true;
-      try {
-        const { arxiv_id: arxivId } = await api.findArxiv(item.key, input.value.trim());
-        if (arxivId) linked(arxivId);
-      } catch (error) {
-        toastError(error);
-      } finally {
-        go.disabled = false;
-      }
-    });
-    return form;
-  };
-  const search = h("button", { class: "button small-button", type: "button" }, h("span", { class: "button-icon", html: icons.search }), t("feed.arxivSearch"));
-  search.addEventListener("click", async () => {
-    search.disabled = true;
-    search.replaceChildren(h("span", { class: "spinner" }), " ", t("feed.arxivSearching"));
+  toggle.addEventListener("click", () => show(true));
+  cancel.addEventListener("click", () => show(false));
+  input.addEventListener("keydown", (event) => { if (event.key === "Escape") show(false); });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!input.value.trim()) { input.focus(); return; }
+    go.disabled = true;
     try {
-      const { arxiv_id: arxivId } = await api.findArxiv(item.key);
-      if (arxivId) { linked(arxivId); return; }
-      box.replaceChildren(h("p", { class: "muted small" }, t("feed.arxivNotFound")), manual());
-      box.querySelector("input")?.focus();
+      const { arxiv_id: arxivId } = await api.linkArxiv(item.key, input.value.trim());
+      item.arxiv_id = arxivId;
+      item.link = `https://arxiv.org/abs/${arxivId}`;
+      const next = feedCard(item);
+      currentCard().replaceWith(next);
+      typesetTex([next]).catch(() => {});
+      toast(t("feed.arxivLinked", { id: arxivId }));
     } catch (error) {
       toastError(error);
-      search.disabled = false;
-      search.replaceChildren(h("span", { class: "button-icon", html: icons.search }), t("feed.arxivSearch"));
+    } finally {
+      go.disabled = false;
     }
   });
-  const paste = h("button", { class: "link-button small", type: "button", onclick: () => { box.replaceChildren(manual()); box.querySelector("input").focus(); } }, t("feed.arxivHaveLink"));
-  box.append(h("span", { class: "muted small" }, t("feed.offArxivText")), search, paste);
-  return box;
+  return { toggle, form };
 }
 
 // Signet : ajouter l'article à la bibliothèque (ou l'en retirer) sans quitter le feed ni redessiner la liste

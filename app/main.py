@@ -124,7 +124,7 @@ class AIRequest(BaseModel):
 
 class FindArxivRequest(BaseModel):
     key: str
-    query: str | None = None  # lien ou identifiant collé ; sinon recherche par le titre
+    query: str  # lien ou identifiant arXiv collé
 
 
 class RefreshRequest(BaseModel):
@@ -416,24 +416,19 @@ def feed_status(body: StatusRequest):
 
 @app.post("/api/feed/arxiv")
 async def find_arxiv(body: FindArxivRequest):
-    """Version arXiv d'une recommandation qui n'en a pas : par son titre, ou par le lien donné."""
+    """Version arXiv d'une recommandation qui n'en a pas, d'après le lien donné."""
     item = feed.get_item(body.key[:200])
     if item is None:
         raise HTTPException(404, "Unknown item")
     try:
-        if body.query:
-            from .arxiv import fetch_metadata, parse_arxiv_id
-            arxiv_id, _ = parse_arxiv_id(body.query[:500])
-            await run_in_threadpool(fetch_metadata, arxiv_id)  # l'article existe bien
-        else:
-            from .arxiv import search_by_title
-            arxiv_id = await run_in_threadpool(search_by_title, item["title"], item["authors"])
+        from .arxiv import fetch_metadata, parse_arxiv_id
+        arxiv_id, _ = parse_arxiv_id(body.query[:500])
+        await run_in_threadpool(fetch_metadata, arxiv_id)  # l'article existe bien
     except ArxivError as error:
         return JSONResponse({"error": str(error)}, status_code=400)
     except Exception as error:  # réseau
         return JSONResponse({"error": f"{type(error).__name__}: {error}"}, status_code=502)
-    if arxiv_id:
-        feed.link_arxiv(item["key"], arxiv_id)
+    feed.link_arxiv(item["key"], arxiv_id)
     return {"arxiv_id": arxiv_id}
 
 

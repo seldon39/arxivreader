@@ -855,7 +855,8 @@ mark.hl:hover { filter: brightness(.95); }
 
 /* Recommandation sans version arXiv */
 .chip.off-arxiv { color: var(--warning-text); background: var(--warning-bg); border-color: transparent; }
-.arxiv-finder { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 2px 0 4px; }
-.arxiv-finder .button-icon svg { width: 16px; height: 16px; }
-.arxiv-finder-form { display: flex; gap: 8px; flex: 1 1 100%; }
+.arxiv-add { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; color: var(--link); text-decoration: none; font-size: 14px; }
+.arxiv-add:hover { text-decoration: underline; }
+.arxiv-add .button-icon svg { width: 16px; height: 16px; }
+.arxiv-finder-form { display: flex; gap: 8px; margin: 2px 0 2px; }
 .arxiv-finder-form .text-input { flex: 1; height: 34px; }
