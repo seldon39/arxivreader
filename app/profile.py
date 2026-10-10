@@ -227,7 +227,7 @@ def _surname(name):
     return parts[-1] if parts else None
 
 
-def followed_author_papers(categories, per_author=30, days=60):
+def followed_author_papers(categories, per_author=30, days=60, stop=None):
     """Articles récents des auteurs suivis (toutes catégories).
 
     L'API arXiv cherche « au:Marinescu_G » à l'identique (« G. Marinescu » seulement) : on demande
@@ -240,6 +240,8 @@ def followed_author_papers(categories, per_author=30, days=60):
     papers = {}
     with httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=40) as client:
         for index, author in enumerate(authors):
+            if stop is not None and stop.is_set():
+                break
             surname = _surname(author)
             if not surname:
                 continue

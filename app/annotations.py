@@ -37,6 +37,8 @@ def create(paper_id, kind, target=None, color=None, quote=None, note=None, state
         raise ValueError("bad annotation")
     if author not in AUTHORS:
         raise ValueError("bad author")
+    if kind != "highlight":
+        author = None  # notes d'énoncé et fiche de lecture : ce sont les vôtres, même complétées par Claude
     if kind == "block" and not (target or {}).get("id"):
         raise ValueError("block without target")  # sinon une nouvelle ligne à chaque enregistrement
     with db.connect() as connection:

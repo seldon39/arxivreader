@@ -1,6 +1,6 @@
 // Point d'entrée : réglages, navigation entre la bibliothèque et le lecteur.
 
-import { t } from "./i18n.js";
+import { t, tn } from "./i18n.js";
 import { renderFeed } from "./feed.js";
 import { renderLibrary } from "./library.js";
 import { renderReader } from "./reader.js";
@@ -52,8 +52,11 @@ export async function refreshAlerts() {
   let count = 0;
   try { count = (await api.alerts()).unseen.length; } catch { return; }
   const link = document.querySelector('.topnav a[href="#/feed"]');
-  link.querySelector(".nav-badge")?.remove();
-  if (count) link.append(h("span", { class: "nav-badge", title: t("alerts.badge", { n: count }), "aria-label": t("alerts.badge", { n: count }) }, String(count)));
+  link.querySelectorAll(".nav-badge").forEach((badge) => badge.remove());
+  if (count) {
+    link.append(h("span", { class: "nav-badge", title: tn("alerts.badge", count), "aria-hidden": "true" }, String(count)),
+      h("span", { class: "visually-hidden nav-badge" }, tn("alerts.badge", count)));
+  }
 }
 addEventListener("arxivreader:alerts", refreshAlerts);
 
@@ -64,6 +67,7 @@ onSettingsChange(() => {
   if (`${settings.language}/${settings.mathRenderer}` !== rendering) {
     rendering = `${settings.language}/${settings.mathRenderer}`;
     route();
+    refreshAlerts();
   }
 });
 document.getElementById("settings-button").addEventListener("click", openSettingsDialog);

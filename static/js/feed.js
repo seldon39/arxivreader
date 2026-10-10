@@ -59,7 +59,13 @@ async function renderList(body, tab) {
   let data = first;
   const fresh = new Set(alerts.unseen); // articles d'auteurs suivis jamais vus : signalés cette fois-ci
   // marqués vus seulement une fois affichés (voir draw)
-  const markSeen = (keys) => { if (keys.length) api.alertsSeen(keys).then(() => dispatchEvent(new Event("arxivreader:alerts"))).catch(() => {}); };
+  const sent = new Set(); // déjà signalés au serveur (pas de nouvel envoi à chaque redessin)
+  const markSeen = (keys) => {
+    keys = keys.filter((key) => !sent.has(key));
+    if (!keys.length) return;
+    keys.forEach((key) => sent.add(key));
+    api.alertsSeen(keys).then(() => dispatchEvent(new Event("arxivreader:alerts"))).catch(() => {});
+  };
   let loadingDay = false;
   let generation = 0; // change à chaque changement de jour : une mise à jour plus ancienne n'écrase rien
   const remember = () => { memory.day = data.day && data.day !== data.latestDay ? data.day : null; };
@@ -88,7 +94,7 @@ async function renderList(body, tab) {
       for (let attempt = 0; attempt < 5; attempt++) {
         const next = await api.feed(tab, target);
         const last = step > 0 && (!data.latestDay || shiftDay(target, step) > data.latestDay);
-        if (next.items.some((i) => i.in_arxiv) || last || attempt === 4) { data = next; break; }
+        if (next.items.some((i) => i.in_arxiv && i.announced === target) || last || attempt === 4) { data = next; break; }
         target = shiftDay(target, step);
       }
       remember();
@@ -128,6 +134,7 @@ async function renderList(body, tab) {
       if (started !== generation || !document.body.contains(list)) return; // on a changé de jour entre-temps
       data = next;
       remember();
+      if (tab === "arxiv") (await api.alerts().catch(() => ({ unseen: [] }))).unseen.forEach((key) => fresh.add(key)); // apportés par la mise à jour
       draw();
     } catch (error) {
       notice.replaceChildren(h("p", { class: "notice" }, errorText(error.message)));
@@ -158,21 +165,22 @@ async function renderList(body, tab) {
       return;
     }
     const byRelevance = state.sort === "relevance";
-    const card = (item) => feedCard(item, draw, { fresh: fresh.has(item.key),
+    const card = (item) => feedCard(item, draw, { fresh: fresh.has(item.key), showDate: Boolean(item.followed && item.in_arxiv && item.announced !== data.day),
       compact: byRelevance && item.relevance < COMPACT_BELOW && !item.libraryId && item.status !== "liked" && !fresh.has(item.key) });
     const sections = [];
     let shown;
     if (tab === "arxiv") {
       // Nouveaux articles des auteurs suivis, hors des annonces de vos catégories
       // tous les articles récents des auteurs suivis, sauf ceux de l'annonce affichée (ils y sont déjà)
-      const followed = data.items.filter((i) => i.followed && !(i.in_arxiv && i.announced === data.day) && matches(i))
+      const inDayList = (i) => i.in_arxiv && i.announced === data.day && state.types.has(i.announce_type) && inCategories(i);
+      const followed = data.items.filter((i) => i.followed && !inDayList(i) && matches(i))
         .sort((a, b) => (b.announced || "").localeCompare(a.announced || ""));
       if (followed.length) {
         sections.push(h("section", { class: "feed-day followed-section" },
           h("h2", { class: "feed-date" }, `${t("feed.followedTitle")} · ${tn("feed.count", followed.length)}`),
           followed.map(card)));
       }
-      shown = data.items.filter((i) => i.in_arxiv && i.announced === data.day && state.types.has(i.announce_type) && inCategories(i) && matches(i));
+      shown = data.items.filter((i) => inDayList(i) && matches(i));
     } else {
       shown = data.items.filter((i) => inCategories(i) && matches(i));
     }
@@ -283,7 +291,7 @@ function formatDay(iso) {
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString(getLanguage() === "fr" ? "fr-FR" : "en-GB", { weekday: "long", day: "numeric", month: "long" });
 }
 
-function feedCard(item, onChange = () => {}, { compact = false, fresh = false } = {}) {
+function feedCard(item, onChange = () => {}, { compact = false, fresh = false, showDate = false } = {}) {
   const authors = item.authors.length > 8 ? [...item.authors.slice(0, 8), t("feed.etAl")] : item.authors;
   // Résumé coupé à trois lignes : clic, Entrée ou Espace pour le déplier
   const abstract = h("p", { class: "feed-abstract", tabindex: 0, role: "button", "aria-expanded": "false" }, item.abstract || "");
@@ -355,7 +363,7 @@ function feedCard(item, onChange = () => {}, { compact = false, fresh = false } 
   const meter = level && level !== "none" && h("span", { class: `relevance relevance-${level}`, title: t("feed.relevanceHint", { n: Math.round(item.relevance * 100) }) },
     h("span", { class: "relevance-bar" }, h("span", { style: `width: ${Math.round(item.relevance * 100)}%` })), t(`feed.level.${level}`));
 
-  const linker = item.arxiv_id ? null : arxivLinker(item, () => card);
+  const linker = item.arxiv_id ? null : arxivLinker(item, () => card, (next) => feedCard(next, onChange, { fresh }));
   const card = h("article", { class: `feed-card${compact ? " compact" : ""}${fresh ? " fresh" : ""}`, dataset: { key: item.key } },
     h("div", { class: "feed-title-row" }, h("h3", { class: "feed-title" }, fresh && h("span", { class: "fresh-badge" }, t("alerts.new")), title), meter),
     h("div", { class: "feed-authors" }, authors.join(", ")),
@@ -364,7 +372,7 @@ function feedCard(item, onChange = () => {}, { compact = false, fresh = false } 
       ...item.categories.filter((c) => c !== item.primary_category).map((c) => h("span", { class: "chip" }, c)),
       item.announce_type && h("span", { class: `chip type-${item.announce_type}` }, t(`feed.badge.${item.announce_type}`)),
       item.arxiv_id && h("span", { class: "chip" }, `arXiv:${item.arxiv_id}`),
-      !item.announce_type && item.announced && h("span", { class: "chip" }, item.announced),
+      (!item.announce_type || showDate) && item.announced && h("span", { class: "chip" }, item.announced),
       item.announce_type && item.s2_rank !== null && item.s2_rank !== undefined && h("span", { class: "chip recommended-chip", title: t("feed.recommendedHint") }, t("feed.recommended")),
       !item.arxiv_id && h("span", { class: "chip off-arxiv", title: t("feed.offArxivHint") }, t("feed.offArxiv")),
     ),
@@ -393,7 +401,7 @@ function feedCard(item, onChange = () => {}, { compact = false, fresh = false } 
 
 // Recommandation sans version arXiv connue : on peut coller son lien arXiv (champ déplié sous la carte).
 // Une fois reliée, la carte devient une carte arXiv ordinaire (lecture, signet, PDF).
-function arxivLinker(item, currentCard) {
+function arxivLinker(item, currentCard, rebuild) {
   const input = h("input", { class: "text-input", type: "text", placeholder: t("feed.arxivPaste"), "aria-label": t("feed.arxivPaste"),
     autocomplete: "off", spellcheck: "false" });
   const go = h("button", { class: "button small-button primary", type: "submit" }, t("feed.arxivLink"));
@@ -415,13 +423,14 @@ function arxivLinker(item, currentCard) {
     if (!input.value.trim()) { input.focus(); return; }
     go.disabled = true;
     try {
-      const { arxiv_id: arxivId } = await api.linkArxiv(item.key, input.value.trim());
+      const { arxiv_id: arxivId, title } = await api.linkArxiv(item.key, input.value.trim());
       item.arxiv_id = arxivId;
       item.link = `https://arxiv.org/abs/${arxivId}`;
-      const next = feedCard(item);
+      const next = rebuild(item);
       currentCard().replaceWith(next);
+      next.querySelector(".feed-title-link")?.focus();
       typesetTex([next]).catch(() => {});
-      toast(t("feed.arxivLinked", { id: arxivId }));
+      toast(t("feed.arxivLinked", { id: arxivId, title }), { duration: 6000 });
     } catch (error) {
       toastError(error);
     } finally {

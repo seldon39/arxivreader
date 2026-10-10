@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import ai, alerts, annotations, db, feed, library, profile, relevance
-from .arxiv import ArxivError
+from .arxiv import ArxivError, fetch_metadata, parse_arxiv_id
 from .config import HOST, PORT, STATIC
 
 ALLOWED_HOSTS = {f"{HOST}:{PORT}", f"localhost:{PORT}"}
@@ -35,10 +35,16 @@ async def lifespan(_app):
     ai.stop_running()
     library.clean_cache()
     # vérification périodique des auteurs suivis (ARXIVREADER_NO_ALERTS=1 pour la couper, par ex. en test)
+    alerts.stop.clear()
     task = None if os.environ.get("ARXIVREADER_NO_ALERTS") else asyncio.create_task(alerts.loop())
     yield
     if task:
+        alerts.stop.set()  # la vérification en cours s'arrête à l'auteur suivant
         task.cancel()
+        try:
+            await asyncio.wait_for(task, 5)
+        except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
+            pass
 
 
 app = FastAPI(title="arXivReader", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
@@ -423,19 +429,18 @@ def feed_status(body: StatusRequest):
 @app.post("/api/feed/arxiv")
 async def find_arxiv(body: FindArxivRequest):
     """Version arXiv d'une recommandation qui n'en a pas, d'après le lien donné."""
-    item = feed.get_item(body.key[:200])
-    if item is None:
-        raise HTTPException(404, "Unknown item")
+    item = feed.get_item(body.key[:100])
+    if item is None or not item["key"].startswith("s2:"):
+        raise HTTPException(404, "Unknown recommendation")
     try:
-        from .arxiv import fetch_metadata, parse_arxiv_id
         arxiv_id, _ = parse_arxiv_id(body.query[:500])
-        await run_in_threadpool(fetch_metadata, arxiv_id)  # l'article existe bien
+        meta = await run_in_threadpool(fetch_metadata, arxiv_id)  # l'article existe bien
     except ArxivError as error:
         return JSONResponse({"error": str(error)}, status_code=400)
     except Exception as error:  # réseau
         return JSONResponse({"error": f"{type(error).__name__}: {error}"}, status_code=502)
     feed.link_arxiv(item["key"], arxiv_id)
-    return {"arxiv_id": arxiv_id}
+    return {"arxiv_id": arxiv_id, "title": meta.title}  # titre montré pour vérifier qu'on a relié le bon article
 
 
 @app.get("/api/alerts")
@@ -518,12 +523,38 @@ def update_settings(values: dict):
     allowed = {"language", "theme", "fontSize", "readingWidth", "proofsCollapsed", "tocOpen", "panelOpen", "panelWidth", "tocWidth", "paperFont", "marginMarks", "mathRenderer",
                "feedCategories", "feedTypes", "s2ApiKey", "feedSort", "feedSortS2", "aiModel", "notifyFollowed"}
     values = {k: v for k, v in values.items() if k in allowed}
+    if not all(_valid_setting(k, v) for k, v in values.items()):
+        raise HTTPException(400, "Bad setting")
     categories = values.get("feedCategories")
     if categories is not None and not (isinstance(categories, list) and all(
             isinstance(c, str) and re.fullmatch(r"[a-z-]+(\.[A-Za-z-]+)?", c) for c in categories)):
         raise HTTPException(400, "Bad categories")
     db.save_settings(values)
     return db.get_settings()
+
+
+SETTING_CHOICES = {
+    "language": {"fr", "en"}, "theme": {"auto", "light", "dark"}, "readingWidth": {"narrow", "normal", "wide"},
+    "paperFont": {"auto", "charter", "lm"}, "mathRenderer": {"mathjax", "native"}, "aiModel": set(ai.MODELS),
+    "feedSort": {"relevance", "arxiv"}, "feedSortS2": {"relevance", "s2"},
+}
+BOOLEAN_SETTINGS = {"proofsCollapsed", "tocOpen", "panelOpen", "marginMarks", "notifyFollowed"}
+
+
+def _valid_setting(key, value):
+    if key in SETTING_CHOICES:
+        return value in SETTING_CHOICES[key]
+    if key in BOOLEAN_SETTINGS:
+        return isinstance(value, bool)
+    if key == "fontSize":
+        return isinstance(value, int) and 10 <= value <= 32
+    if key in ("panelWidth", "tocWidth"):
+        return value is None or (isinstance(value, (int, float)) and 100 <= value <= 2000)
+    if key == "s2ApiKey":
+        return isinstance(value, str) and len(value) <= 200 and value.isascii() and value.isprintable()
+    if key == "feedTypes":
+        return isinstance(value, list) and all(v in ("new", "cross", "replace", "replace-cross") for v in value)
+    return True  # feedCategories : vérifié à part
 
 
 @app.get("/")

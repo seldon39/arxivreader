@@ -145,6 +145,9 @@ export function withMath(text) {
 // Titre écrit tout en majuscules (certaines sources, Semantic Scholar…) : remis en casse de titre
 // usuelle, formules $…$ intactes. Les titres normaux ne sont pas touchés.
 const SMALL_WORDS = new Set(["a", "an", "the", "of", "on", "in", "and", "or", "for", "to", "with", "via", "by", "at", "from", "as", "into", "over", "under"]);
+// Sigles gardés tels quels (on ne peut pas les deviner dans un titre tout en majuscules)
+const ACRONYMS = new Set(["QFT", "CFT", "ADS", "PDE", "PDES", "ODE", "ODES", "SU", "SO", "SL", "GL", "SP", "PSL", "CR", "BPS", "QCD",
+  "TQFT", "KAM", "WKB", "BV", "BRST", "KDV", "NLS", "RCD", "CAT", "HKR", "DG", "II", "III", "IV", "VI", "VII", "VIII", "IX", "XI", "XII"]);
 
 export function tidyTitle(title) {
   const text = String(title || "");
@@ -154,11 +157,14 @@ export function tidyTitle(title) {
   let first = true;
   return text.split(/(\$[^$]*\$)/).map((part) => {
     if (part.startsWith("$")) { first = false; return part; }
-    return part.toLowerCase().replace(/[\p{L}\d][\p{L}\d'’]*/gu, (word, offset, whole) => {
-      const afterColon = /[:—–]\s*$/.test(whole.slice(0, offset));
-      const keepSmall = SMALL_WORDS.has(word) && !first && !afterColon;
+    return part.replace(/[\p{L}\d][\p{L}\d'’]*/gu, (word, offset, whole) => {
+      const sentenceStart = first || /[:?!.—–]\s*$/.test(whole.slice(0, offset));
       first = false;
-      return keepSmall ? word : word.charAt(0).toUpperCase() + word.slice(1);
+      // sigle, numéro, ou groupe noté SL(2,R), CP^N, H_1 : casse d'origine
+      if (/\d/.test(word) || ACRONYMS.has(word.toUpperCase()) || /^[(^_]/.test(whole.slice(offset + word.length))) return word;
+      const lower = word.toLowerCase();
+      if (SMALL_WORDS.has(lower) && !sentenceStart) return lower;
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
     });
   }).join("");
 }

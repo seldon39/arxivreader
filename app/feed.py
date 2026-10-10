@@ -82,6 +82,9 @@ def parse_rss(xml_text):
     return items
 
 
+FOLLOWED_DAYS = 45  # articles récents des auteurs suivis : section du feed, alertes
+
+
 def _store(connection, item, followed=False):
     connection.execute(
         f"""INSERT INTO feed_items (key, arxiv_id, version, title, authors, abstract, categories,
@@ -240,8 +243,10 @@ def _positive_negative():
         rows = connection.execute(
             "SELECT s.key, s.status, f.arxiv_id FROM feed_status s LEFT JOIN feed_items f ON f.key = s.key"
         ).fetchall()
-    liked = [r["arxiv_id"] or r["key"] for r in rows if r["status"] == "liked"]
-    disliked = [r["arxiv_id"] or r["key"] for r in rows if r["status"] == "disliked"]
+    # une recommandation reliée à la main à arXiv garde son identifiant Semantic Scholar (s2:…)
+    pick = lambda r: r["key"] if r["key"].startswith("s2:") else (r["arxiv_id"] or r["key"])  # noqa: E731
+    liked = [pick(r) for r in rows if r["status"] == "liked"]
+    disliked = [pick(r) for r in rows if r["status"] == "disliked"]
 
     def s2_id(key):
         return key[3:] if key.startswith("s2:") else f"ArXiv:{key}"
@@ -310,7 +315,7 @@ def list_items(view, announce_types=None, day=None):
             day = day or connection.execute("SELECT MAX(announced) FROM feed_items WHERE in_arxiv = 1").fetchone()[0]
             rows = connection.execute(
                 f"""SELECT * FROM feed_items WHERE (in_arxiv = 1 AND announce_type IN ({marks}) AND announced = ?)
-                       OR (followed = 1 AND announced >= date('now', '-45 days'))
+                       OR (followed = 1 AND announced >= date('now', '-{FOLLOWED_DAYS} days'))
                     ORDER BY CASE announce_type WHEN 'new' THEN 0 WHEN 'cross' THEN 1 ELSE 2 END, arxiv_id DESC""",
                 [*types, day],
             ).fetchall()
@@ -328,6 +333,8 @@ def list_items(view, announce_types=None, day=None):
 
 def link_arxiv(key, arxiv_id):
     """Recommandation sans version arXiv connue de Semantic Scholar : reliée à son identifiant arXiv."""
+    if not key.startswith("s2:"):
+        raise ValueError("only Semantic Scholar recommendations can be linked")
     with db.connect() as connection:
         connection.execute("UPDATE feed_items SET arxiv_id = ?, link = ? WHERE key = ?",
                            (arxiv_id, f"https://arxiv.org/abs/{arxiv_id}", key))

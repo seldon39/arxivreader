@@ -44,6 +44,46 @@ class Requests(unittest.TestCase):
         self.assertEqual(self.client.put("/api/papers/none/proofs/x", json={"mode": "immediate"}).status_code, 404)
 
 
+class Settings(unittest.TestCase):
+    def setUp(self):
+        self.saved = (db.DB_PATH, db.LIBRARY)
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        db.DB_PATH, db.LIBRARY = tmp / "test.db", tmp
+        db.init()
+        self.client = TestClient(main.app, base_url=BASE)
+
+    def tearDown(self):
+        db.DB_PATH, db.LIBRARY = self.saved
+
+    def test_values_are_checked(self):
+        put = lambda values: self.client.put("/api/settings", json=values).status_code  # noqa: E731
+        self.assertEqual(put({"notifyFollowed": "false"}), 400)
+        self.assertEqual(put({"notifyFollowed": False, "theme": "dark", "fontSize": 18, "panelWidth": None}), 200)
+        self.assertEqual(put({"theme": "purple"}), 400)
+        self.assertEqual(put({"s2ApiKey": "clé"}), 400)
+
+    def test_link_only_recommendations(self):
+        from app import feed
+        with db.connect() as connection:
+            connection.execute("INSERT INTO feed_items (key, arxiv_id, title, authors) VALUES ('2601.00001', '2601.00001', 't', '[]')")
+        self.assertEqual(self.client.post("/api/feed/arxiv", json={"key": "2601.00001", "query": "2601.00002"}).status_code, 404)
+        self.assertEqual(self.client.post("/api/feed/arxiv", json={"key": "s2:none", "query": "2601.00002"}).status_code, 404)
+        with self.assertRaises(ValueError):
+            feed.link_arxiv("2601.00001", "2601.00002")
+
+    def test_migration_of_an_old_database(self):
+        import sqlite3
+        with sqlite3.connect(db.DB_PATH) as connection:  # schéma d'avant : sans author ni applied
+            connection.execute("DROP TABLE annotations")
+            connection.execute("CREATE TABLE annotations (id INTEGER PRIMARY KEY, paper_id TEXT, kind TEXT, target TEXT, "
+                               "color TEXT, quote TEXT, note TEXT, state TEXT, created_at TEXT, updated_at TEXT)")
+        db.init()
+        db.init()
+        with db.connect() as connection:
+            columns = {row["name"] for row in connection.execute("PRAGMA table_info(annotations)")}
+        self.assertIn("author", columns)
+
+
 class Reanalysis(unittest.TestCase):
     def setUp(self):
         self.saved = library.PAPERS

@@ -2,7 +2,7 @@
 
 import { api } from "./api.js";
 import { t, tn } from "./i18n.js";
-import { debounce, formatDate, h, icons, timeAgo, toast, toastError, withMath } from "./util.js";
+import { debounce, formatDate, h, icons, tidyTitle, timeAgo, toast, toastError, withMath } from "./util.js";
 
 // Recherche et filtres, gardés d'une visite à l'autre (le temps de la session)
 const view = { search: "", categories: new Set(), reading: new Set(), years: new Set(), source: "any", sort: "opened" };
@@ -10,7 +10,8 @@ const READING = ["unread", "annotated", "understood", "claude"];
 const SORTS = ["opened", "added", "published", "title"];
 
 // Comparaison sans accents ni majuscules
-const fold = (text) => String(text || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const fold = (text) => String(text || "").replace(/\\["'`^~=.uvHc]\{?(\w)\}?/g, "$1") // accents TeX : K\"ahler → Kahler
+  .normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
 function readingStates(paper) {
   const reading = paper.reading || {};
@@ -46,15 +47,14 @@ const SORTERS = {
   title: (a, b) => fold(a.title).localeCompare(fold(b.title)),
 };
 
-const activeCount = () => view.categories.size + view.reading.size + view.years.size + (view.source !== "any" ? 1 : 0)
-  + (view.sort !== "opened" ? 1 : 0);
+// le tri n'est pas un filtre : il ne compte pas, et « Tout réinitialiser » le garde
+const activeCount = () => view.categories.size + view.reading.size + view.years.size + (view.source !== "any" ? 1 : 0);
 
 function resetFilters() {
   view.categories.clear();
   view.reading.clear();
   view.years.clear();
   view.source = "any";
-  view.sort = "opened";
 }
 
 export async function renderLibrary(root) {
@@ -108,7 +108,7 @@ export async function renderLibrary(root) {
     menu.remove();
     menu = null;
     filterButton.setAttribute("aria-expanded", "false");
-    document.removeEventListener("mousedown", onOutside);
+    document.removeEventListener("pointerdown", onOutside);
     document.removeEventListener("keydown", onEscape);
     if (focus) filterButton.focus();
   };
@@ -116,35 +116,41 @@ export async function renderLibrary(root) {
   const onEscape = (event) => { if (event.key === "Escape") closeMenu(); };
   const changed = () => { refreshList(false); if (menu) fillMenu(); };
 
-  const chip = (label, active, toggle) => h("button", { class: "kind-filter", type: "button", "aria-pressed": active,
-    onclick: () => { toggle(); changed(); } }, label);
+  const chip = (label, active, toggle, focusId) => h("button", { class: "kind-filter", type: "button", "aria-pressed": active,
+    dataset: { focus: focusId }, onclick: () => { toggle(); changed(); } }, label);
   const toggleIn = (set, value) => () => { if (set.has(value)) set.delete(value); else set.add(value); };
   const choice = (name, options, current, pick) => h("div", { class: "segmented filter-segmented", role: "radiogroup", "aria-labelledby": `filter-${name}` },
     options.map(([value, label]) => h("label", {},
-      h("input", { type: "radio", name: `filter-${name}`, value, checked: value === current, onchange: () => { pick(value); changed(); } }), label)));
+      h("input", { type: "radio", name: `filter-${name}`, value, checked: value === current, dataset: { focus: `${name}:${value}` },
+        onchange: () => { pick(value); changed(); } }), label)));
   const section = (name, title, body) => h("div", { class: "filter-section" }, h("h3", { id: `filter-${name}` }, title), body);
 
   function fillMenu() {
     const categories = [...new Set(papers.flatMap((p) => p.categories))].sort();
     const years = [...new Set(papers.map((p) => (p.published || "").slice(0, 4)).filter(Boolean))].sort().reverse();
     const scroll = menu.querySelector(".filter-body")?.scrollTop || 0;
+    const focused = menu.contains(document.activeElement) ? document.activeElement.dataset.focus || document.activeElement.dataset.role : null;
     menu.replaceChildren(
       h("div", { class: "filter-body" },
         section("reading", t("library.filters.reading"), h("div", { class: "filter-chips" },
-          READING.map((state) => chip(t(`library.reading.${state}`), view.reading.has(state), toggleIn(view.reading, state))))),
+          READING.map((state) => chip(t(`library.reading.${state}`), view.reading.has(state), toggleIn(view.reading, state), `reading:${state}`)))),
         categories.length > 1 && section("categories", t("library.filters.categories"), h("div", { class: "filter-chips" },
-          categories.map((c) => chip(c, view.categories.has(c), toggleIn(view.categories, c))))),
+          categories.map((c) => chip(c, view.categories.has(c), toggleIn(view.categories, c), `category:${c}`)))),
         years.length > 1 && section("years", t("library.filters.years"), h("div", { class: "filter-chips" },
-          years.map((y) => chip(y, view.years.has(y), toggleIn(view.years, y))))),
+          years.map((y) => chip(y, view.years.has(y), toggleIn(view.years, y), `year:${y}`)))),
         section("source", t("library.filters.source"), choice("source",
           [["any", t("library.source.any")], ["html", t("library.source.html")], ["pdf", t("library.source.pdf")]], view.source, (v) => { view.source = v; })),
         section("sort", t("library.filters.sort"), choice("sort",
           SORTS.map((key) => [key, t(`library.sort.${key}`)]), view.sort, (v) => { view.sort = v; }))),
       h("div", { class: "filter-foot" },
-        h("button", { class: "button small-button", type: "button", disabled: !activeCount(), onclick: () => { resetFilters(); changed(); } }, t("library.filters.reset")),
+        h("button", { class: "button small-button", type: "button", disabled: !activeCount(), dataset: { role: "reset" },
+          onclick: () => { resetFilters(); changed(); } }, t("library.filters.reset")),
         h("span", { class: "spacer" }),
-        h("button", { class: "button small-button primary", type: "button", onclick: () => closeMenu() }, t("library.filters.done"))));
+        h("button", { class: "button small-button primary", type: "button", dataset: { role: "done" }, onclick: () => closeMenu() }, t("library.filters.done"))));
     menu.querySelector(".filter-body").scrollTop = scroll;
+    // le menu est redessiné : le focus revient sur la même commande (ou sur « Fermer » si elle a disparu)
+    if (focused) (menu.querySelector(`[data-focus="${CSS.escape(focused)}"], [data-role="${CSS.escape(focused)}"]:not(:disabled)`)
+      || menu.querySelector('[data-role="done"]')).focus();
   }
 
   filterButton.addEventListener("click", () => {
@@ -153,7 +159,11 @@ export async function renderLibrary(root) {
     fillMenu();
     tools.append(menu);
     filterButton.setAttribute("aria-expanded", "true");
-    document.addEventListener("mousedown", onOutside);
+    document.addEventListener("pointerdown", onOutside); // aussi au doigt (iPhone)
+    // Tab hors du menu : il se ferme, sans reprendre le focus
+    menu.addEventListener("focusout", (event) => {
+      if (event.relatedTarget && !menu?.contains(event.relatedTarget) && !filterButton.contains(event.relatedTarget)) closeMenu({ focus: false });
+    });
     document.addEventListener("keydown", onEscape);
     menu.querySelector("button, input")?.focus();
   });
@@ -164,14 +174,21 @@ export async function renderLibrary(root) {
     filterButton.replaceChildren(h("span", { class: "button-icon", html: icons.filter }), t("library.filters.title"),
       count ? h("span", { class: "filter-count" }, String(count)) : "");
     const pill = (label, remove) => h("span", { class: "active-filter" }, label,
-      h("button", { type: "button", class: "active-filter-remove", title: t("library.filters.remove"), "aria-label": `${t("library.filters.remove")} : ${label}`,
-        html: icons.close, onclick: () => { remove(); changed(); } }));
+      h("button", { type: "button", class: "active-filter-remove", title: t("library.filters.remove"), "aria-label": t("library.filters.removeOne", { label }),
+        html: icons.close, onclick: (event) => {
+          // focus sur la pastille suivante (ou le bouton Filtres) une fois celle-ci retirée
+          const buttons = [...activeRow.querySelectorAll(".active-filter-remove")];
+          const index = buttons.indexOf(event.currentTarget);
+          remove();
+          changed();
+          const rest = [...activeRow.querySelectorAll(".active-filter-remove")];
+          (rest[Math.min(index, rest.length - 1)] || filterButton).focus();
+        } }));
     const pills = [
       ...[...view.reading].map((state) => pill(t(`library.reading.${state}`), () => view.reading.delete(state))),
       ...[...view.categories].map((c) => pill(c, () => view.categories.delete(c))),
       ...[...view.years].map((y) => pill(y, () => view.years.delete(y))),
       view.source !== "any" && pill(t(`library.source.${view.source}`), () => { view.source = "any"; }),
-      view.sort !== "opened" && pill(t("library.sortedBy", { sort: t(`library.sort.${view.sort}`) }), () => { view.sort = "opened"; }),
     ].filter(Boolean);
     activeRow.replaceChildren(...pills, pills.length > 1 ? h("button", { class: "link-button small", type: "button",
       onclick: () => { resetFilters(); changed(); } }, t("library.filters.reset")) : "");
@@ -240,7 +257,7 @@ function card(paper, refreshList) {
   const authors = paper.authors.length > 6 ? [...paper.authors.slice(0, 6), "…"] : paper.authors;
   // Le titre est un vrai lien (⌘-clic, copier le lien…) qui couvre toute la carte ; les boutons restent au-dessus
   return h("article", { class: "card" },
-    h("h3", { class: "card-title" }, h("a", { class: "card-link", href }, withMath(paper.title))),
+    h("h3", { class: "card-title" }, h("a", { class: "card-link", href }, withMath(tidyTitle(paper.title)))),
     h("div", { class: "card-authors" }, authors.join(", ")),
     readingLine(paper),
     h("div", { class: "card-meta" },

@@ -89,6 +89,8 @@ ARXIV_REF = re.compile(r"\d{4}\.\d{4,5}|[a-z\-]+(\.[A-Z]{2})?/\d{7}")
 
 
 def s2_key(arxiv_id=None, ref=None):
+    if ref and ref.startswith("s2:"):  # identifiant Semantic Scholar, même si l'article a été relié à arXiv
+        return ref[3:]
     if arxiv_id:
         return f"ArXiv:{arxiv_id}"
     if ref:
