@@ -2,6 +2,8 @@
 // Contrairement au lecteur PDF du système, il dit quelle page on lit et à quelle hauteur : le retour
 // au HTML se fait au même endroit, et la position de lecture est gardée même en lisant le PDF.
 
+import { pdfWords } from "./pdfsync.js";
+
 const VIEWER = "/static/vendor/pdfjs/web/viewer.html";
 
 // Réglages de pdf.js, posés avant son démarrage : il envoie « webviewerloaded » à la page parente
@@ -68,18 +70,33 @@ export class PdfView {
     app?.pdfViewer.scrollPageIntoView({ pageNumber: page, destArray: [null, { name: "XYZ" }, null, top, null], allowNegativeOffset: true });
   }
 
-  // endroit lu : page en haut de la fenêtre et hauteur dans la page (coordonnées du PDF)
+  // endroit lu : page en haut de la fenêtre et hauteur dans la page (coordonnées du PDF), calculés sur le
+  // défilement réel (la position que pdf.js tient à jour attend l'image suivante, retardée en arrière-plan)
   location() {
     const app = this.frame.contentWindow?.PDFViewerApplication;
-    if (!app?.pdfDocument) return null;
-    const location = app.pdfViewer?._location;
-    return location ? { page: location.pageNumber, top: location.top } : { page: app.page, top: null };
+    const viewer = app?.pdfDocument && app.pdfViewer;
+    if (!viewer) return null;
+    const top = viewer.container.getBoundingClientRect().top;
+    for (let i = 0; i < viewer.pagesCount; i++) {
+      const view = viewer.getPageView(i);
+      const rect = view?.div.getBoundingClientRect();
+      if (!rect || rect.bottom <= top + 1) continue;
+      const [, y] = view.viewport.convertToPdfPoint(0, Math.max(0, top - rect.top));
+      return { page: i + 1, top: y };
+    }
+    return { page: app.page, top: null };
   }
 
   // appelé à chaque déplacement dans le PDF
   async onMove(callback) {
     const app = await this.ready();
     app?.eventBus.on("updateviewarea", () => callback(this.location()));
+  }
+
+  // texte du PDF, mot à mot avec page et hauteur (calculé une fois)
+  text() {
+    this.words ??= this.ready().then((app) => (app ? pdfWords(app) : null)).catch(() => null);
+    return this.words;
   }
 
   find() {

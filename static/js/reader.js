@@ -9,6 +9,7 @@ import { currentModel } from "./aiproviders.js";
 import { layoutFigures, openFigure, prepareFigures } from "./figures.js";
 import { findBar, setFindHandler } from "./find.js";
 import { PdfView } from "./pdfview.js";
+import { htmlToPdf, htmlWords, pdfToHtml, wordTop } from "./pdfsync.js";
 import { defineMacros, statementElement, statementsContainer } from "./texview.js";
 import { typesetFragment, typesetMath, typesetTex } from "./math.js";
 
@@ -218,7 +219,14 @@ class Reader {
       // page où l'on en était dans le HTML
       this.htmlScroll = scrollY;
       // à l'ouverture : dernière position de lecture enregistrée ; sinon, l'endroit lu dans le HTML
-      const anchorId = save ? this.currentAnchor()?.id : this.paper.position;
+      // (à l'ouverture, l'article n'est pas encore dans la page : recherche dans son contenu)
+      const position = this.paper.position;
+      const anchor = save ? this.currentAnchor()
+        : position ? this.find(position) || this.content.querySelector(`#${CSS.escape(position)}`) : null;
+      const anchorId = anchor?.id ?? (save ? null : this.paper.position);
+      // texte du HTML et mot lu (avant de masquer le HTML : il faut sa mise en page)
+      this.htmlText = htmlWords(this.content);
+      const from = this.wordAt(this.htmlText, anchor, save);
       this.pdfMode = true;
       this.root.dataset.view = "pdf";
       if (!this.pdf) {
@@ -230,29 +238,69 @@ class Reader {
       scrollTo({ top: 0, behavior: "instant" });
       await this.loadPages();
       if (this.destroyed || !this.pdfMode) return;
+      // d'abord l'estimation des ancres (immédiate), puis l'endroit exact, retrouvé par le texte
       const spot = anchorId ? this.pdfSpot(anchorId) : null;
       this.pdf.goTo(spot?.page || 1, spot?.top ?? null);
+      const text = await this.pdf.text();
+      if (!text || from < 0 || this.destroyed || !this.pdfMode) return;
+      const exact = htmlToPdf(this.htmlText, text, from, spot?.page ?? null);
+      if (exact) this.pdf.goTo(exact.page, exact.top);
     } else {
-      // retour au HTML : à l'endroit lu dans le PDF, sinon là où l'on en était dans le HTML
-      const target = this.htmlSpot(this.pdf?.location());
+      // retour au HTML : au texte lu en haut du PDF ; sinon à l'énoncé estimé par les ancres, sinon là où
+      // l'on en était dans le HTML
+      const location = this.pdf?.location();
+      const estimate = this.htmlSpot(location);
       this.pdfMode = false;
       delete this.root.dataset.view;
       this.anchors = null;
-      if (target) {
-        this.reveal(target);
-        requestAnimationFrame(() => this.scrollToElement(target, false));
+      const text = location ? await this.pdf.text() : null;
+      if (this.destroyed || this.pdfMode) return;
+      const html = this.htmlText = htmlWords(this.content);
+      const estimateTop = estimate?.getBoundingClientRect().top;
+      const word = text && pdfToHtml(text, html, location, (entry) => (estimateTop == null ? 0 : Math.abs(wordTop(entry) - estimateTop)));
+      // défilement immédiat (la mise en page est recalculée à la lecture des positions)
+      if (word) {
+        this.reveal(word.node.parentElement);
+        scrollTo({ top: Math.round(scrollY + wordTop(word) - this.viewTop() - 24), behavior: "instant" });
+      } else if (estimate) {
+        this.reveal(estimate);
+        this.scrollToElement(estimate, false);
       } else if (this.htmlScroll !== undefined) scrollTo({ top: this.htmlScroll, behavior: "instant" });
       else this.restorePosition();
     }
   }
 
+  // Mot du HTML d'où chercher dans le PDF : le premier visible sous la ligne de lecture (dans l'élément
+  // courant ou après), ou le premier de l'élément quand la page n'est pas encore en place (ouverture)
+  wordAt(html, anchor, visible) {
+    const sequence = html.sequence;
+    if (!anchor) return -1;
+    const after = (node) => anchor.contains(node) || Boolean(anchor.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING);
+    let low = 0;
+    let high = sequence.length;
+    while (low < high) {
+      const mid = (low + high) >> 1;
+      if (after(sequence[mid].node)) high = mid; else low = mid + 1;
+    }
+    if (!visible) return low < sequence.length ? low : -1;
+    const line = this.viewTop() + 24;
+    for (let i = low; i < Math.min(sequence.length, low + 400); i++) {
+      const top = wordTop(sequence[i]);
+      if (top && top >= line - 6) return i;
+    }
+    return low < sequence.length ? low : -1;
+  }
+
   // Lecture dans le PDF : la position de lecture suit (même article rouvert plus tard, dans le HTML ou le PDF)
   followPdf() {
-    this.pdf.onMove((location) => {
+    const follow = debounce(async (location) => {
       if (!this.pdfMode || this.destroyed) return;
-      const target = this.htmlSpot(location);
-      if (target) this.savePosition(target.id);
-    });
+      const text = await this.pdf.text();
+      const word = text && this.htmlText && pdfToHtml(text, this.htmlText, location);
+      const target = word?.node.parentElement?.closest("[id]") || this.htmlSpot(location);
+      if (target && this.content.contains(target)) this.savePosition(target.id);
+    }, 800);
+    this.pdf.onMove(follow);
   }
 
   // Article lu dans le PDF : page de l'énoncé, de la section ou de la preuve, et énoncé choisi dans le panneau
