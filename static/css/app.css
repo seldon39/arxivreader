@@ -546,7 +546,9 @@ svg.graph { color: var(--border-strong); }
 .feed { max-width: 980px; margin: 0 auto; padding: 24px 16px 80px; }
 .feed-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
 .feed-head h1 { font-family: var(--font-read); font-size: 30px; font-weight: 600; margin: 0; }
-.feed-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
+/* filet gris de la longueur des soulignements rouges : du début du premier onglet à la fin du dernier */
+.feed-tabs { display: flex; gap: 4px; border-bottom: 1px solid transparent;
+  background: linear-gradient(var(--border), var(--border)) 8px 100% / calc(100% - 16px) 1px no-repeat border-box; }
 .feed-tabs a { padding: 8px 12px 9px; color: var(--muted); border-bottom: 2px solid transparent; font-weight: 500; }
 .feed-tabs a:hover { color: var(--text); text-decoration: none; }
 .feed-tabs a[aria-current="page"] { color: var(--accent); }
@@ -1006,6 +1008,14 @@ dialog.figure-viewer::backdrop { background: rgba(20, 20, 24, .6); -webkit-backd
 /* intertitres (« Citent vos articles »…) : titre de livre sur une ligne rouge de séparation, nombre d'articles en retrait */
 .feed-date { font: 600 18px var(--font-read); color: var(--text); padding: 8px 4px 6px; margin: 0 -4px 4px; border-bottom: 1.5px solid var(--accent); }
 .feed-date .count { font: 400 13px var(--font-ui); color: var(--muted); margin-left: .6em; white-space: nowrap; }
+/* intertitre repliable : tout l'intertitre est un bouton, flèche à droite (vers le bas : déplié) */
+.section-toggle { display: flex; align-items: baseline; width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.section-toggle .chevron { margin-left: auto; align-self: center; display: inline-flex; color: var(--muted); transform: rotate(90deg); transition: transform .2s ease; }
+.section-toggle .chevron svg { width: 18px; height: 18px; }
+.section-toggle:hover .chevron { color: var(--text); }
+.foldable.collapsed .section-toggle .chevron { transform: none; }
+.foldable.collapsed > .feed-card { display: none; }
+.followed-section.foldable.collapsed { margin-bottom: 14px; }
 .day-label { font: 600 17px var(--font-read); }
 @media (max-width: 700px) {
   .feed-card { padding: 12px 2px 11px; }

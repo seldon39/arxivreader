@@ -182,18 +182,10 @@ async function renderList(body, tab) {
       // Articles qui citent les vôtres (Semantic Scholar), trouvés ces dernières semaines
       const citing = data.items.filter((i) => i.citing?.length && !inDayList(i) && matches(i))
         .sort((a, b) => (b.cited_found || "").localeCompare(a.cited_found || "") || (b.announced || "").localeCompare(a.announced || ""));
-      if (citing.length) {
-        sections.push(h("section", { class: "feed-day followed-section citing-section" },
-          h("h2", { class: "feed-date" }, t("feed.citingTitle"), h("span", { class: "count" }, tn("feed.count", citing.length))),
-          citing.map(card)));
-      }
+      if (citing.length) sections.push(foldableSection("citingCollapsed", t("feed.citingTitle"), citing.map(card), "citing-section"));
       const followed = data.items.filter((i) => i.followed && !i.citing?.length && !inDayList(i) && matches(i))
         .sort((a, b) => (b.announced || "").localeCompare(a.announced || ""));
-      if (followed.length) {
-        sections.push(h("section", { class: "feed-day followed-section" },
-          h("h2", { class: "feed-date" }, t("feed.followedTitle"), h("span", { class: "count" }, tn("feed.count", followed.length))),
-          followed.map(card)));
-      }
+      if (followed.length) sections.push(foldableSection("followedCollapsed", t("feed.followedTitle"), followed.map(card)));
       shown = data.items.filter((i) => inDayList(i) && matches(i));
     } else {
       shown = data.items.filter((i) => inCategories(i) && matches(i));
@@ -467,6 +459,24 @@ function feedCard(item, onChange = () => {}, { compact = false, fresh = false, s
     card.addEventListener("keydown", (event) => { if (event.target === card && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); expand(); } });
   }
   return card;
+}
+
+// Section repliable (« Citent vos articles », « Nouveaux articles de vos auteurs suivis ») : l'intertitre
+// porte une flèche à droite ; l'état replié est retenu dans les réglages (clé settingKey)
+function foldableSection(settingKey, title, cards, extraClass = "") {
+  const section = h("section", { class: `feed-day followed-section foldable ${extraClass}`.trim() });
+  const toggle = h("button", { class: "section-toggle", type: "button",
+    onclick: () => { const collapsed = !section.classList.contains("collapsed"); setCollapsed(collapsed); saveSettings({ [settingKey]: collapsed }); } },
+    h("span", { class: "title" }, title), h("span", { class: "count" }, tn("feed.count", cards.length)),
+    h("span", { class: "chevron", html: icons.chevronRight }));
+  const setCollapsed = (collapsed) => {
+    section.classList.toggle("collapsed", collapsed);
+    toggle.setAttribute("aria-expanded", String(!collapsed));
+    toggle.title = t(collapsed ? "feed.expandSection" : "feed.collapseSection");
+  };
+  setCollapsed(Boolean(settings[settingKey]));
+  section.append(h("h2", { class: "feed-date" }, toggle), ...cards);
+  return section;
 }
 
 // Recommandation sans version arXiv connue : on peut coller son lien arXiv (champ déplié sous la carte).
