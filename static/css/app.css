@@ -507,3 +507,7 @@ svg.graph { color: var(--border-strong); }
 .reader-toolbar .thumb svg { width: 20px; height: 20px; }
 .reader-toolbar .thumb[aria-pressed="true"] { background: transparent; color: var(--text); }
 .topbar .icon-button svg.gear { width: 22px; height: 22px; }
+.feed-title-link { color: inherit; text-decoration: none; }
+.feed-title-link:hover, .feed-title-link:focus-visible { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.title-spinner { display: inline-block; vertical-align: middle; margin-left: 8px; width: 14px; height: 14px; }
+.feed-actions { margin-left: -8px; }

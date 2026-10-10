@@ -262,22 +262,32 @@ export function feedCard(item, onChange = () => {}, { compact = false } = {}) {
     return button;
   };
 
-  // « Lire » ouvre l'article sans l'ajouter à la bibliothèque (il est seulement mis en cache)
-  const read = item.arxiv_id && h("button", { class: "button primary small-button", type: "button" }, t("feed.read"));
-  read?.addEventListener("click", async () => {
-    const known = item.libraryId || item.readId;
-    if (known) { location.hash = `#/paper/${encodeURIComponent(known)}`; return; }
-    read.disabled = true;
-    read.replaceChildren(h("span", { class: "spinner" }), " ", t("feed.importing"));
-    try {
-      const paper = await api.importPaper(item.arxiv_id, false);
-      location.hash = `#/paper/${encodeURIComponent(paper.id)}`;
-    } catch (error) {
-      toast(t("error.generic", { message: error.message }), { error: true, duration: 6000 });
-      read.disabled = false;
-      read.replaceChildren(t("feed.read"));
-    }
-  });
+  // Clic sur le titre : ouvre l'article sans l'ajouter à la bibliothèque (il est seulement mis en cache).
+  // Article sans version arXiv (recommandation) : sa page Semantic Scholar.
+  const known = () => item.libraryId || item.readId;
+  const title = item.arxiv_id
+    ? h("a", { class: "feed-title-link", href: known() ? `#/paper/${encodeURIComponent(known())}` : `#/feed`, title: t("feed.read") }, item.title)
+    : h("a", { class: "feed-title-link", href: item.link, target: "_blank", rel: "noopener noreferrer" }, item.title);
+  if (item.arxiv_id) {
+    title.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (known()) { location.hash = `#/paper/${encodeURIComponent(known())}`; return; }
+      if (title.dataset.loading) return;
+      title.dataset.loading = "1";
+      const spinner = h("span", { class: "spinner title-spinner", "aria-label": t("feed.importing") });
+      title.after(spinner);
+      try {
+        const paper = await api.importPaper(item.arxiv_id, false);
+        location.hash = `#/paper/${encodeURIComponent(paper.id)}`;
+      } catch (error) {
+        toast(t("error.generic", { message: error.message }), { error: true, duration: 6000 });
+      } finally {
+        delete title.dataset.loading;
+        spinner.remove();
+      }
+    });
+  }
 
   const reasons = (item.reasons || []).map((reason) => h("span", { class: `reason reason-${reason.kind}` },
     reason.kind === "author" ? `👤 ${t("feed.reason.author")} : ${reason.label}`
@@ -289,7 +299,7 @@ export function feedCard(item, onChange = () => {}, { compact = false } = {}) {
     h("span", { class: "relevance-bar" }, h("span", { style: `width: ${Math.round(item.relevance * 100)}%` })), t(`feed.level.${level}`));
 
   const card = h("article", { class: `feed-card${item.libraryId ? " in-library" : ""}${compact ? " compact" : ""}` },
-    h("div", { class: "feed-title-row" }, h("h3", { class: "feed-title" }, item.title), meter),
+    h("div", { class: "feed-title-row" }, h("h3", { class: "feed-title" }, title), meter),
     h("div", { class: "feed-authors" }, authors.join(", ")),
     h("div", { class: "card-meta" },
       item.primary_category && h("span", { class: "chip category" }, item.primary_category),
@@ -302,7 +312,6 @@ export function feedCard(item, onChange = () => {}, { compact = false } = {}) {
     reasons.length ? h("div", { class: "reasons" }, reasons) : null,
     item.abstract && abstract,
     h("div", { class: "feed-actions" },
-      read,
       statusButton("liked", t("feed.like"), "up"),
       statusButton("disliked", t("feed.dislike"), "down"),
       item.arxiv_id && libraryButton(item, onChange),
@@ -310,7 +319,8 @@ export function feedCard(item, onChange = () => {}, { compact = false } = {}) {
       item.link && h("a", { class: "icon-button", href: item.link, target: "_blank", rel: "noopener noreferrer", title: item.arxiv_id ? "arXiv" : "Semantic Scholar", html: icons.external }),
       item.arxiv_id && h("a", { class: "icon-button", href: `https://arxiv.org/pdf/${item.arxiv_id}`, target: "_blank", rel: "noopener noreferrer", title: "PDF", html: icons.pdf })));
   // Article peu pertinent : une ligne ; un clic sur le titre déplie la carte
-  if (compact) card.querySelector(".feed-title-row").addEventListener("click", () => card.classList.remove("compact"));
+  // Carte réduite à une ligne : le titre ouvre l'article, un clic ailleurs sur la ligne la déplie
+  if (compact) card.addEventListener("click", (event) => { if (!event.target.closest("a, button")) card.classList.remove("compact"); });
   return card;
 }
 
