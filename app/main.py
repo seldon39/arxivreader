@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import db, feed, library, profile, relevance
+from . import annotations, db, feed, library, profile, relevance
 from .arxiv import ArxivError
 from .config import HOST, PORT, STATIC
 
@@ -77,6 +77,22 @@ class LibraryRequest(BaseModel):
 
 class PositionRequest(BaseModel):
     anchor: str
+
+
+class AnnotationRequest(BaseModel):
+    kind: str
+    target: dict | None = None
+    color: str | None = None
+    quote: str | None = None
+    note: str | None = None
+    state: str | None = None
+
+
+class AnnotationUpdate(BaseModel):
+    color: str | None = None
+    note: str | None = None
+    state: str | None = None
+    clear_state: bool = False
 
 
 class RefreshRequest(BaseModel):
@@ -156,6 +172,39 @@ def asset(paper_id: str, name: str):
 def set_library(paper_id: str, body: LibraryRequest):
     checked_paper(paper_id)
     return library.set_in_library(paper_id, body.in_library)
+
+
+@app.get("/api/papers/{paper_id}/annotations")
+def list_annotations(paper_id: str):
+    checked_paper(paper_id)
+    return annotations.list_for(paper_id)
+
+
+@app.post("/api/papers/{paper_id}/annotations")
+def add_annotation(paper_id: str, body: AnnotationRequest):
+    checked_paper(paper_id)
+    try:
+        return annotations.create(paper_id, body.kind, body.target, body.color, (body.quote or "")[:5000] or None,
+                                  (body.note or "")[:100000] if body.note is not None else None, body.state)
+    except ValueError:
+        raise HTTPException(400, "Bad annotation")
+
+
+@app.put("/api/annotations/{annotation_id}")
+def edit_annotation(annotation_id: int, body: AnnotationUpdate):
+    if not annotations.get(annotation_id):
+        raise HTTPException(404, "Unknown annotation")
+    try:
+        return annotations.update(annotation_id, body.color, body.note[:100000] if body.note is not None else None,
+                                  body.state, clear_state=body.clear_state)
+    except ValueError:
+        raise HTTPException(400, "Bad annotation")
+
+
+@app.delete("/api/annotations/{annotation_id}")
+def remove_annotation(annotation_id: int):
+    annotations.delete(annotation_id)
+    return {"ok": True}
 
 
 @app.put("/api/papers/{paper_id}/position")

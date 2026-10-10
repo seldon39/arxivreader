@@ -93,11 +93,16 @@ def clean_cache(days=30):
         rows = connection.execute(
             "SELECT id FROM papers WHERE in_library = 0 AND COALESCE(opened_at, added_at) < datetime('now', ?)",
             (f"-{days} days",)).fetchall()
-    for row in rows:
-        remove_paper(row["id"])
-    return len(rows)
+    from .annotations import annotated_papers
+    keep = annotated_papers()  # un article annoté n'est jamais effacé du cache
+    removed = [row["id"] for row in rows if row["id"] not in keep]
+    for paper_id in removed:
+        remove_paper(paper_id)
+    return len(removed)
 
 
 def remove_paper(paper_id):
+    from .annotations import delete_for
     shutil.rmtree(paper_dir(paper_id), ignore_errors=True)
     db.delete_paper(paper_id)
+    delete_for(paper_id)

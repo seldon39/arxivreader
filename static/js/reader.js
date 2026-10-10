@@ -2,6 +2,7 @@
 
 import { api } from "./api.js";
 import { closure, renderGraph } from "./graph.js";
+import { Annotator, noteEditor } from "./annotations.js";
 import { amsBibliography, markItalicStatements, placeEquationNumbers, relabelLists } from "./amsfix.js";
 import { layoutFigures, prepareFigures } from "./figures.js";
 import { typesetFragment, typesetMath } from "./math.js";
@@ -42,6 +43,11 @@ class Reader {
     this.renderToc();
     this.renderPanel();
     this.bindEvents();
+    this.annotator = new Annotator({
+      paperId: paper.id, content: this.content, nodes: this.nodes,
+      navigate: (target) => (typeof target === "string" ? this.navigate(target) : this.navigateElement(target)),
+      onChange: () => { if (["notes", "statements", "dependencies"].includes(this.tab)) this.renderPanel(); },
+    });
     this.finishLayout();
   }
 
@@ -63,6 +69,10 @@ class Reader {
     if (this.destroyed) return;
     layoutFigures(this.figures);
     this.markWideMath();
+    await this.annotator.load();
+    if (this.destroyed) return;
+    this.annotator.apply();
+    if (this.tab !== "statements") this.renderPanel();
     this.anchors = null;
     this.restorePosition();
   }
@@ -372,6 +382,15 @@ class Reader {
     scrollTo({ top: Math.round(scrollY + offset), behavior: smooth && near ? "smooth" : "instant" });
   }
 
+  navigateElement(element) {
+    this.backStack.push(scrollY);
+    this.backButton.classList.add("visible");
+    this.scrollToElement(element);
+    element.classList.remove("flash");
+    void element.offsetWidth;
+    element.classList.add("flash");
+  }
+
   goBack() {
     const top = this.backStack.pop();
     if (top !== undefined) scrollTo({ top, behavior: "instant" });
@@ -459,7 +478,7 @@ class Reader {
     const copy = element.cloneNode(true);
     copy.removeAttribute("id");
     copy.querySelectorAll("[id]").forEach((el) => el.removeAttribute("id"));
-    copy.querySelectorAll(".proof-toggle").forEach((el) => el.remove());
+    copy.querySelectorAll(".proof-toggle, .block-note, .state-pill").forEach((el) => el.remove());
     copy.classList.remove("selected", "flash");
     return copy;
   }
@@ -528,7 +547,7 @@ class Reader {
   }
 
   renderPanel() {
-    const tabs = [["statements", t("tabs.statements")], ["dependencies", t("tabs.dependencies")], ["graph", t("tabs.graph")]];
+    const tabs = [["statements", t("tabs.statements")], ["dependencies", t("tabs.dependencies")], ["graph", t("tabs.graph")], ["notes", t("tabs.notes")]];
     const tabBar = h("div", { class: "tabs", role: "tablist" }, tabs.map(([key, label]) => h("button", {
       type: "button", role: "tab", "aria-selected": String(this.tab === key),
       onclick: () => { this.tab = key; this.renderPanel(); },
@@ -536,6 +555,7 @@ class Reader {
     const body = h("div", { class: "panel-body" });
     if (this.tab === "statements") this.renderStatements(body);
     else if (this.tab === "dependencies") this.renderDependencies(body);
+    else if (this.tab === "notes") this.annotator ? this.annotator.renderPanel(body) : null;
     else this.renderGraphTab(body);
     this.panel.replaceChildren(tabBar, body);
   }
@@ -544,6 +564,8 @@ class Reader {
     const badges = [];
     if (NEEDS_PROOF.has(node.kind) && !node.proofs.length) badges.push(h("span", { class: "badge" }, t("panel.noProof")));
     if (node.usedBy.length) badges.push(h("span", { class: "badge" }, t("panel.usedCount", { n: node.usedBy.length })));
+    const state = this.annotator?.stateOf(node.id);
+    if (state) badges.unshift(h("span", { class: `state-pill state-${state}` }, t(`notes.state.${state}`)));
     return h("button", {
       class: `node-item${node.id === this.selected ? " selected" : ""}`, type: "button",
       dataset: { id: node.id, kind: node.kind },
@@ -615,6 +637,11 @@ class Reader {
       h("div", { class: "small" }, h("a", { href: `#${node.id}`, onclick: (e) => { e.preventDefault(); this.navigate(node.id); } }, t("panel.showInText"))),
     );
     setTimeout(() => typesetFragment(card), 0);
+    if (this.annotator) {
+      card.append(h("div", { class: "dep-notes" }, this.annotator.stateControl(node.id),
+        noteEditor({ value: this.annotator.block(node.id)?.note || "", placeholder: t("notes.placeholderBlock"),
+          onSave: (note) => this.annotator.saveBlock(node.id, { note }) })));
+    }
     const section = (title, items) => h("div", { class: "panel-section" }, h("h3", {}, title),
       items.length ? h("div", { class: "node-list" }, items) : h("p", { class: "hint" }, t("panel.none")));
     const nodesOf = (ids) => ids.filter((id) => this.byId.has(id)).map((id) => this.nodeItem(this.byId.get(id)));
@@ -739,6 +766,7 @@ class Reader {
 
   destroy() {
     this.destroyed = true;
+    this.annotator?.destroy();
     this.hidePreview();
     this.overlay?.remove();
     this.cleanups.forEach((fn) => fn());

@@ -34,6 +34,10 @@ export const api = {
   removeProfileItem: (id) => request("DELETE", `/api/profile/items/${id}`),
   resolveProfile: (kind, query) => request("POST", "/api/profile/resolve", { kind, query }),
   prefillProfile: (owner) => request("POST", "/api/profile/prefill", { owner }),
+  annotations: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/annotations`),
+  addAnnotation: (id, body) => request("POST", `/api/papers/${encodeURIComponent(id)}/annotations`, body),
+  updateAnnotation: (annotationId, body) => request("PUT", `/api/annotations/${annotationId}`, body),
+  deleteAnnotation: (annotationId) => request("DELETE", `/api/annotations/${annotationId}`),
   settings: () => request("GET", "/api/settings"),
   saveSettings: (values) => request("PUT", "/api/settings", values),
 };

@@ -56,9 +56,20 @@ et proximité de sens (vecteurs SPECTER de Semantic Scholar, comparés au lot du
 référence du profil ; + auteurs suivis, mots-clés ; − proximité avec les articles 👎.
 Une clé d'API Semantic Scholar (gratuite, facultative) évite les limitations de requêtes.
 
+## Notes et annotations (étape 3)
+
+- **Surligner** : sélectionner un passage (formules comprises) ; une barre propose 4 couleurs et
+  « ajouter une note ». Un clic sur un surlignage permet de changer sa couleur, sa note, ou de le supprimer.
+- **Énoncés et preuves** : l'icône de note en marge (au survol) ouvre une note et, pour un énoncé,
+  l'état de lecture *compris / à revoir / vérifié* (affiché dans le titre et la liste des énoncés).
+- **Onglet Notes** du panneau : progression de lecture, fiche de lecture de l'article, toutes les
+  annotations dans l'ordre de l'article (un clic y ramène).
+- Notes en Markdown (**gras**, *italique*, listes, citations) avec formules `$…$`, `$$…$$`,
+  enregistrées automatiquement. Un article annoté n'est jamais effacé du cache.
+
 ## Étapes suivantes prévues
 
-3. Notes et annotations.
+
 4. IA (Claude, via la connexion Claude Code) sur les preuves : détailler, auditer, répondre.
 
 ## Sécurité

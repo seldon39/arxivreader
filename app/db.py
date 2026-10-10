@@ -67,6 +67,20 @@ CREATE TABLE IF NOT EXISTS embeddings (
     vector TEXT,                     -- JSON, ou NULL si inconnu de Semantic Scholar
     fetched_at TEXT DEFAULT (datetime('now'))
 );
+-- Annotations : passages surlignés, notes et état de lecture des énoncés et preuves, fiche de lecture
+CREATE TABLE IF NOT EXISTS annotations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    paper_id TEXT NOT NULL,
+    kind TEXT NOT NULL,              -- highlight, block (énoncé ou preuve), general
+    target TEXT,                     -- JSON : {start:{id,offset}, end:{id,offset}} ou {id}
+    color TEXT,
+    quote TEXT,                      -- texte surligné (formules en $…$), pour retrouver le passage
+    note TEXT,                       -- Markdown + LaTeX
+    state TEXT,                      -- understood, review, verified (énoncés)
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS annotations_paper ON annotations (paper_id);
 CREATE TABLE IF NOT EXISTS feed_status (
     key TEXT PRIMARY KEY,
     status TEXT,                     -- liked, disliked
