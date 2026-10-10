@@ -250,6 +250,24 @@ svg { fill: currentColor; }
 .reader.resizing .toc, .reader.resizing .panel { z-index: 4; box-shadow: var(--shadow); }
 .reader.resizing .pane-resizer::after { background: var(--accent); }
 .reader[data-toc="closed"] .toc, .reader[data-panel="closed"] .panel { visibility: hidden; border: 0; padding: 0; }
+/* Recherche dans l'article (⌘F) : barre collée sous la barre d'outils, à droite */
+.find-dock { position: sticky; top: calc(var(--topbar-h) + var(--toolbar-h)); height: 0; z-index: 14; display: flex; justify-content: flex-end; }
+.find-bar {
+  display: flex; align-items: center; gap: 2px; margin: 10px 14px 0 auto; height: 40px; padding: 0 4px 0 10px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); font: 14px var(--font-ui);
+}
+.find-bar[hidden] { display: none; }
+.find-icon { display: inline-flex; color: var(--muted); }
+.find-icon svg { width: 16px; height: 16px; }
+.find-input { width: 210px; border: 0; background: transparent; color: var(--text); font: inherit; padding: 6px; outline: none; }
+.find-input::-webkit-search-cancel-button { display: none; }
+.find-count { min-width: 64px; text-align: right; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; padding-right: 4px; white-space: nowrap; }
+.find-bar.no-match .find-input { color: var(--accent); }
+::highlight(find) { background-color: rgba(255, 213, 0, .45); color: inherit; }
+::highlight(find-current) { background-color: #ff9632; color: #000; }
+.find-formula { background-color: rgba(255, 213, 0, .35); border-radius: 3px; }
+.find-formula-current { background-color: rgba(255, 150, 50, .28); outline: 2px solid #ff9632; outline-offset: 1px; border-radius: 3px; }
+@media (max-width: 600px) { .find-input { width: 120px; } .find-count { min-width: 48px; } }
 .paper-scroll { grid-area: paper; position: relative; min-width: 0; background: var(--surface); }
 .paper {
   max-width: var(--reading-width); margin: 0 auto; padding: 28px 32px 30vh;

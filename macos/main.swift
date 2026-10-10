@@ -338,6 +338,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         webView.evaluateJavaScript("document.getElementById('settings-button')?.click()")
     }
     @objc func reloadPage() { webView.reload() }
+    // Rechercher : la page s'en charge (barre de recherche du lecteur, champ de la bibliothèque)
+    func find(_ command: String) {
+        webView.evaluateJavaScript("document.dispatchEvent(new CustomEvent('app:find', { detail: '\(command)' }))")
+    }
+    @objc func findOpen() { find("open") }
+    @objc func findNext() { find("next") }
+    @objc func findPrevious() { find("previous") }
     @objc func goBack() { webView.goBack() }
     @objc func goForward() { webView.goForward() }
     @objc func showLibraryFolder() { NSWorkspace.shared.activateFileViewerSelecting([support]) }
@@ -378,6 +385,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             entry(tr("Copier", "Copy"), #selector(NSText.copy(_:)), "c"),
             entry(tr("Coller", "Paste"), #selector(NSText.paste(_:)), "v"),
             entry(tr("Tout sélectionner", "Select All"), #selector(NSText.selectAll(_:)), "a"),
+            .separator(),
+            entry(tr("Rechercher…", "Find…"), #selector(findOpen), "f", target: self),
+            entry(tr("Rechercher le suivant", "Find Next"), #selector(findNext), "g", target: self),
+            entry(tr("Rechercher le précédent", "Find Previous"), #selector(findPrevious), "g", [.command, .shift], target: self),
         ])
         submenu(tr("Présentation", "View"), [
             entry(tr("Recharger", "Reload"), #selector(reloadPage), "r", target: self),

@@ -2,11 +2,12 @@
 
 import { api } from "./api.js";
 import { closure, renderGraph } from "./graph.js";
-import { Annotator, noteEditor } from "./annotations.js";
+import { Annotator, findAll, noteEditor } from "./annotations.js";
 import { Assistant } from "./ai.js";
 import { alignNumberColumns, amsBibliography, fixMathML, splitLongInlineMath, markItalicStatements, moveTitleNotes, normalizeFontScale, placeEquationNumbers, relabelLists } from "./amsfix.js";
 import { currentModel } from "./aiproviders.js";
 import { layoutFigures, openFigure, prepareFigures } from "./figures.js";
+import { findBar, setFindHandler } from "./find.js";
 import { typesetFragment, typesetMath, typesetTex } from "./math.js";
 import { t } from "./i18n.js";
 import { DEFAULT_FONT_SIZE, onSettingsChange, saveSettings, settings } from "./settings.js";
@@ -1152,6 +1153,19 @@ class Reader {
     this.overlay = { remove: () => overlay.close() };
   }
 
+  // Occurrence trouvée (⌘F) : preuve repliée dépliée, puis passage amené au tiers haut de l'écran s'il n'y est pas
+  revealRange(range) {
+    const node = range.startContainer;
+    const element = node.nodeType === 3 ? node.parentElement : node;
+    const proof = element?.closest(".collapsed");
+    if (proof?.matches(".ltx_proof, [data-proof]") || proof?.querySelector(":scope > .proof-toggle")) this.setProof(proof, false);
+    const rect = range.getBoundingClientRect();
+    const top = this.toolbar.getBoundingClientRect().bottom;
+    if (rect.top < top + 24 || rect.bottom > innerHeight - 24) {
+      scrollBy({ top: rect.top - (top + (innerHeight - top) / 3), behavior: "instant" });
+    }
+  }
+
   // ---------- Événements ----------
 
   bindEvents() {
@@ -1162,6 +1176,18 @@ class Reader {
     const onWindowScroll = () => { this.hidePreview(); this.annotator?.hideToolbar(); onScroll(); };
     addEventListener("scroll", onWindowScroll, { passive: true });
     this.cleanups.push(() => removeEventListener("scroll", onWindowScroll));
+
+    // ⌘F : recherche dans l'article
+    this.finder = findBar({
+      host: this.scroller,
+      search: (query) => findAll(this.content, query),
+      reveal: (range) => this.revealRange(range),
+      firstVisible: (ranges) => {
+        const top = this.toolbar.getBoundingClientRect().bottom;
+        return ranges.findIndex((range) => range.getBoundingClientRect().bottom > top);
+      },
+    });
+    this.cleanups.push(setFindHandler((command) => this.finder.command(command)), () => this.finder.close());
 
     const zoom = (event) => {
       const figure = event.target.closest?.(".figure-card, img.ltx_graphics");

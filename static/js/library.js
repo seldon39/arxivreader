@@ -1,5 +1,6 @@
 // Page « Bibliothèque » : import par identifiant arXiv et liste des articles.
 
+import { setFindHandler } from "./find.js";
 import { api } from "./api.js";
 import { t, tn } from "./i18n.js";
 import { debounce, formatDate, h, icons, tidyTitle, timeAgo, toast, toastError, withMath } from "./util.js";
@@ -232,7 +233,9 @@ export async function renderLibrary(root) {
   if (matchMedia("(hover: hover)").matches) input.focus(); // pas sur téléphone : le clavier s'ouvrirait à chaque visite
   list.replaceChildren(h("div", { class: "busy" }, h("span", { class: "spinner" }), t("common.loading")));
   await refreshList();
-  return () => closeMenu({ focus: false });
+  // ⌘F : champ de recherche de la bibliothèque
+  const unsubscribeFind = setFindHandler((command) => { if (command === "open") { search.focus(); search.select(); } });
+  return () => { closeMenu({ focus: false }); unsubscribeFind(); };
 }
 
 // « Ouvert il y a 2 jours · 3 notes · 5 énoncés compris · 2 réponses de Claude »

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Construit l'application Mac : dist/arXivReader.app et dist/arXivReader.dmg (Mac Apple Silicon).
+# Construit l'application Mac et son image disque dist/arXivReader.dmg (Mac Apple Silicon).
 #   macos/build.sh
 # L'application embarque son Python (conda-forge, déplaçable : bibliothèques en chemins relatifs), les
 # paquets de .venv (même version de Python) et le code d'app/ et static/. Rien à installer pour s'en servir.
@@ -7,9 +7,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
-BUILD=$ROOT/build
+# Construction hors de Documents : synchronisé par iCloud, il ajoute aux fichiers des attributs qui
+# empêchent de signer l'application (et téléverserait des centaines de Mo)
+BUILD=${ARXIVREADER_BUILD:-$HOME/Library/Caches/arXivReader-build}
 DIST=$ROOT/dist
-APP=$DIST/arXivReader.app
+APP=$BUILD/arXivReader.app
 RES=$APP/Contents/Resources
 CONDA=${CONDA:-$HOME/miniforge3/bin/conda}
 PYVER=$(.venv/bin/python -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')
@@ -18,7 +20,7 @@ VERSION=1.0
 BUILD_NUMBER=$(git rev-list --count HEAD 2>/dev/null || echo 1)
 
 rm -rf "$APP" "$DIST/arXivReader.dmg"
-mkdir -p "$APP/Contents/MacOS" "$RES" "$BUILD"
+mkdir -p "$APP/Contents/MacOS" "$RES" "$BUILD" "$DIST"
 
 # 1. Python autonome, créé une fois depuis le cache de conda (sans réseau)
 if [ ! -x "$BUILD/python/bin/python3" ]; then
@@ -90,4 +92,6 @@ ln -s /Applications "$STAGE/Applications"
 hdiutil create -quiet -volname arXivReader -srcfolder "$STAGE" -ov -format UDZO "$DIST/arXivReader.dmg"
 rm -rf "$STAGE"
 
+codesign --verify "$APP"
 du -sh "$APP" "$DIST/arXivReader.dmg"
+echo "Application : $APP"

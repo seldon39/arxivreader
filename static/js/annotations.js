@@ -149,6 +149,34 @@ function rangeAt(flat, index, length) {
   return range;
 }
 
+// Recherche dans l'article (⌘F) : toutes les occurrences, sans tenir compte des majuscules ni des accents.
+// Les formules sont cherchées dans leur source TeX quand la recherche contient \ ou $ (« \mathcal{O} »),
+// sinon elles ne comptent que pour une espace.
+const foldCache = new WeakMap();
+const foldChar = (ch) => {
+  const base = ch.normalize("NFD")[0].toLowerCase();
+  return base.length === 1 ? base : ch; // une lettre pour une lettre : positions inchangées
+};
+const fold = (text) => Array.from({ length: text.length }, (_, i) => foldChar(text[i])).join("");
+
+export function findAll(root, query, limit = 2000) {
+  const withTex = /[\\$]/.test(query);
+  const flat = flatten(root, withTex);
+  let folded = foldCache.get(flat);
+  if (!folded) { folded = fold(flat.text); foldCache.set(flat, folded); }
+  const needle = fold(sameChars(query).replace(/\$/g, "").replace(/\s+/g, " ").trim());
+  const ranges = [];
+  if (!needle) return ranges;
+  for (let at = folded.indexOf(needle); at >= 0 && ranges.length < limit; at = folded.indexOf(needle, at + needle.length)) {
+    const range = rangeAt(flat, at, needle.length);
+    // formules touchées : MathJax les dessine sans texte, le surlignage passe par une classe
+    const first = flat.unitIndex[at], last = flat.unitIndex[at + needle.length - 1];
+    range.formulas = flat.units.slice(first, last + 1).filter((unit) => unit.nodeType === 1);
+    ranges.push(range);
+  }
+  return ranges;
+}
+
 // Plage DOM d'un extrait recopié de l'article, ou null s'il est introuvable. Cherché d'abord dans
 // `scopes` (l'énoncé et la preuve visés), puis dans tout l'article. Sans les formules (repli quand
 // Claude a recopié une formule autrement), l'extrait doit être unique et garder assez de texte.
