@@ -244,7 +244,7 @@ class Reader {
     const wide = innerWidth >= WIDE;
     const medium = innerWidth >= MEDIUM;
     this.root = h("div", {
-      class: "reader",
+      class: `reader${this.paper.source === "tex" ? " tex-only" : ""}`, // sans version HTML : taille du texte sans objet
       dataset: {
         toc: wide && settings.tocOpen ? "open" : "closed",
         panel: medium && settings.panelOpen ? "open" : "closed",
@@ -266,6 +266,8 @@ class Reader {
       this.viewSwitch = paper.source !== "tex" && paper.source !== "none" && h("div", { class: "view-switch", role: "group", "aria-label": t("reader.view") },
         [["html", "HTML"], ["pdf", "PDF"]].map(([view, label]) => h("button", { type: "button", dataset: { view }, "aria-pressed": String(view === "html"),
           title: t(`reader.view.${view}`), onclick: () => this.setView(view) }, label))),
+      // pas de version HTML : à la place du choix HTML / PDF, une petite mention (explication au survol)
+      paper.source === "tex" && h("span", { class: "no-html-badge", title: t("reader.pdfMode") }, "No HTML"),
       button(icons.minus, "reader.smaller", () => this.changeFont(-1), { class: "wide-only html-only" }),
       this.zoomButton = h("button", { class: "zoom-reset wide-only html-only", type: "button", onclick: () => { if (settings.fontSize !== DEFAULT_FONT_SIZE) saveSettings({ fontSize: DEFAULT_FONT_SIZE }); } }),
       button(icons.plus, "reader.larger", () => this.changeFont(1), { class: "wide-only html-only" }),
@@ -308,7 +310,7 @@ class Reader {
       this.pdfUrl = `/api/papers/${encodeURIComponent(paper.id)}/pdf`;
       this.pdfFrame = h("iframe", { class: "pdf-frame", title: paper.title, src: `${this.pdfUrl}#page=1` });
       this.article.classList.add("pdf-mode");
-      this.article.append(h("div", { class: "notice small pdf-notice" }, t("reader.pdfMode")), this.pdfFrame);
+      this.article.append(this.pdfFrame);
       this.content = statementsContainer(this.structure);
       this.article.append(this.content);
     } else if (paper.source === "none") {
