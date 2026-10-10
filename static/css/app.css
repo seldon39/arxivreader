@@ -389,7 +389,9 @@ svg { fill: currentColor; }
 @keyframes flash { 0%, 30% { background-color: color-mix(in srgb, var(--accent) 22%, transparent); } 100% { background-color: transparent; } }
 .paper.reveal-hidden .arx-hidden-text { outline: 2px dashed #e08a00; color: var(--text) !important; font-size: 1em !important; opacity: 1 !important; display: inline !important; visibility: visible !important; }
 
-.paper.typesetting .paper-content { visibility: hidden; }
+/* pendant la conversion des formules : hors mise en page (et pas seulement invisible), sinon le navigateur
+   recalcule tout l'article entre deux paquets de formules, pour rien */
+.paper.typesetting .paper-content { display: none; }
 .typesetting-note { position: absolute; top: 120px; left: 0; right: 0; justify-content: center; font: 14px var(--font-ui); z-index: 3; }
 
 .back-button {

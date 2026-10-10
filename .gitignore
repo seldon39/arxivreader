@@ -3,5 +3,4 @@ __pycache__/
 *.pyc
 library/
 .DS_Store
-build/
 dist/

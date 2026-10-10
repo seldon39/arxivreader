@@ -44,6 +44,10 @@ rsync -a --exclude 'pip' --exclude 'pip-*' --exclude __pycache__ ".venv/$SITE/" 
 mkdir -p "$RES/arxivreader"
 rsync -a --exclude __pycache__ app static "$RES/arxivreader/"
 
+# Python et l'application précompilés : sans cela, tout est recompilé à chaque lancement (0,6 s de plus).
+# « unchecked-hash » : les .pyc servent tels quels, quelles que soient les dates des fichiers copiés
+"$RES/python/bin/python3" -m compileall -q -j 0 --invalidation-mode unchecked-hash "$RES/python/lib" "$RES/arxivreader/app" >/dev/null
+
 # 4. Programme de l'application (fenêtre WebKit)
 echo "Compilation…"
 swiftc -O -target arm64-apple-macos13.0 -o "$APP/Contents/MacOS/arXivReader" macos/main.swift

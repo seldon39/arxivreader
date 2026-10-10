@@ -759,6 +759,7 @@ class Reader {
   }
 
   onScroll() {
+    if (this.article.classList.contains("typesetting")) return; // article pas encore en page : position inconnue
     const anchor = this.currentAnchor();
     if (!anchor) return;
     // Section courante dans le sommaire : la dernière dont le début est au-dessus de la ligne de lecture

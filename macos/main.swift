@@ -98,7 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
                 } else if Date().timeIntervalSince(start) > 90 {
                     self.fail(tr("Le serveur d'arXivReader ne répond pas.", "The arXivReader server does not answer."), detail: self.logTail())
                 } else {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.waitForServer(since: start) }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { self.waitForServer(since: start) }
                 }
             }
         }.resume()

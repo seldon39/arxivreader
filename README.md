@@ -4,7 +4,7 @@ Lecteur personnel d'articles arXiv, inspiré d'arXivpecker. Usage strictement lo
 
 ## Application Mac
 
-`macos/build.sh` construit `dist/arXivReader.app` et `dist/arXivReader.dmg` (~170 Mo, Mac Apple Silicon,
+`macos/build.sh` construit `dist/arXivReader.dmg` (~170 Mo, Mac Apple Silicon,
 macOS 13 ou plus) : une application autonome, avec sa fenêtre (WebKit, comme Safari), qui embarque Python et
 ses paquets. Rien d'autre à installer.
 
@@ -17,7 +17,7 @@ ses paquets. Rien d'autre à installer.
 - **Chez un collègue** : l'application n'est pas signée par un compte développeur Apple. Au premier lancement,
   macOS la bloque : Réglages Système → Confidentialité et sécurité → *Ouvrir quand même* (une seule fois).
 - Construire : outils en ligne de commande Xcode (`swiftc`), miniforge (`conda`, Python pris dans son cache) et
-  `.venv` à jour (ses paquets sont recopiés).
+  `.venv` à jour (ses paquets sont recopiés). Construction dans `~/Library/Caches/arXivReader-build` (hors d'iCloud).
 
 ## Lancer
 
