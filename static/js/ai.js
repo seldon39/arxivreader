@@ -36,6 +36,12 @@ export class Assistant {
     this.refs = this.buildRefs();
   }
 
+  setStructure(structure) {
+    this.structure = structure;
+    this.byId = new Map(structure.nodes.map((n) => [n.id, n]));
+    this.refs = this.buildRefs();
+  }
+
   async load() {
     try { this.exchanges = await api.aiExchanges(this.paper.id); } catch { this.exchanges = []; }
   }
@@ -84,12 +90,13 @@ export class Assistant {
   actionsFor(nodeId, { compact = false } = {}) {
     const node = this.byId.get(nodeId);
     if (!node) return null;
+    const hasText = node.proofs.length || node.justifiedBy || node.proofPassage;
     const action = (task, label) => h("button", { class: `button small-button ai-action${compact ? " compact" : ""}`, type: "button",
       onclick: () => this.ask({ task, target: nodeId }) }, h("span", { class: "ai-icon", html: icons.sparkle }), label);
     return h("div", { class: "ai-actions" },
       action("explain", t("ai.task.explain")),
-      node.proofs.length || node.justifiedBy ? action("detail", t("ai.task.detail")) : null,
-      node.proofs.length || node.justifiedBy ? action("audit", t("ai.task.audit")) : null);
+      hasText || node.manual === "immediate" ? action("detail", t("ai.task.detail")) : null,
+      hasText ? action("audit", t("ai.task.audit")) : null);
   }
 
   // Passage sélectionné dans l'article : il accompagne la prochaine question

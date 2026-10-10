@@ -6,7 +6,7 @@ from bs4 import NavigableString, Tag
 
 from .arxiv import extract_ids
 
-STRUCTURE_VERSION = 2  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
+STRUCTURE_VERSION = 3  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
 
 SECTION_LEVELS = {
     "ltx_part": 0, "ltx_chapter": 0, "ltx_section": 1, "ltx_appendix": 1,
@@ -101,13 +101,53 @@ def is_boundary(element):
     )
 
 
-def extract_structure(fragment):
-    """Analyse la soupe nettoyée (modifiée sur place) et renvoie la structure de l'article."""
+# Blocs qu'on peut désigner comme passage de preuve (aussi dans l'interface, static/js/reader.js)
+PASSAGE_BLOCKS = {"ltx_para", "ltx_theorem", "ltx_proof", "ltx_equation", "ltx_equationgroup", "ltx_figure", "ltx_table"}
+
+
+def is_passage_block(element):
+    return isinstance(element, Tag) and bool(set(element.get("class") or []) & PASSAGE_BLOCKS) and bool(element.get("id"))
+
+
+def passage_elements(fragment, start_id, end_id):
+    """Blocs de l'article du bloc `start_id` au bloc `end_id` inclus, dans l'ordre (sans les blocs imbriqués)."""
+    start = fragment.find(id=start_id)
+    end = fragment.find(id=end_id) if end_id else None
+    if start is None:
+        return []
+    if end is None or end is start:
+        return [start]
+    blocks, taken = [start], {id(start)}
+    for element in start.find_all_next(True):
+        inside = any(id(parent) in taken for parent in element.parents)
+        if element is end:
+            if not inside:
+                blocks.append(element)
+            return blocks
+        if is_passage_block(element) and not inside:
+            blocks.append(element)
+            taken.add(id(element))
+    return [start]  # fin avant le début (ou introuvable) : le premier bloc seul
+
+
+def extract_structure(fragment, overrides=None):
+    """Analyse la soupe nettoyée (modifiée sur place) et renvoie la structure de l'article.
+    `overrides` : emplacements de preuve indiqués à la main ({id d'énoncé: {mode, ref | start, end}})."""
+    for element in fragment.find_all(attrs={"data-proof-of": True}):
+        del element["data-proof-of"]  # nouvelle analyse : rattachements refaits ci-dessous
     counter = iter(range(1, 10**6))
+    # Index des identifiants : une recherche par fragment.find(id=…) parcourt tout l'article
+    index = {}
+    for element in fragment.find_all(id=True):
+        index.setdefault(element["id"], element)
+
+    def by_id(element_id):
+        return index.get(element_id) if element_id else None
 
     def ensure_id(element, prefix):
         if not element.get("id"):
             element["id"] = f"arx-{prefix}-{next(counter)}"
+            index[element["id"]] = element
         return element["id"]
 
     # Sommaire
@@ -148,6 +188,8 @@ def extract_structure(fragment):
             "proofSection": False,     # preuve dans une section à part (« 4.2. Proof of Theorem 1.3 »)
             "cited": cites_in_title,   # énoncé repris d'une référence (« Theorem 3.2 ([12, Theorem 4.3]) »)
             "justifiedBy": None,       # paragraphe voisin qui le justifie, sans preuve en forme
+            "manual": None,            # emplacement indiqué à la main : section, passage, immediate, admitted
+            "proofPassage": None,      # {start, end} : passage de l'article indiqué comme preuve
             "uses": [],
             "usesEquations": [],
             "cites": [],
@@ -159,7 +201,7 @@ def extract_structure(fragment):
     def theorem_of_ref(container):
         """Énoncé visé par un renvoi présent dans un titre de preuve (« Proof of Theorem 1.1 »)."""
         for link in container.select('a.ltx_ref[href^="#"]'):
-            target = fragment.find(id=link["href"][1:])
+            target = by_id(link["href"][1:])
             if target is None:
                 continue
             theorem = target if has_class(target, "ltx_theorem") else enclosing(target, lambda e: has_class(e, "ltx_theorem"))
@@ -185,7 +227,7 @@ def extract_structure(fragment):
             return None
         found = None
         for link in previous.select('a.ltx_ref[href^="#"]'):
-            target = fragment.find(id=link["href"][1:])
+            target = by_id(link["href"][1:])
             if target is not None:
                 theorem = target if has_class(target, "ltx_theorem") else enclosing(target, lambda e: has_class(e, "ltx_theorem"))
                 found = theorem or found
@@ -247,7 +289,7 @@ def extract_structure(fragment):
         """Énoncés cités dans un titre : directement (« Theorem 1.3 ») ou par un point ou une équation (« (1) »)."""
         found = []
         for link in container.select('a.ltx_ref[href^="#"]'):
-            target = fragment.find(id=link["href"][1:])
+            target = by_id(link["href"][1:])
             if target is None:
                 continue
             if has_class(target, "ltx_theorem"):
@@ -281,7 +323,7 @@ def extract_structure(fragment):
         node = nodes[node_id]
         if node["proofs"] or node["cited"] or node["kind"] not in NEEDS_PROOF:
             continue
-        element = fragment.find(id=node_id)
+        element = by_id(node_id)
         previous = element.find_previous_sibling(True)
         if previous is not None and has_class(previous, "ltx_para"):
             last = re.split(r"(?<=[.!?])\s+(?=[A-Z])", squash(plain(previous)))[-1]
@@ -292,9 +334,32 @@ def extract_structure(fragment):
         if following is not None and has_class(following, "ltx_para") and JUSTIFIES_PREVIOUS.search(squash(plain(following))):
             node["justifiedBy"] = ensure_id(following, "para")
 
+    # Emplacements indiqués à la main : ils remplacent ce qui a été trouvé automatiquement
+    for node_id, choice in (overrides or {}).items():
+        node = nodes.get(node_id)
+        mode = choice.get("mode")
+        if node is None:
+            continue
+        if mode == "section" and by_id(choice.get("ref")) is None:
+            continue
+        if mode == "passage" and by_id(choice.get("start")) is None:
+            continue
+        for proof_id in node["proofs"]:  # l'ancienne preuve trouvée n'est plus rattachée à l'énoncé
+            proof = by_id(proof_id)
+            if proof is not None and proof.get("data-proof-of") == node_id:
+                del proof["data-proof-of"]
+        node.update(proofs=[], detectedProof=False, proofSection=False, justifiedBy=None, manual=mode)
+        if mode == "section":
+            section = by_id(choice["ref"])
+            attach(section, by_id(node_id))
+            node["proofSection"] = True
+        elif mode == "passage":
+            end = choice.get("end") if by_id(choice.get("end") or "") is not None else choice["start"]
+            node["proofPassage"] = {"start": choice["start"], "end": end}
+
     # Renvois → dépendances
     def resolve(target_id):
-        target = fragment.find(id=target_id)
+        target = by_id(target_id)
         if target is None:
             return None
         if target_id.startswith("bib."):
@@ -304,7 +369,7 @@ def extract_structure(fragment):
         if equation_tag is not None:
             if theorem is None:
                 proof = enclosing(target, lambda e: e.get("data-proof-of"))
-                theorem = fragment.find(id=proof["data-proof-of"]) if proof else None
+                theorem = by_id(proof["data-proof-of"]) if proof else None
             return ("equation", target_id, squash(plain(equation_tag)), theorem.get("id") if theorem else None)
         if theorem is not None:
             return ("theorem", theorem["id"])
@@ -313,9 +378,11 @@ def extract_structure(fragment):
     equations = {}
     for node_id in order:
         node = nodes[node_id]
-        scope = [fragment.find(id=node_id)] + [fragment.find(id=p) for p in node["proofs"]]
+        scope = [by_id(node_id)] + [by_id(p) for p in node["proofs"]]
         if node["justifiedBy"]:
-            scope.append(fragment.find(id=node["justifiedBy"]))
+            scope.append(by_id(node["justifiedBy"]))
+        if node["proofPassage"]:
+            scope += passage_elements(fragment, node["proofPassage"]["start"], node["proofPassage"]["end"])
         for container in scope:
             for link in container.select('a.ltx_ref[href^="#"]'):
                 hit = resolve(link["href"][1:])

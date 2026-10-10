@@ -97,6 +97,13 @@ class AnnotationUpdate(BaseModel):
     clear_state: bool = False
 
 
+class ProofChoice(BaseModel):
+    mode: str
+    ref: str | None = None
+    start: str | None = None
+    end: str | None = None
+
+
 class AIRequest(BaseModel):
     task: str
     target: str | None = None
@@ -215,6 +222,35 @@ def edit_annotation(annotation_id: int, body: AnnotationUpdate):
 def remove_annotation(annotation_id: int):
     annotations.delete(annotation_id)
     return {"ok": True}
+
+
+@app.put("/api/papers/{paper_id}/proofs/{node_id}")
+def set_proof_location(paper_id: str, node_id: str, body: ProofChoice):
+    """Emplacement de la preuve d'un énoncé, indiqué à la main ; renvoie la structure mise à jour."""
+    structure = _checked_node(paper_id, node_id)
+    ids = [body.ref, body.start, body.end]
+    if any(i is not None and not PAPER_ID.match(i) for i in ids):
+        raise HTTPException(400, "Bad element id")
+    try:
+        annotations.set_proof(paper_id, node_id, body.mode, body.ref, body.start, body.end)
+    except ValueError:
+        raise HTTPException(400, "Bad proof location")
+    return library.reanalyze(paper_id, structure)
+
+
+@app.delete("/api/papers/{paper_id}/proofs/{node_id}")
+def clear_proof_location(paper_id: str, node_id: str):
+    structure = _checked_node(paper_id, node_id)
+    annotations.clear_proof(paper_id, node_id)
+    return library.reanalyze(paper_id, structure)
+
+
+def _checked_node(paper_id, node_id):
+    checked_paper(paper_id)
+    structure = library.load_structure(paper_id)
+    if not structure or not any(n["id"] == node_id for n in structure["nodes"]):
+        raise HTTPException(404, "Unknown statement")
+    return structure
 
 
 @app.get("/api/ai/status")

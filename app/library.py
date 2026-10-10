@@ -6,7 +6,7 @@ import time
 
 from bs4 import BeautifulSoup
 
-from . import db
+from . import annotations, db
 from .arxiv import fetch_asset, fetch_html, fetch_metadata, fetch_source, paper_key, parse_arxiv_id
 from .config import PAPERS
 from .sanitize import sanitize_document
@@ -35,7 +35,7 @@ def import_paper(query, add_to_library=True):
     if fetched is not None:
         html, base_url, source = fetched
         fragment, assets = sanitize_document(html, base_url)
-        structure = extract_structure(fragment)
+        structure = extract_structure(fragment, annotations.proof_overrides(paper_id))
         (staging / "content.html").write_text(str(fragment), encoding="utf-8")
         for local_name, remote in assets:
             try:
@@ -90,14 +90,15 @@ def load_structure(paper_id):
 
 
 def reanalyze(paper_id, previous):
-    """Analyse refaite sur le HTML déjà enregistré (sans téléchargement) quand l'analyse a changé.
+    """Analyse refaite sur le HTML déjà enregistré (sans téléchargement) : quand l'analyse a changé,
+    ou quand l'emplacement d'une preuve a été indiqué à la main.
     Les identifiants existants sont conservés : surlignages et notes restent en place."""
     folder = paper_dir(paper_id)
     content = folder / "content.html"
     if not content.exists():
         return previous
     fragment = BeautifulSoup(content.read_text(encoding="utf-8"), "html.parser")
-    structure = extract_structure(fragment)
+    structure = extract_structure(fragment, annotations.proof_overrides(paper_id))
     structure["source"] = previous.get("source")
     structure["tex"] = previous.get("tex")
     content.write_text(str(fragment), encoding="utf-8")

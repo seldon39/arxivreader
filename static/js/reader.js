@@ -6,13 +6,16 @@ import { Annotator, noteEditor } from "./annotations.js";
 import { Assistant } from "./ai.js";
 import { amsBibliography, markItalicStatements, placeEquationNumbers, relabelLists } from "./amsfix.js";
 import { layoutFigures, prepareFigures } from "./figures.js";
-import { typesetFragment, typesetMath } from "./math.js";
+import { typesetFragment, typesetMath, typesetTex } from "./math.js";
 import { t } from "./i18n.js";
 import { onSettingsChange, saveSettings, settings } from "./settings.js";
 import { debounce, formatDate, h, icons, toast, toggleIcon, withMath } from "./util.js";
 
 const NEEDS_PROOF = new Set(["theorem", "proposition", "lemma", "corollary", "claim"]);
 const WIDE = 1280;
+// Blocs qu'on peut désigner comme passage de preuve (mêmes classes que PASSAGE_BLOCKS dans app/structure.py)
+const PICKABLE = [".ltx_para", ".ltx_theorem", ".ltx_proof", ".ltx_equation", ".ltx_equationgroup", ".ltx_figure", ".ltx_table"]
+  .map((c) => `${c}[id]`).join(", ");
 const MEDIUM = 900;
 
 export async function renderReader(view, paperId) {
@@ -246,14 +249,7 @@ class Reader {
     });
     this.updateFoldButton();
 
-    // Énoncé prouvé dans une section à part : renvoi discret vers sa preuve
-    for (const node of this.nodes) {
-      if (!node.proofSection) continue;
-      const theorem = this.find(node.id);
-      const section = this.find(node.proofs[0]);
-      if (!theorem || !section) continue;
-      theorem.append(h("a", { class: "proof-pointer", href: `#${section.id}` }, t("reader.proofIn", { where: this.sectionName(section) })));
-    }
+    this.renderProofPointers();
 
     // Titres d'énoncés cliquables → panneau des dépendances
     this.content.querySelectorAll(".ltx_theorem").forEach((theorem) => {
@@ -262,6 +258,44 @@ class Reader {
       title.title = t("tabs.dependencies");
       title.addEventListener("click", () => this.select(theorem.id, { tab: "dependencies", openPanel: true }));
     });
+  }
+
+  // Preuve placée ailleurs (section à part, passage indiqué) : renvoi discret sous l'énoncé
+  renderProofPointers() {
+    this.content.querySelectorAll(".proof-pointer").forEach((el) => el.remove());
+    for (const node of this.nodes) {
+      const theorem = this.find(node.id);
+      if (!theorem) continue;
+      if (node.proofSection) {
+        const section = this.find(node.proofs[0]);
+        if (section) theorem.append(h("a", { class: "proof-pointer", href: `#${section.id}` }, t("reader.proofIn", { where: this.sectionName(section) })));
+      } else if (node.proofPassage) {
+        const start = this.find(node.proofPassage.start);
+        const next = theorem.nextElementSibling;
+        if (start && start !== next && !next?.contains(start)) {
+          theorem.append(h("a", { class: "proof-pointer", href: `#${start.id}` }, t("reader.proofPassage")));
+        }
+      }
+    }
+  }
+
+  // Structure renvoyée par le serveur après une indication de preuve
+  setStructure(structure) {
+    this.structure = structure;
+    this.nodes = structure.nodes;
+    this.byId = new Map(this.nodes.map((n) => [n.id, n]));
+    if (this.annotator) {
+      this.annotator.nodes = this.nodes;
+      this.annotator.byId = this.byId;
+    }
+    this.assistant?.setStructure(structure);
+    this.renderProofPointers();
+    this.anchors = null;
+    this.renderPanel();
+  }
+
+  hasProof(node) {
+    return node.proofs.length > 0 || Boolean(node.proofPassage);
   }
 
   // « § 4.2 » : numéro de la section (ou de la plus proche section numérotée qui la contient)
@@ -277,13 +311,18 @@ class Reader {
   // Où se trouve la preuve d'un énoncé : liens pour le panneau
   proofInfo(node) {
     const link = (id, text) => h("a", { href: `#${id}`, onclick: (e) => { e.preventDefault(); this.navigate(id); } }, text);
+    const mine = node.manual ? [" ", h("span", { class: "muted" }, t("panel.manualNote"))] : [];
     if (node.proofs.length) {
       return [t("panel.proofLabel"), " ", node.proofs.map((id, i) => {
         const element = this.find(id);
-        const text = element?.matches("section") ? withMath(this.structure.toc.find((s) => s.id === id)?.title || this.sectionName(element)) : t("panel.proofHere");
+        // titre de section tel quel ($…$ compris), mis en forme ensuite par MathJax (proofLine)
+        const text = element?.matches("section") ? this.structure.toc.find((s) => s.id === id)?.title || this.sectionName(element) : t("panel.proofHere");
         return [i ? ", " : "", link(id, text)];
-      })];
+      }), mine];
     }
+    if (node.proofPassage) return [t("panel.proofLabel"), " ", link(node.proofPassage.start, t("panel.proofPassage")), mine];
+    if (node.manual === "immediate") return [t("panel.immediateInfo"), mine];
+    if (node.manual === "admitted") return [t("panel.admittedInfo"), mine];
     if (node.justifiedBy) {
       const element = this.find(node.justifiedBy);
       const before = element && this.find(node.id) && element.compareDocumentPosition(this.find(node.id)) & Node.DOCUMENT_POSITION_FOLLOWING;
@@ -293,6 +332,119 @@ class Reader {
       return [t("panel.citedLabel"), " ", node.cited.map((id, i) => [i ? ", " : "", link(id, `[${this.bib.get(id)?.label || "?"}]`)])];
     }
     return NEEDS_PROOF.has(node.kind) ? t("panel.proofNotFound") : null;
+  }
+
+  // Ligne « Preuve : … » du panneau, avec le bouton pour indiquer (ou corriger) l'emplacement de la preuve
+  proofLine(node) {
+    const line = h("div", { class: "small proof-info" });
+    const draw = () => {
+      const info = this.proofInfo(node);
+      const editable = NEEDS_PROOF.has(node.kind) || node.manual || this.hasProof(node);
+      const button = editable && h("button", { class: "link-button", type: "button", onclick: () => line.replaceChildren(this.proofEditor(node, draw)) },
+        t(node.manual ? "panel.changeProof" : "panel.setProof"));
+      line.replaceChildren(h("span", {}, info), button ? " " : "", button || "");
+      if (line.textContent.includes("$")) typesetTex([line]).catch(() => {});
+    };
+    draw();
+    return line;
+  }
+
+  proofEditor(node, close) {
+    const save = async (body) => {
+      try {
+        this.setStructure(body ? await api.setProof(this.paper.id, node.id, body) : await api.clearProof(this.paper.id, node.id));
+        toast(t("pick.saved", { label: node.label }));
+      } catch (error) {
+        toast(t("error.generic", { message: error.message }), { error: true });
+      }
+    };
+    const sections = this.structure.toc.filter((s) => s.id !== "bib" && !/bibliograph/i.test(s.id));
+    const current = node.manual === "section" ? node.proofs[0] : "";
+    const select = h("select", { class: "ai-model proof-select", "aria-label": t("panel.chooseSection") },
+      h("option", { value: "" }, t("panel.chooseSection")),
+      sections.map((s) => h("option", { value: s.id, selected: s.id === current },
+        `${"\u2003".repeat(Math.max(0, s.level - 1))}${s.title.replace(/\$/g, "")}`)));
+    const button = (label, onclick, extra = "") => h("button", { class: `button small-button ${extra}`, type: "button", onclick }, label);
+    return h("div", { class: "proof-editor" },
+      h("p", { class: "proof-editor-title" }, t("panel.proofWhere", { label: node.label })),
+      h("div", { class: "proof-editor-row" }, select,
+        button(t("panel.validate"), () => select.value ? save({ mode: "section", ref: select.value }) : select.focus())),
+      h("div", { class: "proof-editor-row" }, button(t("panel.pickPassage"), () => this.startPick(node))),
+      h("div", { class: "proof-editor-row" },
+        button(t("panel.immediate"), () => save({ mode: "immediate" })),
+        button(t("panel.admitted"), () => save({ mode: "admitted" }))),
+      h("div", { class: "proof-editor-row" },
+        node.manual && button(t("panel.resetProof"), () => save(null)),
+        button(t("panel.cancel"), close)));
+  }
+
+  // ---------- Choix d'un passage de preuve dans le texte ----------
+
+  startPick(node) {
+    this.stopPick();
+    this.closeDrawers();
+    const pick = this.picking = { node, start: null, hover: null };
+    this.root.classList.add("picking");
+    const message = h("span", {}, t("pick.start", { label: node.label }));
+    const finish = h("button", { class: "button small-button", type: "button", disabled: true, onclick: () => this.finishPick(pick.start, pick.start) }, t("pick.finish"));
+    const banner = h("div", { class: "pick-banner", role: "status" }, message, finish,
+      h("button", { class: "button small-button", type: "button", onclick: () => this.stopPick() }, t("pick.cancel")));
+    document.body.append(banner);
+    const candidate = (target) => {
+      const block = target.closest?.(PICKABLE);
+      return block && this.content.contains(block) ? block : null;
+    };
+    const onOver = (event) => {
+      const block = candidate(event.target);
+      if (block === pick.hover) return;
+      pick.hover?.classList.remove("pick-hover");
+      pick.hover = block;
+      block?.classList.add("pick-hover");
+    };
+    const onClick = (event) => {
+      const block = candidate(event.target);
+      if (!block) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (!pick.start) {
+        pick.start = block;
+        block.classList.add("pick-start");
+        message.textContent = t("pick.end");
+        finish.disabled = false;
+      } else {
+        this.finishPick(pick.start, block);
+      }
+    };
+    const onKey = (event) => { if (event.key === "Escape") this.stopPick(); };
+    this.content.addEventListener("mouseover", onOver);
+    this.content.addEventListener("click", onClick, true);
+    document.addEventListener("keydown", onKey);
+    pick.cleanup = () => {
+      this.content.removeEventListener("mouseover", onOver);
+      this.content.removeEventListener("click", onClick, true);
+      document.removeEventListener("keydown", onKey);
+      banner.remove();
+      this.content.querySelectorAll(".pick-hover, .pick-start").forEach((el) => el.classList.remove("pick-hover", "pick-start"));
+      this.root.classList.remove("picking");
+    };
+  }
+
+  stopPick() {
+    this.picking?.cleanup();
+    this.picking = null;
+  }
+
+  async finishPick(start, end) {
+    const node = this.picking.node;
+    this.stopPick();
+    if (end !== start && end.compareDocumentPosition(start) & Node.DOCUMENT_POSITION_FOLLOWING) [start, end] = [end, start];
+    try {
+      this.setStructure(await api.setProof(this.paper.id, node.id, { mode: "passage", start: start.id, end: end.id }));
+      toast(t("pick.saved", { label: node.label }));
+    } catch (error) {
+      toast(t("error.generic", { message: error.message }), { error: true });
+    }
+    this.select(node.id, { tab: "dependencies", openPanel: true });
   }
 
   markQed(proof) {
@@ -551,6 +703,7 @@ class Reader {
   }
 
   showPreview(link) {
+    if (this.picking) return;
     const preview = this.previewFor(link);
     if (!preview) return;
     this.hidePreview();
@@ -638,8 +791,9 @@ class Reader {
 
   nodeItem(node) {
     const badges = [];
-    if (NEEDS_PROOF.has(node.kind) && !node.proofs.length) {
-      const [key, title] = node.cited?.length ? ["panel.cited", node.cited.map((id) => `[${this.bib.get(id)?.label || "?"}]`).join(", ")]
+    if (NEEDS_PROOF.has(node.kind) && !this.hasProof(node)) {
+      const [key, title] = node.manual === "immediate" ? ["panel.badgeImmediate", ""] : node.manual === "admitted" ? ["panel.badgeAdmitted", ""]
+        : node.cited?.length ? ["panel.cited", node.cited.map((id) => `[${this.bib.get(id)?.label || "?"}]`).join(", ")]
         : node.justifiedBy ? ["panel.justified", ""] : ["panel.noProof", ""];
       badges.push(h("span", { class: `badge${key === "panel.noProof" ? " warn" : ""}`, title: title || undefined }, t(key)));
     }
@@ -715,7 +869,7 @@ class Reader {
       h("div", { class: "heading" }, h("span", { class: "dot" }), node.label, node.name && h("span", { class: "muted" }, `— ${node.name}`)),
       element && h("div", { class: "statement" }, this.clean(element)),
       h("div", { class: "small" }, h("a", { href: `#${node.id}`, onclick: (e) => { e.preventDefault(); this.navigate(node.id); } }, t("panel.showInText"))),
-      h("div", { class: "small proof-info" }, this.proofInfo(node)),
+      this.proofLine(node),
       this.assistant?.actionsFor(node.id),
     );
     setTimeout(() => typesetFragment(card), 0);
@@ -850,6 +1004,7 @@ class Reader {
     this.destroyed = true;
     this.annotator?.destroy();
     this.assistant?.destroy();
+    this.stopPick();
     this.hidePreview();
     this.overlay?.remove();
     this.cleanups.forEach((fn) => fn());

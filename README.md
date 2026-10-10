@@ -64,6 +64,10 @@ quand son titre y renvoie (« Proof of Lemma 4.4 »), ou quand une section enti�
 cite une référence (« Theorem 3.2 ([12, Theorem 4.3]) ») est marqué *cité* ; un énoncé justifié par la
 phrase qui le précède (« The following corollary is a consequence of (2.6) ») ou qui le suit
 (« This follows from Lemma 2.1 ») est marqué *justifié dans le texte*. Sinon : *preuve non repérée*.
+Si la détection se trompe ou ne trouve rien : onglet Dépendances, **Indiquer la preuve** — une section
+de l'article, un passage choisi dans le texte (cliquer le premier puis le dernier paragraphe), *immédiat*
+ou *admis* ; *Détection automatique* annule ce choix. Le choix est gardé avec les notes de l'article et
+compte pour les dépendances et pour Claude.
 Les articles déjà importés sont ré-analysés automatiquement quand cette analyse change.
 
 ## Notes et annotations (étape 3)

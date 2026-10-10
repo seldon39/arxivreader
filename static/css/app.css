@@ -718,3 +718,19 @@ mark.hl:hover { filter: brightness(.95); }
 .proof-pointer { display: block; text-align: right; font: 13.5px var(--font-ui); color: var(--link); margin-top: .3em; text-decoration: none; }
 .proof-pointer:hover { text-decoration: underline; }
 .proof-info { margin-top: 6px; color: var(--muted); }
+.link-button { border: 0; background: none; padding: 0; font: inherit; color: var(--link); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.proof-editor { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+.proof-editor-title { margin: 0; font-weight: 600; }
+.proof-editor-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.proof-editor .button { height: 30px; padding: 0 10px; font-size: 13px; }
+.proof-select { flex: 1; min-width: 0; height: 30px; font-size: 13px; }
+/* Choix d'un passage dans le texte */
+.reader.picking .paper-content { cursor: crosshair; }
+.pick-hover { outline: 2px dashed var(--accent); outline-offset: 3px; border-radius: 2px; }
+.pick-start { outline: 2px solid var(--accent); outline-offset: 3px; background: var(--accent-soft); }
+.pick-banner {
+  position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 40; width: min(640px, calc(100vw - 24px));
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 14px; border-radius: 10px;
+  background: var(--surface); color: var(--text); border: 1px solid var(--accent); box-shadow: var(--shadow); font: 14px var(--font-ui);
+}
+.pick-banner span { flex: 1 1 260px; }

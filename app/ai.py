@@ -191,6 +191,15 @@ def _node_text(soup, structure, node):
         proof = _by_id(soup, proof_id)
         if proof is not None:
             parts.append(f'<focus kind="proof" of="{node["label"]}">\n{element_text(proof)}\n</focus>')
+    passage = node.get("proofPassage")
+    if passage:
+        from .structure import passage_elements
+        text = "\n\n".join(element_text(e) for e in passage_elements(soup, passage["start"], passage["end"]))
+        parts.append(f'<focus kind="proof" of="{node["label"]}">\n{text}\n</focus>')
+    if node.get("manual") == "immediate":
+        parts.append(f"The author regards {node['label']} as immediate and gives no proof.")
+    if node.get("manual") == "admitted":
+        parts.append(f"{node['label']} is admitted in the paper (proved elsewhere); the paper does not prove it.")
     justification = _by_id(soup, node.get("justifiedBy"))
     if justification is not None:
         parts.append(f'<focus kind="justification" of="{node["label"]}">\n{element_text(justification)}\n</focus>\n'
@@ -219,7 +228,9 @@ def build_prompt(paper, structure, task, target=None, quote=None, question=None,
     node = next((n for n in structure.get("nodes", []) if n["id"] == target), None) if target else None
     if task in ("explain", "detail", "audit") and node is None:
         raise AIError("Unknown statement")
-    if task in ("detail", "audit") and not (node.get("proofs") or node.get("justifiedBy")):
+    has_text = node is not None and (node.get("proofs") or node.get("justifiedBy") or node.get("proofPassage"))
+    immediate = node is not None and node.get("manual") == "immediate"
+    if task == "audit" and not has_text or task == "detail" and not (has_text or immediate):
         raise AIError("No proof found for this statement")
     if task == "passage" and not quote:
         raise AIError("No passage")

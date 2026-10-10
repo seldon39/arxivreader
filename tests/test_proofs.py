@@ -64,3 +64,31 @@ class Proofs(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ManualProofs(unittest.TestCase):
+    def analyse(self, overrides):
+        fragment = BeautifulSoup(PAGE, "html.parser")
+        return {n["label"]: n for n in extract_structure(fragment, overrides)["nodes"]}, fragment
+
+    def test_overrides(self):
+        nodes, fragment = self.analyse({
+            "S1.Thm2": {"id": "S1.Thm2", "mode": "passage", "start": "S1.p1", "end": "S1.Thm4"},
+            "S1.Thm1": {"id": "S1.Thm1", "mode": "section", "ref": "S2.SS1"},
+            "S1.Thm6": {"id": "S1.Thm6", "mode": "immediate"},
+            "S1.Thm9": {"id": "S1.Thm9", "mode": "admitted"},  # énoncé inconnu : ignoré
+        })
+        corollary = nodes["Corollary 1.2"]
+        self.assertEqual((corollary["manual"], corollary["proofPassage"]), ("passage", {"start": "S1.p1", "end": "S1.Thm4"}))
+        self.assertIn("S1.Thm1", corollary["uses"])  # renvois du passage
+        main = nodes["Theorem 1.1"]
+        self.assertEqual((main["proofs"], main["manual"]), (["S2.SS1"], "section"))
+        self.assertIsNone(fragment.find(id="S2").get("data-proof-of"))  # plus rattachée
+        self.assertEqual((nodes["Lemma 1.6"]["manual"], nodes["Lemma 1.6"]["justifiedBy"]), ("immediate", None))
+
+    def test_passage_elements(self):
+        from app.structure import passage_elements
+        fragment = BeautifulSoup(PAGE, "html.parser")
+        ids = [e["id"] for e in passage_elements(fragment, "S1.p1", "S1.Thm4")]
+        self.assertEqual(ids, ["S1.p1", "S1.Thm3", "S1.p2", "S1.Thm4"])  # paragraphes internes non répétés
+        self.assertEqual([e["id"] for e in passage_elements(fragment, "S1.Thm4", "S1.p1")], ["S1.Thm4"])

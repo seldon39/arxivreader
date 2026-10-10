@@ -30,6 +30,17 @@ class Annotations(unittest.TestCase):
         self.assertEqual(annotations.create("p", "general", note="v2")["id"], general["id"])
         self.assertEqual(len(annotations.list_for("p")), 3)
 
+    def test_proof_location(self):
+        annotations.set_proof("p", "S1.Thm1", "section", ref="S2")
+        annotations.set_proof("p", "S1.Thm1", "passage", start="S1.p1")  # remplace le choix précédent
+        self.assertEqual(annotations.proof_overrides("p"),
+                         {"S1.Thm1": {"id": "S1.Thm1", "mode": "passage", "start": "S1.p1", "end": "S1.p1"}})
+        self.assertEqual(annotations.list_for("p")[0]["kind"], "proof")
+        annotations.clear_proof("p", "S1.Thm1")
+        self.assertEqual(annotations.proof_overrides("p"), {})
+        with self.assertRaises(ValueError):
+            annotations.set_proof("p", "S1.Thm1", "section")
+
     def test_validation(self):
         with self.assertRaises(ValueError):
             annotations.create("p", "highlight", color="purple")
