@@ -261,6 +261,15 @@ a.button.primary { text-decoration: none; }
 .cross-badge:hover { background: var(--surface-hover); }
 .cross-head { margin-bottom: 6px; font-family: var(--font-ui); }
 .cross-statement .ltx_theorem { margin: 0; }
+/* Choix HTML / PDF (barre d'outils du lecteur) */
+.view-switch { display: inline-flex; flex: none; margin: 0 6px; padding: 2px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.view-switch button { border: 0; border-radius: 6px; background: transparent; color: var(--muted); font: 600 12px var(--font-ui); letter-spacing: .02em; padding: 4px 9px; cursor: pointer; }
+.view-switch button:hover { color: var(--text); }
+.view-switch button[aria-pressed="true"] { background: var(--surface-hover); color: var(--text); }
+.reader[data-view="pdf"] .paper:not(.pdf-view), .reader:not([data-view="pdf"]) .pdf-view, .reader[data-view="pdf"] .html-only { display: none; }
+.reader[data-view="pdf"] .find-dock { display: none; }
+.pdf-view .pdf-frame { height: calc(100vh - var(--topbar-h) - var(--toolbar-h) - 24px); height: calc(100dvh - var(--topbar-h) - var(--toolbar-h) - 24px); }
+
 /* Article lu dans le PDF (pas de version HTML) */
 .paper.pdf-mode { max-width: none; padding: 10px 12px 0; }
 .pdf-notice { margin: 0 0 8px; }

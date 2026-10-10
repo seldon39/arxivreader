@@ -36,6 +36,12 @@ def paper_lock(paper_id):
         return _locks[paper_id]
 
 
+def write_atomic_bytes(path, data):
+    temporary = path.with_name(f".{path.name}.tmp")
+    temporary.write_bytes(data)
+    os.replace(temporary, path)
+
+
 def write_atomic(path, text):
     """Écrit à côté puis remplace : un lecteur voit l'ancien fichier ou le nouveau, jamais un fichier à moitié écrit."""
     part = path.with_name(path.name + ".part")
@@ -177,6 +183,38 @@ def reanalyze(paper_id, previous):
         write_atomic(content, str(fragment))
         write_atomic(folder / "structure.json", json.dumps(structure, ensure_ascii=False))
     return structure
+
+
+def ensure_pdf(paper):
+    """Chemin du PDF de l'article, téléchargé depuis arXiv s'il manque ; None s'il est introuvable."""
+    path = paper_dir(paper["id"]) / "paper.pdf"
+    with paper_lock(paper["id"]):
+        if not path.exists():
+            data = fetch_pdf(paper["arxiv_id"], paper["version"])
+            if not data:
+                return None
+            write_atomic_bytes(path, data)
+    return path
+
+
+def pdf_pages(paper):
+    """{id d'énoncé ou de section: page du PDF} ; calculé une fois par PDF et gardé (pages.json)."""
+    structure = load_structure(paper["id"]) or {}
+    if structure.get("source") == "tex":  # pages déjà trouvées à l'import
+        return {item["id"]: item["page"] for item in structure.get("nodes", []) + structure.get("toc", [])
+                + structure.get("proofBlocks", []) if item.get("page")}
+    path = ensure_pdf(paper)
+    if path is None:
+        return None
+    cache = paper_dir(paper["id"]) / "pages.json"
+    stamp = f"{path.stat().st_mtime}:{STRUCTURE_VERSION}"
+    if cache.exists():
+        saved = json.loads(cache.read_text(encoding="utf-8"))
+        if saved.get("stamp") == stamp:
+            return saved["pages"]
+    pages = texstructure.pages_for(structure, path.read_bytes())
+    write_atomic(cache, json.dumps({"stamp": stamp, "pages": pages}))
+    return pages
 
 
 def set_in_library(paper_id, value):

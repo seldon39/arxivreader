@@ -61,6 +61,8 @@ class Reader {
   constructor(view, paper, structure, html, at = null) {
     this.paper = paper;
     this.startAt = at;
+    this.texOnly = paper.source === "tex"; // pas de version HTML : toujours dans le PDF
+    this.pdfMode = this.texOnly;
     this.structure = structure;
     this.nodes = structure.nodes;
     this.byId = new Map(this.nodes.map((n) => [n.id, n]));
@@ -76,6 +78,7 @@ class Reader {
     this.cleanups = [];
 
     this.build(view, html);
+    if (!this.texOnly && this.viewSwitch && settings.readerView === "pdf") this.setView("pdf", { save: false });
     this.enhanceContent();
     this.renderToc();
     this.renderPanel();
@@ -128,7 +131,7 @@ class Reader {
     this.annotator.apply();
     this.renderPanel(); // avec les états de lecture, chargés seulement maintenant
     this.anchors = null;
-    if (this.pdfFrame) {
+    if (this.texOnly) {
       await defineMacros(this.structure.macros);
       await typesetTexSafe(this.content);
       if (this.destroyed) return;
@@ -136,7 +139,9 @@ class Reader {
       this.loadCrossLinks();
       return;
     }
-    if (this.startAt && this.find(this.startAt)) {
+    if (this.pdfMode) {
+      if (this.startAt) this.showInPdf(this.startAt);
+    } else if (this.startAt && this.find(this.startAt)) {
       this.reveal(this.find(this.startAt));
       requestAnimationFrame(() => this.navigate(this.startAt));
     } else {
@@ -145,13 +150,66 @@ class Reader {
     this.loadCrossLinks();
   }
 
+  // ---------- Lecture en HTML ou dans le PDF ----------
+
+  // Page du PDF d'un élément : énoncé, section, preuve (page de son énoncé), sinon section qui le contient
+  pageFor(id) {
+    if (this.texOnly) {
+      const item = this.byId.get(id) || this.structure.toc.find((s) => s.id === id)
+        || (this.structure.proofBlocks || []).find((p) => p.id === id);
+      return item?.page || null;
+    }
+    const pages = this.pages || {};
+    if (pages[id]) return pages[id];
+    const owner = this.nodes.find((n) => n.proofs.includes(id));
+    if (owner && pages[owner.id]) return pages[owner.id];
+    for (let element = this.find(id); element; element = element.parentElement?.closest("[id]")) {
+      const statement = element.closest(".ltx_theorem[id]");
+      if (statement && pages[statement.id]) return pages[statement.id];
+      if (pages[element.id]) return pages[element.id];
+    }
+    return null;
+  }
+
+  async setView(view, { save = true } = {}) {
+    if (this.texOnly || (view === "pdf") === this.pdfMode) return;
+    if (save) saveSettings({ readerView: view });
+    this.viewSwitch?.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === view)));
+    if (view === "pdf") {
+      // page où l'on en était dans le HTML
+      this.htmlScroll = scrollY;
+      // à l'ouverture : dernière position de lecture enregistrée ; sinon, l'endroit lu dans le HTML
+      const anchorId = save ? this.currentAnchor()?.id : this.paper.position;
+      this.pdfMode = true;
+      this.root.dataset.view = "pdf";
+      if (!this.pdfView) {
+        this.pdfUrl = `/api/papers/${encodeURIComponent(this.paper.id)}/pdf`;
+        this.pdfFrame = h("iframe", { class: "pdf-frame", title: this.paper.title });
+        this.pdfView = h("div", { class: "paper pdf-mode pdf-view" }, this.pdfFrame);
+        this.scroller.append(this.pdfView);
+      }
+      scrollTo({ top: 0, behavior: "instant" });
+      if (!this.pages) {
+        this.pdfFrame.src = `${this.pdfUrl}#page=1`;
+        try { this.pages = await api.pages(this.paper.id); } catch { this.pages = {}; }
+        if (this.destroyed || !this.pdfMode) return;
+      }
+      const page = anchorId ? this.pageFor(anchorId) : null;
+      this.pdfFrame.src = `${this.pdfUrl}?page=${page || 1}#page=${page || 1}`;
+    } else {
+      this.pdfMode = false;
+      delete this.root.dataset.view;
+      this.anchors = null;
+      if (this.htmlScroll !== undefined) scrollTo({ top: this.htmlScroll, behavior: "instant" });
+      else this.restorePosition();
+    }
+  }
+
   // Article lu dans le PDF : page de l'énoncé, de la section ou de la preuve, et énoncé choisi dans le panneau
   showInPdf(id) {
     const node = this.byId.get(id);
-    const item = node || this.structure.toc.find((s) => s.id === id)
-      || (this.structure.proofBlocks || []).find((p) => p.id === id);
-    if (!item?.page) { if (node) this.select(id, { openPanel: true }); return; }
-    this.pdfFrame.src = `${this.pdfUrl}?page=${item.page}#page=${item.page}`; // nouvelle adresse : le PDF va à la page
+    const page = this.pageFor(id);
+    if (page && this.pdfFrame) this.pdfFrame.src = `${this.pdfUrl}?page=${page}#page=${page}`; // nouvelle adresse : le PDF va à la page
     if (node) this.select(id, { openPanel: true });
   }
 
@@ -198,21 +256,24 @@ class Reader {
     const paper = this.paper;
     this.tocButton = button(icons.menu, "reader.toc", () => this.toggle("toc"), { attrs: { "aria-pressed": this.root.dataset.toc === "open" } });
     this.panelButton = button(icons.panel, "reader.panel", () => this.toggle("panel"), { attrs: { "aria-pressed": this.root.dataset.panel === "open" } });
-    this.foldButton = button(icons.fold, "reader.foldAll", () => this.foldAll(), { class: "wide-only" });
+    this.foldButton = button(icons.fold, "reader.foldAll", () => this.foldAll(), { class: "wide-only html-only" });
     const link = (icon, title, href) => h("a", { class: "icon-button", href, target: "_blank", rel: "noopener noreferrer", title, "aria-label": title, html: icon });
 
     const toolbar = this.toolbar = h("div", { class: "reader-toolbar" },
       this.tocButton,
       h("a", { class: "icon-button", href: "#/", title: t("reader.back"), "aria-label": t("reader.back"), html: icons.back }),
       h("div", { class: "title", title: paper.title }, withMath(paper.title)),
-      button(icons.minus, "reader.smaller", () => this.changeFont(-1), { class: "wide-only" }),
-      this.zoomButton = h("button", { class: "zoom-reset wide-only", type: "button", onclick: () => { if (settings.fontSize !== DEFAULT_FONT_SIZE) saveSettings({ fontSize: DEFAULT_FONT_SIZE }); } }),
-      button(icons.plus, "reader.larger", () => this.changeFont(1), { class: "wide-only" }),
+      this.viewSwitch = paper.source !== "tex" && paper.source !== "none" && h("div", { class: "view-switch", role: "group", "aria-label": t("reader.view") },
+        [["html", "HTML"], ["pdf", "PDF"]].map(([view, label]) => h("button", { type: "button", dataset: { view }, "aria-pressed": String(view === "html"),
+          title: t(`reader.view.${view}`), onclick: () => this.setView(view) }, label))),
+      button(icons.minus, "reader.smaller", () => this.changeFont(-1), { class: "wide-only html-only" }),
+      this.zoomButton = h("button", { class: "zoom-reset wide-only html-only", type: "button", onclick: () => { if (settings.fontSize !== DEFAULT_FONT_SIZE) saveSettings({ fontSize: DEFAULT_FONT_SIZE }); } }),
+      button(icons.plus, "reader.larger", () => this.changeFont(1), { class: "wide-only html-only" }),
       this.foldButton,
       h("span", { class: "sep wide-only" }),
       this.libraryToggle(),
       link(icons.external, "arXiv", `https://arxiv.org/abs/${paper.arxiv_id}v${paper.version}`),
-      link(icons.pdf, "PDF", `https://arxiv.org/pdf/${paper.arxiv_id}v${paper.version}`),
+
       this.panelButton,
     );
 
@@ -537,7 +598,7 @@ class Reader {
     const draw = () => {
       const info = this.proofInfo(node);
       // article lu dans le PDF : pas de texte où désigner une preuve à la main
-      const editable = !this.pdfFrame && (NEEDS_PROOF.has(node.kind) || node.manual || this.hasProof(node));
+      const editable = !this.texOnly && (NEEDS_PROOF.has(node.kind) || node.manual || this.hasProof(node));
       const button = editable && h("button", { class: "link-button", type: "button", onclick: () => line.replaceChildren(this.proofEditor(node, draw)) },
         t(node.manual ? "panel.changeProof" : "panel.setProof"));
       line.replaceChildren(h("span", {}, info), button ? " " : "", button || "");
@@ -784,7 +845,7 @@ class Reader {
   }
 
   navigate(id, options) {
-    if (this.pdfFrame) { this.showInPdf(id); return; }
+    if (this.pdfMode) { this.showInPdf(id); return; }
     const target = this.find(id);
     if (target) this.navigateElement(target.closest(".ltx_theorem, .ltx_para, .ltx_bibitem, .ltx_equation, .eq-scroll, section") || target, options);
   }
@@ -847,7 +908,7 @@ class Reader {
   }
 
   onScroll() {
-    if (this.article.classList.contains("typesetting") || this.pdfFrame) return; // article pas en page, ou lu dans le PDF
+    if (this.article.classList.contains("typesetting") || this.pdfMode) return; // article pas en page, ou lu dans le PDF
     const anchor = this.currentAnchor();
     if (!anchor) return;
     // Section courante dans le sommaire : la dernière dont le début est au-dessus de la ligne de lecture
@@ -1319,7 +1380,8 @@ class Reader {
         return ranges.findIndex((range) => range.getBoundingClientRect().bottom > top);
       },
     });
-    if (!this.pdfFrame) this.cleanups.push(setFindHandler((command) => this.finder.command(command)), () => this.finder.close());
+    // ⌘F : recherche dans le texte HTML (dans le PDF, rien : le texte affiché n'est pas celui de la page)
+    if (!this.texOnly) this.cleanups.push(setFindHandler((command) => { if (!this.pdfMode) this.finder.command(command); }), () => this.finder.close());
 
     const zoom = (event) => {
       const figure = event.target.closest?.(".figure-card, img.ltx_graphics");

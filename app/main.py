@@ -247,12 +247,20 @@ def set_library(paper_id: str, body: LibraryRequest):
 
 @app.get("/api/papers/{paper_id}/pdf")
 def paper_pdf(paper_id: str):
-    """PDF d'un article sans version HTML (affiché dans le lecteur)."""
-    checked_paper(paper_id)
-    path = library.paper_dir(paper_id) / "paper.pdf"
-    if not path.exists():
+    """PDF de l'article (affiché dans le lecteur) ; téléchargé depuis arXiv la première fois."""
+    path = library.ensure_pdf(checked_paper(paper_id))
+    if path is None:
         raise HTTPException(404, "No PDF")
     return FileResponse(path, media_type="application/pdf")
+
+
+@app.get("/api/papers/{paper_id}/pages")
+def paper_pages(paper_id: str):
+    """Page du PDF de chaque énoncé et section : {id: page}."""
+    pages = library.pdf_pages(checked_paper(paper_id))
+    if pages is None:
+        raise HTTPException(404, "No PDF")
+    return pages
 
 
 @app.get("/api/papers/{paper_id}/crosslinks")
@@ -610,7 +618,7 @@ def settings():
 def update_settings(values: dict):
     allowed = {"language", "theme", "fontSize", "readingWidth", "proofsCollapsed", "tocOpen", "panelOpen", "panelWidth", "tocWidth", "paperFont", "marginMarks", "mathRenderer",
                "feedCategories", "feedTypes", "s2ApiKey", "feedSort", "feedSortS2", "aiModel", "notifyFollowed",
-               "aiProvider", "aiLocalUrl", "aiLocalModel", "checkUpdates", "aiFontSize", "notifyCitations"}
+               "aiProvider", "aiLocalUrl", "aiLocalModel", "checkUpdates", "aiFontSize", "notifyCitations", "readerView"}
     values = {k: v for k, v in values.items() if k in allowed}
     if not all(_valid_setting(k, v) for k, v in values.items()):
         raise HTTPException(400, "Bad setting")
@@ -625,7 +633,7 @@ def update_settings(values: dict):
 SETTING_CHOICES = {
     "language": {"fr", "en"}, "theme": {"auto", "light", "dark"}, "readingWidth": {"narrow", "normal", "wide"},
     "paperFont": {"auto", "charter", "lm"}, "mathRenderer": {"mathjax", "native"}, "aiModel": set(ai.MODELS),
-    "aiProvider": set(providers.PROVIDERS),
+    "aiProvider": set(providers.PROVIDERS), "readerView": {"html", "pdf"},
     "feedSort": {"relevance", "arxiv"}, "feedSortS2": {"relevance", "s2"},
 }
 BOOLEAN_SETTINGS = {"proofsCollapsed", "tocOpen", "panelOpen", "marginMarks", "notifyFollowed", "checkUpdates", "notifyCitations"}

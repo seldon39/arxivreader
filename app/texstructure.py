@@ -564,6 +564,34 @@ def locate_pages(structure, pdf_bytes):
     return structure
 
 
+# Ancres de hyperref possibles pour un énoncé de la version HTML : « lemma.2.3 », « lem.2.3 »…, puis le
+# compteur commun le plus courant (« theorem.2.3 », « thm.2.3 ») quand les énoncés partagent un compteur
+ANCHOR_WORDS = {
+    "theorem": ["theorem", "thm", "theo", "teo"], "lemma": ["lemma", "lem", "lema"], "proposition": ["proposition", "prop"],
+    "corollary": ["corollary", "cor", "coro"], "definition": ["definition", "defn", "defi", "dfn", "def"],
+    "remark": ["remark", "rem", "rmk"], "example": ["example", "ex", "exa"], "claim": ["claim"],
+    "conjecture": ["conjecture", "conj"], "notation": ["notation"], "problem": ["problem", "question"],
+}
+SECTION_COMMANDS = {0: "chapter", 1: "section", 2: "subsection", 3: "subsubsection"}
+
+
+def pages_for(structure, pdf_bytes):
+    """Pages du PDF des énoncés et sections d'une structure lue dans la version HTML : {id: page}."""
+    items = {"nodes": [], "toc": [], "proofBlocks": []}
+    for node in structure.get("nodes", []):
+        number = (re.search(r"(\S+)$", node["label"]) or [None, ""])[1].rstrip(".")
+        words = ANCHOR_WORDS.get(node["kind"], []) + ["theorem", "thm"]
+        anchors = [f"{word}.{number}" for word in words] if re.fullmatch(r"[\dA-Za-z.]+", number or "") else []
+        items["nodes"].append({"id": node["id"], "label": node["label"], "anchors": anchors})
+    for section in structure.get("toc", []):
+        number = re.match(r"^([\dA-Z]+(?:\.\d+)*)\.?\s", section.get("title", ""))
+        command = SECTION_COMMANDS.get(section.get("level"), "section")
+        anchors = [f"{command}.{number.group(1)}", f"appendix.{number.group(1)}"] if number else []
+        items["toc"].append({"id": section["id"], "title": section.get("title", ""), "level": section.get("level"), "anchors": anchors})
+    locate_pages(items, pdf_bytes)
+    return {item["id"]: item["page"] for item in items["nodes"] + items["toc"] if item.get("page")}
+
+
 def _search(texts, item):
     label = item.get("label") or item.get("title") or ""
     if not label:

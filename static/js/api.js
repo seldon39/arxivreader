@@ -22,6 +22,7 @@ export const api = {
   setInLibrary: (id, value) => request("PUT", `/api/papers/${encodeURIComponent(id)}/library`, { in_library: value }),
   paper: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}`),
   content: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/content`),
+  pages: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/pages`),
   crosslinks: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/crosslinks`),
   statement: (id, node) => request("GET", `/api/papers/${encodeURIComponent(id)}/statements/${encodeURIComponent(node)}`),
   savePosition: (id, anchor) => request("PUT", `/api/papers/${encodeURIComponent(id)}/position`, { anchor }),
