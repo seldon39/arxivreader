@@ -625,7 +625,7 @@ svg.graph { color: var(--border-strong); }
 .feed-card.compact { padding: 8px 18px; cursor: pointer; }
 .feed-card.compact .feed-title { font-size: 15.5px; font-weight: 500; margin: 0; }
 .feed-card.compact .feed-authors { font-size: 13px; margin: 2px 0 0; }
-.feed-card.compact :is(.meta-row, .reasons, .feed-abstract) { display: none; }
+.feed-card.compact :is(.card-meta, .reasons, .feed-abstract, .feed-actions) { display: none; }
 .followed-section .feed-card { border-left: 3px solid var(--k-corollary); }
 .sort-label { margin-right: 2px; }
 .profile-owner { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0 0 22px; }
@@ -985,17 +985,10 @@ dialog.figure-viewer::backdrop { background: rgba(20, 20, 24, .6); -webkit-backd
 .card-meta .chip.citing-chip { color: var(--accent); font-style: italic; }
 .card-meta .chip.off-arxiv { color: var(--warning-text); }
 
-/* Feed : même liste à filets ; actions au bout de la ligne des métadonnées */
+/* Feed : même liste à filets */
 .feed-card { border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; padding: 14px 2px 13px; }
 .followed-section .feed-card { border-left: 0; }
 .feed-day > .feed-card:first-child { border-top: 1px solid var(--border); }
-.meta-row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; }
-.meta-row .card-meta { flex: 1 1 260px; min-width: 0; }
-.meta-row .feed-actions { margin: 0; opacity: .6; transition: opacity .15s; }
-.meta-row .feed-actions .icon-button { width: 28px; min-width: 28px; height: 28px; padding: 0; }
-.meta-row .feed-actions svg { width: 16px; height: 16px; }
-.feed-card:hover .meta-row .feed-actions, .meta-row .feed-actions:focus-within { opacity: 1; }
-@media (hover: none) { .meta-row .feed-actions { opacity: 1; } }
 .feed-abstract { margin-top: 6px; -webkit-line-clamp: 2; color: color-mix(in srgb, var(--text) 85%, transparent); }
 /* nouveauté : un point rouge dans la marge au lieu de l'étiquette */
 .fresh-badge { font-size: 0; width: 7px; height: 7px; padding: 0; border-radius: 50%; margin: 0 9px 3px -16px; vertical-align: middle; }
@@ -1005,16 +998,12 @@ dialog.figure-viewer::backdrop { background: rgba(20, 20, 24, .6); -webkit-backd
 .reason i { font-style: normal; }
 .reason + .reason::before { content: "·"; margin: 0 .45em; }
 .reason-icon { display: none; }
-/* intertitres (« Citent vos articles »…) : titre de livre avec un filet rouge, nombre d'articles en retrait */
-.feed-date {
-  font: 600 18px var(--font-read); color: var(--text);
-  border-left: 3px solid var(--accent); padding: 6px 4px 6px 12px; margin: 0 -4px 6px -15px;
-}
+/* intertitres (« Citent vos articles »…) : titre de livre sur une ligne rouge de séparation, nombre d'articles en retrait */
+.feed-date { font: 600 18px var(--font-read); color: var(--text); padding: 8px 4px 6px; margin: 0 -4px 4px; border-bottom: 1.5px solid var(--accent); }
 .feed-date .count { font: 400 13px var(--font-ui); color: var(--muted); margin-left: .6em; white-space: nowrap; }
 .day-label { font: 600 17px var(--font-read); }
 @media (max-width: 700px) {
   .feed-card { padding: 12px 2px 11px; }
-  .feed-date { margin-left: -4px; padding-left: 10px; }
   .day-label { font-size: 15px; }
 }
 

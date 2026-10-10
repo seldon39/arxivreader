@@ -435,8 +435,7 @@ function feedCard(item, onChange = () => {}, { compact = false, fresh = false, s
   const card = h("article", { class: `feed-card${compact ? " compact" : ""}${fresh ? " fresh" : ""}`, dataset: { key: item.key } },
     h("div", { class: "feed-title-row" }, h("h3", { class: "feed-title" }, fresh && h("span", { class: "fresh-badge" }, t("alerts.new")), title), meter),
     h("div", { class: "feed-authors" }, authors.join(", ")),
-    // métadonnées en une ligne de texte, actions au bout de la ligne
-    h("div", { class: "meta-row" }, h("div", { class: "card-meta" },
+    h("div", { class: "card-meta" },
       item.primary_category && h("span", { class: "chip category" }, item.primary_category),
       ...item.categories.filter((c) => c !== item.primary_category).map((c) => h("span", { class: "chip" }, c)),
       item.announce_type && h("span", { class: `chip type-${item.announce_type}` }, t(`feed.badge.${item.announce_type}`)),
@@ -447,16 +446,17 @@ function feedCard(item, onChange = () => {}, { compact = false, fresh = false, s
       ...(item.citing || []).map((cited) => h("span", { class: "chip citing-chip", title: t("feed.citingHint", { title: cited }) },
         t("feed.cites", { title: cited.length > 48 ? `${cited.slice(0, 46)}…` : cited }))),
     ),
+    reasons.length ? h("div", { class: "reasons" }, reasons) : null,
+    item.abstract && abstract,
+    linker?.form,
     h("div", { class: "feed-actions" },
       statusButton("liked", t("feed.like"), "up"),
       statusButton("disliked", t("feed.dislike"), "down"),
       item.arxiv_id && libraryButton(item),
       linker?.toggle,
+      h("span", { class: "spacer" }),
       item.link && h("a", { class: "icon-button", href: item.link, target: "_blank", rel: "noopener noreferrer", title: item.arxiv_id ? "arXiv" : "Semantic Scholar", html: icons.external }),
-      item.arxiv_id && h("a", { class: "icon-button", href: `https://arxiv.org/pdf/${item.arxiv_id}`, target: "_blank", rel: "noopener noreferrer", title: "PDF", html: icons.pdf }))),
-    reasons.length ? h("div", { class: "reasons" }, reasons) : null,
-    item.abstract && abstract,
-    linker?.form);
+      item.arxiv_id && h("a", { class: "icon-button", href: `https://arxiv.org/pdf/${item.arxiv_id}`, target: "_blank", rel: "noopener noreferrer", title: "PDF", html: icons.pdf })));
   // Article peu pertinent : une ligne ; un clic sur le titre déplie la carte
   // Carte réduite à une ligne : le titre ouvre l'article, un clic ailleurs sur la ligne la déplie
   if (compact) {
