@@ -78,12 +78,13 @@
 .ltx_abstract { margin: 0 2.4em 2em; font-size: .9em; line-height: 1.45; }
 .ltx_title_abstract { display: inline; font-size: 1em; font-weight: 400; font-variant: small-caps; margin: 0 .5em 0 0; }
 .ltx_title_abstract + .ltx_p, .ltx_abstract > .ltx_p:first-of-type { display: inline; }
-.ltx_dates, .ltx_keywords, .ltx_classification, .ltx_acknowledgements {
+.ltx_dates, .ltx_keywords, .ltx_classification, .ltx_acknowledgements, .ltx_titlenotes {
   font-size: .82em; line-height: 1.4; margin: .2em 0; color: var(--muted); text-align: left;
 }
 .ltx_title_keywords, .ltx_title_classification { display: inline; font-size: 1em; font-weight: 400; font-style: italic; margin-right: .4em; }
 .ltx_title_classification::after { content: "."; }
 .ltx_classification { margin-bottom: 0; }
+.ltx_titlenote + .ltx_titlenote { margin-top: .2em; }
 .front-last { margin-bottom: 2.2em !important; }
 
 /* ---- Titres (amsart) : sections centrées en petites capitales, sous-sections en gras en ligne ---- */

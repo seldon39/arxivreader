@@ -4,7 +4,7 @@ import { api } from "./api.js";
 import { closure, renderGraph } from "./graph.js";
 import { Annotator, noteEditor } from "./annotations.js";
 import { Assistant } from "./ai.js";
-import { amsBibliography, markItalicStatements, placeEquationNumbers, relabelLists } from "./amsfix.js";
+import { amsBibliography, markItalicStatements, moveTitleNotes, normalizeFontScale, placeEquationNumbers, relabelLists } from "./amsfix.js";
 import { layoutFigures, prepareFigures } from "./figures.js";
 import { typesetFragment, typesetMath, typesetTex } from "./math.js";
 import { t } from "./i18n.js";
@@ -297,6 +297,8 @@ class Reader {
     if (!this.content.querySelector("[lang]")) this.content.lang = "en"; // césure à l'anglaise
     this.figures = prepareFigures(this.content);
 
+    normalizeFontScale(this.content);
+
     // Ce que la version HTML perd par rapport au PDF (lu dans la source TeX à l'import)
     const tex = this.structure.tex;
     if (tex) {
@@ -321,7 +323,8 @@ class Reader {
     const dates = this.content.querySelector(".ltx_dates");
     const frontNotes = this.content.querySelectorAll(".ltx_keywords, .ltx_classification");
     if (dates && frontNotes.length) frontNotes[frontNotes.length - 1].after(dates);
-    const front = this.content.querySelectorAll(".ltx_abstract, .ltx_keywords, .ltx_classification, .ltx_dates");
+    moveTitleNotes(this.content);
+    const front = this.content.querySelectorAll(".ltx_abstract, .ltx_keywords, .ltx_classification, .ltx_dates, .ltx_titlenotes");
     if (front.length) [...front].sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1)).at(-1).classList.add("front-last");
 
     // Preuves repliables ; le ∎ de LaTeXML devient le □ d'amsthm, aligné à droite
@@ -900,18 +903,35 @@ class Reader {
   }
 
   renderPanel({ focus = false } = {}) {
-    const tabs = [["statements", t("tabs.statements")], ["dependencies", t("tabs.dependencies")], ["graph", t("tabs.graph")], ["notes", t("tabs.notes")], ["ai", t("tabs.ai")]];
-    const tabBar = h("div", { class: "tabs", role: "tablist" }, tabs.map(([key, label]) => h("button", {
-      type: "button", role: "tab", "aria-selected": String(this.tab === key),
-      onclick: () => { this.tab = key; this.renderPanel(); },
-    }, label)));
-    const body = h("div", { class: "panel-body" });
+    // Focus dans le panneau avant le nouveau rendu : il est rendu au même endroit ensuite (onglet, énoncé)
+    const active = this.panel.contains(document.activeElement) ? document.activeElement : null;
+    const keep = active?.matches('[role="tab"]') ? `[role="tab"][data-tab="${this.tab}"]`
+      : active?.matches(".node-item[data-id]") ? `.node-item[data-id="${CSS.escape(active.dataset.id)}"]` : null;
+
+    const keys = ["statements", "dependencies", "graph", "notes", "ai"];
+    const show = (key) => { this.tab = key; this.renderPanel(); this.panel.querySelector(`[role="tab"][data-tab="${key}"]`)?.focus(); };
+    // Onglets à la norme ARIA : un seul arrêt de tabulation, flèches ←/→ (Début/Fin) pour changer d'onglet
+    const tabBar = h("div", { class: "tabs", role: "tablist", "aria-label": t("reader.panel") }, keys.map((key) => h("button", {
+      type: "button", role: "tab", id: `panel-tab-${key}`, "aria-controls": "panel-body", dataset: { tab: key },
+      "aria-selected": this.tab === key, tabindex: this.tab === key ? 0 : -1,
+      onclick: () => show(key),
+      onkeydown: (event) => {
+        const i = keys.indexOf(key);
+        const target = { ArrowRight: keys[(i + 1) % keys.length], ArrowLeft: keys[(i + keys.length - 1) % keys.length],
+          Home: keys[0], End: keys[keys.length - 1] }[event.key];
+        if (!target) return;
+        event.preventDefault();
+        show(target);
+      },
+    }, t(`tabs.${key}`))));
+    const body = h("div", { class: "panel-body", id: "panel-body", role: "tabpanel", "aria-labelledby": `panel-tab-${this.tab}` });
     if (this.tab === "statements") this.renderStatements(body);
     else if (this.tab === "dependencies") this.renderDependencies(body);
     else if (this.tab === "notes") this.annotator?.renderPanel(body);
     else if (this.tab === "ai") this.assistant?.renderPanel(body, { focus });
     else this.renderGraphTab(body);
     this.panel.replaceChildren(tabBar, body);
+    if (keep) this.panel.querySelector(keep)?.focus({ preventScroll: true });
     if (this.tab !== "ai" && this.assistant) this.assistant.live = null; // plus de rendu en direct hors de l'onglet
     this.setPanelWide(this.tab === "ai");
     const graph = this.tab === "graph" && body.querySelector(".graph-wrap");
@@ -1117,6 +1137,15 @@ class Reader {
     // Renvois internes (#…) dans l'article, le panneau (énoncé recopié) ou un aperçu : on reste dans le lecteur
     this.scroller.addEventListener("click", this.interceptLinks);
     this.panel.addEventListener("click", this.interceptLinks);
+    // ↑/↓ d'un énoncé à l'autre dans les listes du panneau (Entrée : y aller)
+    this.panel.addEventListener("keydown", (event) => {
+      if (!["ArrowDown", "ArrowUp"].includes(event.key) || !event.target.matches(".node-item")) return;
+      const items = [...this.panel.querySelectorAll(".node-item")];
+      const next = items[items.indexOf(event.target) + (event.key === "ArrowDown" ? 1 : -1)];
+      if (!next) return;
+      event.preventDefault();
+      next.focus();
+    });
 
     const hoverable = 'a[href^="#"], .ltx_note_mark';
     this.scroller.addEventListener("mouseover", (event) => {

@@ -114,3 +114,60 @@ export function amsBibliography(content) {
     item.append(entry);
   }
 }
+
+// Taille de texte imposée à tout l'article par la source (\large, \fontsize…) : LaTeXML l'écrit sur chaque
+// morceau de texte (style="font-size:144%") mais pas sur les citations, titres d'abstract, mots-clés…,
+// qui paraissent alors minuscules. Si une même taille couvre l'essentiel des paragraphes, elle devient la
+// taille normale et les autres tailles sont gardées en proportion.
+export function normalizeFontScale(content) {
+  const percent = (element) => Number(element.style.fontSize.match(/^([\d.]+)%$/)?.[1]) || null;
+  // vraie propriété font-size (pas la variable --font-size de la page), et seulement dans l'article
+  const sizedParent = (element) => {
+    for (let parent = element.parentElement; parent && parent !== content; parent = parent.parentElement) {
+      if (parent.style.fontSize) return parent;
+    }
+    return null;
+  };
+  const sized = [...content.querySelectorAll('[style*="font-size"]')].filter((element) => element.style.fontSize);
+  const outermost = sized.filter((element) => percent(element) && element.closest(".ltx_para") && !sizedParent(element));
+  const share = new Map();
+  for (const element of outermost) share.set(percent(element), (share.get(percent(element)) || 0) + element.textContent.length);
+  const total = [...content.querySelectorAll(".ltx_para")].reduce((n, para) => n + para.textContent.length, 0);
+  const [scale, covered] = [...share].sort((a, b) => b[1] - a[1])[0] || [];
+  if (!scale || scale === 100 || covered < 0.6 * total) return;
+  for (const element of sized) {
+    const value = percent(element);
+    if (!value || sizedParent(element)) continue; // une taille imbriquée est relative à son parent : inchangée
+    const next = (100 * value) / scale;
+    if (Math.abs(next - 100) < 1) element.style.removeProperty("font-size");
+    else element.style.fontSize = `${Math.round(next)}%`;
+  }
+  // Les formules portent le même agrandissement (mathsize="1.440em" sur chaque symbole) : idem
+  for (const element of content.querySelectorAll("[mathsize]")) {
+    if (element.parentElement?.closest("[mathsize]")) continue; // relatif au parent : inchangé
+    const [, number, unit] = element.getAttribute("mathsize").match(/^([\d.]+)(em|%)$/) || [];
+    if (!number) continue;
+    const ratio = (unit === "%" ? number / 100 : Number(number)) / (scale / 100);
+    if (Math.abs(ratio - 1) < 0.01) element.removeAttribute("mathsize");
+    else element.setAttribute("mathsize", `${ratio.toFixed(3)}em`);
+  }
+}
+
+// \thanks d'amsart : LaTeXML les met dans le titre ; ils rejoignent les notes de première page
+// (mots-clés, classification), sous le résumé.
+export function moveTitleNotes(content) {
+  const notes = [...content.querySelectorAll(".ltx_title_document .ltx_pubnote")];
+  if (!notes.length) return;
+  const after = [...content.querySelectorAll(".ltx_abstract, .ltx_keywords, .ltx_classification, .ltx_dates, .ltx_authors")].at(-1);
+  const holder = document.createElement("div");
+  holder.className = "ltx_titlenotes";
+  for (const note of notes) {
+    note.querySelector(".ltx_note_name")?.remove();
+    const line = document.createElement("div");
+    line.className = "ltx_titlenote";
+    line.append(...note.childNodes);
+    holder.append(line);
+  }
+  content.querySelectorAll(".ltx_title_document .ltx_pubnotes").forEach((element) => element.remove());
+  (after || content.querySelector(".ltx_title_document"))?.after(holder);
+}
