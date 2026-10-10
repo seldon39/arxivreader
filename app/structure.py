@@ -6,6 +6,8 @@ from bs4 import NavigableString, Tag
 
 from .arxiv import extract_ids
 
+STRUCTURE_VERSION = 2  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
+
 SECTION_LEVELS = {
     "ltx_part": 0, "ltx_chapter": 0, "ltx_section": 1, "ltx_appendix": 1,
     "ltx_bibliography": 1, "ltx_subsection": 2, "ltx_subsubsection": 3,
@@ -28,6 +30,18 @@ KIND_PREFIXES = [
 
 PROOF_START = re.compile(r"^\s*(proof|preuve|démonstration|demonstration)\b", re.I)
 ANNOUNCES_PROOF = re.compile(r"\b(prove|proof|proving|démontr|preuve|montrons)", re.I)
+PROOF_HEADING = re.compile(r"\b(proofs?|preuves?|d[ée]monstrations?)\b", re.I)
+# Phrase juste avant l'énoncé qui le justifie (« The following corollary is a consequence of (2.6) »)
+JUSTIFIES_NEXT = re.compile(r"\b(following|below|suivante?s?|ci-dessous)\b", re.I)
+JUSTIFICATION = re.compile(
+    r"\b(consequence|follows?|by|from|deduce|obtain|get|same way|simplif\w*|combin\w*|immediate\w*|implies"
+    r"|conséquence|découle|d'après|grâce|obtient|déduit|même façon|même manière)\b", re.I)
+ANNOUNCES_PROOF_BELOW = re.compile(r"\b(we|nous)\s+(now\s+|will\s+|allons\s+)?(prove|show|establish|montrer|démontrer|montrons|démontrons)", re.I)
+NEEDS_PROOF = {"theorem", "proposition", "lemma", "corollary", "claim"}
+# Phrase juste après l'énoncé (« This follows from Lemma 2.1. »)
+JUSTIFIES_PREVIOUS = re.compile(
+    r"^\s*(this|it|the (above )?(lemma|corollary|proposition|result) )\s*(follows|is (a |an )?(direct |immediate |straightforward )?consequence)"
+    r"|^\s*(ceci|cela|ce résultat)\s+(découle|est une (conséquence|application))", re.I)
 QED_END = re.compile(r"(□|∎|■|\$\\(Box|square|blacksquare|qed|qedsymbol|QED)\$)\s*$")
 
 HIDDEN_STYLE = re.compile(
@@ -122,6 +136,7 @@ def extract_structure(fragment):
         name = squash(title_text.replace(label, "", 1)).strip(" .:")
         name = re.sub(r"^\((.*)\)$", r"\1", name)
         section = enclosing(element, lambda e: any(c in SECTION_LEVELS for c in e.get("class") or []))
+        cites_in_title = [a["href"][1:] for a in title.select('a[href^="#bib"]')] if title else []
         nodes[node_id] = {
             "id": node_id,
             "kind": classify(label, element.get("class") or []),
@@ -130,6 +145,9 @@ def extract_structure(fragment):
             "section": section.get("id") if section else None,
             "proofs": [],
             "detectedProof": False,
+            "proofSection": False,     # preuve dans une section à part (« 4.2. Proof of Theorem 1.3 »)
+            "cited": cites_in_title,   # énoncé repris d'une référence (« Theorem 3.2 ([12, Theorem 4.3]) »)
+            "justifiedBy": None,       # paragraphe voisin qui le justifie, sans preuve en forme
             "uses": [],
             "usesEquations": [],
             "cites": [],
@@ -152,6 +170,8 @@ def extract_structure(fragment):
     def attach(proof, theorem, detected=False):
         proof_id = ensure_id(proof, "proof")
         node = nodes[theorem["id"]]
+        if proof_id in node["proofs"]:
+            return
         node["proofs"].append(proof_id)
         node["detectedProof"] = node["detectedProof"] or detected
         proof["data-proof-of"] = theorem["id"]
@@ -195,7 +215,7 @@ def extract_structure(fragment):
             continue
         target = proof_target(element, element.find(class_=re.compile(r"^ltx_title")), last_theorem)
         if target is not None:
-            attach(element, target)
+            attach(element, target, detected=has_class(element, "arx-detected-proof"))
 
     # Preuves écrites à la main (« {\it Proof.} … $\Box$ ») : on les regroupe dans un bloc
     for para in fragment.select(".ltx_para"):
@@ -223,6 +243,55 @@ def extract_structure(fragment):
             wrapper.append(element.extract())
         attach(wrapper, target, detected=True)
 
+    def theorems_of(container, direct):
+        """Énoncés cités dans un titre : directement (« Theorem 1.3 ») ou par un point ou une équation (« (1) »)."""
+        found = []
+        for link in container.select('a.ltx_ref[href^="#"]'):
+            target = fragment.find(id=link["href"][1:])
+            if target is None:
+                continue
+            if has_class(target, "ltx_theorem"):
+                theorem = target if direct else None
+            else:
+                theorem = None if direct else enclosing(target, lambda e: has_class(e, "ltx_theorem"))
+            if theorem is not None and theorem.get("id") in nodes and theorem not in found:
+                found.append(theorem)
+        return found
+
+    # Preuves en section à part : titre « Proof of Theorem 1.1 », « 4.3. …, proofs of Corollary 1.4 and 1.5 ».
+    # Les sections les plus profondes d'abord : la sous-section « Proof of Corollary 1.4 » l'emporte.
+    # Un titre qui renvoie à l'énoncé lui-même l'emporte sur « Proof of (1) » (un point de l'énoncé).
+    sections = [e for e in fragment.find_all("section") if any(c in SECTION_LEVELS for c in e.get("class") or [])]
+    for direct in (True, False):
+        for section in sorted(sections, key=lambda e: -len(list(e.parents))):
+            heading = section.find(re.compile(r"^h[1-6]$"))
+            if heading is None or enclosing(heading, lambda e: e.name == "section") is not section:
+                continue
+            if not PROOF_HEADING.search(squash(plain(heading))):
+                continue
+            for theorem in theorems_of(heading, direct):
+                node = nodes[theorem["id"]]
+                if node["proofs"] or section.find(id=theorem["id"]) is not None:
+                    continue
+                attach(section, theorem)
+                node["proofSection"] = True
+
+    # Justification en une phrase juste avant (ou après) l'énoncé, sans environnement de preuve
+    for node_id in order:
+        node = nodes[node_id]
+        if node["proofs"] or node["cited"] or node["kind"] not in NEEDS_PROOF:
+            continue
+        element = fragment.find(id=node_id)
+        previous = element.find_previous_sibling(True)
+        if previous is not None and has_class(previous, "ltx_para"):
+            last = re.split(r"(?<=[.!?])\s+(?=[A-Z])", squash(plain(previous)))[-1]
+            if JUSTIFIES_NEXT.search(last) and JUSTIFICATION.search(last) and not ANNOUNCES_PROOF_BELOW.search(last):
+                node["justifiedBy"] = ensure_id(previous, "para")
+                continue
+        following = element.find_next_sibling(True)
+        if following is not None and has_class(following, "ltx_para") and JUSTIFIES_PREVIOUS.search(squash(plain(following))):
+            node["justifiedBy"] = ensure_id(following, "para")
+
     # Renvois → dépendances
     def resolve(target_id):
         target = fragment.find(id=target_id)
@@ -245,6 +314,8 @@ def extract_structure(fragment):
     for node_id in order:
         node = nodes[node_id]
         scope = [fragment.find(id=node_id)] + [fragment.find(id=p) for p in node["proofs"]]
+        if node["justifiedBy"]:
+            scope.append(fragment.find(id=node["justifiedBy"]))
         for container in scope:
             for link in container.select('a.ltx_ref[href^="#"]'):
                 hit = resolve(link["href"][1:])
@@ -288,10 +359,12 @@ def extract_structure(fragment):
     hidden = 0
     for element in fragment.find_all(style=True):
         if HIDDEN_STYLE.search(element["style"]) and squash(element.get_text()):
-            element["class"] = (element.get("class") or []) + ["arx-hidden-text"]
+            if "arx-hidden-text" not in (element.get("class") or []):
+                element["class"] = (element.get("class") or []) + ["arx-hidden-text"]
             hidden += 1
 
     return {
+        "version": STRUCTURE_VERSION,
         "toc": toc,
         "nodes": [nodes[n] for n in order],
         "equations": equations,

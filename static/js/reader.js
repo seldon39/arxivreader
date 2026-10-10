@@ -246,6 +246,15 @@ class Reader {
     });
     this.updateFoldButton();
 
+    // Énoncé prouvé dans une section à part : renvoi discret vers sa preuve
+    for (const node of this.nodes) {
+      if (!node.proofSection) continue;
+      const theorem = this.find(node.id);
+      const section = this.find(node.proofs[0]);
+      if (!theorem || !section) continue;
+      theorem.append(h("a", { class: "proof-pointer", href: `#${section.id}` }, t("reader.proofIn", { where: this.sectionName(section) })));
+    }
+
     // Titres d'énoncés cliquables → panneau des dépendances
     this.content.querySelectorAll(".ltx_theorem").forEach((theorem) => {
       const title = theorem.querySelector(".ltx_title_theorem, .ltx_title");
@@ -253,6 +262,37 @@ class Reader {
       title.title = t("tabs.dependencies");
       title.addEventListener("click", () => this.select(theorem.id, { tab: "dependencies", openPanel: true }));
     });
+  }
+
+  // « § 4.2 » : numéro de la section (ou de la plus proche section numérotée qui la contient)
+  sectionName(section) {
+    const titles = new Map(this.structure.toc.map((entry) => [entry.id, entry.title]));
+    for (let el = section; el; el = el.parentElement?.closest("section[id]")) {
+      const number = titles.get(el.id)?.match(/^([0-9A-Z]+(?:\.[0-9]+)*)\.?\s/)?.[1];
+      if (number) return `§ ${number}`;
+    }
+    return titles.get(section.id) || "";
+  }
+
+  // Où se trouve la preuve d'un énoncé : liens pour le panneau
+  proofInfo(node) {
+    const link = (id, text) => h("a", { href: `#${id}`, onclick: (e) => { e.preventDefault(); this.navigate(id); } }, text);
+    if (node.proofs.length) {
+      return [t("panel.proofLabel"), " ", node.proofs.map((id, i) => {
+        const element = this.find(id);
+        const text = element?.matches("section") ? withMath(this.structure.toc.find((s) => s.id === id)?.title || this.sectionName(element)) : t("panel.proofHere");
+        return [i ? ", " : "", link(id, text)];
+      })];
+    }
+    if (node.justifiedBy) {
+      const element = this.find(node.justifiedBy);
+      const before = element && this.find(node.id) && element.compareDocumentPosition(this.find(node.id)) & Node.DOCUMENT_POSITION_FOLLOWING;
+      return [t("panel.justifiedLabel"), " ", link(node.justifiedBy, t(before ? "panel.sentenceBefore" : "panel.sentenceAfter"))];
+    }
+    if (node.cited?.length) {
+      return [t("panel.citedLabel"), " ", node.cited.map((id, i) => [i ? ", " : "", link(id, `[${this.bib.get(id)?.label || "?"}]`)])];
+    }
+    return NEEDS_PROOF.has(node.kind) ? t("panel.proofNotFound") : null;
   }
 
   markQed(proof) {
@@ -490,7 +530,7 @@ class Reader {
     const copy = element.cloneNode(true);
     copy.removeAttribute("id");
     copy.querySelectorAll("[id]").forEach((el) => el.removeAttribute("id"));
-    copy.querySelectorAll(".proof-toggle, .block-note, .state-pill").forEach((el) => el.remove());
+    copy.querySelectorAll(".proof-toggle, .block-note, .state-pill, .proof-pointer").forEach((el) => el.remove());
     copy.classList.remove("selected", "flash");
     return copy;
   }
@@ -598,7 +638,11 @@ class Reader {
 
   nodeItem(node) {
     const badges = [];
-    if (NEEDS_PROOF.has(node.kind) && !node.proofs.length) badges.push(h("span", { class: "badge" }, t("panel.noProof")));
+    if (NEEDS_PROOF.has(node.kind) && !node.proofs.length) {
+      const [key, title] = node.cited?.length ? ["panel.cited", node.cited.map((id) => `[${this.bib.get(id)?.label || "?"}]`).join(", ")]
+        : node.justifiedBy ? ["panel.justified", ""] : ["panel.noProof", ""];
+      badges.push(h("span", { class: `badge${key === "panel.noProof" ? " warn" : ""}`, title: title || undefined }, t(key)));
+    }
     if (node.usedBy.length) badges.push(h("span", { class: "badge" }, t("panel.usedCount", { n: node.usedBy.length })));
     const state = this.annotator?.stateOf(node.id);
     if (state) badges.unshift(h("span", { class: `state-pill state-${state}` }, t(`notes.state.${state}`)));
@@ -671,6 +715,7 @@ class Reader {
       h("div", { class: "heading" }, h("span", { class: "dot" }), node.label, node.name && h("span", { class: "muted" }, `— ${node.name}`)),
       element && h("div", { class: "statement" }, this.clean(element)),
       h("div", { class: "small" }, h("a", { href: `#${node.id}`, onclick: (e) => { e.preventDefault(); this.navigate(node.id); } }, t("panel.showInText"))),
+      h("div", { class: "small proof-info" }, this.proofInfo(node)),
       this.assistant?.actionsFor(node.id),
     );
     setTimeout(() => typesetFragment(card), 0);

@@ -4,11 +4,13 @@ import json
 import shutil
 import time
 
+from bs4 import BeautifulSoup
+
 from . import db
 from .arxiv import fetch_asset, fetch_html, fetch_metadata, fetch_source, paper_key, parse_arxiv_id
 from .config import PAPERS
 from .sanitize import sanitize_document
-from .structure import extract_structure
+from .structure import STRUCTURE_VERSION, extract_structure
 from .texsource import analyze_source
 
 ALLOWED_ASSET_TYPES = ("image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml")
@@ -79,7 +81,28 @@ def import_paper(query, add_to_library=True):
 
 def load_structure(paper_id):
     path = paper_dir(paper_id) / "structure.json"
-    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+    if not path.exists():
+        return None
+    structure = json.loads(path.read_text(encoding="utf-8"))
+    if structure.get("version") != STRUCTURE_VERSION:
+        structure = reanalyze(paper_id, structure)
+    return structure
+
+
+def reanalyze(paper_id, previous):
+    """Analyse refaite sur le HTML déjà enregistré (sans téléchargement) quand l'analyse a changé.
+    Les identifiants existants sont conservés : surlignages et notes restent en place."""
+    folder = paper_dir(paper_id)
+    content = folder / "content.html"
+    if not content.exists():
+        return previous
+    fragment = BeautifulSoup(content.read_text(encoding="utf-8"), "html.parser")
+    structure = extract_structure(fragment)
+    structure["source"] = previous.get("source")
+    structure["tex"] = previous.get("tex")
+    content.write_text(str(fragment), encoding="utf-8")
+    (folder / "structure.json").write_text(json.dumps(structure, ensure_ascii=False), encoding="utf-8")
+    return structure
 
 
 def set_in_library(paper_id, value):

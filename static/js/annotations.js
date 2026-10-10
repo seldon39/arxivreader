@@ -14,7 +14,7 @@ import { debounce, h, icons, toast } from "./util.js";
 
 export const COLORS = ["yellow", "green", "blue", "pink"];
 export const STATES = ["understood", "review", "verified"];
-const UI = ".proof-toggle, .block-note, .state-pill";
+const UI = ".proof-toggle, .block-note, .state-pill, .proof-pointer";
 
 // ---------- Texte logique ----------
 

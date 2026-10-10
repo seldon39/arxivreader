@@ -88,8 +88,8 @@ export class Assistant {
       onclick: () => this.ask({ task, target: nodeId }) }, h("span", { class: "ai-icon", html: icons.sparkle }), label);
     return h("div", { class: "ai-actions" },
       action("explain", t("ai.task.explain")),
-      node.proofs.length ? action("detail", t("ai.task.detail")) : null,
-      node.proofs.length ? action("audit", t("ai.task.audit")) : null);
+      node.proofs.length || node.justifiedBy ? action("detail", t("ai.task.detail")) : null,
+      node.proofs.length || node.justifiedBy ? action("audit", t("ai.task.audit")) : null);
   }
 
   // Passage sélectionné dans l'article : il accompagne la prochaine question
@@ -153,7 +153,8 @@ export class Assistant {
     let id = null;
     if (node) {
       const proofId = node.proofs[0];
-      id = ["detail", "audit"].includes(exchange.task) && proofId && this.find(proofId) ? proofId : node.id;
+      // note de la preuve si c'est un bloc « Proof. » ; sinon (section à part, justification) celle de l'énoncé
+      id = ["detail", "audit"].includes(exchange.task) && proofId && this.find(proofId)?.matches(".ltx_proof") ? proofId : node.id;
     }
     const header = `**Claude · ${this.title(exchange)}** — *${exchange.created_at.slice(0, 10)}, ${t("ai.unverified")}*`;
     const asked = exchange.question ? `\n\n> ${exchange.question.replace(/\n/g, " ")}` : "";

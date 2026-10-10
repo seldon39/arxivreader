@@ -713,3 +713,8 @@ mark.hl:hover { filter: brightness(.95); }
 .ai-login p { margin: 0; }
 .ai-command { font: 13px var(--font-mono); background: var(--surface); color: var(--text); padding: 3px 8px; border-radius: 6px; user-select: all; }
 .ai-privacy { margin-top: 16px; }
+
+/* Renvoi vers une preuve placée dans une section à part */
+.proof-pointer { display: block; text-align: right; font: 13.5px var(--font-ui); color: var(--link); margin-top: .3em; text-decoration: none; }
+.proof-pointer:hover { text-decoration: underline; }
+.proof-info { margin-top: 6px; color: var(--muted); }

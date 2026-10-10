@@ -56,6 +56,16 @@ et proximité de sens (vecteurs SPECTER de Semantic Scholar, comparés au lot du
 référence du profil ; + auteurs suivis, mots-clés ; − proximité avec les articles 👎.
 Une clé d'API Semantic Scholar (gratuite, facultative) évite les limitations de requêtes.
 
+## Où sont les preuves
+
+Une preuve est rattachée à son énoncé quand elle le suit (environnement *proof* ou « *Proof.* … □ »),
+quand son titre y renvoie (« Proof of Lemma 4.4 »), ou quand une section entière lui est consacrée
+(« 4.2. Proof of Theorem 1.3 » ; l'énoncé affiche alors « → Preuve au § 4.2 »). Un énoncé dont le titre
+cite une référence (« Theorem 3.2 ([12, Theorem 4.3]) ») est marqué *cité* ; un énoncé justifié par la
+phrase qui le précède (« The following corollary is a consequence of (2.6) ») ou qui le suit
+(« This follows from Lemma 2.1 ») est marqué *justifié dans le texte*. Sinon : *preuve non repérée*.
+Les articles déjà importés sont ré-analysés automatiquement quand cette analyse change.
+
 ## Notes et annotations (étape 3)
 
 - **Surligner** : sélectionner un passage (formules comprises) ; une barre propose 4 couleurs et
