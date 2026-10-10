@@ -207,5 +207,17 @@ export function fixMathML(content) {
     for (const mi of math.querySelectorAll("mi")) {
       if (GLYPHS[mi.textContent.trim()]) mi.textContent = GLYPHS[mi.textContent.trim()];
     }
+    // Virgule en fin de cellule alignée (« h_s(Y,x_m),& h_s(Y',x'_m) » dans split) : la ligne continue
+    // dans la cellule suivante, mais l'espace après la virgule se perdait ; espace fine (\,) rétablie
+    for (const cell of math.querySelectorAll("mtd")) {
+      const tokens = [...cell.querySelectorAll("mi, mo, mn, mtext")].filter((token) => token.textContent.trim());
+      const last = tokens.at(-1);
+      if (last?.localName !== "mo" || last.textContent.trim() !== ",") continue;
+      let next = cell.nextElementSibling;
+      while (next && !next.textContent.trim()) next = next.nextElementSibling;
+      if (!next || /^[=<>≤≥≈∼≃≅≡∈∉⊂⊆⊃⊇→↦⟶:]/.test(next.textContent.trim())) continue;
+      last.after(document.createElementNS(last.namespaceURI, "mspace"));
+      last.nextSibling.setAttribute("width", "0.167em");
+    }
   }
 }
