@@ -229,10 +229,10 @@ function feedTools({ tab, state, data, draw, refresh }) {
     "aria-label": t("feed.search"), autocomplete: "off", spellcheck: "false" });
   const redraw = debounce(draw, 150);
   search.addEventListener("input", () => { state.search = search.value; redraw(); });
-  const tool = (icon, key, className = "") => h("button", { class: `button tool-button ${className}`, type: "button", title: t(key), "aria-label": t(key),
-    "aria-haspopup": "dialog", "aria-expanded": "false", html: icon });
-  const sortButton = tool(icons.sort, "feed.sortTitle");
-  const filterButton = tool(icons.filter, "feed.filters", "filter-button");
+  // « Tri » et « Filtres » : boutons à icône et texte, comme « Filtres » dans la bibliothèque
+  const menuButton = () => h("button", { class: "button filter-button", type: "button", "aria-haspopup": "dialog", "aria-expanded": "false" });
+  const sortButton = menuButton();
+  const filterButton = menuButton();
   const toolbar = h("div", { class: "library-tools feed-tools" },
     h("div", { class: "library-search-row feed-search-row" },
       h("span", { class: "search-field" }, h("span", { class: "search-icon", html: icons.search }), search),
@@ -257,7 +257,7 @@ function feedTools({ tab, state, data, draw, refresh }) {
     close({ focus: false });
     if (same) return;
     owner = button;
-    menu = h("div", { class: `filter-menu feed-menu${button === sortButton ? " sort-menu" : ""}`, role: "dialog", "aria-label": button.getAttribute("aria-label") });
+    menu = h("div", { class: `filter-menu feed-menu${button === sortButton ? " sort-menu" : ""}`, role: "dialog", "aria-label": t(button === sortButton ? "feed.sortTitle" : "feed.filters") });
     fill();
     toolbar.append(menu);
     button.setAttribute("aria-expanded", "true");
@@ -322,8 +322,9 @@ function feedTools({ tab, state, data, draw, refresh }) {
   // Pastilles des filtres actifs, et nombre sur le bouton Filtres ; tri en cours dans l'infobulle
   function update() {
     const count = activeCount();
-    filterButton.replaceChildren(h("span", { class: "button-icon", html: icons.filter }),
-      count ? h("span", { class: "filter-count tool-count" }, String(count)) : "");
+    filterButton.replaceChildren(h("span", { class: "button-icon", html: icons.filter }), t("feed.filters"),
+      count ? h("span", { class: "filter-count" }, String(count)) : "");
+    sortButton.replaceChildren(h("span", { class: "button-icon", html: icons.sort }), t("feed.sortLabel"));
     filterButton.title = count ? `${t("feed.filters")} (${count})` : t("feed.filters");
     sortButton.title = `${t("feed.sortTitle")} : ${t(`feed.sort.${state.sort}`)}`;
     const pill = (label, remove) => h("span", { class: "active-filter" }, label,
