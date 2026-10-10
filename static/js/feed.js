@@ -46,17 +46,22 @@ function errorText(message) {
 }
 
 async function renderList(body, tab) {
-  const status = h("span", { class: "muted small" });
-  const refresh = h("button", { class: "button", type: "button" }, h("span", { html: icons.refresh, class: "button-icon" }), t("feed.refresh"));
-  const filters = h("div", { class: "feed-filters" });
+  const status = h("div", { class: "feed-status muted small", "aria-live": "polite", hidden: true }); // pendant une mise à jour
+  const refresh = h("button", { class: "button tool-button", type: "button", "aria-label": t("feed.refresh"), title: t("feed.refresh"), html: icons.refresh });
   const list = h("div", { class: "feed-list" });
   const notice = h("div", {});
-  body.replaceChildren(h("div", { class: "feed-toolbar" }, status, refresh), notice, filters, list);
+  // la recherche, les catégories et les articles écartés sont ceux de la mémoire (gardés d'une visite à l'autre)
+  // tri propre à chaque onglet : proximité au profil, ou ordre d'origine (arXiv, Semantic Scholar)
+  const sortSetting = tab === "recommended" ? "feedSortS2" : "feedSort";
+  const state = Object.assign(memory, { types: new Set(settings.feedTypes || ["new", "cross"]), sort: settings[sortSetting] || "relevance", sortSetting });
+  let data = { items: [], categories: [] };
+  const tools = feedTools({ tab, state, data: () => data, refresh, draw: () => { try { draw(); } catch { /* liste pas encore chargée */ } } });
+  body.replaceChildren(tools.toolbar, tools.active, status, notice, list);
   list.replaceChildren(h("div", { class: "busy" }, h("span", { class: "spinner" }), t("common.loading")));
 
   const [first, alerts] = await Promise.all([api.feed(tab, tab === "arxiv" ? memory.day : null),
     tab === "arxiv" ? api.alerts().catch(() => ({ unseen: [] })) : { unseen: [] }]);
-  let data = first;
+  data = first;
   const fresh = new Set(alerts.unseen); // articles d'auteurs suivis jamais vus : signalés cette fois-ci
   // marqués vus seulement une fois affichés (voir draw)
   const sent = new Set(); // déjà signalés au serveur (pas de nouvel envoi à chaque redessin)
@@ -118,13 +123,11 @@ async function renderList(body, tab) {
     if (event.key === "ArrowRight") goToDay(1);
   };
   addEventListener("keydown", onKey);
-  // la recherche, les catégories et les articles écartés sont ceux de la mémoire (gardés d'une visite à l'autre)
-  // tri propre à chaque onglet : proximité au profil, ou ordre d'origine (arXiv, Semantic Scholar)
-  const sortSetting = tab === "recommended" ? "feedSortS2" : "feedSort";
-  const state = Object.assign(memory, { types: new Set(settings.feedTypes || ["new", "cross"]), sort: settings[sortSetting] || "relevance", sortSetting });
 
   const doRefresh = async (automatic = false) => {
     refresh.disabled = true;
+    refresh.classList.add("spinning");
+    status.hidden = false;
     status.replaceChildren(h("span", { class: "spinner" }), " ", t(tab === "recommended" ? "feed.loadingS2" : "feed.loadingArxiv"));
     const started = generation;
     try {
@@ -141,6 +144,8 @@ async function renderList(body, tab) {
       if (!automatic) toast(errorText(error.message), { error: true, duration: 6000 });
     } finally {
       refresh.disabled = false;
+      refresh.classList.remove("spinning");
+      status.hidden = true;
       showStatus();
     }
   };
@@ -150,11 +155,11 @@ async function renderList(body, tab) {
     const stamp = data.refreshed?.[tab];
     let text = t("feed.updated", { when: ago(stamp) });
     if (tab === "recommended" && data.seeds) text += ` · ${t("feed.seeds", { pos: data.seeds[0], neg: data.seeds[1] })}`;
-    status.replaceChildren(text);
+    refresh.title = `${t("feed.refresh")} · ${text}`; // date de la dernière mise à jour : au survol du bouton
   };
 
   const draw = () => {
-    renderFilters(filters, tab, data, state, draw);
+    tools.update();
     const needle = state.search.trim().toLowerCase();
     const matches = (item) => (item.status !== "disliked" || state.showHidden)
       && (!needle || `${item.title} ${item.authors.join(" ")} ${item.abstract}`.toLowerCase().includes(needle));
@@ -219,76 +224,130 @@ async function renderList(body, tab) {
   draw();
   const stale = hoursSince(data.refreshed?.[tab]) > (tab === "recommended" ? STALE_S2_HOURS : STALE_ARXIV_HOURS);
   if (stale) doRefresh(true);
-  return () => removeEventListener("keydown", onKey);
+  return () => { removeEventListener("keydown", onKey); tools.close({ focus: false }); };
 }
 
-function renderFilters(filters, tab, data, state, draw) {
-  const disliked = data.items.filter((i) => i.status === "disliked").length;
-  if (filters.dataset.ready) {
-    // les compteurs changent ; le reste du formulaire est conservé
-    filters.querySelector(".hidden-count").textContent = t("feed.hiddenCount", { n: disliked });
-    filters.querySelector(".hidden-toggle").hidden = !disliked && !state.showHidden;
-    return;
-  }
-  filters.dataset.ready = "1";
-  const search = h("input", { class: "text-input", type: "search", value: state.search, placeholder: t("feed.search"), "aria-label": t("feed.search") });
+// Barre du feed : recherche, puis trois boutons (tri, filtres, mise à jour), comme la bibliothèque ;
+// menus « Trier » et « Filtres » en fenêtres déroulantes, filtres actifs en pastilles retirables
+const DEFAULT_TYPES = ["new", "cross"];
+
+function feedTools({ tab, state, data, draw, refresh }) {
+  const search = h("input", { class: "text-input library-search", type: "search", value: state.search, placeholder: t("feed.search"),
+    "aria-label": t("feed.search"), autocomplete: "off", spellcheck: "false" });
   const redraw = debounce(draw, 150);
   search.addEventListener("input", () => { state.search = search.value; redraw(); });
-  const chip = (label, active, onToggle) => {
-    const button = h("button", { class: "kind-filter", type: "button", "aria-pressed": String(active) }, label);
-    button.addEventListener("click", () => {
-      const now = button.getAttribute("aria-pressed") !== "true";
-      button.setAttribute("aria-pressed", String(now));
-      onToggle(now);
-      draw();
-    });
-    return button;
-  };
-  const row = [search];
-  {
-    const keys = ["relevance", tab === "recommended" ? "s2" : "arxiv"];
-    const sortButtons = keys.map((key) => {
-      const button = h("button", { class: "kind-filter", type: "button", "aria-pressed": String(state.sort === key) }, t(`feed.sort.${key}`));
-      button.addEventListener("click", () => {
-        state.sort = key;
-        sortButtons.forEach((b, i) => b.setAttribute("aria-pressed", String(keys[i] === key)));
-        saveSettings({ [state.sortSetting]: key });
-        draw();
-      });
-      return button;
-    });
-    row.push(h("span", { class: "filter-group" }, h("span", { class: "muted small sort-label" }, t("feed.sortLabel")), sortButtons));
+  const tool = (icon, key, className = "") => h("button", { class: `button tool-button ${className}`, type: "button", title: t(key), "aria-label": t(key),
+    "aria-haspopup": "dialog", "aria-expanded": "false", html: icon });
+  const sortButton = tool(icons.sort, "feed.sortTitle");
+  const filterButton = tool(icons.filter, "feed.filters", "filter-button");
+  const toolbar = h("div", { class: "library-tools feed-tools" },
+    h("div", { class: "library-search-row feed-search-row" },
+      h("span", { class: "search-field" }, h("span", { class: "search-icon", html: icons.search }), search),
+      sortButton, filterButton, refresh));
+  const active = h("div", { class: "active-filters", hidden: true });
+
+  let menu = null;
+  let owner = null;
+  const onOutside = (event) => { if (menu && !menu.contains(event.target) && !owner.contains(event.target)) close({ focus: false }); };
+  const onEscape = (event) => { if (event.key === "Escape") { event.stopPropagation(); close(); } };
+  function close({ focus = true } = {}) {
+    if (!menu) return;
+    menu.remove();
+    menu = null;
+    owner.setAttribute("aria-expanded", "false");
+    document.removeEventListener("pointerdown", onOutside);
+    document.removeEventListener("keydown", onEscape, true);
+    if (focus) owner.focus();
   }
-  const hidden = h("label", { class: "check small hidden-toggle", hidden: !disliked && !state.showHidden }, h("input", { type: "checkbox", checked: state.showHidden }),
-    h("span", { class: "hidden-count" }, t("feed.hiddenCount", { n: disliked })));
-  hidden.querySelector("input").addEventListener("change", (event) => { state.showHidden = event.target.checked; draw(); });
-  if (tab !== "arxiv") {
-    filters.replaceChildren(...row, hidden);
-    return;
-  }
-  // Types d'annonce et catégories : repliés sur petit écran, avec le résumé des filtres actifs
-  const summary = h("span", { class: "muted small" });
-  const describe = () => {
-    const types = state.types.size === TYPES.length ? t("feed.allTypes")
-      : state.types.size ? TYPES.filter((type) => state.types.has(type)).map((type) => t(`feed.type.${type}`)).join(", ") : t("feed.noType");
-    const categories = state.categories.size ? [...state.categories].join(", ") : t("feed.allCategories");
-    summary.textContent = `${types} · ${categories}`;
+  const open = (button, fill) => {
+    const same = owner === button && menu;
+    close({ focus: false });
+    if (same) return;
+    owner = button;
+    menu = h("div", { class: `filter-menu feed-menu${button === sortButton ? " sort-menu" : ""}`, role: "dialog", "aria-label": button.getAttribute("aria-label") });
+    fill();
+    toolbar.append(menu);
+    button.setAttribute("aria-expanded", "true");
+    document.addEventListener("pointerdown", onOutside);
+    document.addEventListener("keydown", onEscape, true);
+    menu.addEventListener("focusout", (event) => {
+      if (event.relatedTarget && !menu?.contains(event.relatedTarget) && !owner.contains(event.relatedTarget)) close({ focus: false });
+    });
+    (menu.querySelector("input:checked, button, input") || menu).focus();
   };
-  const more = h("details", { class: "feed-more", open: innerWidth >= 700 },
-    h("summary", {}, h("span", { class: "feed-more-title" }, t("feed.filters")), summary),
-    h("div", { class: "feed-more-body" },
-      h("span", { class: "filter-group" }, TYPES.map((type) => chip(t(`feed.type.${type}`), state.types.has(type), (on) => {
-        if (on) state.types.add(type); else state.types.delete(type);
-        saveSettings({ feedTypes: [...state.types] });
-        describe();
-      }))),
-      h("span", { class: "filter-group" }, (data.categories || []).map((category) => chip(category, state.categories.has(category), (on) => {
-        if (on) state.categories.add(category); else state.categories.delete(category);
-        describe();
-      }))),
-      hidden));
-  describe();
-  filters.replaceChildren(...row, more);
+  const changed = () => { draw(); if (menu && owner === filterButton) fillFilters(); };
+  const section = (title, body) => h("div", { class: "filter-section" }, h("h3", {}, title), body);
+  const chip = (label, on, toggle, focusId) => h("button", { class: "kind-filter", type: "button", "aria-pressed": String(on), dataset: { focus: focusId },
+    onclick: () => { toggle(); changed(); } }, label);
+  const foot = (resettable, reset) => h("div", { class: "filter-foot" },
+    reset && h("button", { class: "button small-button", type: "button", disabled: !resettable, dataset: { role: "reset" },
+      onclick: () => { reset(); changed(); } }, t("library.filters.reset")),
+    h("span", { class: "spacer" }),
+    h("button", { class: "button small-button primary", type: "button", dataset: { role: "done" }, onclick: () => close() }, t("library.filters.done")));
+
+  // ---- Trier ----
+  const sortKeys = ["relevance", tab === "recommended" ? "s2" : "arxiv"];
+  const fillSort = () => {
+    menu.replaceChildren(h("div", { class: "filter-body" },
+      section(t("feed.sortTitle"), h("div", { class: "segmented filter-segmented", role: "radiogroup" },
+        sortKeys.map((key) => h("label", {}, h("input", { type: "radio", name: "feed-sort", value: key, checked: state.sort === key,
+          onchange: () => { state.sort = key; saveSettings({ [state.sortSetting]: key }); update(); draw(); } }), t(`feed.sort.${key}`)))))),
+    foot(false, null));
+  };
+  sortButton.addEventListener("click", () => open(sortButton, fillSort));
+
+  // ---- Filtres ----
+  const toggleIn = (set, value, after = () => {}) => () => { if (set.has(value)) set.delete(value); else set.add(value); after(); };
+  const saveTypes = () => saveSettings({ feedTypes: [...state.types] });
+  const typesChanged = () => state.types.size !== DEFAULT_TYPES.length || DEFAULT_TYPES.some((type) => !state.types.has(type));
+  const activeCount = () => (tab === "arxiv" ? state.categories.size + (typesChanged() ? 1 : 0) : 0) + (state.showHidden ? 1 : 0);
+  const resetFilters = () => {
+    state.categories.clear();
+    state.showHidden = false;
+    if (tab === "arxiv" && typesChanged()) { state.types = new Set(DEFAULT_TYPES); saveTypes(); }
+  };
+  function fillFilters() {
+    const items = data().items;
+    const disliked = items.filter((i) => i.status === "disliked").length;
+    const focused = menu.contains(document.activeElement) ? document.activeElement.dataset.focus || document.activeElement.dataset.role : null;
+    menu.replaceChildren(
+      h("div", { class: "filter-body" },
+        tab === "arxiv" && section(t("feed.filter.types"), h("div", { class: "filter-chips" },
+          TYPES.map((type) => chip(t(`feed.type.${type}`), state.types.has(type), toggleIn(state.types, type, saveTypes), `type:${type}`)))),
+        tab === "arxiv" && (data().categories || []).length > 0 && section(t("library.filters.categories"), h("div", { class: "filter-chips" },
+          data().categories.map((c) => chip(c, state.categories.has(c), toggleIn(state.categories, c), `category:${c}`)))),
+        section(t("feed.filter.hidden"), h("label", { class: "check small" },
+          h("input", { type: "checkbox", checked: state.showHidden, dataset: { focus: "hidden" },
+            onchange: (event) => { state.showHidden = event.target.checked; changed(); } }),
+          t("feed.hiddenCount", { n: disliked })))),
+      foot(activeCount() > 0, resetFilters));
+    if (focused) (menu.querySelector(`[data-focus="${CSS.escape(focused)}"], [data-role="${CSS.escape(focused)}"]:not(:disabled)`)
+      || menu.querySelector('[data-role="done"]')).focus();
+  }
+  filterButton.addEventListener("click", () => open(filterButton, fillFilters));
+
+  // Pastilles des filtres actifs, et nombre sur le bouton Filtres ; tri en cours dans l'infobulle
+  function update() {
+    const count = activeCount();
+    filterButton.replaceChildren(h("span", { class: "button-icon", html: icons.filter }),
+      count ? h("span", { class: "filter-count tool-count" }, String(count)) : "");
+    filterButton.title = count ? `${t("feed.filters")} (${count})` : t("feed.filters");
+    sortButton.title = `${t("feed.sortTitle")} : ${t(`feed.sort.${state.sort}`)}`;
+    const pill = (label, remove) => h("span", { class: "active-filter" }, label,
+      h("button", { type: "button", class: "active-filter-remove", title: t("library.filters.remove"), "aria-label": t("library.filters.removeOne", { label }),
+        html: icons.close, onclick: () => { remove(); changed(); } }));
+    const types = TYPES.filter((type) => state.types.has(type)).map((type) => t(`feed.type.${type}`)).join(", ");
+    const pills = [
+      tab === "arxiv" && typesChanged() && pill(types || t("feed.noType"), () => { state.types = new Set(DEFAULT_TYPES); saveTypes(); }),
+      ...(tab === "arxiv" ? [...state.categories].map((c) => pill(c, () => state.categories.delete(c))) : []),
+      state.showHidden && pill(t("feed.hiddenShown"), () => { state.showHidden = false; }),
+    ].filter(Boolean);
+    active.replaceChildren(...pills, pills.length > 1 ? h("button", { class: "link-button small", type: "button",
+      onclick: () => { resetFilters(); changed(); } }, t("library.filters.reset")) : "");
+    active.hidden = !pills.length;
+  }
+
+  return { toolbar, active, update, close, search };
 }
 
 function capitalize(text) {
