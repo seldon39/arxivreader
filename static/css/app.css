@@ -83,6 +83,7 @@
 html, body { margin: 0; }
 body { min-height: 100vh; }
 body { background: var(--bg); color: var(--text); font: 15px/1.5 var(--font-ui); -webkit-font-smoothing: antialiased; }
+body.reading { background: var(--surface); } /* lecteur : zones pas encore dessinées au défilement de la couleur de l'article */
 a { color: var(--link); text-decoration: none; }
 a:hover { text-decoration: underline; }
 button, input, select { font: inherit; color: inherit; }

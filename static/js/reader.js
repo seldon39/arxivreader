@@ -105,6 +105,9 @@ class Reader {
   // ---------- Construction ----------
 
   build(view, html) {
+    // fond de page = fond de l'article : une zone pas encore dessinée pendant un défilement rapide
+    // apparaît blanche (comme l'article) et non grise
+    document.body.classList.add("reading");
     const wide = innerWidth >= WIDE;
     const medium = innerWidth >= MEDIUM;
     this.root = h("div", {
@@ -1271,6 +1274,7 @@ class Reader {
 
   destroy() {
     this.destroyed = true;
+    document.body.classList.remove("reading");
     this.annotator?.destroy();
     this.assistant?.destroy();
     this.stopPick();
