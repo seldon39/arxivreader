@@ -142,14 +142,21 @@ export function normalizeFontScale(content) {
     if (Math.abs(next - 100) < 1) element.style.removeProperty("font-size");
     else element.style.fontSize = `${Math.round(next)}%`;
   }
-  // Les formules portent le même agrandissement (mathsize="1.440em" sur chaque symbole) : idem
-  for (const element of content.querySelectorAll("[mathsize]")) {
-    if (element.parentElement?.closest("[mathsize]")) continue; // relatif au parent : inchangé
-    const [, number, unit] = element.getAttribute("mathsize").match(/^([\d.]+)(em|%)$/) || [];
-    if (!number) continue;
+  // Les formules portent le même agrandissement : mathsize="1.440em" sur chaque symbole, et
+  // minsize/maxsize="1.440em" sur les délimiteurs (parenthèses alors trop hautes) : idem
+  const rescale = (element, attribute) => {
+    const [, number, unit] = element.getAttribute(attribute).match(/^([\d.]+)(em|%)$/) || [];
+    if (!number) return;
     const ratio = (unit === "%" ? number / 100 : Number(number)) / (scale / 100);
-    if (Math.abs(ratio - 1) < 0.01) element.removeAttribute("mathsize");
-    else element.setAttribute("mathsize", `${ratio.toFixed(3)}em`);
+    if (Math.abs(ratio - 1) < 0.01) element.removeAttribute(attribute);
+    else element.setAttribute(attribute, `${ratio.toFixed(3)}em`);
+  };
+  for (const element of content.querySelectorAll("[mathsize]")) {
+    if (!element.parentElement?.closest("[mathsize]")) rescale(element, "mathsize"); // imbriqué : relatif au parent
+  }
+  for (const element of content.querySelectorAll("mo[minsize], mo[maxsize]")) {
+    if (element.hasAttribute("minsize")) rescale(element, "minsize");
+    if (element.hasAttribute("maxsize")) rescale(element, "maxsize");
   }
 }
 
@@ -170,4 +177,35 @@ export function moveTitleNotes(content) {
   }
   content.querySelectorAll(".ltx_title_document .ltx_pubnotes").forEach((element) => element.remove());
   (after || content.querySelector(".ltx_title_document"))?.after(holder);
+}
+
+// Délimiteurs : en TeX, ( ) [ ] ⟨ ⟩ | / ne grandissent qu'avec \left…\right (ou \middle).
+// LaTeXML les laisse parfois « extensibles » (attribut absent, ou stretchy="true" pour / et ⟨ ⟩) :
+// MathJax les agrandit alors selon leur contenu (« Ad(K) », « G/P_Θ » aux parenthèses trop hautes).
+// Dans une formule sans \left ni \middle, ils reprennent leur taille fixe. Les tailles explicites
+// (\big, \bigl… : attributs minsize/maxsize) ne sont pas touchées.
+const FENCES = new Set(["(", ")", "[", "]", "{", "}", "⟨", "⟩", "|", "‖", "∥", "/", "⌊", "⌋", "⌈", "⌉"]);
+// Caractères absents des polices de MathJax, remplacés par leur équivalent TeX
+const GLYPHS = { "⟂": "⊥" };
+
+export function fixMathML(content) {
+  for (const math of content.querySelectorAll("math")) {
+    const tex = math.getAttribute("alttext") || "";
+    // délimiteurs voulus extensibles : \left…\right, \middle, matrices et cas (pmatrix, cases…), \binom
+    const sized = /\\left\b|\\middle\b|\\right\b|\\begin\{[pbBvV]?matrix\*?\}|\\begin\{cases\}|\\[dt]?binom\b|\\genfrac\b/.test(tex);
+    for (const mo of math.querySelectorAll("mo")) {
+      const text = mo.textContent.trim();
+      // parenthèse ouverte hors de la formule (source déséquilibrée) : LaTeXML laisse « OPEN » ou « CLOSE »
+      if ((text === "OPEN" || text === "CLOSE") && mo.getAttribute("fence") === "true") { mo.remove(); continue; }
+      if (GLYPHS[text]) mo.textContent = GLYPHS[text];
+      const aroundTable = mo.parentElement?.querySelector(":scope > mtable, :scope > mrow > mtable");
+      if (!sized && !aroundTable && FENCES.has(text) && !mo.hasAttribute("minsize") && !mo.hasAttribute("maxsize")
+          && mo.getAttribute("stretchy") !== "false") {
+        mo.setAttribute("stretchy", "false");
+      }
+    }
+    for (const mi of math.querySelectorAll("mi")) {
+      if (GLYPHS[mi.textContent.trim()]) mi.textContent = GLYPHS[mi.textContent.trim()];
+    }
+  }
 }

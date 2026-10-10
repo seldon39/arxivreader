@@ -4,7 +4,7 @@ import { api } from "./api.js";
 import { closure, renderGraph } from "./graph.js";
 import { Annotator, noteEditor } from "./annotations.js";
 import { Assistant } from "./ai.js";
-import { amsBibliography, markItalicStatements, moveTitleNotes, normalizeFontScale, placeEquationNumbers, relabelLists } from "./amsfix.js";
+import { amsBibliography, fixMathML, markItalicStatements, moveTitleNotes, normalizeFontScale, placeEquationNumbers, relabelLists } from "./amsfix.js";
 import { layoutFigures, prepareFigures } from "./figures.js";
 import { typesetFragment, typesetMath, typesetTex } from "./math.js";
 import { t } from "./i18n.js";
@@ -299,6 +299,7 @@ class Reader {
     this.figures = prepareFigures(this.content);
 
     normalizeFontScale(this.content);
+    fixMathML(this.content);
 
     // Ce que la version HTML perd par rapport au PDF (lu dans la source TeX à l'import)
     const tex = this.structure.tex;
