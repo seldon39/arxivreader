@@ -180,17 +180,31 @@ export function normalizeFontScale(content) {
   for (const element of content.querySelectorAll("[mathsize]")) {
     if (!element.parentElement?.closest("[mathsize]")) rescale(element, "mathsize"); // imbriqué : relatif au parent
   }
-  // délimiteurs : seule la taille égale à l'agrandissement global est retirée ; \big, \Big… gardent la leur
-  const isScale = (value) => {
+  // délimiteurs : seule la taille égale à l'agrandissement global est retirée ; \big, \Big… gardent la leur.
+  // En indice, LaTeXML exprime cet agrandissement dans la taille des indices (1,44 / 0,7 ≈ 2,05 em) :
+  // un ⟨Θ⟩ sous un ∑ deviendrait aussi haut que la formule
+  const isScale = (value, element) => {
     const [, number, unit] = String(value || "").match(/^([\d.]+)(em|%)$/) || [];
-    return number && Math.abs((unit === "%" ? number / 100 : Number(number)) - scale / 100) < 0.01;
+    if (!number) return false;
+    const ratio = (unit === "%" ? number / 100 : Number(number)) / (scale / 100);
+    const factors = inScript(element) ? [1, 1 / 0.7, 1 / 0.5] : [1];
+    return factors.some((factor) => Math.abs(ratio / factor - 1) < 0.01);
   };
   for (const element of content.querySelectorAll("mo[minsize], mo[maxsize]")) {
-    if (isScale(element.getAttribute("minsize")) && (!element.hasAttribute("maxsize") || isScale(element.getAttribute("maxsize")))) {
+    if (isScale(element.getAttribute("minsize"), element) && (!element.hasAttribute("maxsize") || isScale(element.getAttribute("maxsize"), element))) {
       element.removeAttribute("minsize");
       element.removeAttribute("maxsize");
     }
   }
+}
+
+// Élément placé en indice ou en exposant (y compris sous ou sur un grand opérateur)
+const SCRIPTS = new Set(["msub", "msup", "msubsup", "munder", "mover", "munderover", "mmultiscripts"]);
+function inScript(element) {
+  for (let node = element; node?.parentElement && node.localName !== "math"; node = node.parentElement) {
+    if (SCRIPTS.has(node.parentElement.localName) && node !== node.parentElement.firstElementChild) return true;
+  }
+  return false;
 }
 
 // \thanks d'amsart : LaTeXML les met dans le titre ; ils rejoignent les notes de première page
@@ -316,6 +330,15 @@ export function fixMathML(content, macros = []) {
     // délimiteurs voulus extensibles : \left…\right, \middle, matrices et cas, \binom, \choose…, macros de l'auteur
     const sized = /\\left\b|\\middle\b|\\right\b|\\begin\{[pbBvV]?matrix\*?\}|\\begin\{cases\}|\\[dt]?binom\b|\\genfrac\b|\\choose\b|\\brace\b|\\brack\b|\\atopwithdelims\b/.test(tex)
       || Boolean(authorSized?.test(tex));
+    // « := » coupé en deux par LaTeXML (« : » puis « = », parfois séparés par un groupe vide) : sans espace entre eux
+    const tokens = [...math.querySelectorAll("mi, mn, mo, mtext, ms")];
+    tokens.forEach((token, i) => {
+      const next = tokens[i + 1];
+      if (token.localName === "mo" && token.textContent.trim() === ":" && next?.localName === "mo" && next.textContent.trim() === "=") {
+        token.setAttribute("rspace", "0em");
+        next.setAttribute("lspace", "0em");
+      }
+    });
     for (const mo of math.querySelectorAll("mo")) {
       const text = mo.textContent.trim();
       // parenthèse ouverte hors de la formule (source déséquilibrée) : LaTeXML laisse « OPEN » ou « CLOSE »,
@@ -347,6 +370,9 @@ export function fixMathML(content, macros = []) {
         token[where](gap);
       };
       if (isRelation(tokens[0])) space(tokens[0], "before");
+      // « &:= » coupé en « : » puis « = » : même espace avant (attribut lspace, que MathJax respecte en tête)
+      else if (tokens[0]?.localName === "mo" && tokens[0].textContent.trim() === ":" && tokens[1]?.textContent.trim() === "="
+        && !tokens[0].hasAttribute("lspace")) tokens[0].setAttribute("lspace", "0.2778em");
       if (isRelation(tokens.at(-1)) && tokens.length === 1) space(tokens[0], "after");
     }
     for (const mi of math.querySelectorAll("mi")) {

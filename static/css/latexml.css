@@ -61,6 +61,9 @@
 .ltx_align_right { text-align: right; }
 .ltx_align_center, .ltx_centering { text-align: center; }
 .ltx_align_justify { text-align: justify; }
+/* lignes d'équations alignées : cellules sur la ligne de base (comme TeX), sinon un membre de gauche court
+   descend au milieu d'une ligne haute (∑ ou ⋂ avec indices dessous) */
+.ltx_align_baseline { vertical-align: baseline; }
 .ltx_align_top { vertical-align: top; }
 .ltx_align_middle { vertical-align: middle; }
 .ltx_align_bottom { vertical-align: bottom; }
