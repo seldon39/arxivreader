@@ -269,7 +269,7 @@ function quoteOf(range, limit = 1500) {
 function authorBadge(annotation) {
   return annotation.author
     ? h("span", { class: "badge ai-badge", title: t("ai.byAI", { name: authorName(annotation.author) }) },
-      h("span", { class: "ai-icon", html: icons.sparkle }), authorName(annotation.author))
+      authorName(annotation.author))
     : null;
 }
 

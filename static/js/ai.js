@@ -112,7 +112,7 @@ export class Assistant {
     if (!node) return null;
     const hasText = node.proofs.length || node.justifiedBy || node.proofPassage;
     const action = (task, label) => h("button", { class: `button small-button ai-action${compact ? " compact" : ""}`, type: "button",
-      onclick: () => this.ask({ task, target: nodeId }) }, h("span", { class: "ai-icon", html: icons.sparkle }), label);
+      onclick: () => this.ask({ task, target: nodeId }) }, label);
     return h("div", { class: "ai-actions" },
       action("explain", t("ai.task.explain")),
       hasText || node.manual === "immediate" ? action("detail", t("ai.task.detail")) : null,
@@ -307,7 +307,6 @@ export class Assistant {
   card(exchange) {
     const node = this.byId.get(exchange.target);
     const head = h("div", { class: "ai-card-head" },
-      h("span", { class: "ai-icon", html: icons.sparkle }),
       h("span", { class: "ai-card-title" }, node
         ? [t(`ai.title.${exchange.task}`, { label: "" }).trim(), " ", h("a", { href: `#${node.id}`, onclick: (e) => { e.preventDefault(); this.navigate(node.id); } }, node.label)]
         : this.title(exchange)),
@@ -454,7 +453,7 @@ export class Assistant {
     });
     typesetTex([list]).catch(() => {});
     return h("div", { class: "ai-proposals" },
-      h("div", { class: "ai-proposals-head" }, h("span", { class: "ai-icon", html: icons.sparkle }), t("ai.proposals.title", { n: proposals.length })),
+      h("div", { class: "ai-proposals-head" }, t("ai.proposals.title", { n: proposals.length })),
       list, h("div", { class: "ai-card-actions" }, apply));
   }
 

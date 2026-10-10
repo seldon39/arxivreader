@@ -142,7 +142,6 @@ a.button.primary { text-decoration: none; }
 /* ---------- Bibliothèque ---------- */
 .library { max-width: 1180px; margin: 0 auto; padding: 28px 16px 64px; }
 .library h1 { font-family: var(--font-read); font-size: 30px; font-weight: 600; margin: 0 0 6px; }
-.library .lead { color: var(--muted); margin: 0 0 22px; }
 .import-box { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
 .import-box .text-input { flex: 1 1 320px; }
 .library-tools { position: relative; display: flex; gap: 10px 16px; align-items: center; justify-content: space-between; margin: 26px 0 12px; flex-wrap: wrap; }
@@ -626,7 +625,7 @@ svg.graph { color: var(--border-strong); }
 .feed-card.compact { padding: 8px 18px; cursor: pointer; }
 .feed-card.compact .feed-title { font-size: 15.5px; font-weight: 500; margin: 0; }
 .feed-card.compact .feed-authors { font-size: 13px; margin: 2px 0 0; }
-.feed-card.compact :is(.card-meta, .reasons, .feed-abstract, .feed-actions) { display: none; }
+.feed-card.compact :is(.meta-row, .reasons, .feed-abstract) { display: none; }
 .followed-section .feed-card { border-left: 3px solid var(--k-corollary); }
 .sort-label { margin-right: 2px; }
 .profile-owner { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0 0 22px; }
@@ -947,3 +946,86 @@ dialog.figure-viewer::backdrop { background: rgba(20, 20, 24, .6); -webkit-backd
 .figure-viewer-close { position: absolute; top: 8px; right: 8px; width: 38px; height: 38px; }
 .figure-viewer-close svg { width: 22px; height: 22px; fill: currentColor; }
 .figure-viewer-caption { margin-top: 14px; text-align: center; font-family: var(--paper-font); font-size: 16px; }
+
+/* ---------- Style « papier » : listes à filets, métadonnées en texte, peu d'ornements ---------- */
+/* (vient après le reste : ces règles remplacent les cartes et les pastilles) */
+.button, .text-input, .icon-button, .segmented, .kind-filter, .filter-menu, .notice, .ai-card, .feed-tabs a { border-radius: 5px; }
+
+/* Bibliothèque : titre et import sur une ligne, articles en liste comme une bibliographie */
+.lib-head { display: flex; align-items: baseline; gap: 24px; flex-wrap: wrap; margin-bottom: 8px; }
+.lib-head h1 { margin: 0; }
+.lib-head .import-box { flex: 1 1 380px; margin: 0; }
+.lib-head .import-box .text-input, .lib-head .import-box .button { height: 36px; }
+.lib-head .import-box .button { font-weight: 500; }
+.cards { display: block; border-top: 1px solid var(--border); }
+.card {
+  display: grid; grid-template-columns: 1fr auto; column-gap: 18px; row-gap: 3px;
+  border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; padding: 15px 2px 14px;
+}
+.card > * { grid-column: 1; }
+.card:hover { border-color: var(--border); box-shadow: none; background: color-mix(in srgb, var(--surface-hover) 55%, transparent); }
+.card-title { font-size: 18.5px; }
+.card-authors { color: var(--text); opacity: .82; font-size: 14.5px; -webkit-line-clamp: 1; }
+.card-reading { margin-top: 0; font-size: 13px; }
+/* boutons à droite, visibles au survol (toujours sur écran tactile) */
+.card-actions { grid-column: 2; grid-row: 1 / span 4; align-self: center; margin: 0; opacity: 0; transition: opacity .15s; }
+.card:hover .card-actions, .card:focus-within .card-actions { opacity: 1; }
+@media (hover: none) { .card-actions { opacity: 1; } }
+.resume-link { color: var(--accent); position: relative; z-index: 2; }
+
+/* Métadonnées : une ligne de texte, comme dans une revue */
+.card-meta, .paper-meta { display: block; font: 13px/1.5 var(--font-ui); color: var(--muted); }
+.card-meta { margin-top: 2px; }
+.card-meta .chip, .paper-meta .chip {
+  display: inline; border: 0; background: none; padding: 0; border-radius: 0; font: inherit; color: inherit; white-space: normal;
+}
+.card-meta .chip + .chip::before, .paper-meta .chip + .chip::before { content: "·"; margin: 0 .45em; color: var(--muted); }
+.card-meta .chip.category, .paper-meta .chip.category { color: var(--accent); }
+.paper-meta a.chip { color: var(--link); }
+.card-meta .chip.citing-chip { color: var(--accent); font-style: italic; }
+.card-meta .chip.off-arxiv { color: var(--warning-text); }
+
+/* Feed : même liste à filets ; actions au bout de la ligne des métadonnées */
+.feed-card { border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; padding: 14px 2px 13px; }
+.followed-section .feed-card { border-left: 0; }
+.feed-day > .feed-card:first-child { border-top: 1px solid var(--border); }
+.meta-row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; }
+.meta-row .card-meta { flex: 1 1 260px; min-width: 0; }
+.meta-row .feed-actions { margin: 0; opacity: .6; transition: opacity .15s; }
+.meta-row .feed-actions .icon-button { width: 28px; min-width: 28px; height: 28px; padding: 0; }
+.meta-row .feed-actions svg { width: 16px; height: 16px; }
+.feed-card:hover .meta-row .feed-actions, .meta-row .feed-actions:focus-within { opacity: 1; }
+@media (hover: none) { .meta-row .feed-actions { opacity: 1; } }
+.feed-abstract { margin-top: 6px; -webkit-line-clamp: 2; color: color-mix(in srgb, var(--text) 85%, transparent); }
+/* nouveauté : un point rouge dans la marge au lieu de l'étiquette */
+.fresh-badge { font-size: 0; width: 7px; height: 7px; padding: 0; border-radius: 50%; margin: 0 9px 3px -16px; vertical-align: middle; }
+/* raisons : une phrase en italique */
+.reasons { display: block; margin: 4px 0 0; font: italic 13.5px/1.5 var(--font-read); color: var(--muted); }
+.reason { display: inline; background: none; border: 0; padding: 0; font: inherit; color: inherit; }
+.reason i { font-style: normal; }
+.reason + .reason::before { content: "·"; margin: 0 .45em; }
+.reason-icon { display: none; }
+/* intertitres (« Citent vos articles »…) : titre de livre avec un filet rouge, nombre d'articles en retrait */
+.feed-date {
+  font: 600 18px var(--font-read); color: var(--text);
+  border-left: 3px solid var(--accent); padding: 6px 4px 6px 12px; margin: 0 -4px 6px -15px;
+}
+.feed-date .count { font: 400 13px var(--font-ui); color: var(--muted); margin-left: .6em; white-space: nowrap; }
+.day-label { font: 600 17px var(--font-read); }
+@media (max-width: 700px) {
+  .feed-card { padding: 12px 2px 11px; }
+  .feed-date { margin-left: -4px; padding-left: 10px; }
+  .day-label { font-size: 15px; }
+}
+
+/* Petits titres en casse normale */
+.filter-section h3, .toc h3, .panel-section h3, .settings-section { text-transform: none; letter-spacing: 0; font: 600 13px var(--font-ui); color: var(--text); }
+
+/* Lecteur : barre d'outils et liste des énoncés allégées */
+.reader-toolbar { background: var(--bg); }
+.reader-toolbar .title { font-family: var(--font-read); font-weight: 600; font-size: 16.5px; }
+.tabs button { font-size: 13.5px; }
+.node-item .badges { gap: 0; }
+.node-item .badge { border: 0; background: none; color: var(--muted); padding: 0; }
+.node-item .badge.warn { color: var(--warning-text); }
+.node-item .badge + .badge::before { content: "·"; margin: 0 .4em; }

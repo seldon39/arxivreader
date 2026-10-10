@@ -64,7 +64,7 @@ export async function renderLibrary(root) {
     class: "text-input", type: "text", name: "query", autocomplete: "off", spellcheck: "false",
     placeholder: t("library.placeholder"), "aria-label": t("library.placeholder"),
   });
-  const submit = h("button", { class: "button primary", type: "submit" }, t("library.import"));
+  const submit = h("button", { class: "button", type: "submit" }, t("library.import"));
   const status = h("div", { class: "busy", hidden: true }, h("span", { class: "spinner" }), t("library.importing"));
   const form = h("form", { class: "import-box" }, input, submit);
   const list = h("div", {});
@@ -225,9 +225,9 @@ export async function renderLibrary(root) {
   }
 
   root.replaceChildren(h("section", { class: "library" },
-    h("h1", {}, t("library.title")),
-    h("p", { class: "lead" }, t("library.lead")),
-    form, status,
+    // titre et import sur une ligne
+    h("div", { class: "lib-head" }, h("h1", {}, t("library.title")), form),
+    status,
     tools, activeRow,
     list,
   ));
@@ -249,7 +249,10 @@ function readingLine(paper) {
     reading.done ? tn("library.done", reading.done) : "",
     reading.answers ? tn("library.answers", reading.answers) : "",
   ].filter(Boolean);
-  return h("div", { class: "card-reading muted small" }, parts.join(" · "));
+  // dernière position de lecture dans une section numérotée (identifiants LaTeXML « S3… ») : lien pour y revenir
+  const section = paper.position?.match(/^S(\d+)/)?.[1];
+  return h("div", { class: "card-reading muted small" }, parts.join(" · "),
+    section && [" · ", h("a", { class: "resume-link", href: `#/paper/${encodeURIComponent(paper.id)}` }, t("library.resume", { n: section }))]);
 }
 
 function card(paper, refreshList) {
