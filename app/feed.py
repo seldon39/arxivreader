@@ -233,7 +233,7 @@ def known_days():
 
 def _positive_negative():
     with db.connect() as connection:
-        library = [r["arxiv_id"] for r in connection.execute("SELECT arxiv_id FROM papers ORDER BY added_at DESC")]
+        library = [r["arxiv_id"] for r in connection.execute("SELECT arxiv_id FROM papers WHERE in_library = 1 ORDER BY added_at DESC")]
         rows = connection.execute(
             "SELECT s.key, s.status, f.arxiv_id FROM feed_status s LEFT JOIN feed_items f ON f.key = s.key"
         ).fetchall()
@@ -297,7 +297,9 @@ def refresh_recommendations(api_key=None, limit=60):
 
 def list_items(view, announce_types=None, day=None):
     with db.connect() as connection:
-        library = {r["arxiv_id"]: r["id"] for r in connection.execute("SELECT id, arxiv_id FROM papers")}
+        papers = connection.execute("SELECT id, arxiv_id, in_library FROM papers").fetchall()
+        library = {r["arxiv_id"]: r["id"] for r in papers if r["in_library"]}
+        cached = {r["arxiv_id"]: r["id"] for r in papers}
         status = {r["key"]: r["status"] for r in connection.execute("SELECT key, status FROM feed_status")}
         if view == "recommended":
             rows = connection.execute("SELECT * FROM feed_items WHERE s2_rank IS NOT NULL ORDER BY s2_rank").fetchall()
@@ -319,6 +321,7 @@ def list_items(view, announce_types=None, day=None):
         item["categories"] = json.loads(item["categories"] or "[]")
         item["status"] = status.get(item["key"])
         item["libraryId"] = library.get(item["arxiv_id"])
+        item["readId"] = cached.get(item["arxiv_id"])  # déjà téléchargé (lu), dans la bibliothèque ou non
         items.append(item)
     return relevance.score_items(items)
 
@@ -368,7 +371,7 @@ def lookup_ids(text, limit=200):
             if start + 50 < len(ids):
                 time.sleep(3)
     with db.connect() as connection:
-        library = {r["arxiv_id"]: r["id"] for r in connection.execute("SELECT id, arxiv_id FROM papers")}
+        library = {r["arxiv_id"]: r["id"] for r in connection.execute("SELECT id, arxiv_id FROM papers WHERE in_library = 1")}
     papers = [dict(found[i], libraryId=library.get(i)) for i in ids if i in found]
     missing = [i for i in ids if i not in found]
     return {"papers": papers, "missing": missing}

@@ -39,7 +39,9 @@ Menu **Feed** en haut, quatre onglets :
 - **Nouveautés arXiv** : annonces quotidiennes des catégories suivies (math.DG, math.CV, math.SP,
   math-ph par défaut, modifiables dans les réglages), **triées par pertinence pour votre profil**,
   avec la raison affichée (« auteur suivi », « proche de … », mot-clé) ; les articles peu pertinents
-  sont réduits à une ligne (clic pour déplier). En tête : les nouveaux articles des **auteurs suivis**,
+  sont réduits à une ligne (clic pour déplier). « Lire » ouvre l'article sans l'ajouter à la
+  bibliothèque (cache vidé après 30 jours sans lecture) ; le **signet** l'ajoute ou l'en retire
+  (aussi dans la barre du lecteur). En tête : les nouveaux articles des **auteurs suivis**,
   même hors de vos catégories. Tri « Ordre arXiv » possible. 👍 / 👎 affinent le tri.
 - **Recommandations** : Semantic Scholar (API publique, sans compte), à partir du profil et des 👍.
 - **Profil** : vos articles, articles et livres de référence, auteurs suivis, mots-clés.

@@ -5,7 +5,7 @@ import { getLanguage, t } from "./i18n.js";
 import { typesetTex } from "./math.js";
 import { renderProfile } from "./profile.js";
 import { saveSettings, settings } from "./settings.js";
-import { h, icons, toast, withMath } from "./util.js";
+import { h, icons, toast, toggleIcon, withMath } from "./util.js";
 
 const TABS = [["arxiv", "#/feed"], ["recommended", "#/feed/recommended"], ["profile", "#/feed/profile"], ["import", "#/feed/import"]];
 const COMPACT_BELOW = 0.12;
@@ -262,13 +262,15 @@ export function feedCard(item, onChange = () => {}, { compact = false } = {}) {
     return button;
   };
 
-  const read = item.arxiv_id && h("button", { class: "button primary small-button", type: "button" }, item.libraryId ? t("feed.open") : t("feed.read"));
+  // « Lire » ouvre l'article sans l'ajouter à la bibliothèque (il est seulement mis en cache)
+  const read = item.arxiv_id && h("button", { class: "button primary small-button", type: "button" }, t("feed.read"));
   read?.addEventListener("click", async () => {
-    if (item.libraryId) { location.hash = `#/paper/${encodeURIComponent(item.libraryId)}`; return; }
+    const known = item.libraryId || item.readId;
+    if (known) { location.hash = `#/paper/${encodeURIComponent(known)}`; return; }
     read.disabled = true;
     read.replaceChildren(h("span", { class: "spinner" }), " ", t("feed.importing"));
     try {
-      const paper = await api.importPaper(item.arxiv_id);
+      const paper = await api.importPaper(item.arxiv_id, false);
       location.hash = `#/paper/${encodeURIComponent(paper.id)}`;
     } catch (error) {
       toast(t("error.generic", { message: error.message }), { error: true, duration: 6000 });
@@ -303,12 +305,41 @@ export function feedCard(item, onChange = () => {}, { compact = false } = {}) {
       read,
       statusButton("liked", t("feed.like"), "up"),
       statusButton("disliked", t("feed.dislike"), "down"),
+      item.arxiv_id && libraryButton(item, onChange),
       h("span", { class: "spacer" }),
       item.link && h("a", { class: "icon-button", href: item.link, target: "_blank", rel: "noopener noreferrer", title: item.arxiv_id ? "arXiv" : "Semantic Scholar", html: icons.external }),
       item.arxiv_id && h("a", { class: "icon-button", href: `https://arxiv.org/pdf/${item.arxiv_id}`, target: "_blank", rel: "noopener noreferrer", title: "PDF", html: icons.pdf })));
   // Article peu pertinent : une ligne ; un clic sur le titre déplie la carte
   if (compact) card.querySelector(".feed-title-row").addEventListener("click", () => card.classList.remove("compact"));
   return card;
+}
+
+// Signet : ajouter l'article à la bibliothèque (ou l'en retirer) sans quitter le feed
+function libraryButton(item, onChange) {
+  const label = () => t(item.libraryId ? "feed.removeFromLibrary" : "feed.addToLibrary");
+  const button = toggleIcon(icons.bookmarkOff, icons.bookmarkOn, { pressed: Boolean(item.libraryId), label: label(), className: "bookmark" });
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    try {
+      if (item.libraryId) {
+        await api.setInLibrary(item.libraryId, false);
+        item.readId = item.libraryId;
+        item.libraryId = null;
+      } else if (item.readId) {
+        await api.setInLibrary(item.readId, true);
+        item.libraryId = item.readId;
+      } else {
+        const paper = await api.importPaper(item.arxiv_id, true);
+        item.libraryId = item.readId = paper.id;
+      }
+      toast(t(item.libraryId ? "feed.added" : "feed.removed"));
+      onChange();
+    } catch (error) {
+      toast(t("error.generic", { message: error.message }), { error: true, duration: 6000 });
+      button.disabled = false;
+    }
+  });
+  return button;
 }
 
 // ---------- Import d'un texte collé ou d'un fichier ----------

@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS papers (
     source TEXT,
     added_at TEXT DEFAULT (datetime('now')),
     opened_at TEXT,
-    position TEXT
+    position TEXT,
+    in_library INTEGER DEFAULT 1     -- 0 : article seulement lu (cache), pas ajouté à la bibliothèque
 );
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -84,6 +85,9 @@ def init():
         columns = {row["name"] for row in db.execute("PRAGMA table_info(feed_items)")}
         if "followed" not in columns:
             db.execute("ALTER TABLE feed_items ADD COLUMN followed INTEGER DEFAULT 0")
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(papers)")}
+        if "in_library" not in columns:
+            db.execute("ALTER TABLE papers ADD COLUMN in_library INTEGER DEFAULT 1")
 
 
 @contextmanager
@@ -106,7 +110,7 @@ def row_to_paper(row):
 
 def list_papers():
     with connect() as db:
-        rows = db.execute("SELECT * FROM papers ORDER BY COALESCE(opened_at, added_at) DESC").fetchall()
+        rows = db.execute("SELECT * FROM papers WHERE in_library = 1 ORDER BY COALESCE(opened_at, added_at) DESC").fetchall()
     return [row_to_paper(r) for r in rows]
 
 

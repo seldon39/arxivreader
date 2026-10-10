@@ -18,7 +18,7 @@ def paper_dir(paper_id):
     return PAPERS / paper_id
 
 
-def import_paper(query):
+def import_paper(query, add_to_library=True):
     arxiv_id, _ = parse_arxiv_id(query)
     meta = fetch_metadata(arxiv_id)
     paper_id = paper_key(arxiv_id)
@@ -71,6 +71,8 @@ def import_paper(query):
         "comment": meta.comment,
         "source": source,
         "position": previous["position"] if previous else None,
+        # déjà dans la bibliothèque : on l'y laisse ; sinon selon la demande (« Lire » = cache seulement)
+        "in_library": 1 if add_to_library or (previous and previous.get("in_library")) else 0,
     })
     return db.get_paper(paper_id)
 
@@ -78,6 +80,22 @@ def import_paper(query):
 def load_structure(paper_id):
     path = paper_dir(paper_id) / "structure.json"
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+
+
+def set_in_library(paper_id, value):
+    db.update_paper(paper_id, in_library=1 if value else 0)
+    return db.get_paper(paper_id)
+
+
+def clean_cache(days=30):
+    """Articles lus sans être ajoutés à la bibliothèque, pas rouverts depuis `days` jours : effacés."""
+    with db.connect() as connection:
+        rows = connection.execute(
+            "SELECT id FROM papers WHERE in_library = 0 AND COALESCE(opened_at, added_at) < datetime('now', ?)",
+            (f"-{days} days",)).fetchall()
+    for row in rows:
+        remove_paper(row["id"])
+    return len(rows)
 
 
 def remove_paper(paper_id):

@@ -29,6 +29,7 @@ CSP = (
 @asynccontextmanager
 async def lifespan(_app):
     db.init()
+    library.clean_cache()
     yield
 
 
@@ -67,6 +68,11 @@ def checked_paper(paper_id):
 
 class ImportRequest(BaseModel):
     query: str
+    library: bool = True  # False : « Lire » depuis le feed, sans ajouter à la bibliothèque
+
+
+class LibraryRequest(BaseModel):
+    in_library: bool
 
 
 class PositionRequest(BaseModel):
@@ -112,7 +118,7 @@ def papers():
 @app.post("/api/papers")
 async def add_paper(body: ImportRequest):
     try:
-        return await run_in_threadpool(library.import_paper, body.query)
+        return await run_in_threadpool(library.import_paper, body.query, body.library)
     except ArxivError as error:
         return JSONResponse({"error": str(error)}, status_code=400)
     except Exception as error:  # réseau, page inattendue…
@@ -144,6 +150,12 @@ def asset(paper_id: str, name: str):
     if not path.exists():
         raise HTTPException(404, "Missing asset")
     return FileResponse(path)
+
+
+@app.put("/api/papers/{paper_id}/library")
+def set_library(paper_id: str, body: LibraryRequest):
+    checked_paper(paper_id)
+    return library.set_in_library(paper_id, body.in_library)
 
 
 @app.put("/api/papers/{paper_id}/position")

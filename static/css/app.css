@@ -503,3 +503,6 @@ svg.graph { color: var(--border-strong); }
 .thumb:hover { background: var(--surface-hover); }
 .thumb:active svg { transform: scale(.88); }
 .thumb-down:active svg { transform: rotate(180deg) scale(.88); }
+.reader-toolbar .thumb { width: 36px; height: 36px; }
+.reader-toolbar .thumb svg { width: 20px; height: 20px; }
+.reader-toolbar .thumb[aria-pressed="true"] { background: transparent; color: var(--text); }

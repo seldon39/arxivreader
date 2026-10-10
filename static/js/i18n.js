@@ -2,6 +2,10 @@
 
 const STRINGS = {
   fr: {
+    "feed.addToLibrary": "Ajouter à la bibliothèque",
+    "feed.removeFromLibrary": "Retirer de la bibliothèque",
+    "feed.added": "Ajouté à la bibliothèque.",
+    "feed.removed": "Retiré de la bibliothèque.",
     "feed.loadingDay": "Chargement des annonces de ce jour…",
     "feed.previousDay": "Jour précédent (←)",
     "feed.nextDay": "Jour suivant (→)",
@@ -198,6 +202,10 @@ const STRINGS = {
     "kind.notation": "Notation", "kind.problem": "Question", "kind.other": "Autre",
   },
   en: {
+    "feed.addToLibrary": "Add to library",
+    "feed.removeFromLibrary": "Remove from library",
+    "feed.added": "Added to library.",
+    "feed.removed": "Removed from library.",
     "feed.loadingDay": "Loading this day's announcements…",
     "feed.previousDay": "Previous day (←)",
     "feed.nextDay": "Next day (→)",

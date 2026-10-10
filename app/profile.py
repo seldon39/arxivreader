@@ -116,7 +116,7 @@ def prefill(owner, api_key=None):
     """Propose un profil à partir de la bibliothèque et des bibliographies des articles de `owner`."""
     owner_key = author_key(owner) if owner else None
     with db.connect() as connection:
-        papers = [dict(r) for r in connection.execute("SELECT id, arxiv_id, title, authors, abstract FROM papers")]
+        papers = [dict(r) for r in connection.execute("SELECT id, arxiv_id, title, authors, abstract FROM papers WHERE in_library = 1")]
     mine, cited_authors, author_labels, books, keywords = [], Counter(), {}, {}, []
     for paper in papers:
         authors = json.loads(paper["authors"] or "[]")

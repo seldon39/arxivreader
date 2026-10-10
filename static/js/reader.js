@@ -7,7 +7,7 @@ import { layoutFigures, prepareFigures } from "./figures.js";
 import { typesetFragment, typesetMath } from "./math.js";
 import { t } from "./i18n.js";
 import { onSettingsChange, saveSettings, settings } from "./settings.js";
-import { debounce, formatDate, h, icons, toast, withMath } from "./util.js";
+import { debounce, formatDate, h, icons, toast, toggleIcon, withMath } from "./util.js";
 
 const NEEDS_PROOF = new Set(["theorem", "proposition", "lemma", "corollary", "claim"]);
 const WIDE = 1280;
@@ -95,6 +95,7 @@ class Reader {
       button(icons.plus, "reader.larger", () => this.changeFont(1), { class: "wide-only" }),
       this.foldButton,
       h("span", { class: "sep wide-only" }),
+      this.libraryToggle(),
       link(icons.external, "arXiv", `https://arxiv.org/abs/${paper.arxiv_id}v${paper.version}`),
       link(icons.pdf, "PDF", `https://arxiv.org/pdf/${paper.arxiv_id}v${paper.version}`),
       this.panelButton,
@@ -143,6 +144,26 @@ class Reader {
     // Police « comme l'article » : celle du paquet de police de la source TeX
     if (settings.paperFont === "auto") this.root.dataset.paperFont = this.structure.tex?.font || "lm";
     view.replaceChildren(this.root);
+  }
+
+  // Signet : l'article lu depuis le feed n'est dans la bibliothèque que si on l'y ajoute
+  libraryToggle() {
+    const paper = this.paper;
+    const label = () => t(paper.in_library ? "feed.removeFromLibrary" : "feed.addToLibrary");
+    const button = toggleIcon(icons.bookmarkOff, icons.bookmarkOn, { pressed: Boolean(paper.in_library), label: label(), className: "bookmark" });
+    button.addEventListener("click", async () => {
+      try {
+        const updated = await api.setInLibrary(paper.id, !paper.in_library);
+        paper.in_library = updated.in_library;
+        button.setAttribute("aria-pressed", String(Boolean(paper.in_library)));
+        button.title = label();
+        button.setAttribute("aria-label", label());
+        toast(t(paper.in_library ? "feed.added" : "feed.removed"));
+      } catch (error) {
+        toast(error.message, { error: true });
+      }
+    });
+    return button;
   }
 
   enhanceContent() {
