@@ -166,11 +166,83 @@ class Reader {
       this.article.append(this.content);
     }
 
-    this.root.append(toolbar, this.toc, this.scroller, this.panel,
+    this.resizer = this.panelResizer();
+    this.root.append(toolbar, this.toc, this.scroller, this.panel, this.resizer,
       h("div", { class: "scrim", onclick: () => this.closeDrawers() }));
     // Police « comme l'article » : celle du paquet de police de la source TeX
+    if (settings.panelWidth) this.root.style.setProperty("--panel-w", `${settings.panelWidth}px`);
     if (settings.paperFont === "auto") this.root.dataset.paperFont = this.structure.tex?.font || "lm";
     view.replaceChildren(this.root);
+  }
+
+  // Poignée sur le bord gauche du panneau de droite : glisser pour l'élargir ou le réduire,
+  // flèches du clavier, double-clic pour revenir à la largeur par défaut.
+  panelResizer() {
+    const handle = h("div", { class: "panel-resizer", role: "separator", tabindex: 0, "aria-orientation": "vertical",
+      "aria-label": t("reader.resizePanel"), title: t("reader.resizePanelHint") });
+    const limits = () => {
+      const tocWidth = this.root.dataset.toc === "open" && innerWidth >= WIDE ? this.toc.getBoundingClientRect().width : 0;
+      return [260, Math.max(260, Math.min(900, innerWidth - tocWidth - 420))]; // l'article garde au moins 420 px
+    };
+    const current = () => this.panel.getBoundingClientRect().width;
+    let anchor = null;
+    let anchorTop = 0;
+    const begin = () => {
+      anchor = this.currentAnchor();
+      anchorTop = anchor?.getBoundingClientRect().top ?? 0;
+      this.root.classList.add("resizing");
+    };
+    const apply = (width) => {
+      const [min, max] = limits();
+      const value = Math.round(Math.min(max, Math.max(min, width)));
+      this.root.style.setProperty("--panel-w", `${value}px`);
+      handle.setAttribute("aria-valuenow", String(value));
+      if (anchor) scrollBy({ top: anchor.getBoundingClientRect().top - anchorTop, behavior: "instant" }); // on reste au même endroit
+      return value;
+    };
+    const end = (width) => {
+      this.root.classList.remove("resizing");
+      this.anchors = null;
+      layoutFigures(this.figures);
+      this.markWideMath();
+      saveSettings({ panelWidth: width });
+    };
+
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      try { handle.setPointerCapture(event.pointerId); } catch { /* pointeur déjà relâché */ }
+      begin();
+      const right = this.root.getBoundingClientRect().right;
+      const startX = event.clientX;
+      let width = null; // rien n'est enregistré pour un simple clic
+      const move = (e) => { if (width !== null || Math.abs(e.clientX - startX) > 2) width = apply(right - e.clientX); };
+      const up = () => {
+        handle.removeEventListener("pointermove", move);
+        handle.removeEventListener("pointerup", up);
+        handle.removeEventListener("pointercancel", up);
+        if (width === null) this.root.classList.remove("resizing");
+        else end(width);
+      };
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", up);
+      handle.addEventListener("pointercancel", up);
+    });
+    handle.addEventListener("keydown", (event) => {
+      const step = event.shiftKey ? 80 : 24;
+      const delta = { ArrowLeft: step, ArrowRight: -step }[event.key];
+      if (!delta) return;
+      event.preventDefault();
+      begin();
+      end(apply(current() + delta));
+    });
+    handle.addEventListener("dblclick", () => {
+      begin();
+      this.root.style.removeProperty("--panel-w");
+      end(null);
+      if (anchor) scrollBy({ top: anchor.getBoundingClientRect().top - anchorTop, behavior: "instant" });
+    });
+    return handle;
   }
 
   // Signet : l'article lu depuis le feed n'est dans la bibliothèque que si on l'y ajoute

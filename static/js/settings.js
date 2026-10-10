@@ -12,6 +12,7 @@ const DEFAULTS = {
   proofsCollapsed: false,
   tocOpen: true,
   panelOpen: true,
+  panelWidth: null,   // largeur du panneau de droite choisie à la souris (sinon largeur par défaut)
   paperFont: "auto",
   marginMarks: true,
   mathRenderer: "mathjax",

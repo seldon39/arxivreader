@@ -188,6 +188,18 @@ svg { fill: currentColor; }
 }
 .toc { grid-area: toc; border-right: 1px solid var(--border); padding: 14px 8px 40px; }
 .panel { grid-area: panel; border-left: 1px solid var(--border); display: flex; flex-direction: column; }
+/* Poignée de largeur du panneau : sur son bord gauche, collée sous les barres comme le panneau */
+.panel-resizer {
+  grid-area: panel; justify-self: start; align-self: start; position: sticky; z-index: 5;
+  top: calc(var(--topbar-h) + var(--toolbar-h)); height: calc(100vh - var(--topbar-h) - var(--toolbar-h));
+  width: 10px; margin-left: -5px; cursor: col-resize; touch-action: none;
+}
+.panel-resizer::after { content: ""; position: absolute; inset: 0 4px; border-radius: 2px; transition: background .15s; }
+.panel-resizer:hover::after, .panel-resizer:focus-visible::after, .reader.resizing .panel-resizer::after { background: var(--accent); }
+.panel-resizer:focus-visible { outline: none; }
+.reader[data-panel="closed"] .panel-resizer { display: none; }
+.reader.resizing { cursor: col-resize; user-select: none; -webkit-user-select: none; }
+.reader.resizing .paper-scroll { pointer-events: none; }
 .reader[data-toc="closed"] .toc, .reader[data-panel="closed"] .panel { visibility: hidden; border: 0; padding: 0; }
 .paper-scroll { grid-area: paper; position: relative; min-width: 0; background: var(--surface); }
 .paper {
@@ -209,6 +221,7 @@ svg { fill: currentColor; }
 }
 @media (max-width: 899px) {
   .reader { --panel-col: 0px; }
+  .panel-resizer { display: none; }
   .reader .panel {
     position: fixed; z-index: 25; top: calc(var(--topbar-h) + var(--toolbar-h)); bottom: 0; right: 0; height: auto;
     align-self: auto;
