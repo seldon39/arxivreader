@@ -74,6 +74,27 @@ class Reanalysis(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in folder.iterdir()), ["content.html", "structure.json"])  # pas de .part
 
 
+class TitleSearch(unittest.TestCase):
+    FEED = """<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>http://arxiv.org/abs/2610.05205v1</id>
+<title>Infinite-Dimensionality of Bergman Spaces on Complete $d$-Bounded K\u00e4hler Manifolds</title>
+<author><name>Bo-Yong Chen</name></author><author><name>Jujie Wu</name></author></entry></feed>"""
+
+    def search(self, title, authors):
+        from unittest import mock
+        from app import arxiv
+        response = mock.Mock(status_code=200, text=self.FEED, raise_for_status=lambda: None)
+        client = mock.MagicMock()
+        client.__enter__.return_value.get.return_value = response
+        with mock.patch.object(arxiv, "_client", return_value=client):
+            return arxiv.search_by_title(title, authors)
+
+    def test_title_and_author_must_match(self):
+        title = "INFINITE-DIMENSIONALITY OF BERGMAN SPACES ON COMPLETE d-BOUNDED KÄHLER MANIFOLDS"
+        self.assertEqual(self.search(title, ["Jujie Wu"]), "2610.05205")
+        self.assertIsNone(self.search(title, ["Someone Else"]))
+        self.assertIsNone(self.search("Bergman spaces on manifolds", ["Jujie Wu"]))
+
+
 class Helpers(unittest.TestCase):
     def test_s2_key(self):
         self.assertEqual(relevance.s2_key(None, "math/0601001"), "ArXiv:math/0601001")

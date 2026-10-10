@@ -1,7 +1,9 @@
 """Accès à arXiv : identifiants, métadonnées et version HTML des articles."""
 
+import difflib
 import re
 import time
+import unicodedata
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 
@@ -112,6 +114,43 @@ def fetch_metadata(arxiv_id):
         journal_ref=_text(entry, f"{ARXIV_NS}journal_ref"),
         comment=_text(entry, f"{ARXIV_NS}comment"),
     )
+
+
+def _words(text):
+    """Mots d'un titre sans accents, ponctuation ni commandes TeX (pour comparer deux titres)."""
+    text = unicodedata.normalize("NFKD", re.sub(r"\\[a-zA-Z]+|\$", " ", text or ""))
+    return re.findall(r"[a-z0-9]+", text.encode("ascii", "ignore").decode().lower())
+
+
+def search_by_title(title, authors=()):
+    """Identifiant arXiv d'un article connu par son titre (et ses auteurs), ou None.
+    Titre identique à quelques mots près, et au moins un nom d'auteur en commun quand on en connaît."""
+    wanted = _words(title)
+    if len(wanted) < 3:
+        return None
+    # mots sûrs pour l'index d'arXiv : en ASCII, sans trait d'union ni formule (« Kähler », « d-Bounded » exclus),
+    # les plus longs (les plus distinctifs)
+    plain = [w.lower() for w in re.split(r"[\s:,.;()]+", title or "") if re.fullmatch(r"[A-Za-z]{4,}", w)]
+    plain = sorted(dict.fromkeys(plain), key=len, reverse=True)[:6]
+    if len(plain) < 2:
+        return None
+    query = " AND ".join(f"ti:{word}" for word in plain)
+    with _client() as client:
+        response = with_retry(lambda: client.get("https://export.arxiv.org/api/query",
+                                                 params={"search_query": query, "max_results": 10}))
+    response.raise_for_status()
+    surnames = {_words(name)[-1] for name in authors if _words(name)}
+    for entry in ET.fromstring(response.text).findall(f"{ATOM}entry"):
+        found = _words(_text(entry, f"{ATOM}title"))
+        if difflib.SequenceMatcher(None, wanted, found).ratio() < 0.9:
+            continue
+        names = {(_words(_text(a, f"{ATOM}name")) or [""])[-1] for a in entry.findall(f"{ATOM}author")}
+        if surnames and not surnames & names:
+            continue
+        match = ID_RE.search(_text(entry, f"{ATOM}id"))
+        if match:
+            return match.group(1)
+    return None
 
 
 def fetch_html(arxiv_id, version):

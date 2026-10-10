@@ -357,9 +357,11 @@ function feedCard(item, onChange = () => {}, { compact = false } = {}) {
       item.arxiv_id && h("span", { class: "chip" }, `arXiv:${item.arxiv_id}`),
       !item.announce_type && item.announced && h("span", { class: "chip" }, item.announced),
       item.announce_type && item.s2_rank !== null && item.s2_rank !== undefined && h("span", { class: "chip recommended-chip", title: t("feed.recommendedHint") }, t("feed.recommended")),
+      !item.arxiv_id && h("span", { class: "chip off-arxiv", title: t("feed.offArxivHint") }, t("feed.offArxiv")),
     ),
     reasons.length ? h("div", { class: "reasons" }, reasons) : null,
     item.abstract && abstract,
+    !item.arxiv_id && arxivFinder(item, () => card),
     h("div", { class: "feed-actions" },
       statusButton("liked", t("feed.like"), "up"),
       statusButton("disliked", t("feed.dislike"), "down"),
@@ -377,6 +379,58 @@ function feedCard(item, onChange = () => {}, { compact = false } = {}) {
     card.addEventListener("keydown", (event) => { if (event.target === card && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); expand(); } });
   }
   return card;
+}
+
+// Recommandation sans version arXiv connue : recherche sur arXiv par le titre, ou lien collé à la main.
+// Une fois reliée, la carte devient une carte arXiv ordinaire (lecture, signet, PDF).
+function arxivFinder(item, currentCard) {
+  const box = h("div", { class: "arxiv-finder" });
+  const linked = (arxivId) => {
+    item.arxiv_id = arxivId;
+    item.link = `https://arxiv.org/abs/${arxivId}`;
+    const next = feedCard(item);
+    currentCard().replaceWith(next);
+    typesetTex([next]).catch(() => {});
+    toast(t("feed.arxivLinked", { id: arxivId }));
+  };
+  const manual = () => {
+    const input = h("input", { class: "text-input", type: "text", placeholder: t("feed.arxivPaste"), "aria-label": t("feed.arxivPaste"),
+      autocomplete: "off", spellcheck: "false" });
+    const go = h("button", { class: "button small-button primary", type: "submit" }, t("feed.arxivLink"));
+    const form = h("form", { class: "arxiv-finder-form" }, input, go);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!input.value.trim()) { input.focus(); return; }
+      go.disabled = true;
+      try {
+        const { arxiv_id: arxivId } = await api.findArxiv(item.key, input.value.trim());
+        if (arxivId) linked(arxivId);
+      } catch (error) {
+        toastError(error);
+      } finally {
+        go.disabled = false;
+      }
+    });
+    return form;
+  };
+  const search = h("button", { class: "button small-button", type: "button" }, h("span", { class: "button-icon", html: icons.search }), t("feed.arxivSearch"));
+  search.addEventListener("click", async () => {
+    search.disabled = true;
+    search.replaceChildren(h("span", { class: "spinner" }), " ", t("feed.arxivSearching"));
+    try {
+      const { arxiv_id: arxivId } = await api.findArxiv(item.key);
+      if (arxivId) { linked(arxivId); return; }
+      box.replaceChildren(h("p", { class: "muted small" }, t("feed.arxivNotFound")), manual());
+      box.querySelector("input")?.focus();
+    } catch (error) {
+      toastError(error);
+      search.disabled = false;
+      search.replaceChildren(h("span", { class: "button-icon", html: icons.search }), t("feed.arxivSearch"));
+    }
+  });
+  const paste = h("button", { class: "link-button small", type: "button", onclick: () => { box.replaceChildren(manual()); box.querySelector("input").focus(); } }, t("feed.arxivHaveLink"));
+  box.append(h("span", { class: "muted small" }, t("feed.offArxivText")), search, paste);
+  return box;
 }
 
 // Signet : ajouter l'article à la bibliothèque (ou l'en retirer) sans quitter le feed ni redessiner la liste

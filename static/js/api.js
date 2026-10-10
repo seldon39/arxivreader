@@ -26,6 +26,7 @@ export const api = {
   refresh: (id) => request("POST", `/api/papers/${encodeURIComponent(id)}/refresh`, {}),
   feed: (view, day) => request("GET", `/api/feed?view=${encodeURIComponent(view)}${day ? `&day=${day}` : ""}`),
   refreshFeed: (view) => request("POST", "/api/feed/refresh", { view }),
+  findArxiv: (key, query) => request("POST", "/api/feed/arxiv", { key, query }),
   feedStatus: (key, status) => request("PUT", "/api/feed/status", { key, status }),
   lookup: (text) => request("POST", "/api/lookup", { text }),
   profile: () => request("GET", "/api/profile"),

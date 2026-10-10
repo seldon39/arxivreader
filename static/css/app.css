@@ -852,3 +852,10 @@ mark.hl:hover { filter: brightness(.95); }
 .ai-proposal-note { font-size: 14px; color: var(--muted); }
 .ai-badge { display: inline-flex; align-items: center; gap: 3px; }
 .ai-badge .ai-icon, .ai-badge .ai-icon svg { width: 12px; height: 12px; color: var(--accent); }
+
+/* Recommandation sans version arXiv */
+.chip.off-arxiv { color: var(--warning-text); background: var(--warning-bg); border-color: transparent; }
+.arxiv-finder { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 2px 0 4px; }
+.arxiv-finder .button-icon svg { width: 16px; height: 16px; }
+.arxiv-finder-form { display: flex; gap: 8px; flex: 1 1 100%; }
+.arxiv-finder-form .text-input { flex: 1; height: 34px; }

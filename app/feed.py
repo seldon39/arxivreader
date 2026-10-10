@@ -326,6 +326,23 @@ def list_items(view, announce_types=None, day=None):
     return relevance.score_items(items)
 
 
+def link_arxiv(key, arxiv_id):
+    """Recommandation sans version arXiv connue de Semantic Scholar : reliée à son identifiant arXiv."""
+    with db.connect() as connection:
+        connection.execute("UPDATE feed_items SET arxiv_id = ?, link = ? WHERE key = ?",
+                           (arxiv_id, f"https://arxiv.org/abs/{arxiv_id}", key))
+
+
+def get_item(key):
+    with db.connect() as connection:
+        row = connection.execute("SELECT * FROM feed_items WHERE key = ?", (key,)).fetchone()
+    if row is None:
+        return None
+    item = dict(row)
+    item["authors"] = json.loads(item["authors"] or "[]")
+    return item
+
+
 def set_status(key, status):
     with db.connect() as connection:
         if status in ("liked", "disliked"):
