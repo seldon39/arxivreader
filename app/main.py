@@ -1,16 +1,17 @@
 """Serveur web local d'arXivReader (127.0.0.1 uniquement)."""
 
+import json
 import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import annotations, db, feed, library, profile, relevance
+from . import ai, annotations, db, feed, library, profile, relevance
 from .arxiv import ArxivError
 from .config import HOST, PORT, STATIC
 
@@ -29,6 +30,7 @@ CSP = (
 @asynccontextmanager
 async def lifespan(_app):
     db.init()
+    ai.stop_running()
     library.clean_cache()
     yield
 
@@ -93,6 +95,14 @@ class AnnotationUpdate(BaseModel):
     note: str | None = None
     state: str | None = None
     clear_state: bool = False
+
+
+class AIRequest(BaseModel):
+    task: str
+    target: str | None = None
+    quote: str | None = None
+    question: str | None = None
+    parent_id: int | None = None
 
 
 class RefreshRequest(BaseModel):
@@ -205,6 +215,67 @@ def edit_annotation(annotation_id: int, body: AnnotationUpdate):
 def remove_annotation(annotation_id: int):
     annotations.delete(annotation_id)
     return {"ok": True}
+
+
+@app.get("/api/ai/status")
+async def ai_status():
+    return {**await run_in_threadpool(ai.status), "model": _ai_model()}
+
+
+@app.get("/api/papers/{paper_id}/ai")
+def list_ai(paper_id: str):
+    checked_paper(paper_id)
+    return ai.list_for(paper_id)
+
+
+@app.post("/api/papers/{paper_id}/ai")
+async def ask_ai(paper_id: str, body: AIRequest):
+    """Réponse de Claude en direct : une ligne JSON par morceau de texte, puis l'échange enregistré."""
+    paper = checked_paper(paper_id)
+    structure = library.load_structure(paper_id) or {}
+    settings = db.get_settings()
+    parent = ai.get(body.parent_id) if body.parent_id else None
+    if parent and parent["paper_id"] != paper_id:
+        parent = None
+    quote = (body.quote or "")[:20000] or None
+    question = (body.question or "")[:20000] or None
+    target = (body.target or "")[:200] or None
+    try:
+        system, prompt = await run_in_threadpool(ai.build_prompt, paper, structure, body.task, target, quote, question,
+                                                 parent, settings.get("language", "fr"))
+    except ai.AIError as error:
+        return JSONResponse({"error": str(error)}, status_code=400)
+    model = _ai_model()
+    exchange = ai.create(paper_id, body.task, target, quote, question, parent["id"] if parent else None, model)
+
+    async def lines():
+        answer = []
+        status = "stopped"  # si la page interrompt la réponse
+        try:
+            yield json.dumps({"exchange": exchange}) + "\n"
+            async for text in ai.stream_answer(system, prompt, model):
+                answer.append(text)
+                yield json.dumps({"delta": text}) + "\n"
+            status = "done"
+        except ai.AIError as error:
+            status = "error"
+            yield json.dumps({"error": str(error), "code": error.code}) + "\n"
+        finally:
+            final = ai.finish(exchange["id"], "".join(answer), status)
+        yield json.dumps({"done": True, "exchange": final}) + "\n"
+
+    return StreamingResponse(lines(), media_type="application/x-ndjson", headers={"Cache-Control": "no-store"})
+
+
+@app.delete("/api/ai/{exchange_id}")
+def remove_ai(exchange_id: int):
+    ai.delete(exchange_id)
+    return {"ok": True}
+
+
+def _ai_model():
+    model = db.get_settings().get("aiModel")
+    return model if model in ai.MODELS else "opus"
 
 
 @app.put("/api/papers/{paper_id}/position")
@@ -338,7 +409,7 @@ def settings():
 @app.put("/api/settings")
 def update_settings(values: dict):
     allowed = {"language", "theme", "fontSize", "readingWidth", "proofsCollapsed", "tocOpen", "panelOpen", "paperFont", "marginMarks", "mathRenderer",
-               "feedCategories", "feedTypes", "s2ApiKey", "feedSort"}
+               "feedCategories", "feedTypes", "s2ApiKey", "feedSort", "aiModel"}
     db.save_settings({k: v for k, v in values.items() if k in allowed})
     return db.get_settings()
 

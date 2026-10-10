@@ -3,6 +3,7 @@
 import { api } from "./api.js";
 import { closure, renderGraph } from "./graph.js";
 import { Annotator, noteEditor } from "./annotations.js";
+import { Assistant } from "./ai.js";
 import { amsBibliography, markItalicStatements, placeEquationNumbers, relabelLists } from "./amsfix.js";
 import { layoutFigures, prepareFigures } from "./figures.js";
 import { typesetFragment, typesetMath } from "./math.js";
@@ -47,6 +48,17 @@ class Reader {
       paperId: paper.id, content: this.content, nodes: this.nodes,
       navigate: (target) => (typeof target === "string" ? this.navigate(target) : this.navigateElement(target)),
       onChange: () => { if (["notes", "statements", "dependencies"].includes(this.tab)) this.renderPanel(); },
+      aiActions: (id) => this.assistant.actionsFor(id, { compact: true }),
+      onAskAI: (quote) => this.assistant.setPassage(quote),
+    });
+    this.assistant = new Assistant({
+      paper, structure: this.structure, find: (id) => this.find(id), annotator: this.annotator,
+      navigate: (id) => this.navigate(id),
+      onChange: (options) => this.onAssistantChange(options),
+      equationIds: () => [...this.content.querySelectorAll(".ltx_tag_equation")].map((tag) => {
+        const row = tag.closest("tr[id], table[id], .ltx_equation[id]");
+        return row ? [tag.textContent.trim(), row.id] : null;
+      }).filter(Boolean),
     });
     this.finishLayout();
   }
@@ -69,7 +81,7 @@ class Reader {
     if (this.destroyed) return;
     layoutFigures(this.figures);
     this.markWideMath();
-    await this.annotator.load();
+    await Promise.all([this.annotator.load(), this.assistant.load()]);
     if (this.destroyed) return;
     this.annotator.apply();
     if (this.tab !== "statements") this.renderPanel();
@@ -546,8 +558,17 @@ class Reader {
     this.renderPanel();
   }
 
-  renderPanel() {
-    const tabs = [["statements", t("tabs.statements")], ["dependencies", t("tabs.dependencies")], ["graph", t("tabs.graph")], ["notes", t("tabs.notes")]];
+  // L'assistant demande à être affiché (nouvelle demande, passage à expliquer) ou a changé
+  onAssistantChange({ show = false, focus = false } = {}) {
+    if (show || focus) {
+      this.tab = "ai";
+      if (this.root.dataset.panel !== "open") this.toggle("panel");
+    }
+    if (this.tab === "ai") this.renderPanel({ focus });
+  }
+
+  renderPanel({ focus = false } = {}) {
+    const tabs = [["statements", t("tabs.statements")], ["dependencies", t("tabs.dependencies")], ["graph", t("tabs.graph")], ["notes", t("tabs.notes")], ["ai", t("tabs.ai")]];
     const tabBar = h("div", { class: "tabs", role: "tablist" }, tabs.map(([key, label]) => h("button", {
       type: "button", role: "tab", "aria-selected": String(this.tab === key),
       onclick: () => { this.tab = key; this.renderPanel(); },
@@ -556,8 +577,23 @@ class Reader {
     if (this.tab === "statements") this.renderStatements(body);
     else if (this.tab === "dependencies") this.renderDependencies(body);
     else if (this.tab === "notes") this.annotator ? this.annotator.renderPanel(body) : null;
+    else if (this.tab === "ai") this.assistant ? this.assistant.renderPanel(body, { focus }) : null;
     else this.renderGraphTab(body);
     this.panel.replaceChildren(tabBar, body);
+    this.setPanelWide(this.tab === "ai");
+  }
+
+  // Panneau élargi pour l'onglet IA, sans perdre l'endroit où l'on lit
+  setPanelWide(wide) {
+    if ((this.root.dataset.tab === "ai") === wide) return;
+    const anchor = this.root.dataset.panel === "open" && innerWidth >= MEDIUM ? this.currentAnchor() : null;
+    const before = anchor?.getBoundingClientRect().top;
+    if (wide) this.root.dataset.tab = "ai"; else delete this.root.dataset.tab;
+    if (!this.figures) return;
+    this.anchors = null;
+    layoutFigures(this.figures);
+    this.markWideMath();
+    if (anchor) scrollBy({ top: anchor.getBoundingClientRect().top - before, behavior: "instant" });
   }
 
   nodeItem(node) {
@@ -635,6 +671,7 @@ class Reader {
       h("div", { class: "heading" }, h("span", { class: "dot" }), node.label, node.name && h("span", { class: "muted" }, `— ${node.name}`)),
       element && h("div", { class: "statement" }, this.clean(element)),
       h("div", { class: "small" }, h("a", { href: `#${node.id}`, onclick: (e) => { e.preventDefault(); this.navigate(node.id); } }, t("panel.showInText"))),
+      this.assistant?.actionsFor(node.id),
     );
     setTimeout(() => typesetFragment(card), 0);
     if (this.annotator) {
@@ -767,6 +804,7 @@ class Reader {
   destroy() {
     this.destroyed = true;
     this.annotator?.destroy();
+    this.assistant?.destroy();
     this.hidePreview();
     this.overlay?.remove();
     this.cleanups.forEach((fn) => fn());

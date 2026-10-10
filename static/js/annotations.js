@@ -127,7 +127,7 @@ function unpaint(root, id) {
   });
 }
 
-function quoteOf(range) {
+function quoteOf(range, limit = 1500) {
   const parts = [];
   const box = range.commonAncestorContainer.nodeType === 3 ? range.commonAncestorContainer.parentElement : range.commonAncestorContainer;
   for (const unit of units(box)) {
@@ -140,7 +140,7 @@ function quoteOf(range) {
       parts.push(`$${texOf(unit)}$`);
     }
   }
-  return parts.join("").replace(/\s+/g, " ").trim().slice(0, 1500);
+  return parts.join("").replace(/\s+/g, " ").trim().slice(0, limit);
 }
 
 // ---------- Éditeur de note (Markdown + LaTeX) ----------
@@ -193,13 +193,15 @@ export function noteEditor({ value = "", placeholder = "", onSave, autofocus = f
 // ---------- Annotateur d'un article ----------
 
 export class Annotator {
-  constructor({ paperId, content, nodes, navigate, onChange }) {
+  constructor({ paperId, content, nodes, navigate, onChange, aiActions, onAskAI }) {
     this.paperId = paperId;
     this.content = content;
     this.nodes = nodes;
     this.byId = new Map(nodes.map((n) => [n.id, n]));
     this.navigate = navigate;
     this.onChange = onChange;
+    this.aiActions = aiActions;
+    this.onAskAI = onAskAI;
     this.items = [];
     this.popover = null;
     this.toolbar = null;
@@ -252,6 +254,16 @@ export class Annotator {
     return annotation;
   }
 
+  // Texte ajouté à la fin d'une note (énoncé ou preuve `id`, sinon fiche de lecture)
+  async appendNote(id, text) {
+    const join = (current) => (current?.trim() ? `${current.trimEnd()}\n\n---\n\n${text}` : text);
+    if (id) return this.saveBlock(id, { note: join(this.block(id)?.note) });
+    const annotation = await api.addAnnotation(this.paperId, { kind: "general", note: join(this.general?.note) });
+    this.items = this.items.filter((a) => a.kind !== "general").concat(annotation);
+    this.onChange();
+    return annotation;
+  }
+
   async setState(id, state) {
     const current = this.block(id);
     if (current && current.state === state) {
@@ -274,6 +286,11 @@ export class Annotator {
     if (isTheorem) body.push(this.stateControl(id));
     body.push(noteEditor({ value: this.block(id)?.note || "", placeholder: t("notes.placeholderBlock"), autofocus: !isTheorem,
       onSave: (note) => this.saveBlock(id, { note }) }));
+    const actions = this.aiActions?.(isTheorem ? id : proofOf?.id);
+    if (actions) {
+      actions.addEventListener("click", (event) => { if (event.target.closest("button")) this.closePopover(); });
+      body.push(actions);
+    }
     this.openPopover(anchor, body);
   }
 
@@ -348,7 +365,9 @@ export class Annotator {
         onclick: () => create(color, false) })),
       h("span", { class: "hl-sep" }),
       h("button", { type: "button", class: "hl-note-button", title: t("notes.addNote"), "aria-label": t("notes.addNote"), html: icons.note,
-        onclick: () => create("yellow", true) }));
+        onclick: () => create("yellow", true) }),
+      this.onAskAI && h("button", { type: "button", class: "hl-note-button", title: t("ai.askPassage"), "aria-label": t("ai.askPassage"), html: icons.sparkle,
+        onclick: () => { const quote = quoteOf(range, 12000); selection.removeAllRanges(); this.hideToolbar(); this.onAskAI(quote); } }));
     document.body.append(this.toolbar);
     const width = this.toolbar.offsetWidth;
     this.toolbar.style.left = `${Math.max(8, Math.min(innerWidth - width - 8, rect.left + rect.width / 2 - width / 2))}px`;

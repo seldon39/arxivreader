@@ -175,6 +175,7 @@ svg { fill: currentColor; }
 }
 .reader[data-toc="closed"] { --toc-col: 0px; }
 .reader[data-panel="closed"] { --panel-col: 0px; }
+.reader[data-tab="ai"] { --panel-w: 420px; } /* réponses de Claude : panneau plus large */
 .reader-toolbar {
   grid-area: bar; position: sticky; top: var(--topbar-h); z-index: 15; height: var(--toolbar-h); display: flex; align-items: center; gap: 4px; padding: 0 8px;
   background: var(--surface); border-bottom: 1px solid var(--border); min-width: 0;
@@ -199,6 +200,7 @@ svg { fill: currentColor; }
   .reader { --toc-col: 0px; }
   .reader .toc {
     position: fixed; z-index: 25; top: calc(var(--topbar-h) + var(--toolbar-h)); bottom: 0; left: 0; height: auto;
+    align-self: auto; /* sinon WebKit aligne le tiroir en haut de la grille, sous les barres */
     width: min(var(--toc-w), 85vw); box-shadow: var(--shadow); visibility: visible; padding: 14px 8px 40px;
     transform: translateX(-105%); transition: transform .2s ease;
   }
@@ -209,6 +211,7 @@ svg { fill: currentColor; }
   .reader { --panel-col: 0px; }
   .reader .panel {
     position: fixed; z-index: 25; top: calc(var(--topbar-h) + var(--toolbar-h)); bottom: 0; right: 0; height: auto;
+    align-self: auto;
     width: min(var(--panel-w), 92vw); box-shadow: var(--shadow); visibility: visible; border-left: 1px solid var(--border);
     transform: translateX(105%); transition: transform .2s ease;
   }
@@ -324,7 +327,7 @@ svg { fill: currentColor; }
 /* ---------- Panneau latéral ---------- */
 .tabs { display: flex; border-bottom: 1px solid var(--border); padding: 0 6px; position: sticky; top: 0; background: var(--surface); z-index: 2; }
 .tabs button {
-  flex: 1; border: 0; background: transparent; padding: 12px 6px 10px; cursor: pointer; color: var(--muted);
+  flex: 1 1 auto; border: 0; background: transparent; padding: 12px 6px 10px; cursor: pointer; color: var(--muted); white-space: nowrap;
   border-bottom: 2px solid transparent; font-size: 14px; font-weight: 500;
 }
 .tabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
@@ -660,3 +663,53 @@ mark.hl:hover { filter: brightness(.95); }
 .hl-border-pink { border-left-color: #e2559a; }
 .note-block-title { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; }
 .note-body { font-size: 14.5px; }
+
+/* ---------- Onglet IA (Claude) ---------- */
+.ai-icon { display: inline-flex; width: 16px; height: 16px; flex: none; }
+.ai-icon svg { width: 16px; height: 16px; fill: currentColor; }
+.ai-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.ai-action { gap: 6px; padding: 0 12px; }
+.ai-action .ai-icon { color: var(--accent); }
+.note-popover .ai-actions { border-top: 1px solid var(--border); padding-top: 10px; }
+.ai-action.compact { height: 30px; font-size: 13px; padding: 0 10px; }
+.ai-ask { display: flex; flex-direction: column; gap: 8px; }
+.ai-question { min-height: 64px; }
+.ai-ask-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ai-ask-row .spacer { flex: 1; }
+.ai-ask-row .button { height: 32px; padding: 0 12px; font-size: 14px; }
+.ai-model { height: 32px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); font: 14px var(--font-ui); padding: 0 6px; }
+.ai-hint { margin: 0; }
+.ai-chip { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-soft); }
+.ai-chip .ai-quote { grid-column: 1 / -1; }
+.icon-button.small { width: 28px; height: 28px; }
+.icon-button.small svg { width: 16px; height: 16px; }
+.ai-quote { border-left-color: var(--border-strong); max-height: 9em; overflow: auto; }
+.ai-list { display: flex; flex-direction: column; gap: 12px; margin-top: 4px; }
+.ai-card { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px 12px; background: var(--surface); display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.ai-card.status-running { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.ai-card-head { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; min-width: 0; }
+.ai-card-head > .ai-icon { color: var(--accent); }
+.ai-card-head .spacer { flex: 1; }
+.ai-card-title { min-width: 0; overflow-wrap: anywhere; }
+.ai-context { margin: 0; }
+.ai-asked { margin: 0; font-size: 14.5px; font-weight: 500; white-space: pre-wrap; }
+.ai-answer { font-size: 15px; overflow-wrap: anywhere; min-width: 0; }
+.ai-answer .ai-block + .ai-block, .ai-answer .ai-block + .ai-tail:not(:empty) { margin-top: .55em; }
+.ai-answer h4, .ai-answer h5, .ai-answer h6 { font-family: var(--font-ui); font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: .9em 0 .3em; }
+.ai-answer .ai-block:first-child h4:first-child, .ai-answer .ai-block:first-child h5:first-child, .ai-answer .ai-block:first-child h6:first-child { margin-top: 0; }
+.ai-answer mjx-container[display="true"] { overflow-x: auto; overflow-y: hidden; max-width: 100%; }
+.ai-answer a.ai-ref { color: var(--link); text-decoration: none; border-bottom: 1px dotted currentColor; }
+.ai-answer hr, .markdown hr { border: 0; border-top: 1px solid var(--border); margin: .8em 0; }
+.md-table { overflow-x: auto; margin: .4em 0 .6em; }
+.md-table table { border-collapse: collapse; font-size: .92em; }
+.md-table th, .md-table td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; vertical-align: top; }
+.md-table th { background: var(--surface-soft); font-family: var(--font-ui); font-weight: 600; }
+.ai-card-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.ai-card-actions .button { height: 30px; padding: 0 10px; font-size: 13px; gap: 6px; }
+.ai-date { white-space: nowrap; }
+.ai-card > .badge { align-self: flex-start; }
+.ai-disclaimer { margin: 0; font-size: 12.5px; color: var(--muted); }
+.ai-login { flex-direction: column; align-items: flex-start; gap: 6px; }
+.ai-login p { margin: 0; }
+.ai-command { font: 13px var(--font-mono); background: var(--surface); color: var(--text); padding: 3px 8px; border-radius: 6px; user-select: all; }
+.ai-privacy { margin-top: 16px; }

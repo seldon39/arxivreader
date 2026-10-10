@@ -38,6 +38,32 @@ export const api = {
   addAnnotation: (id, body) => request("POST", `/api/papers/${encodeURIComponent(id)}/annotations`, body),
   updateAnnotation: (annotationId, body) => request("PUT", `/api/annotations/${annotationId}`, body),
   deleteAnnotation: (annotationId) => request("DELETE", `/api/annotations/${annotationId}`),
+  aiStatus: () => request("GET", "/api/ai/status"),
+  aiExchanges: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/ai`),
+  deleteAIExchange: (exchangeId) => request("DELETE", `/api/ai/${exchangeId}`),
   settings: () => request("GET", "/api/settings"),
   saveSettings: (values) => request("PUT", "/api/settings", values),
 };
+
+// Réponse de Claude en direct : une ligne JSON par événement ({exchange}, {delta}, {error}, {done}).
+export async function streamAI(paperId, body, onEvent, signal) {
+  const response = await fetch(`/api/papers/${encodeURIComponent(paperId)}/ai`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal,
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || data.detail || `HTTP ${response.status}`);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+    for (const line of lines) if (line.trim()) onEvent(JSON.parse(line));
+  }
+  if (buffer.trim()) onEvent(JSON.parse(buffer));
+}

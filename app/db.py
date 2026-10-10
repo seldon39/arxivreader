@@ -81,6 +81,21 @@ CREATE TABLE IF NOT EXISTS annotations (
     updated_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS annotations_paper ON annotations (paper_id);
+-- Questions posées à Claude sur un article, et ses réponses
+CREATE TABLE IF NOT EXISTS ai_exchanges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    paper_id TEXT NOT NULL,
+    task TEXT NOT NULL,              -- explain, detail, audit, passage, ask, summary, review
+    target TEXT,                     -- id de l'énoncé ou de la preuve visés, sinon NULL
+    quote TEXT,                      -- passage sélectionné (formules en $…$)
+    question TEXT,
+    parent_id INTEGER,               -- échange auquel celui-ci fait suite
+    answer TEXT,
+    model TEXT,
+    status TEXT,                     -- done, stopped, error
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS ai_exchanges_paper ON ai_exchanges (paper_id);
 CREATE TABLE IF NOT EXISTS feed_status (
     key TEXT PRIMARY KEY,
     status TEXT,                     -- liked, disliked

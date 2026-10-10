@@ -1,19 +1,13 @@
 #!/bin/bash
 # Lance arXivReader : prépare l'environnement Python au besoin, démarre le serveur local
 # (127.0.0.1 uniquement) et ouvre le navigateur. Ctrl+C pour arrêter.
+#   ./arxivreader login   connecte Claude (abonnement Claude, une seule fois) pour l'onglet IA
 set -euo pipefail
 cd "$(dirname "$0")"
 
 PORT=8710
 URL="http://127.0.0.1:$PORT/"
 PYTHON="${PYTHON:-python3}"
-
-# Déjà lancé ? On ouvre simplement le navigateur.
-if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
-  echo "arXivReader tourne déjà : $URL"
-  open "$URL"
-  exit 0
-fi
 
 # Environnement Python du projet (.venv), réinstallé si requirements.txt change.
 if [ ! -x .venv/bin/python ]; then
@@ -25,6 +19,22 @@ if [ "$(cat .venv/.requirements-hash 2>/dev/null)" != "$HASH" ]; then
   .venv/bin/pip install --quiet --upgrade pip
   .venv/bin/pip install --quiet -r requirements.txt
   echo "$HASH" > .venv/.requirements-hash
+fi
+
+# Connexion à Claude : le CLI Claude Code livré avec le SDK ouvre la page de connexion dans le navigateur.
+if [ "${1:-}" = "login" ]; then
+  CLI=$(.venv/bin/python -c "from app.ai import cli_path; print(cli_path() or '')")
+  if [ -z "$CLI" ]; then echo "CLI Claude introuvable (paquet claude-agent-sdk ?)"; exit 1; fi
+  env -u ANTHROPIC_API_KEY "$CLI" auth login --claudeai
+  env -u ANTHROPIC_API_KEY "$CLI" auth status --text || true
+  exit 0
+fi
+
+# Déjà lancé ? On ouvre simplement le navigateur.
+if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+  echo "arXivReader tourne déjà : $URL"
+  open "$URL"
+  exit 0
 fi
 
 # Ouvre le navigateur dès que le serveur répond.

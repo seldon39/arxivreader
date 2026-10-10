@@ -93,8 +93,9 @@ def clean_cache(days=30):
         rows = connection.execute(
             "SELECT id FROM papers WHERE in_library = 0 AND COALESCE(opened_at, added_at) < datetime('now', ?)",
             (f"-{days} days",)).fetchall()
+    from .ai import papers_with_exchanges
     from .annotations import annotated_papers
-    keep = annotated_papers()  # un article annoté n'est jamais effacé du cache
+    keep = annotated_papers() | papers_with_exchanges()  # article annoté ou discuté avec Claude : gardé
     removed = [row["id"] for row in rows if row["id"] not in keep]
     for paper_id in removed:
         remove_paper(paper_id)
@@ -102,7 +103,8 @@ def clean_cache(days=30):
 
 
 def remove_paper(paper_id):
-    from .annotations import delete_for
+    from . import ai, annotations
     shutil.rmtree(paper_dir(paper_id), ignore_errors=True)
     db.delete_paper(paper_id)
-    delete_for(paper_id)
+    annotations.delete_for(paper_id)
+    ai.delete_for(paper_id)

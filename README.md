@@ -67,10 +67,21 @@ Une clé d'API Semantic Scholar (gratuite, facultative) évite les limitations d
 - Notes en Markdown (**gras**, *italique*, listes, citations) avec formules `$…$`, `$$…$$`,
   enregistrées automatiquement. Un article annoté n'est jamais effacé du cache.
 
-## Étapes suivantes prévues
+## Claude sur l'article (étape 4)
 
-
-4. IA (Claude, via la connexion Claude Code) sur les preuves : détailler, auditer, répondre.
+- **Connexion, une seule fois** : double-clic sur `Connecter Claude.command` (ou `./arxivreader login`).
+  La page de connexion Claude s'ouvre dans le navigateur ; c'est votre abonnement Claude qui est utilisé,
+  sans clé d'API (l'usage compte dans ses limites).
+- **Énoncé** (onglet Dépendances, ou note en marge) : *Expliquer*. **Preuve** : *Détailler la preuve*
+  (étapes numérotées, arguments ajoutés marqués **[added]**, points douteux **⚠**) et *Auditer la preuve*
+  (verdict, problèmes avec leur gravité, hypothèses utilisées, dépendances).
+- **Passage** : le sélectionner, puis ✦ ; on peut ajouter une question. **Article entier** : résumé
+  structuré, relecture critique, ou question libre ; *Question de suite* pour poursuivre un échange.
+- Réponses en direct, formules rendues, renvois (« Lemma 2.3 », « (2.11) ») cliquables ; *Ajouter à mes
+  notes* les copie dans la note de l'énoncé ou de la preuve (sinon dans la fiche de lecture). Modèle
+  Opus ou Sonnet au choix dans l'onglet IA. Les réponses sont conservées avec l'article.
+- Claude ne reçoit que le texte de l'article (le texte invisible est retiré) et la demande : aucun outil,
+  ni fichiers, ni réseau, ni commandes, ni réglages Claude Code personnels ; rien n'est gardé côté Claude Code.
 
 ## Sécurité
 
@@ -89,6 +100,8 @@ app/            serveur Python (FastAPI)
   texsource.py  lecture de la source TeX (options de classe, police, étiquettes de listes)
   feed.py       nouveautés arXiv (RSS), recommandations Semantic Scholar, repérage d'identifiants
   profile.py    profil de recherche, pré-remplissage, auteurs suivis ; relevance.py : tri par pertinence
+  annotations.py  surlignages, notes, état de lecture
+  ai.py         texte de l'article et consignes pour Claude, appel sans outils (SDK Claude Agent)
   library.py    import d'un article ; db.py : base SQLite ; main.py : routes web
 static/         interface (HTML, CSS, JavaScript sans compilation) ;
                 vendor/mathjax (MathJax 3.2.2) et fonts/ (Latin Modern) copiés localement
