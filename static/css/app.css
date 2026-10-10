@@ -960,7 +960,7 @@ dialog.figure-viewer::backdrop { background: rgba(20, 20, 24, .6); -webkit-backd
 .cards { display: block; border-top: 1px solid var(--border); }
 .card {
   display: grid; grid-template-columns: 1fr auto; column-gap: 18px; row-gap: 3px;
-  border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; padding: 15px 2px 14px;
+  border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; padding: 16px 14px 15px;
 }
 .card > * { grid-column: 1; }
 .card:hover { border-color: var(--border); box-shadow: none; background: color-mix(in srgb, var(--surface-hover) 55%, transparent); }
@@ -972,6 +972,11 @@ dialog.figure-viewer::backdrop { background: rgba(20, 20, 24, .6); -webkit-backd
 .card:hover .card-actions, .card:focus-within .card-actions { opacity: 1; }
 @media (hover: none) { .card-actions { opacity: 1; } }
 .resume-link { color: var(--accent); position: relative; z-index: 2; }
+/* titres soulignés au survol : un trait dessiné en fond, qui passe aussi sous les formules
+   (MathJax les met dans des blocs en ligne, que text-decoration ne traverse pas) */
+.card-link:hover, .card-link:focus-visible, .feed-title-link:hover, .feed-title-link:focus-visible {
+  text-decoration: none; background: linear-gradient(currentColor, currentColor) left bottom / 100% 1px no-repeat;
+}
 
 /* Métadonnées : une ligne de texte, comme dans une revue */
 .card-meta, .paper-meta { display: block; font: 13px/1.5 var(--font-ui); color: var(--muted); }
