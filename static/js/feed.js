@@ -298,7 +298,7 @@ export function feedCard(item, onChange = () => {}, { compact = false } = {}) {
   const meter = level && level !== "none" && h("span", { class: `relevance relevance-${level}`, title: t("feed.relevanceHint", { n: Math.round(item.relevance * 100) }) },
     h("span", { class: "relevance-bar" }, h("span", { style: `width: ${Math.round(item.relevance * 100)}%` })), t(`feed.level.${level}`));
 
-  const card = h("article", { class: `feed-card${item.libraryId ? " in-library" : ""}${compact ? " compact" : ""}` },
+  const card = h("article", { class: `feed-card${compact ? " compact" : ""}` },
     h("div", { class: "feed-title-row" }, h("h3", { class: "feed-title" }, title), meter),
     h("div", { class: "feed-authors" }, authors.join(", ")),
     h("div", { class: "card-meta" },
