@@ -160,9 +160,9 @@ async function renderList(body, tab) {
       dayLabel = h("span", { class: "day-label" }, data.day
         ? capitalize(`${t("feed.announced", { date: formatDay(data.day) })} · ${t("feed.count", { n: shown.length })}${close ? ` · ${t("feed.closeCount", { n: close })}` : ""}`)
         : t("feed.emptyArxiv"));
-      const previous = h("button", { class: "icon-button day-arrow", type: "button", title: t("feed.previousDay"), "aria-label": t("feed.previousDay") }, "‹");
+      const previous = h("button", { class: "icon-button day-arrow", type: "button", title: t("feed.previousDay"), "aria-label": t("feed.previousDay"), html: icons.chevronLeft });
       const next = h("button", { class: "icon-button day-arrow", type: "button", title: t("feed.nextDay"), "aria-label": t("feed.nextDay"),
-        disabled: !data.day || data.day >= data.latestDay }, "›");
+        disabled: !data.day || data.day >= data.latestDay, html: icons.chevronRight });
       previous.addEventListener("click", () => goToDay(-1));
       next.addEventListener("click", () => goToDay(1));
       sections.push(h("section", { class: "feed-day" },
