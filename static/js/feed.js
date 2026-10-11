@@ -5,7 +5,7 @@ import { getLanguage, t, tn } from "./i18n.js";
 import { typesetTex } from "./math.js";
 import { renderProfile } from "./profile.js";
 import { saveSettings, settings } from "./settings.js";
-import { debounce, h, hoursSince, icons, openRoute, tidyTitle, timeAgo, toast, toastError, toggleIcon, wantsNewTab, withMath } from "./util.js";
+import { debounce, h, hoursSince, icons, journalChip, openRoute, tidyTitle, timeAgo, toast, toastError, toggleIcon, wantsNewTab, withMath } from "./util.js";
 
 const TABS = [["arxiv", "#/feed"], ["recommended", "#/feed/recommended"], ["profile", "#/feed/profile"], ["import", "#/feed/import"]];
 const COMPACT_BELOW = 0.12;
@@ -13,7 +13,7 @@ const TYPES = ["new", "cross", "replace", "replace-cross"];
 const STALE_ARXIV_HOURS = 3;
 const STALE_S2_HOURS = 24;
 // Ce qu'on retrouve en revenant d'un article : jour affiché, recherche, catégories, articles écartés visibles
-const memory = { day: null, search: "", categories: new Set(), showHidden: false };
+const memory = { day: null, search: "", categories: new Set(), showHidden: false, publication: "any" };
 
 export async function renderFeed(view, tab) {
   const body = h("div", { class: "feed-body" });
@@ -169,7 +169,8 @@ async function renderList(body, tab) {
     tools.update();
     const needle = state.search.trim().toLowerCase();
     const matches = (item) => (item.status !== "disliked" || state.showHidden)
-      && (!needle || `${item.title} ${item.authors.join(" ")} ${item.abstract}`.toLowerCase().includes(needle));
+      && (!needle || `${item.title} ${item.authors.join(" ")} ${item.abstract}`.toLowerCase().includes(needle))
+      && (state.publication === "any" || (state.publication === "journal") === Boolean(item.publishedIn));
     const inCategories = (item) => !state.categories.size || item.categories.some((c) => state.categories.has(c));
     // rien du tout (premier lancement) ; un jour sans annonce garde ses flèches
     if (!data.items.length && (tab !== "arxiv" || !data.day)) {
@@ -307,10 +308,12 @@ function feedTools({ tab, state, data, draw, refresh }) {
   const toggleIn = (set, value, after = () => {}) => () => { if (set.has(value)) set.delete(value); else set.add(value); after(); };
   const saveTypes = () => saveSettings({ feedTypes: [...state.types] });
   const typesChanged = () => state.types.size !== DEFAULT_TYPES.length || DEFAULT_TYPES.some((type) => !state.types.has(type));
-  const activeCount = () => (tab === "arxiv" ? state.categories.size + (typesChanged() ? 1 : 0) : 0) + (state.showHidden ? 1 : 0);
+  const activeCount = () => (tab === "arxiv" ? state.categories.size + (typesChanged() ? 1 : 0) : 0) + (state.showHidden ? 1 : 0)
+    + (state.publication !== "any" ? 1 : 0);
   const resetFilters = () => {
     state.categories.clear();
     state.showHidden = false;
+    state.publication = "any";
     if (tab === "arxiv" && typesChanged()) { state.types = new Set(DEFAULT_TYPES); saveTypes(); }
   };
   function fillFilters() {
@@ -323,6 +326,10 @@ function feedTools({ tab, state, data, draw, refresh }) {
           TYPES.map((type) => chip(t(`feed.type.${type}`), state.types.has(type), toggleIn(state.types, type, saveTypes), `type:${type}`)))),
         tab === "arxiv" && (data().categories || []).length > 0 && section(t("library.filters.categories"), h("div", { class: "filter-chips" },
           data().categories.map((c) => chip(c, state.categories.has(c), toggleIn(state.categories, c), `category:${c}`)))),
+        section(t("journal.filter"), h("div", { class: "segmented filter-segmented", role: "radiogroup", "aria-label": t("journal.filter") },
+          [["any", t("journal.any")], ["journal", t("journal.yes")], ["none", t("journal.no")]].map(([value, label]) => h("label", {},
+            h("input", { type: "radio", name: "feed-publication", value, checked: state.publication === value, dataset: { focus: `publication:${value}` },
+              onchange: () => { state.publication = value; changed(); } }), label)))),
         section(t("feed.filter.hidden"), h("label", { class: "check small" },
           h("input", { type: "checkbox", checked: state.showHidden, dataset: { focus: "hidden" },
             onchange: (event) => { state.showHidden = event.target.checked; changed(); } }),
@@ -349,6 +356,7 @@ function feedTools({ tab, state, data, draw, refresh }) {
       tab === "arxiv" && typesChanged() && pill(types || t("feed.noType"), () => { state.types = new Set(DEFAULT_TYPES); saveTypes(); }),
       ...(tab === "arxiv" ? [...state.categories].map((c) => pill(c, () => state.categories.delete(c))) : []),
       state.showHidden && pill(t("feed.hiddenShown"), () => { state.showHidden = false; }),
+      state.publication !== "any" && pill(t(`journal.${state.publication === "journal" ? "yes" : "no"}`), () => { state.publication = "any"; }),
     ].filter(Boolean);
     active.replaceChildren(...pills, pills.length > 1 ? h("button", { class: "link-button small", type: "button",
       onclick: () => { resetFilters(); changed(); } }, t("library.filters.reset")) : "");
@@ -467,6 +475,7 @@ export function feedCard(item, onChange = () => {}, { compact = false, fresh = f
       ...item.categories.filter((c) => c !== item.primary_category).map((c) => h("span", { class: "chip" }, c)),
       item.announce_type && h("span", { class: `chip type-${item.announce_type}` }, t(`feed.badge.${item.announce_type}`)),
       item.arxiv_id && h("span", { class: "chip" }, `arXiv:${item.arxiv_id}`),
+      journalChip(item.publishedIn),
       (!item.announce_type || showDate) && item.announced && h("span", { class: "chip" }, item.announced),
       item.announce_type && item.s2_rank !== null && item.s2_rank !== undefined && h("span", { class: "chip recommended-chip", title: t("feed.recommendedHint") }, t("feed.recommended")),
       !item.arxiv_id && h("span", { class: "chip off-arxiv", title: t("feed.offArxivHint") }, t("feed.offArxiv")),

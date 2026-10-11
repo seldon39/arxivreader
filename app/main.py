@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Str
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import ai, alerts, annotations, citations, crossrefs, db, feed, folders, library, profile, providers, relevance, search, updates
+from . import ai, alerts, annotations, citations, crossrefs, db, feed, folders, journals, library, profile, providers, relevance, search, updates
 from .arxiv import ArxivError, fetch_metadata, parse_arxiv_id
 from .config import HOST, PORT, STATIC
 
@@ -203,8 +203,14 @@ def papers():
     # avec, pour chaque article, où en est la lecture (notes, énoncés compris, réponses de Claude)
     notes, answers = annotations.stats(), ai.counts()
     empty = {"highlights": 0, "notes": 0, "done": 0}
-    return [{**paper, "reading": {**notes.get(paper["id"], empty), "answers": answers.get(paper["id"], 0)}}
-            for paper in db.list_papers()]
+    papers = [{**paper, "reading": {**notes.get(paper["id"], empty), "answers": answers.get(paper["id"], 0)}}
+              for paper in db.list_papers()]
+    # revue de chaque article (arXiv, sinon Semantic Scholar) ; celles qui manquent sont demandées en arrière-plan
+    key = lambda paper: relevance.s2_key(paper["arxiv_id"])  # noqa: E731
+    journals.annotate(papers, key)
+    # (aussi pour un article dont arXiv ne donne qu'un DOI : Semantic Scholar en connaît souvent la revue)
+    journals.fetch_later([key(p) for p in papers if not (p.get("journal_ref") or "").strip()], db.get_settings().get("s2ApiKey") or None)
+    return papers
 
 
 

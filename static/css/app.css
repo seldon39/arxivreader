@@ -1164,6 +1164,9 @@ input.switch:focus-visible { outline: 2px solid var(--focus); outline-offset: 2p
 .folder-panel .cards { border-top: 0; }
 /* grande bibliothèque : suite de la liste au fil du défilement (bouton si besoin) */
 .library-more { display: flex; justify-content: center; padding: 14px 0 6px; }
+/* revue où l'article est paru ; explication sous le filtre */
+.journal-chip { font-style: italic; }
+.filter-hint { margin: -4px 0 4px; font-size: 12.5px; }
 /* requête IA en cours : compteur à chiffres fixes, mot d'explication en dessous */
 .ai-elapsed { font-variant-numeric: tabular-nums; color: var(--muted); }
 .ai-wait-hint { margin: 4px 0 0; }

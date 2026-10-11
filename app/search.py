@@ -11,7 +11,7 @@ from datetime import date, timedelta
 
 import httpx
 
-from . import db, relevance
+from . import db, journals, relevance
 from .arxiv import ARXIV_NS, ATOM, with_retry
 from .config import USER_AGENT
 from .feed import tex_text
@@ -179,6 +179,8 @@ def parse(xml_text):
             "primary_category": primary.get("term") if primary is not None else (categories[0] if categories else ""),
             "announced": (entry.findtext(f"{ATOM}published") or "")[:10],
             "link": f"https://arxiv.org/abs/{arxiv_id}",
+            "journal_ref": " ".join((entry.findtext(f"{ARXIV_NS}journal_ref") or "").split()) or None,
+            "doi": (entry.findtext(f"{ARXIV_NS}doi") or "").strip() or None,
         })
     return items, total
 
@@ -277,7 +279,7 @@ def annotate_status(items):
 
 def annotate(items):
     """Article déjà lu ou dans la bibliothèque, avis donné : comme dans le feed ; proximité avec le profil."""
-    items = [{**item, "citing": []} for item in annotate_status(items)]
+    items = journals.annotate([{**item, "citing": []} for item in annotate_status(items)])
     try:
         return relevance.score_items(items)
     except Exception:  # vecteurs de sens indisponibles : résultats sans proximité

@@ -183,6 +183,15 @@ export const navigation = { listHash: "#/" };
 
 // Titre d'article en texte simple (onglets, titre de la fenêtre) : formules réduites à leurs symboles
 const SUPERSCRIPTS = { 0: "⁰", 1: "¹", 2: "²", 3: "³", 4: "⁴", 5: "⁵", 6: "⁶", 7: "⁷", 8: "⁸", 9: "⁹", n: "ⁿ" };
+// Revue où l'article est paru (arXiv : indiquée par les auteurs ; sinon Semantic Scholar) : étiquette courte,
+// référence complète et source au survol
+export function journalChip(publishedIn) {
+  if (!publishedIn?.text) return null;
+  const text = publishedIn.text;
+  return h("span", { class: "chip journal-chip", title: t(`journal.hint.${publishedIn.source === "s2" ? "s2" : "arxiv"}`, { ref: text }) },
+    t("journal.chip", { ref: text.length > 48 ? `${text.slice(0, 46)}…` : text }));
+}
+
 export function plainTitle(title) {
   return titleTex(title).split(/(\$[^$]*\$|\\\(.*?\\\))/).map((part, i) => {
     if (!(i % 2)) return part;

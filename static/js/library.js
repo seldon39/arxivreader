@@ -3,10 +3,10 @@
 import { setFindHandler } from "./find.js";
 import { api } from "./api.js";
 import { t, tn } from "./i18n.js";
-import { debounce, formatDate, h, icons, tidyTitle, timeAgo, toast, toastError, withMath } from "./util.js";
+import { debounce, formatDate, h, icons, journalChip, tidyTitle, timeAgo, toast, toastError, withMath } from "./util.js";
 
 // Recherche et filtres, gardés d'une visite à l'autre (le temps de la session)
-const view = { search: "", categories: new Set(), reading: new Set(), years: new Set(), folders: new Set(), source: "any", sort: "opened",
+const view = { search: "", categories: new Set(), reading: new Set(), years: new Set(), folders: new Set(), source: "any", publication: "any", sort: "opened",
   alphaKey: "title", alphaDir: "asc", openFolder: null, folderSort: "newest", folderSearch: "" };
 // Dossiers ({id, name, papers}), relus avec la liste des articles
 let folderList = [];
@@ -43,6 +43,8 @@ function matches(paper) {
   const pdf = paper.source === "none" || paper.source === "tex"; // lu dans le PDF (énoncés tirés du TeX ou non)
   if (view.source === "html" && pdf) return false;
   if (view.source === "pdf" && !pdf) return false;
+  if (view.publication === "journal" && !paper.publishedIn) return false;
+  if (view.publication === "none" && paper.publishedIn) return false;
   if (view.reading.size) {
     const states = readingStates(paper);
     if (![...view.reading].some((state) => states[state])) return false;
@@ -82,7 +84,8 @@ const folderSorter = (scores) => ({
 }[view.folderSort]);
 
 // le tri n'est pas un filtre : il ne compte pas, et « Tout réinitialiser » le garde
-const activeCount = () => view.categories.size + view.reading.size + view.years.size + view.folders.size + (view.source !== "any" ? 1 : 0);
+const activeCount = () => view.categories.size + view.reading.size + view.years.size + view.folders.size + (view.source !== "any" ? 1 : 0)
+  + (view.publication !== "any" ? 1 : 0);
 
 function resetFilters() {
   view.categories.clear();
@@ -90,6 +93,7 @@ function resetFilters() {
   view.years.clear();
   view.folders.clear();
   view.source = "any";
+  view.publication = "any";
 }
 
 // Grande bibliothèque : les cartes sont affichées par lots (les suivantes au fil du défilement), et chaque
@@ -98,7 +102,7 @@ const CHUNK = 150;
 
 // ce qu'une carte montre de l'article : si rien n'a changé, la même carte resert
 const cardSignature = (paper, folders) => JSON.stringify([paper.title, paper.authors, paper.version, paper.published, paper.categories,
-  paper.primary_category, paper.opened_at, paper.position, paper.reading, paper.source, paper.in_library, paper.journal_ref, folders]);
+  paper.primary_category, paper.opened_at, paper.position, paper.reading, paper.source, paper.in_library, paper.publishedIn, folders]);
 
 export async function renderLibrary(root, { restoreTo = 0 } = {}) {
   const input = h("input", {
@@ -188,7 +192,10 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
         years.length > 1 && section("years", t("library.filters.years"), h("div", { class: "filter-chips" },
           years.map((y) => chip(y, view.years.has(y), toggleIn(view.years, y), `year:${y}`)))),
         section("source", t("library.filters.source"), choice("source",
-          [["any", t("library.source.any")], ["html", t("library.source.html")], ["pdf", t("library.source.pdf")]], view.source, (v) => { view.source = v; }))),
+          [["any", t("library.source.any")], ["html", t("library.source.html")], ["pdf", t("library.source.pdf")]], view.source, (v) => { view.source = v; })),
+        section("publication", t("journal.filter"), choice("publication",
+          [["any", t("journal.any")], ["journal", t("journal.yes")], ["none", t("journal.no")]], view.publication, (v) => { view.publication = v; })),
+        h("p", { class: "hint filter-hint" }, t("journal.filterHint"))),
       h("div", { class: "filter-foot" },
         h("button", { class: "button small-button", type: "button", disabled: !activeCount(), dataset: { role: "reset" },
           onclick: () => { resetFilters(); changed(); } }, t("library.filters.reset")),
@@ -269,6 +276,7 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
       ...[...view.folders].map((id) => folderList.find((f) => f.id === id))
         .filter(Boolean).map((f) => pill(f.name, () => view.folders.delete(f.id))),
       view.source !== "any" && pill(t(`library.source.${view.source}`), () => { view.source = "any"; }),
+      view.publication !== "any" && pill(t(`journal.${view.publication === "journal" ? "yes" : "no"}`), () => { view.publication = "any"; }),
     ].filter(Boolean);
     activeRow.replaceChildren(...pills, pills.length > 1 ? h("button", { class: "link-button small", type: "button",
       onclick: () => { resetFilters(); changed(); } }, t("library.filters.reset")) : "");
@@ -655,6 +663,7 @@ function card(paper, refreshList, context = null) {
       h("span", { class: "chip" }, formatDate(paper.published)),
       paper.source === "none" && h("span", { class: "chip" }, t("library.pdfOnly")),
       paper.source === "tex" && h("span", { class: "chip", title: t("library.pdfTexHint") }, t("library.pdfTex")),
+      journalChip(paper.publishedIn),
       folderChip(paper, context),
     ),
     h("div", { class: "card-actions" },

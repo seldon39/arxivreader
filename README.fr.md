@@ -94,6 +94,14 @@ dossiers, affichés en fin de sa ligne ; « Filtres » permet aussi de réduire 
 « Tri » ordonne les articles par dernière lecture, ajout, publication, ou par ordre alphabétique (titre ou
 premier auteur, A → Z ou Z → A, les dossiers étant alors rangés par nom dans le même sens).
 
+## Parus en revue
+
+Dans la bibliothèque et le feed, « Filtres » → *Publication* garde les articles parus en revue, ou ceux qui
+ne sont pas signalés comme tels ; la revue s'affiche sur la carte (« Paru : … »). D'après la référence (ou le
+DOI) indiquée sur arXiv par les auteurs, sinon d'après Semantic Scholar, interrogé par lots et redemandé après
+30 jours pour un article encore non signalé. Beaucoup d'auteurs ne mettent pas arXiv à jour : un article non
+signalé n'est pas forcément inédit.
+
 ## Feed (étape 2)
 
 Menu **Feed** en haut, quatre onglets :
@@ -240,6 +248,7 @@ app/            serveur Python (FastAPI)
   structure.py  sommaire, énoncés, preuves, dépendances, bibliographie
   texsource.py  lecture de la source TeX (options de classe, police, étiquettes de listes)
   feed.py       nouveautés arXiv (RSS, OAI-PMH), recommandations Semantic Scholar, repérage d'identifiants
+  journals.py   revue où un article est paru (arXiv, Semantic Scholar)
   search.py     recherche dans tout arXiv (onglet Recherche)
   folders.py    dossiers de la bibliothèque
   profile.py    profil de recherche, pré-remplissage, auteurs suivis ; relevance.py : tri par pertinence

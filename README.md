@@ -92,6 +92,13 @@ folders to tick, or a new folder. A paper can be in several folders, shown at th
 "Sort" orders papers by last read, added, published, or alphabetically (title or first author, A → Z or
 Z → A, folders then being sorted by name in the same order).
 
+## Published in a journal
+
+In the library and the feed, "Filters" → *Publication* keeps the papers published in a journal, or those not
+reported as such; the journal shows on the card ("Published: …"). From the reference (or DOI) given on arXiv by
+the authors, otherwise from Semantic Scholar, queried in batches and asked again after 30 days for a paper
+still not reported. Many authors never update arXiv: a paper not reported may still be published.
+
 ## Feed
 
 **Feed** menu at the top, four tabs:
@@ -236,6 +243,7 @@ app/            Python server (FastAPI)
   structure.py  table of contents, statements, proofs, dependencies, bibliography
   texsource.py  reading the TeX source (class options, font, list labels)
   feed.py       new arXiv papers (RSS, OAI-PMH), Semantic Scholar recommendations, identifier detection
+  journals.py   journal where a paper appeared (arXiv, Semantic Scholar)
   search.py     search across arXiv (Search tab)
   folders.py    library folders
   profile.py    research profile, prefill, followed authors; relevance.py: relevance ranking

@@ -14,13 +14,13 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
-from . import db, profile, relevance
+from . import db, journals, profile, relevance
 from .arxiv import ATOM, ARXIV_NS, extract_ids, with_retry
 from .config import FEED_CATEGORIES, USER_AGENT
 
 RSS_URL = "https://rss.arxiv.org/rss/{categories}"
 S2_RECOMMEND = "https://api.semanticscholar.org/recommendations/v1/papers"
-S2_FIELDS = "title,externalIds,authors,abstract,publicationDate,year,url"
+S2_FIELDS = "title,externalIds,authors,abstract,publicationDate,year,url,journal"
 DC = "{http://purl.org/dc/elements/1.1/}"
 RSS_ARXIV = "{http://arxiv.org/schemas/atom}"
 
@@ -135,6 +135,8 @@ def parse_rss(xml_text):
             "announce_type": item.findtext(f"{RSS_ARXIV}announce_type") or match.group(4),
             "announced": announced,
             "link": item.findtext("link") or f"https://arxiv.org/abs/{match.group(1)}",
+            "journal_ref": (item.findtext(f"{RSS_ARXIV}journal_reference") or "").strip() or None,
+            "doi": (item.findtext(f"{RSS_ARXIV}DOI") or "").strip() or None,
         })
     return items
 
@@ -150,17 +152,19 @@ def _store(connection, item, followed=False, keep_announce=False):
                 if keep_announce else "announce_type = excluded.announce_type, announced = excluded.announced, ")
     connection.execute(
         f"""INSERT INTO feed_items (key, arxiv_id, version, title, authors, abstract, categories,
-               primary_category, announce_type, announced, in_arxiv, followed, link, fetched_at)
+               primary_category, announce_type, announced, in_arxiv, followed, link, fetched_at, journal_ref, doi)
            VALUES (:key, :arxiv_id, :version, :title, :authors, :abstract, :categories,
-               :primary_category, :announce_type, :announced, :in_arxiv, :followed, :link, :fetched_at)
+               :primary_category, :announce_type, :announced, :in_arxiv, :followed, :link, :fetched_at, :journal_ref, :doi)
            ON CONFLICT(key) DO UPDATE SET {"followed = 1" if followed else
                "version = excluded.version, title = excluded.title, authors = excluded.authors, "
                "abstract = excluded.abstract, categories = excluded.categories, "
                "primary_category = excluded.primary_category, " + announce +
-               "in_arxiv = 1, link = excluded.link"}""",
+               "in_arxiv = 1, link = excluded.link, "
+               # revue : une source qui ne la donne pas (RSS) ne l'efface pas
+               "journal_ref = COALESCE(excluded.journal_ref, feed_items.journal_ref), doi = COALESCE(excluded.doi, feed_items.doi)"}""",
         {**item, "authors": json.dumps(item["authors"], ensure_ascii=False), "categories": json.dumps(item["categories"]),
          "announce_type": item.get("announce_type"), "in_arxiv": 0 if followed else 1, "followed": 1 if followed else 0,
-         "fetched_at": _now()},
+         "fetched_at": _now(), "journal_ref": item.get("journal_ref"), "doi": item.get("doi")},
     )
 
 
@@ -188,6 +192,10 @@ def refresh_arxiv(categories=None, api_key=None):
     keys = [relevance.s2_key(i["arxiv_id"]) for i in items + followed] + [d["s2"] for d in positives + negatives]
     try:
         relevance.fetch_embeddings(keys, api_key)
+    except Exception:
+        pass
+    try:  # revue des articles annoncés (surtout utile pour les nouvelles versions)
+        journals.fetch([relevance.s2_key(i["arxiv_id"]) for i in items + followed], api_key)
     except Exception:
         pass
     try:
@@ -249,6 +257,8 @@ def parse_oai_day(xml_text, day, categories):
             "title": tex_text(raw.findtext(f"{RAW}title")), "authors": _split_raw_authors(raw.findtext(f"{RAW}authors")),
             "abstract": tex_text(raw.findtext(f"{RAW}abstract")), "categories": cats, "primary_category": cats[0],
             "announce_type": kind, "announced": day, "link": f"https://arxiv.org/abs/{arxiv_id}",
+            "journal_ref": " ".join((raw.findtext(f"{RAW}journal-ref") or "").split()) or None,
+            "doi": (raw.findtext(f"{RAW}doi") or "").strip() or None,
         })
     token = root.find(f".//{OAI}resumptionToken")
     return items, (token.text.strip() if token is not None and token.text and token.text.strip() else None)
@@ -360,6 +370,7 @@ def _fetch_day(day, categories, api_key):
             _store(connection, item, keep_announce=partial)
     try:
         relevance.fetch_embeddings([relevance.s2_key(i["arxiv_id"]) for i in items], api_key)
+        journals.fetch([relevance.s2_key(i["arxiv_id"]) for i in items], api_key)
     except Exception:
         pass
     # « 0 annonce » n'est retenu que pour un jour assez ancien : un jour récent peut ne pas être encore
@@ -443,6 +454,11 @@ def refresh_recommendations(api_key=None, limit=60):
                  tex_text(paper.get("abstract")), paper.get("publicationDate") or str(paper.get("year") or ""),
                  rank, f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else web_link(paper.get("url")), _now()),
             )
+    try:  # revue de chaque recommandation (déjà dans la réponse)
+        for paper in papers:
+            journals.store(relevance.s2_key((paper.get("externalIds") or {}).get("ArXiv"), f"s2:{paper['paperId']}"), paper)
+    except Exception:
+        pass
     try:  # vecteurs de sens des recommandations, pour les comparer au profil
         relevance.fetch_embeddings([relevance.s2_key((p.get("externalIds") or {}).get("ArXiv"), f"s2:{p['paperId']}")
                                     for p in papers], api_key)
@@ -484,6 +500,7 @@ def list_items(view, announce_types=None, day=None):
         item["libraryId"] = library.get(item["arxiv_id"])
         item["readId"] = cached.get(item["arxiv_id"])  # déjà téléchargé (lu), dans la bibliothèque ou non
         items.append(item)
+    journals.annotate(items)  # revue où l'article est paru (arXiv, sinon Semantic Scholar)
     return relevance.score_items(items)
 
 
