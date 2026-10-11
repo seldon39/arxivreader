@@ -4,7 +4,7 @@ import { PROVIDERS, assistantName, modelControls, setupNotice } from "./aiprovid
 import { api } from "./api.js";
 import { applyStatic, setAIName, setLanguage, t } from "./i18n.js";
 import { updatesSection } from "./updates.js";
-import { zoteroSection } from "./zotero.js";
+import { ZOTERO_KEY, zoteroSection } from "./zotero.js";
 import { h, icons, toast } from "./util.js";
 
 export const DEFAULT_FONT_SIZE = 18;
@@ -147,7 +147,11 @@ export function openSettingsDialog({ section = null } = {}) {
     hint && h("p", { class: "hint" }, hint),
   ];
   // Réglages en quatre sections, une à la fois ; chaque réglage sur une ligne d'un cadre
-  const zoteroBox = zoteroSection(() => Boolean(settings.zoteroApiKey)); // état de la synchronisation, bouton
+  // état de la synchronisation, bouton ; clé lue dans le champ (tapée puis bouton cliqué : enregistrée d'abord)
+  const zoteroBox = zoteroSection({
+    key: () => (dialog.querySelector('input[name="zoteroApiKey"]')?.value ?? settings.zoteroApiKey ?? "").trim(),
+    save: async (key) => { if (key !== (settings.zoteroApiKey || "") && ZOTERO_KEY.test(key)) await saveSettings({ zoteroApiKey: key }); },
+  });
   const sections = [
     ["reading", t("settings.reading"), [
       h("div", { class: "row" }, h("span", { id: "setting-language" }, t("settings.language")),
@@ -240,6 +244,7 @@ export function openSettingsDialog({ section = null } = {}) {
   form.addEventListener("input", (event) => {
     const { name, value, checked, type } = event.target;
     if (!name || event.target.classList.contains("ai-model")) return; // modèle et niveau : enregistrés par leurs menus
+    if (name === "zoteroApiKey") zoteroBox.redraw();
     if (name === "feedCategories" || name === "s2ApiKey" || name === "aiLocalUrl" || name === "geminiApiKey" || name === "zoteroApiKey") return; // enregistrés à la sortie du champ
     const parsed = type === "checkbox" ? checked : name === "fontSize" ? Number(value) : value;
     if (name === "fontSize") form.querySelector("#setting-fontSize").textContent = t("settings.fontSize", { n: value });
@@ -260,7 +265,12 @@ export function openSettingsDialog({ section = null } = {}) {
       saveSettings({ s2ApiKey: value.trim() });
     } else if (name === "zoteroApiKey") {
       const key = value.trim();
-      if (key && !/^[A-Za-z0-9]{16,64}$/.test(key)) { toast(t("settings.zoteroKeyBad"), { error: true }); return; }
+      if (key && !ZOTERO_KEY.test(key)) {
+        toast(t("settings.zoteroKeyBad"), { error: true });
+        event.target.value = settings.zoteroApiKey || ""; // la clé enregistrée reste celle utilisée
+        zoteroBox.redraw();
+        return;
+      }
       saveSettings({ zoteroApiKey: key }).then(() => zoteroBox.refresh());
     } else if (name === "geminiApiKey") {
       // focus rendu au champ seulement s'il l'a encore (sortie par Tab ou clic : il va ailleurs, et la clé resterait affichée)

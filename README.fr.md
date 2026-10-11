@@ -125,11 +125,13 @@ Réglages, rubrique « Zotero » : avec une clé personnelle de l'API web de Zot
 zotero.org/settings/keys/new, accès à la bibliothèque en écriture), la bibliothèque et les dossiers se
 synchronisent dans les deux sens avec une collection « arXivReader » de Zotero, dont chaque dossier est une
 sous-collection. Un article ajouté, rangé ou retiré d'un côté l'est de l'autre ; un élément Zotero rangé dans
-« arXivReader » avec un identifiant arXiv est importé d'arXiv. Le reste de la bibliothèque Zotero n'est jamais
-modifié et rien n'y est supprimé (un article retiré est seulement sorti de ces collections ; un article déjà dans
-Zotero est repris, pas dupliqué). Synchronisation automatique peu après chaque changement et toutes les dix
+« arXivReader » avec un identifiant arXiv est importé d'arXiv. Aucun élément Zotero n'est supprimé : un article
+retiré est seulement sorti de ces collections (ses autres collections restent), et un article déjà dans Zotero est
+repris, pas dupliqué. Supprimer un dossier supprime sa sous-collection (pas ses éléments), et inversement.
+Synchronisation automatique (réglage « Synchroniser automatiquement ») peu après chaque changement et toutes les dix
 minutes, ou « Synchroniser maintenant ». Par prudence, une synchronisation automatique qui retirerait beaucoup
-d'articles d'un coup (ou verrait disparaître des sous-collections) attend « Synchroniser maintenant ».
+d'articles d'un coup (ou verrait disparaître des sous-collections) ne change rien et attend « Synchroniser
+maintenant ». `ARXIVREADER_NO_ALERTS=1` coupe aussi la synchronisation automatique (essais).
 
 ## Parus en revue
 

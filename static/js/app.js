@@ -11,6 +11,7 @@ import { refreshUpdates } from "./updates.js";
 import { api } from "./api.js";
 import { droppedPapers, h, mayBePaper, navigation, openRoute, toast, toastError, wantsNewTab } from "./util.js";
 import { addToLibrary, selectionDropped } from "./selection.js";
+import { watchZotero } from "./zotero.js";
 
 const view = document.getElementById("view");
 let cleanup = null;
@@ -134,6 +135,8 @@ document.addEventListener("visibilitychange", async () => {
 route();
 refreshAlerts();
 setInterval(refreshAlerts, 10 * 60 * 1000);
+watchZotero();
+setInterval(watchZotero, 30 * 1000); // synchronisation automatique avec Zotero : bibliothèque affichée remise à jour
 // nouvelle version sur GitHub : vérifiée au lancement puis toutes les 6 heures (le serveur n'interroge GitHub qu'une fois par jour)
 refreshUpdates();
 setInterval(refreshUpdates, 6 * 3600 * 1000);

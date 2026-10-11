@@ -29,6 +29,8 @@ class FakeZotero:
         self.version = 0
         self.serial = 0
         self.requests = []
+        self.refuse = set()  # clés dont l'écriture échoue (élément changé entre-temps)
+        self.purged = {}     # éléments supprimés définitivement → version de la suppression
 
     def _key(self):
         self.serial += 1
@@ -55,31 +57,40 @@ class FakeZotero:
             return Answer(200, {"userID": 7, "username": "chercheur", "access": {"user": {"library": True, "write": True}}})
         assert path.startswith("/users/7/")
         path = path.removeprefix("/users/7")
-        page = lambda rows: Answer(200, rows[int(params.get("start", 0)):int(params.get("start", 0)) + int(params.get("limit", 100))], len(rows))
+        def page(rows):
+            answer = Answer(200, rows[int(params.get("start", 0)):int(params.get("start", 0)) + int(params.get("limit", 100))], len(rows))
+            answer.headers["Last-Modified-Version"] = str(self.version)
+            return answer
         if method == "GET":
-            if path == "/collections/top":
-                return page([c for c in self.collections.values() if not c["data"]["parentCollection"]])
+            if path == "/collections":
+                return page(list(self.collections.values()))
             if m := re.fullmatch(r"/collections/(\w+)/collections", path):
                 return page([c for c in self.collections.values() if c["data"]["parentCollection"] == m.group(1)])
             if m := re.fullmatch(r"/collections/(\w+)/items/top", path):
                 return page([i for i in self.items.values() if m.group(1) in i["data"]["collections"] and not i["data"].get("deleted")])
             if m := re.fullmatch(r"/collections/(\w+)", path):
                 return Answer(200, self.collections[m.group(1)]) if m.group(1) in self.collections else Answer(404)
+            if path == "/deleted":
+                return Answer(200, {"items": [k for k, v in self.purged.items() if v > int(params.get("since", 0))], "collections": []})
             if path == "/items/top":
-                rows = [i for i in self.items.values() if not i["data"].get("deleted")]
-                if "q" in params:
-                    rows = [i for i in rows if params["q"] in str(i["data"])]
+                rows = [i for i in self.items.values() if params.get("includeTrashed") or not i["data"].get("deleted")]
+                rows = [i for i in rows if i["version"] > int(params.get("since", 0))]
+                if "q" in params:  # comme Zotero : titre, auteurs, année (pas l'adresse ni « extra »)
+                    rows = [i for i in rows if params["q"].lower() in (i["data"].get("title", "") + str(i["data"].get("creators", ""))).lower()]
                 return page(rows)
+            if path == "/items" and "itemKey" in params:
+                return page([self.items[k] for k in params["itemKey"].split(",") if k in self.items])
             if m := re.fullmatch(r"/items/(\w+)", path):
                 return Answer(200, self.items[m.group(1)]) if m.group(1) in self.items else Answer(404)
         if method == "POST" and path in ("/collections", "/items"):
             store = self.collections if path == "/collections" else self.items
-            successful = {}
+            successful, failed = {}, {}
             for index, obj in enumerate(json):
                 self.version += 1
                 if "key" in obj:  # mise à jour partielle
                     current = store[obj["key"]]
-                    if obj["version"] != current["version"]:
+                    if obj["version"] != current["version"] or obj["key"] in self.refuse:
+                        failed[str(index)] = {"key": obj["key"], "code": 412, "message": "changed"}
                         continue
                     current["data"].update({k: v for k, v in obj.items() if k not in ("key", "version")})
                     current["version"] = self.version
@@ -88,7 +99,7 @@ class FakeZotero:
                     key = self._key()
                     store[key] = {"key": key, "version": self.version, "data": {"key": key, **obj}}
                     successful[str(index)] = store[key]
-            return Answer(200, {"successful": successful, "failed": {}})
+            return Answer(200, {"successful": successful, "failed": failed})
         if method == "PATCH" and (m := re.fullmatch(r"/collections/(\w+)", path)):
             collection = self.collections[m.group(1)]
             if headers.get("If-Unmodified-Since-Version") != str(collection["version"]):
@@ -236,6 +247,76 @@ class Sync(unittest.TestCase):
         report = self.run_sync()
         self.assertEqual(report["removedHere"], 8)
         self.assertEqual(folders.list_folders(), [])
+
+    def item_of(self, arxiv_id):
+        return next(k for k, i in self.zotero.items.items() if zotero.arxiv_of(i["data"]) == arxiv_id and not i["data"].get("deleted"))
+
+    def test_refused_write_is_retried(self):
+        # rangé ici ; l'écriture dans Zotero est refusée (élément changé entre-temps) : ni perdu ni défait
+        a = save("0806.2370", "Toeplitz operators")
+        folder = folders.create("Toeplitz")
+        self.run_sync()
+        folders.set_member(folder["id"], a, True)
+        self.zotero.refuse.add(self.item_of("0806.2370"))
+        report = self.run_sync()
+        self.assertEqual(report["toZotero"], 0)
+        self.zotero.refuse.clear()
+        self.run_sync()
+        self.assertEqual(self.folder_of("Toeplitz")["papers"], [a])
+        self.assertEqual(self.places(self.item_of("0806.2370")), ["Toeplitz", "arXivReader"])
+
+    def test_duplicates_merged_in_zotero(self):
+        # deux éléments du même article dans « arXivReader » ; Zotero fusionne : l'ancien à la corbeille, l'autre gardé
+        a = save("0806.2370", "Toeplitz operators")
+        self.run_sync()
+        first = self.item_of("0806.2370")
+        root = self.zotero.named("arXivReader")
+        second = self.zotero.add_item({"itemType": "journalArticle", "title": "Toeplitz operators (published)", "DOI": "10.48550/arXiv.0806.2370",
+                                       "collections": [root]})
+        self.assertEqual(self.run_sync()["duplicates"], 1)
+        self.zotero.items[first]["data"]["deleted"] = 1
+        self.run_sync()
+        self.assertTrue(db.get_paper(a)["in_library"])
+        self.assertEqual(zotero._saved()[0][a], second)
+
+    def test_nested_subcollection_and_folder_name(self):
+        # élément déplacé dans une sous-collection plus profonde : reste dans le dossier ; nom à deux espaces : pas
+        # renommé à chaque passage
+        a = save("0806.2370", "Toeplitz operators")
+        folders.create("Toeplitz", [a])
+        self.run_sync()
+        sub = self.zotero.named("Toeplitz")
+        old = self.zotero.add_collection("Old", sub)
+        self.zotero.items[self.item_of("0806.2370")]["data"]["collections"] = [old]
+        self.zotero.collections[sub]["data"]["name"] = "Berezin  Toeplitz"
+        self.run_sync()
+        self.assertEqual(self.folder_of("Berezin Toeplitz")["papers"], [a])
+        self.assertTrue(db.get_paper(a)["in_library"])
+        self.assertEqual(self.run_sync()["folders"], 0)
+
+    def test_folder_deleted_here_while_filled_in_zotero(self):
+        # dossier supprimé ici alors qu'un élément vient d'y être rangé dans Zotero : le dossier revient, avec lui
+        a = save("0806.2370", "Toeplitz operators")
+        folder = folders.create("Toeplitz", [a])
+        self.run_sync()
+        self.zotero.add_item({"itemType": "preprint", "title": "Review", "archiveID": "arXiv:1003.2523", "collections": [self.zotero.named("Toeplitz")]})
+        folders.delete(folder["id"])
+        self.run_sync()
+        self.assertIn("1003.2523", self.folder_of("Toeplitz")["papers"])
+        self.assertIn(self.zotero.named("Toeplitz"), self.zotero.collections)
+
+    def test_deleted_or_trashed_item(self):
+        # supprimé de Zotero (corbeille vidée) : retiré d'ici, comme à la corbeille ; rajouté ensuite ici : nouvel élément
+        a = save("0806.2370", "Toeplitz operators")
+        self.run_sync()
+        key = self.item_of("0806.2370")
+        self.zotero.items.pop(key)
+        self.zotero.purged[key] = self.zotero.version
+        self.run_sync()
+        self.assertFalse(db.get_paper(a)["in_library"])
+        db.update_paper(a, in_library=1)
+        self.run_sync()
+        self.assertEqual(self.places(self.item_of("0806.2370")), ["arXivReader"])
 
     def test_read_only_key(self):
         with mock.patch.object(self.zotero, "request", side_effect=lambda *a, **k: Answer(200, {"userID": 7, "access": {"user": {"library": True}}})):

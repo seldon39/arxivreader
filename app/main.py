@@ -57,8 +57,11 @@ async def lifespan(_app):
         threading.Thread(target=_watch_parent, args=(os.getppid(),), daemon=True).start()
     yield
     if syncing:
-        zotero.stop.set()
-        syncing.cancel()
+        zotero.stop.set()  # la synchronisation en cours s'arrête à l'étape suivante
+        try:
+            await asyncio.wait_for(syncing, 5)
+        except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
+            pass
     if task:
         alerts.stop.set()  # la vérification en cours s'arrête à l'auteur suivant
         task.cancel()
@@ -96,10 +99,6 @@ async def local_only(request: Request, call_next):
         if request.method != "DELETE" and content_type != "application/json":
             return PlainTextResponse("JSON expected", status_code=415)
     response = await call_next(request)
-    # bibliothèque ou dossiers modifiés : Zotero sera synchronisé sous peu
-    if request.method != "GET" and response.status_code < 400 and (
-            request.url.path.startswith("/api/folders") or request.url.path == "/api/papers" or request.url.path.endswith("/library")):
-        zotero.touch()
     # le PDF d'un article s'affiche dans un cadre de la page du lecteur (même origine)
     path = request.url.path
     response.headers["Content-Security-Policy"] = PDF_CSP if path.endswith("/pdf") else PDFJS_CSP if path.startswith(PDFJS) else CSP
@@ -246,7 +245,10 @@ async def _import(query, add_to_library):
 
 @app.post("/api/papers")
 async def add_paper(body: ImportRequest):
-    return await _import(body.query, body.library)
+    answer = await _import(body.query, body.library)
+    if body.library:
+        zotero.touch()  # ajouté à la bibliothèque : Zotero sous peu (« Lire » seul : rien)
+    return answer
 
 
 @app.get("/api/papers/{paper_id}")
@@ -311,7 +313,9 @@ def create_folder(body: FolderRequest):
     for paper_id in body.papers:
         checked_paper(paper_id)
     try:
-        return folders.create(body.name, body.papers)
+        created = folders.create(body.name, body.papers)
+        zotero.touch()
+        return created
     except folders.FolderError as error:
         raise HTTPException(409 if "déjà" in str(error) else 400, str(error))
 
@@ -320,7 +324,9 @@ def create_folder(body: FolderRequest):
 def rename_folder(folder_id: int, body: RenameRequest):
     checked_folder(folder_id)
     try:
-        return folders.rename(folder_id, body.name)
+        renamed = folders.rename(folder_id, body.name)
+        zotero.touch()
+        return renamed
     except folders.FolderError as error:
         raise HTTPException(409 if "déjà" in str(error) else 400, str(error))
 
@@ -328,6 +334,7 @@ def rename_folder(folder_id: int, body: RenameRequest):
 @app.delete("/api/folders/{folder_id}")
 def delete_folder(folder_id: int):
     checked_folder(folder_id)
+    zotero.touch()
     return folders.delete(folder_id)
 
 
@@ -335,6 +342,7 @@ def delete_folder(folder_id: int):
 def add_to_folder(folder_id: int, paper_id: str):
     checked_folder(folder_id)
     checked_paper(paper_id)
+    zotero.touch()
     return folders.set_member(folder_id, paper_id, True)
 
 
@@ -342,12 +350,14 @@ def add_to_folder(folder_id: int, paper_id: str):
 def remove_from_folder(folder_id: int, paper_id: str):
     checked_folder(folder_id)
     checked_paper(paper_id)
+    zotero.touch()
     return folders.set_member(folder_id, paper_id, False)
 
 
 @app.put("/api/papers/{paper_id}/library")
 def set_library(paper_id: str, body: LibraryRequest):
     checked_paper(paper_id)
+    zotero.touch()
     return library.set_in_library(paper_id, body.in_library)
 
 
@@ -547,6 +557,7 @@ async def refresh(paper_id: str):
 
 @app.delete("/api/papers/{paper_id}")
 def remove(paper_id: str):
+    zotero.touch()  # effacé : retiré des collections Zotero au prochain passage
     checked_paper(paper_id)
     library.remove_paper(paper_id)
     return {"ok": True}
@@ -779,13 +790,11 @@ async def zotero_sync():
         return JSONResponse({"code": "no-key", "error": "Pas de clé Zotero"}, status_code=400)
     try:
         report = await run_in_threadpool(zotero.sync, key)
-    except zotero.ZoteroError as error:
-        if error.code != "busy":
-            zotero.record_error(error)
-        return JSONResponse({"code": error.code, "error": str(error)}, status_code=409 if error.code == "busy" else 502)
-    except httpx.HTTPError as error:
-        zotero.record_error(f"Zotero injoignable ({type(error).__name__})")
-        return JSONResponse({"code": "network", "error": "Zotero injoignable"}, status_code=502)
+    except Exception as error:  # cause gardée (code traduit par la page) et renvoyée
+        code, message = zotero.describe(error)
+        if code != "busy":
+            zotero.record_error(code, message)
+        return JSONResponse({"code": code, "error": message}, status_code=409 if code == "busy" else 502)
     return {**zotero.status(), "report": report}
 
 

@@ -119,11 +119,13 @@ Z → A, folders then being sorted by name in the same order).
 Settings, "Zotero" section: with a personal Zotero web API key (created at zotero.org/settings/keys/new, library
 access with write access), the library and folders synchronise both ways with an "arXivReader" collection in
 Zotero, each folder being a subcollection. A paper added, filed or removed on one side is on the other; a Zotero
-item filed in "arXivReader" with an arXiv identifier is imported from arXiv. The rest of the Zotero library is never
-modified and nothing is deleted there (a removed paper is only taken out of these collections; a paper already in
-Zotero is reused, not duplicated). Automatic synchronisation shortly after each change and every ten minutes, or
+item filed in "arXivReader" with an arXiv identifier is imported from arXiv. No Zotero item is ever deleted: a removed
+paper is only taken out of these collections (its other collections stay), and a paper already in Zotero is reused,
+not duplicated. Deleting a folder deletes its subcollection (not its items), and the other way round. Automatic
+synchronisation ("Synchronise automatically" setting) shortly after each change and every ten minutes, or
 "Synchronise now". To be safe, an automatic synchronisation that would remove many papers at once (or sees
-subcollections vanish) waits for "Synchronise now".
+subcollections vanish) changes nothing and waits for "Synchronise now". `ARXIVREADER_NO_ALERTS=1` also turns
+automatic synchronisation off (testing).
 
 ## Published in a journal
 
