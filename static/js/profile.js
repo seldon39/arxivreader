@@ -3,6 +3,7 @@
 import { api } from "./api.js";
 import { t, tn } from "./i18n.js";
 import { typesetTex } from "./math.js";
+import { saveSettings, settings } from "./settings.js";
 import { h, icons, toast, toastError, withMath } from "./util.js";
 
 const SECTIONS = [
@@ -51,16 +52,57 @@ export async function renderProfile(body) {
   draw();
 }
 
+// recherche dans chaque rubrique, gardée quand la page est redessinée (ajout, retrait)
+const queries = {};
+const fold = (text) => String(text || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+// Rubrique repliable (comme les sections du feed), fermée par défaut : titre et nombre ; dépliée, son
+// explication, une recherche dans ses éléments (s'il y en a plus de trois), la liste et le champ d'ajout
 function renderSection(section, data, update) {
   const items = data.items.filter((i) => section.kinds.includes(i.kind));
-  const list = h("div", { class: "profile-list" }, items.length
-    ? items.map((item) => profileRow(item, update))
-    : h("p", { class: "hint" }, t("profile.empty")));
-  return h("section", { class: "profile-section" },
-    h("h2", {}, t(`profile.section.${section.key}`)),
+  const count = h("span", { class: "count" });
+  const rows = h("div", { class: "profile-list" });
+  const drawRows = () => {
+    const words = fold(queries[section.key]).split(/\s+/).filter(Boolean);
+    const shown = items.filter((item) => {
+      const haystack = fold([item.label, ...(item.authors || []), item.year, item.ref, item.text].join(" "));
+      return words.every((word) => haystack.includes(word));
+    });
+    count.textContent = shown.length === items.length ? tn("profile.count", items.length)
+      : t("profile.matching", { n: shown.length, total: items.length });
+    rows.replaceChildren(...(shown.length ? shown.map((item) => profileRow(item, update))
+      : [h("p", { class: "hint" }, t(items.length ? "profile.noMatch" : "profile.empty"))]));
+    typesetTex([rows]).catch(() => {});
+  };
+  const search = items.length > 3 && h("input", { class: "text-input profile-search-input", type: "search", value: queries[section.key] || "",
+    placeholder: t("profile.search"), "aria-label": t("profile.search"), autocomplete: "off", spellcheck: "false",
+    oninput: (event) => { queries[section.key] = event.target.value; drawRows(); } });
+  drawRows();
+  const element = h("section", { class: "profile-section foldable" });
+  const toggle = h("button", { class: "section-toggle", type: "button" },
+    h("span", { class: "label" }, t(`profile.section.${section.key}`), count),
+    h("span", { class: "chevron", html: icons.chevronRight }));
+  const body = h("div", { class: "fold-body" }, h("div", { class: "fold-inner" },
     h("p", { class: "hint" }, t(`profile.help.${section.key}`)),
-    list,
-    section.resolver ? searchForm(section, update) : keywordForm(update));
+    search && h("span", { class: "search-field profile-search" }, h("span", { class: "search-icon", html: icons.search }), search),
+    rows,
+    section.resolver ? searchForm(section, update) : keywordForm(update)));
+  const setOpen = (open) => {
+    element.classList.toggle("collapsed", !open);
+    body.inert = !open;
+    toggle.setAttribute("aria-expanded", String(open));
+    toggle.title = t(open ? "feed.collapseSection" : "feed.expandSection");
+  };
+  toggle.addEventListener("click", () => {
+    const open = element.classList.contains("collapsed");
+    setOpen(open);
+    const others = (settings.profileOpen || []).filter((key) => key !== section.key);
+    saveSettings({ profileOpen: open ? [...others, section.key] : others });
+    if (open && search) requestAnimationFrame(() => search.focus({ preventScroll: true }));
+  });
+  setOpen((settings.profileOpen || []).includes(section.key));
+  element.append(h("h2", { class: "feed-date" }, toggle), body);
+  return element;
 }
 
 function profileRow(item, update) {

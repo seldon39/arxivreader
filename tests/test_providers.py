@@ -346,6 +346,8 @@ class Settings(unittest.TestCase):
                               "aiGeminiEffort": ""}), 200)
         self.assertEqual(put({"aiModel": "codex"}), 400)
         self.assertEqual(put({"aiCodexEffort": "turbo"}), 400)
+        self.assertEqual(put({"profileOpen": ["author", "mine"]}), 200)  # rubriques dépliées du profil
+        self.assertEqual(put({"profileOpen": ["author", "../x"]}), 400)
 
 
 if __name__ == "__main__":

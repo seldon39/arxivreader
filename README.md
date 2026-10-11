@@ -117,7 +117,8 @@ still not reported. Many authors never update arXiv: a paper not reported may st
   go back to earlier days; days older than a week come from arXiv's search API, which gives new and
   cross-listed papers but not replacements.
 - **Recommendations**: Semantic Scholar (public API, no account needed), based on your profile and your 👍.
-- **Profile**: your papers, reference papers and books, followed authors, keywords.
+- **Profile**: your papers, reference papers and books, followed authors, keywords, in collapsible
+  sections (closed by default, state kept) with a search in each.
   "Prefill from the library" builds it from the library and from the bibliographies of your papers
   (authors cited at least twice, full first name looked up on arXiv; cited books; keywords).
   The references of your papers are also used, in the background.

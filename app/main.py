@@ -743,7 +743,7 @@ def update_settings(values: dict):
     allowed = {"language", "theme", "fontSize", "readingWidth", "proofsCollapsed", "tocOpen", "panelOpen", "panelWidth", "tocWidth", "paperFont", "marginMarks", "mathRenderer",
                "feedCategories", "feedTypes", "s2ApiKey", "feedSort", "feedSortS2", "aiModel", "notifyFollowed",
                "aiProvider", "aiLocalUrl", "aiLocalModel", "checkUpdates", "aiFontSize", "notifyCitations", "readerView",
-               "citingCollapsed", "followedCollapsed", "geminiApiKey", "aiGeminiModel",
+               "citingCollapsed", "followedCollapsed", "geminiApiKey", "aiGeminiModel", "profileOpen",
                "aiClaudeEffort", "aiCodexModel", "aiCodexEffort", "aiGeminiEffort"}
     values = {k: v for k, v in values.items() if k in allowed}
     if not all(_valid_setting(k, v) for k, v in values.items()):
@@ -789,6 +789,8 @@ def _valid_setting(key, value):
         return isinstance(value, str) and providers.valid_effort(value)
     if key == "s2ApiKey":
         return isinstance(value, str) and len(value) <= 200 and value.isascii() and value.isprintable()
+    if key == "profileOpen":  # rubriques dépliées de l'onglet Profil
+        return isinstance(value, list) and all(v in ("mine", "references", "author", "keyword") for v in value)
     if key == "feedTypes":
         return isinstance(value, list) and all(v in ("new", "cross", "replace", "replace-cross") for v in value)
     return True  # feedCategories : vérifié à part

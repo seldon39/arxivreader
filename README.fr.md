@@ -121,7 +121,8 @@ Menu **Feed** en haut, quatre onglets :
   d'annonce mènent aux jours précédents ; au-delà d'une semaine, ils viennent de l'API de recherche
   d'arXiv, qui donne les nouveaux articles et les croisés mais pas les nouvelles versions.
 - **Recommandations** : Semantic Scholar (API publique, sans compte), à partir du profil et des 👍.
-- **Profil** : vos articles, articles et livres de référence, auteurs suivis, mots-clés.
+- **Profil** : vos articles, articles et livres de référence, auteurs suivis, mots-clés, en rubriques
+  repliables (fermées par défaut, état gardé) avec une recherche dans chacune.
   « Pré-remplir » le construit à partir de la bibliothèque et des bibliographies de vos articles
   (auteurs cités au moins deux fois, prénom complet retrouvé sur arXiv ; livres cités ; mots-clés).
   Les références de vos articles servent aussi, en arrière-plan.

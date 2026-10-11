@@ -635,9 +635,12 @@ svg.graph { color: var(--border-strong); }
 .sort-label { margin-right: 2px; }
 .profile-owner { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0 0 22px; }
 .profile-owner .text-input { flex: 0 1 260px; }
-.profile-section { margin: 0 0 26px; }
-.profile-section h2 { font-size: 18px; margin: 0 0 2px; }
-.profile-section > .hint { margin: 0 0 10px; }
+/* rubriques repliables (comme les sections du feed), recherche comme dans un dossier */
+.profile-section { margin: 0 0 18px; }
+.profile-section .fold-inner > .hint { margin: 10px 0 10px; }
+.profile-search { display: flex; margin: 0 0 10px; }
+.profile-search-input { height: 34px; width: 100%; padding-left: 34px; font-size: 14px; }
+.profile-section .fold-inner { padding: 0 2px 4px; }
 .profile-list { display: grid; gap: 6px; margin-bottom: 10px; }
 .profile-row, .profile-candidate { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
 .profile-text { display: grid; gap: 2px; flex: 1; min-width: 0; }
