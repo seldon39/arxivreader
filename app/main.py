@@ -585,7 +585,7 @@ async def search_arxiv(body: SearchRequest):
     """Recherche dans tout arXiv (pas seulement la bibliothèque) : résultats présentés comme le feed."""
     try:
         return await run_in_threadpool(search.search, [t.model_dump() for t in body.terms[:10]], body.categories[:20],
-                                       body.cross, body.dates, body.sort, body.page)
+                                       body.cross, body.dates, body.sort, body.page, db.get_settings().get("s2ApiKey") or None)
     except search.SearchError as error:
         raise HTTPException(400, str(error))
     except Exception as error:  # réseau, arXiv indisponible

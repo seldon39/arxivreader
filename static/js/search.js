@@ -97,7 +97,8 @@ export async function renderSearch(root) {
         dates.mode === "year" && yearInput,
         dates.mode === "range" && h("span", { class: "search-group" }, dateInput("from"), "–", dateInput("to")),
         h("span", { class: "search-label search-sort-label" }, t("search.sort")),
-        segmented("sort", [["relevance", t("search.sort.relevance")], ["newest", t("search.sort.newest")], ["oldest", t("search.sort.oldest")]],
+        segmented("sort", [["relevance", t("search.sort.relevance")], ["profile", t("search.sort.profile")],
+          ["newest", t("search.sort.newest")], ["oldest", t("search.sort.oldest")]],
           state.sort, (value) => { state.sort = value; })));
   }
 
@@ -130,14 +131,17 @@ export async function renderSearch(root) {
     if (!results) { resultsBox.replaceChildren(); return; }
     const { items, total, start, pageSize } = results;
     const last = Math.min(start + pageSize, total);
-    const sortName = t(`search.sort.${results.request.sort}`).toLowerCase();
+    const sortName = t(`search.sortedBy.${results.request.sort}`);
     const pager = h("div", { class: "search-pager" },
       h("button", { class: "button small-button", type: "button", disabled: start === 0, onclick: () => run(state.page - 1) }, t("search.previous")),
       h("button", { class: "button small-button", type: "button", disabled: last >= total, onclick: () => run(state.page + 1) }, t("search.next")));
     resultsBox.replaceChildren(
       h("div", { class: "search-results-head" },
         h("h2", {}, t("search.results")),
-        h("span", { class: "muted small" }, total ? t("search.range", { from: start + 1, to: last, total, sort: sortName }) : "")),
+        h("span", { class: "muted small", title: results.pool ? t("search.poolHint", { pool: results.pool }) : null }, !total ? ""
+          // « pour vous » : les meilleurs résultats d'arXiv, reclassés selon votre profil
+          : results.pool ? t("search.rangePool", { from: start + 1, to: last, total, arxiv: results.arxivTotal, sort: sortName })
+            : t("search.range", { from: start + 1, to: last, total, sort: sortName }))),
       items.length
         ? h("div", { class: "feed-day" }, items.map((item) => feedCard(item, () => {}, { showDate: true })))
         : h("div", { class: "empty" }, t(total ? "search.noneOnPage" : "search.none")),

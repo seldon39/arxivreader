@@ -77,7 +77,8 @@ L'onglet « Recherche » interroge tout arXiv (interface publique export.arxiv.o
 sa recherche avancée : critères par champ (tous les champs, titre, auteur, résumé, commentaires, référence de
 journal, catégorie, numéro de rapport, identifiant) reliés par ET / OU / SAUF, « expression exacte » entre
 guillemets, catégories (vos catégories du feed proposées, d'autres ajoutées), articles croisés compris ou
-non, période de soumission (12 derniers mois, une année, une période), tri par pertinence ou par date,
+non, période de soumission (12 derniers mois, une année, une période), tri par pertinence, par date, ou
+« Pour vous » (les 200 résultats les plus pertinents pour arXiv, reclassés selon votre profil comme le feed),
 pages de 25 résultats. Les résultats se présentent comme le feed (pertinence pour votre profil, avis, ajout
 à la bibliothèque, ⌘-clic pour un nouvel onglet). Non proposés, faute de prise en charge par l'interface
 d'arXiv : DOI, ORCID, classes MSC/ACM, licence. Une requête au plus toutes les 3 s, comme arXiv le demande.

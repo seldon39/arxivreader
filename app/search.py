@@ -25,7 +25,12 @@ FIELDS = {"all": "all", "title": "ti", "author": "au", "abstract": "abs", "comme
           "journal": "jr", "category": "cat", "report": "rn", "id": "id"}
 OPERATORS = {"and": "AND", "or": "OR", "not": "ANDNOT"}
 SORTS = {"relevance": ("relevance", "descending"), "newest": ("submittedDate", "descending"),
-         "oldest": ("submittedDate", "ascending")}
+         "oldest": ("submittedDate", "ascending"), "profile": ("relevance", "descending")}
+# « Pertinence pour vous » : les POOL meilleurs résultats d'arXiv, reclassés selon le profil (comme le feed),
+# gardés quelques minutes pour passer d'une page à l'autre sans nouvelle requête
+POOL = 200
+POOL_TTL = 600
+_pools = {}
 CATEGORY = re.compile(r"[a-z-]+(\.[A-Za-z-]+)?")
 ARXIV_ID = re.compile(r"(\d{4}\.\d{4,5}|[a-z-]+(\.[A-Z]{2})?/\d{7})(v\d+)?", re.I)
 
@@ -145,25 +150,57 @@ def parse(xml_text):
     return items, total
 
 
-def search(terms, categories=(), cross=True, dates=None, sort="relevance", page=0):
-    expression, ids = build_query(terms, categories, dates)
+def _fetch(expression, ids, sort, start, count):
     sort_by, order = SORTS.get(sort, SORTS["relevance"])
-    start = max(0, min(int(page), MAX_START // PAGE_SIZE)) * PAGE_SIZE
-    params = {"start": start, "max_results": PAGE_SIZE, "sortBy": sort_by, "sortOrder": order}
+    params = {"start": start, "max_results": count, "sortBy": sort_by, "sortOrder": order}
     if expression:
         params["search_query"] = expression
     if ids:
         params["id_list"] = ",".join(ids[:50])
     _wait_turn()
-    with httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=40, follow_redirects=True) as client:
+    with httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=60, follow_redirects=True) as client:
         response = with_retry(lambda: client.get(API, params=params))
     response.raise_for_status()
-    items, total = parse(response.text)
-    if categories and not cross:  # articles croisés exclus : catégorie principale parmi celles demandées
-        wanted = set(categories)
-        items = [i for i in items if i["primary_category"] in wanted]
+    return parse(response.text)
+
+
+def search(terms, categories=(), cross=True, dates=None, sort="relevance", page=0, api_key=None):
+    expression, ids = build_query(terms, categories, dates)
+    page = max(0, min(int(page), MAX_START // PAGE_SIZE))
+    only_primary = set(categories) if categories and not cross else None  # articles croisés exclus
+    if sort == "profile":
+        return _profile_page(expression, ids, only_primary, page, api_key)
+    start = page * PAGE_SIZE
+    items, total = _fetch(expression, ids, sort, start, PAGE_SIZE)
+    if only_primary:
+        items = [i for i in items if i["primary_category"] in only_primary]
     remember(items)
     return {"items": annotate(items), "total": total, "start": start, "pageSize": PAGE_SIZE}
+
+
+def _profile_page(expression, ids, only_primary, page, api_key):
+    key = json.dumps([expression, ids, sorted(only_primary or [])])
+    now = time.monotonic()
+    for old in [k for k, (stamp, _, _) in _pools.items() if now - stamp > POOL_TTL]:
+        del _pools[old]
+    if key not in _pools:
+        items, total = _fetch(expression, ids, "relevance", 0, POOL)
+        if only_primary:
+            items = [i for i in items if i["primary_category"] in only_primary]
+        remember(items)
+        try:  # vecteurs de sens (Semantic Scholar) : proximité de sens en plus de celle du vocabulaire
+            relevance.fetch_embeddings([relevance.s2_key(i["arxiv_id"]) for i in items], api_key)
+        except Exception:
+            pass
+        ranked = sorted(annotate(items), key=lambda i: i.get("relevance") or 0, reverse=True)
+        while len(_pools) >= 5:  # quelques recherches gardées seulement
+            del _pools[min(_pools, key=lambda k: _pools[k][0])]
+        _pools[key] = (now, ranked, total)
+    _, ranked, total = _pools[key]
+    start = page * PAGE_SIZE
+    # avis donnés depuis : relus (le classement, lui, reste celui du premier calcul)
+    items = annotate_status(ranked[start:start + PAGE_SIZE])
+    return {"items": items, "total": len(ranked), "arxivTotal": total, "start": start, "pageSize": PAGE_SIZE, "pool": POOL}
 
 
 def remember(items):
@@ -176,18 +213,20 @@ def remember(items):
               i["abstract"], json.dumps(i["categories"]), i["primary_category"], i["announced"], i["link"]) for i in items])
 
 
-def annotate(items):
-    """Article déjà lu ou dans la bibliothèque, avis donné : comme dans le feed ; proximité avec le profil."""
+def annotate_status(items):
+    """Article déjà lu ou dans la bibliothèque, avis donné (comme dans le feed)."""
     with db.connect() as connection:
         papers = connection.execute("SELECT id, arxiv_id, in_library FROM papers").fetchall()
         status = {r["key"]: r["status"] for r in connection.execute("SELECT key, status FROM feed_status")}
     library = {r["arxiv_id"]: r["id"] for r in papers if r["in_library"]}
     cached = {r["arxiv_id"]: r["id"] for r in papers}
-    for item in items:
-        item["status"] = status.get(item["key"])
-        item["libraryId"] = library.get(item["arxiv_id"])
-        item["readId"] = cached.get(item["arxiv_id"])
-        item["citing"] = []
+    return [{**item, "status": status.get(item["key"]), "libraryId": library.get(item["arxiv_id"]),
+             "readId": cached.get(item["arxiv_id"])} for item in items]
+
+
+def annotate(items):
+    """Article déjà lu ou dans la bibliothèque, avis donné : comme dans le feed ; proximité avec le profil."""
+    items = [{**item, "citing": []} for item in annotate_status(items)]
     try:
         return relevance.score_items(items)
     except Exception:  # vecteurs de sens indisponibles : résultats sans proximité

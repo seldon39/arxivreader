@@ -61,3 +61,37 @@ class Query(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProfileSort(unittest.TestCase):
+    """« Pour vous » : un lot de résultats d'arXiv reclassé selon le profil, puis découpé en pages sans nouvelle requête."""
+
+    def setUp(self):
+        import pathlib, tempfile
+        from app import db, search
+        self.saved = (db.DB_PATH, db.LIBRARY)
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        db.DB_PATH, db.LIBRARY = tmp / "test.db", tmp
+        db.init()
+        search._pools.clear()
+
+    def tearDown(self):
+        from app import db
+        db.DB_PATH, db.LIBRARY = self.saved
+
+    def test_rank_and_pages(self):
+        from unittest import mock
+        from app import search
+        items = [{"key": f"2601.{n:05d}", "arxiv_id": f"2601.{n:05d}", "version": 1, "title": f"Paper {n}", "authors": [],
+                  "abstract": "", "categories": ["math.DG"], "primary_category": "math.DG", "announced": "2026-01-01",
+                  "link": ""} for n in range(60)]
+        scored = lambda batch: [{**i, "relevance": int(i["arxiv_id"][-2:]) / 100} for i in batch]
+        with mock.patch.object(search, "_fetch", return_value=(items, 506)) as fetch, \
+                mock.patch.object(search.relevance, "score_items", side_effect=scored), \
+                mock.patch.object(search.relevance, "fetch_embeddings"):
+            first = search.search([{"field": "all", "value": "x"}], sort="profile", page=0)
+            second = search.search([{"field": "all", "value": "x"}], sort="profile", page=1)
+        self.assertEqual(fetch.call_count, 1)  # deuxième page : même lot, sans requête
+        self.assertEqual((first["total"], first["arxivTotal"], len(first["items"])), (60, 506, 25))
+        self.assertEqual(first["items"][0]["arxiv_id"], "2601.00059")
+        self.assertEqual(second["items"][0]["arxiv_id"], "2601.00034")
