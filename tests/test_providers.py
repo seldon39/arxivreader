@@ -219,3 +219,22 @@ class Settings(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RecentNode(unittest.TestCase):
+    """codex et gemini : le Node d'un gestionnaire de versions passe devant un vieux Node de /usr/local/bin."""
+
+    def test_fnm_before_old_node(self):
+        import pathlib, tempfile
+        from unittest import mock
+        from app import providers
+        home = pathlib.Path(tempfile.mkdtemp())
+        old, new = home / "old", home / ".local/share/fnm/aliases/default/bin"
+        for folder, version in ((old, "v16.14.0"), (new, "v24.19.0")):
+            folder.mkdir(parents=True)
+            (folder / "node").write_text(f"#!/bin/sh\necho {version}\n")
+            (folder / "node").chmod(0o755)
+        with mock.patch.object(providers.Path, "home", return_value=home), mock.patch.object(providers, "_node_folder", None), \
+             mock.patch.dict(providers.os.environ, {"PATH": str(old), "FNM_DIR": ""}):
+            self.assertEqual(providers._recent_node(), str(new))
+            self.assertTrue(providers._search_path().startswith(str(new)))

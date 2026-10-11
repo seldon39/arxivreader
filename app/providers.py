@@ -62,12 +62,50 @@ def valid_local_url(url):
 
 # ---------- Programmes en ligne de commande ----------
 
+NODE_MIN = 20  # codex et gemini demandent Node 20 ou plus
+
+
+def _version_key(path):
+    found = re.search(r"v?(\d+)\.(\d+)\.(\d+)", path)
+    return tuple(int(n) for n in found.groups()) if found else (0, 0, 0)
+
+
+def _node_major(folder):
+    try:
+        out = subprocess.run([str(Path(folder) / "node"), "--version"], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return 0
+    found = re.match(r"v(\d+)", out.strip())
+    return int(found.group(1)) if found else 0
+
+
+_node_folder = None
+
+
+def _recent_node():
+    """Dossier d'un Node assez récent : celui des gestionnaires de versions (fnm, nvm, volta, mise, asdf)
+    d'abord, car un vieux Node installé à part dans /usr/local/bin ferait échouer codex et gemini."""
+    global _node_folder
+    if _node_folder is not None:
+        return _node_folder
+    home = Path.home()
+    fnm = [os.environ.get("FNM_DIR", ""), str(home / ".local/share/fnm"), str(home / "Library/Application Support/fnm"), str(home / ".fnm")]
+    candidates = [*(f"{d}/aliases/default/bin" for d in fnm if d),
+                  *sorted((f for d in fnm if d for f in glob.glob(f"{d}/node-versions/*/installation/bin")), key=_version_key, reverse=True),
+                  *sorted(glob.glob(str(home / ".nvm/versions/node/*/bin")), key=_version_key, reverse=True),
+                  str(home / ".volta/bin"), str(home / ".local/share/mise/shims"), str(home / ".asdf/shims"),
+                  "/opt/homebrew/bin", "/usr/local/bin", *os.environ.get("PATH", "").split(os.pathsep)]
+    _node_folder = next((d for d in dict.fromkeys(candidates) if d and (Path(d) / "node").exists() and _node_major(d) >= NODE_MIN), "")
+    return _node_folder
+
+
 def _search_path():
-    """PATH du serveur, complété des dossiers usuels (lancé depuis le Finder, il est très court)."""
+    """PATH du serveur, complété des dossiers usuels (lancé depuis le Finder, il est très court) ; un Node
+    assez récent passe en tête."""
     home = Path.home()
     extra = ["/opt/homebrew/bin", "/usr/local/bin", str(home / ".local/bin"), str(home / ".npm-global/bin"),
              str(home / ".volta/bin"), str(home / ".bun/bin"), *sorted(glob.glob(str(home / ".nvm/versions/node/*/bin")))]
-    return os.pathsep.join([os.environ.get("PATH", ""), *extra])
+    return os.pathsep.join(d for d in [_recent_node(), os.environ.get("PATH", ""), *extra] if d)
 
 
 def _environment():
@@ -128,8 +166,16 @@ def open_setup(provider, step, claude_cli=None):
     folder.mkdir(parents=True, exist_ok=True)
     script = folder / f"setup-{provider}.command"
     shown = "claude auth login" if provider == "claude" else command
+    # codex et gemini : sans Node assez récent, un message clair plutôt qu'une erreur de JavaScript
+    node_check = ("" if provider not in ("codex", "gemini") else
+                  "major=$(node -p 'process.versions.node.split(\".\")[0]' 2>/dev/null || echo 0)\n"
+                  f"if [ \"$major\" -lt {NODE_MIN} ]; then\n"
+                  f"  echo \"Node.js {NODE_MIN} ou plus est nécessaire (trouvé : $(node --version 2>/dev/null || echo aucun)).\"\n"
+                  "  echo \"Installez la version LTS depuis https://nodejs.org, puis recommencez.\"\n"
+                  "  exit 1\nfi\n")
     _write(script, "#!/bin/bash\n"
                    f"export PATH={shlex.quote(_search_path())}\n"
+                   + node_check +
                    f"echo {shlex.quote('$ ' + shown)}\n"
                    f"{command}\n"
                    "echo\necho \"Terminé : revenez dans arXivReader et cliquez sur « Vérifier à nouveau ».\"\n")
