@@ -71,6 +71,12 @@ async function renderList(body, tab) {
     keys.forEach((key) => sent.add(key));
     api.alertsSeen(keys).then(() => dispatchEvent(new Event("arxivreader:alerts"))).catch(() => {});
   };
+  // vus : les nouveaux articles affichés, hors d'une section repliée (marqués à son ouverture)
+  const markSeenShown = () => markSeen(data.items.filter((i) => {
+    const shownCard = fresh.has(i.key) && list.querySelector(`.feed-card.fresh[data-key="${CSS.escape(i.key)}"]`);
+    return shownCard && !shownCard.closest(".foldable.collapsed");
+  }).map((i) => i.key));
+  addEventListener("arxivreader:section-opened", markSeenShown);
   let loadingDay = false;
   let generation = 0; // change à chaque changement de jour : une mise à jour plus ancienne n'écrase rien
   const remember = () => { memory.day = data.day && data.day !== data.latestDay ? data.day : null; };
@@ -159,6 +165,7 @@ async function renderList(body, tab) {
   };
 
   const draw = () => {
+    abstractObserver.disconnect(); // cartes précédentes : plus observées (elles vont être remplacées)
     tools.update();
     const needle = state.search.trim().toLowerCase();
     const matches = (item) => (item.status !== "disliked" || state.showHidden)
@@ -209,7 +216,7 @@ async function renderList(body, tab) {
       sections.push(h("section", { class: "feed-day" }, shown.map(card)));
     }
     list.replaceChildren(...(sections.length ? sections : [h("div", { class: "empty" }, t("feed.noMatch"))]));
-    markSeen(data.items.filter((i) => fresh.has(i.key) && list.querySelector(`.feed-card.fresh[data-key="${CSS.escape(i.key)}"]`)).map((i) => i.key));
+    markSeenShown();
     typesetTex([list]).then(() => list.querySelectorAll(".feed-abstract").forEach((a) => a.updateMore?.())).catch(() => {});
   };
 
@@ -217,7 +224,12 @@ async function renderList(body, tab) {
   draw();
   const stale = hoursSince(data.refreshed?.[tab]) > (tab === "recommended" ? STALE_S2_HOURS : STALE_ARXIV_HOURS);
   if (stale) doRefresh(true);
-  return () => { removeEventListener("keydown", onKey); tools.close({ focus: false }); };
+  return () => {
+    removeEventListener("keydown", onKey);
+    removeEventListener("arxivreader:section-opened", markSeenShown);
+    abstractObserver.disconnect();
+    tools.close({ focus: false });
+  };
 }
 
 // Barre du feed : recherche, puis trois boutons (tri, filtres, mise à jour), comme la bibliothèque ;
@@ -366,7 +378,7 @@ function feedCard(item, onChange = () => {}, { compact = false, fresh = false, s
     more.hidden = !open && abstract.scrollHeight <= abstract.clientHeight + 1;
   };
   abstract.updateMore = updateMore; // aussi après la mise en forme des formules (la hauteur change)
-  new ResizeObserver(updateMore).observe(abstract);
+  abstractObserver.observe(abstract);
   const toggleAbstract = () => {
     abstract.setAttribute("aria-expanded", String(abstract.classList.toggle("open")));
     updateMore();
@@ -485,6 +497,10 @@ function feedCard(item, onChange = () => {}, { compact = false, fresh = false, s
 
 // Section repliable (« Citent vos articles », « Nouveaux articles de vos auteurs suivis ») : l'intertitre
 // porte une flèche à droite ; l'état replié est retenu dans les réglages (clé settingKey)
+// Lien « Afficher tout le résumé » recalculé quand la largeur change ; un seul observateur pour tout le feed,
+// vidé à chaque nouvel affichage (voir draw)
+const abstractObserver = new ResizeObserver((entries) => entries.forEach((entry) => entry.target.updateMore?.()));
+
 function foldableSection(settingKey, title, cards, { extraClass = "", collapsedByDefault = false } = {}) {
   const section = h("section", { class: `feed-day followed-section foldable ${extraClass}`.trim() });
   const toggle = h("button", { class: "section-toggle", type: "button",
@@ -501,6 +517,7 @@ function foldableSection(settingKey, title, cards, { extraClass = "", collapsedB
     if (animate && !collapsed) setTimeout(() => section.classList.remove("opening"), 900);
     section.classList.toggle("collapsed", collapsed);
     body.inert = collapsed; // repliée : ses liens ne reçoivent plus le focus
+    if (animate && !collapsed) dispatchEvent(new Event("arxivreader:section-opened")); // nouveaux articles vus
     toggle.setAttribute("aria-expanded", String(!collapsed));
     toggle.title = t(collapsed ? "feed.expandSection" : "feed.collapseSection");
   };

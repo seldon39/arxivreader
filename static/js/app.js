@@ -92,7 +92,8 @@ for (const type of ["click", "auxclick"]) {
 document.addEventListener("visibilitychange", async () => {
   if (document.visibilityState !== "visible") return;
   await loadSettings();
-  if (!location.hash || location.hash === "#/") route();
+  // bibliothèque : liste et dossiers relus sur place (sans redessiner la page : saisie, menus et import en cours restent)
+  if (!location.hash || location.hash === "#/") dispatchEvent(new Event("arxivreader:library-refresh"));
   refreshAlerts();
 });
 route();

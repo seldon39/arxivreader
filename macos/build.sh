@@ -17,12 +17,17 @@ CONDA=${CONDA:-$HOME/miniforge3/bin/conda}
 PYVER=$(.venv/bin/python -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')
 PYFULL=$(.venv/bin/python -c 'import platform; print(platform.python_version())')  # même Python que .venv
 VERSION=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' app/version.py)  # app/version.py
+[ -n "$VERSION" ] || { echo "VERSION introuvable dans app/version.py."; exit 1; }
 BUILD_NUMBER=$(git rev-list --count HEAD 2>/dev/null || echo 1)
 
 rm -rf "$APP" "$DIST/arXivReader.dmg"
 mkdir -p "$APP/Contents/MacOS" "$RES" "$BUILD" "$DIST"
 
 # 1. Python autonome, créé une fois depuis le cache de conda (sans réseau)
+# (recréé si .venv est passé à une autre version de Python)
+if [ -x "$BUILD/python/bin/python3" ] && [ "$("$BUILD/python/bin/python3" -c 'import platform; print(platform.python_version())')" != "$PYFULL" ]; then
+  rm -rf "$BUILD/python"
+fi
 if [ ! -x "$BUILD/python/bin/python3" ]; then
   echo "Python $PYVER (conda-forge)…"
   "$CONDA" create --offline --yes --quiet --override-channels -c conda-forge -p "$BUILD/python" "python=$PYFULL" >/dev/null

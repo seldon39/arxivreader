@@ -1136,7 +1136,8 @@ input.switch:focus-visible { outline: 2px solid var(--focus); outline-offset: 2p
 .folder-panel.open { grid-template-rows: 1fr; opacity: 1; transform: none; margin-top: 12px; }
 .folder-panel-inner { min-height: 0; overflow: hidden; border-radius: 10px; }
 .folder-panel.open .folder-panel-inner { border: 1.5px solid var(--accent); background: color-mix(in srgb, var(--accent) 4%, var(--bg)); padding: 4px 14px 6px; }
-.folder-panel.open .card { animation: folder-card .32s ease both; animation-delay: calc(80ms + var(--i, 0) * 45ms); }
+.folder-panel.opening .card { animation: folder-card .32s ease both; animation-delay: calc(80ms + var(--i, 0) * 45ms); }
+.folder-panel.no-anim { transition: none; }
 @keyframes folder-card { from { opacity: 0; transform: translateY(-4px); } }
 .folder-panel-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
 .folder-panel-head .folder-icon { width: 22px; height: 22px; background: transparent; }

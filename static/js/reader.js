@@ -79,6 +79,7 @@ class Reader {
     this.backStack = [];
     this.anchors = null;
     this.cleanups = [];
+    this.viewToken = 0;
 
     this.build(view, html);
     if (!this.texOnly && this.viewSwitch && settings.readerView === "pdf") this.setView("pdf", { save: false });
@@ -214,17 +215,20 @@ class Reader {
 
   async setView(view, { save = true } = {}) {
     if (this.texOnly || (view === "pdf") === this.pdfMode) return;
+    // jeton : une bascule plus récente (ou un énoncé choisi entre-temps) l'emporte sur les suites de celle-ci
+    const token = ++this.viewToken;
+    const current = () => token === this.viewToken && !this.destroyed;
     if (save) saveSettings({ readerView: view });
     this.viewSwitch?.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === view)));
     if (view === "pdf") {
-      // page où l'on en était dans le HTML
-      this.htmlScroll = scrollY;
-      // à l'ouverture : dernière position de lecture enregistrée ; sinon, l'endroit lu dans le HTML
-      // (à l'ouverture, l'article n'est pas encore dans la page : recherche dans son contenu)
-      const position = this.paper.position;
+      // page où l'on en était dans le HTML (pas à l'ouverture : rien n'est encore lu)
+      if (save) this.htmlScroll = scrollY;
+      // à l'ouverture : l'énoncé demandé (renvoi), sinon la dernière position de lecture ; ensuite, l'endroit
+      // lu dans le HTML (à l'ouverture, l'article n'est pas encore dans la page : recherche dans son contenu)
+      const position = this.startAt || this.paper.position;
       const anchor = save ? this.currentAnchor()
         : position ? this.find(position) || this.content.querySelector(`#${CSS.escape(position)}`) : null;
-      const anchorId = anchor?.id ?? (save ? null : this.paper.position);
+      const anchorId = anchor?.id ?? (save ? null : position);
       // texte du HTML et mot lu (avant de masquer le HTML : il faut sa mise en page)
       this.htmlText = htmlWords(this.content);
       const from = this.wordAt(this.htmlText, anchor, save);
@@ -238,12 +242,12 @@ class Reader {
       }
       scrollTo({ top: 0, behavior: "instant" });
       await this.loadPages();
-      if (this.destroyed || !this.pdfMode) return;
+      if (!current()) return;
       // d'abord l'estimation des ancres (immédiate), puis l'endroit exact, retrouvé par le texte
       const spot = anchorId ? this.pdfSpot(anchorId) : null;
       this.pdf.goTo(spot?.page || 1, spot?.top ?? null);
       const text = await this.pdf.text();
-      if (!text || from < 0 || this.destroyed || !this.pdfMode) return;
+      if (!text || from < 0 || !current()) return;
       const exact = htmlToPdf(this.htmlText, text, from, spot?.page ?? null);
       if (exact) this.pdf.goTo(exact.page, exact.top);
     } else {
@@ -254,8 +258,12 @@ class Reader {
       this.pdfMode = false;
       delete this.root.dataset.view;
       this.anchors = null;
+      // le HTML a pu être mis en page caché (article ouvert dans le PDF, fenêtre redimensionnée) :
+      // figures et formules larges recalculées maintenant qu'il est affiché
+      layoutFigures(this.figures);
+      this.markWideMath();
       const text = location ? await this.pdf.text() : null;
-      if (this.destroyed || this.pdfMode) return;
+      if (!current()) return;
       const html = this.htmlText = htmlWords(this.content);
       const estimateTop = estimate?.getBoundingClientRect().top;
       const word = text && pdfToHtml(text, html, location, (entry) => (estimateTop == null ? 0 : Math.abs(wordTop(entry) - estimateTop)));
@@ -306,6 +314,7 @@ class Reader {
 
   // Article lu dans le PDF : page de l'énoncé, de la section ou de la preuve, et énoncé choisi dans le panneau
   showInPdf(id) {
+    this.viewToken++; // un recalage en attente (bascule HTML → PDF) ne déplace plus le PDF ensuite
     const node = this.byId.get(id);
     const spot = this.pdfSpot(id);
     if (spot && this.pdf) this.pdf.goTo(spot.page, spot.top);

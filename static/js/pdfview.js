@@ -52,9 +52,13 @@ export class PdfView {
     return Boolean(this.frame.getAttribute("src"));
   }
 
-  // pdf.js prêt (document ouvert, pages en place) ; null s'il ne l'est pas au bout de 20 s
+  // pdf.js prêt (document ouvert, pages en place) ; null s'il ne l'est pas 30 s après le début du
+  // chargement (le PDF peut d'abord être téléchargé depuis arXiv : l'attente compte à partir de load())
   async ready() {
-    for (let i = 0; i < 200; i++) {
+    for (let i = 0; i < 1200 && !this.loaded && this.frame.isConnected !== false; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    for (let i = 0; i < 300; i++) {
       const app = this.frame.contentWindow?.PDFViewerApplication;
       if (app?.pdfDocument && app.pdfViewer?.pagesCount > 0) return app;
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -95,7 +99,9 @@ export class PdfView {
 
   // texte du PDF, mot à mot avec page et hauteur (calculé une fois)
   text() {
-    this.words ??= this.ready().then((app) => (app ? pdfWords(app) : null)).catch(() => null);
+    // un échec n'est pas gardé : la prochaine demande réessaie
+    this.words ??= this.ready().then((app) => (app ? pdfWords(app) : null)).catch(() => null)
+      .then((words) => { if (!words) this.words = null; return words; });
     return this.words;
   }
 

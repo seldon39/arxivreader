@@ -29,7 +29,7 @@ function showPill() {
 
 // Section « Mises à jour » des réglages
 export function updatesSection() {
-  const box = h("div", { class: "updates-settings", id: "settings-updates" });
+  const box = h("div", { class: "updates-settings" });
   const draw = (state, checking = false) => {
     const latest = state?.latest;
     const parts = [h("p", { class: "hint" }, t("updates.current", { version: state?.current || "…" }))];

@@ -45,7 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let server, server.isRunning else { return .terminateNow }
         server.terminate() // SIGTERM : le serveur termine proprement (vérification en cours, base)
         DispatchQueue.global().async {
-            let deadline = Date().addingTimeInterval(5)
+            let deadline = Date().addingTimeInterval(9) // le serveur se laisse 3 s, plus l'arrêt de ses tâches
             while server.isRunning && Date() < deadline { usleep(50_000) }
             if server.isRunning { kill(server.processIdentifier, SIGKILL) }
             DispatchQueue.main.async { NSApp.reply(toApplicationShouldTerminate: true) }
@@ -58,7 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let process = Process()
         process.executableURL = resources.appendingPathComponent("python/bin/python3")
         process.arguments = ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(port),
-                             "--log-level", "warning"]
+                             "--log-level", "warning", "--timeout-graceful-shutdown", "3"]
         process.currentDirectoryURL = resources.appendingPathComponent("arxivreader")
         var env = ProcessInfo.processInfo.environment
         for key in ["PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "VIRTUAL_ENV"] { env.removeValue(forKey: key) }
@@ -72,6 +72,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if FileManager.default.fileExists(atPath: certificates.path) { env["SSL_CERT_FILE"] = certificates.path }
         process.environment = env
         let log = support.appendingPathComponent("server.log")
+        // journal précédent gardé (server.log.1) : après « Relancer », la cause de l'arrêt reste lisible
+        let previous = support.appendingPathComponent("server.log.1")
+        try? FileManager.default.removeItem(at: previous)
+        try? FileManager.default.moveItem(at: log, to: previous)
         FileManager.default.createFile(atPath: log.path, contents: nil)
         if let handle = try? FileHandle(forWritingTo: log) {
             process.standardOutput = handle
@@ -131,8 +135,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.messageText = message
         alert.informativeText = detail
         alert.addButton(withTitle: tr("Quitter", "Quit"))
+        quitting = true // avant la fenêtre : un arrêt du serveur pendant qu'elle est affichée n'en ouvre pas une autre
         alert.runModal()
-        quitting = true
         server?.terminate()
         NSApp.terminate(nil)
     }
@@ -231,7 +235,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } else if let frame = tabs.dropLast().last?.window.frame {
                 tab.window.setFrame(frame.offsetBy(dx: 28, dy: -28), display: false) // en cascade
             }
+            // nouvelle fenêtre (⌘N) : pas rangée d'office en onglet (réglage « Préférer les onglets : toujours »)
+            tab.window.tabbingMode = .disallowed
             tab.window.makeKeyAndOrderFront(nil)
+            tab.window.tabbingMode = .automatic
         }
         showTabBar(tab.window)
         tab.load(route)
@@ -267,7 +274,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func newTab() { openTab("#/", beside: keyTab?.window) }
     @objc func newWindow() { openTab("#/", beside: nil) }
     // tous les onglets de la fenêtre
-    @objc func closeWindow() { (keyTab?.window.tabGroup?.windows ?? keyTab.map { [$0.window] } ?? []).forEach { $0.performClose(nil) } }
+    @objc func closeWindow() { (keyTab?.window.tabGroup?.windows ?? keyTab.map { [$0.window] } ?? []).forEach { $0.close() } }
     // Rechercher : la page s'en charge (barre de recherche du lecteur, champ de la bibliothèque)
     func find(_ command: String) {
         keyTab?.webView.evaluateJavaScript("document.dispatchEvent(new CustomEvent('app:find', { detail: '\(command)' }))")
@@ -314,7 +321,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             entry(tr("Fermer l'onglet", "Close Tab"), #selector(NSWindow.performClose(_:)), "w"),
             entry(tr("Fermer la fenêtre", "Close Window"), #selector(closeWindow), "w", [.command, .shift], target: self),
             .separator(),
-            entry(tr("Afficher tous les onglets", "Show All Tabs"), #selector(NSWindow.toggleTabOverview(_:)), "\\", [.command, .shift]),
+            entry(tr("Afficher tous les onglets", "Show All Tabs"), #selector(NSWindow.toggleTabOverview(_:)), "|"),
         ])
         submenu(tr("Édition", "Edit"), [
             entry(tr("Annuler", "Undo"), Selector(("undo:")), "z"),
@@ -342,8 +349,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             entry(tr("Placer dans le Dock", "Minimize"), #selector(NSWindow.performMiniaturize(_:)), "m"),
             entry(tr("Réduire/agrandir", "Zoom"), #selector(NSWindow.performZoom(_:))),
             .separator(),
-            entry(tr("Afficher l'onglet précédent", "Show Previous Tab"), #selector(NSWindow.selectPreviousTab(_:)), "[", [.command, .shift]),
-            entry(tr("Afficher l'onglet suivant", "Show Next Tab"), #selector(NSWindow.selectNextTab(_:)), "]", [.command, .shift]),
+            entry(tr("Afficher l'onglet précédent", "Show Previous Tab"), #selector(NSWindow.selectPreviousTab(_:)), "{"),
+            entry(tr("Afficher l'onglet suivant", "Show Next Tab"), #selector(NSWindow.selectNextTab(_:)), "}"),
             entry(tr("Placer l'onglet dans une nouvelle fenêtre", "Move Tab to New Window"), #selector(NSWindow.moveTabToNewWindow(_:))),
             entry(tr("Fusionner toutes les fenêtres", "Merge All Windows"), #selector(NSWindow.mergeAllWindows(_:))),
         ]
@@ -408,7 +415,8 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
     func load(_ route: String) {
         if app.serverReady {
             pending = nil
-            webView.load(URLRequest(url: URL(string: "\(app.origin)/\(route)")!))
+            guard let url = URL(string: "\(app.origin)/\(route)") ?? URL(string: "\(app.origin)/") else { return }
+            webView.load(URLRequest(url: url))
         } else {
             pending = route
             webView.loadHTMLString(app.startPage(), baseURL: nil)
@@ -423,7 +431,8 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
 
     func received(_ message: WKScriptMessage) {
         guard let body = message.body as? [String: Any], body["action"] as? String == "openTab",
-              let route = body["route"] as? String, route.hasPrefix("#/") else { return }
+              let route = body["route"] as? String,
+              route.range(of: "^#/[A-Za-z0-9/._%~-]*$", options: .regularExpression) != nil else { return }
         // comme Safari : nouvel onglet en arrière-plan (⇧ en plus : affiché aussitôt)
         app.openTab(route, beside: window, front: body["front"] as? Bool ?? false)
     }
@@ -449,14 +458,35 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
         try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
     }
 
+    // Page de l'application : http://127.0.0.1:<port du serveur>, comparé en entier (pas un simple préfixe :
+    // « http://127.0.0.1:8720@autre.site » ou un port plus long ne passent pas)
+    func isAppURL(_ url: URL) -> Bool {
+        url.scheme == "http" && url.host == "127.0.0.1" && url.port == app.port && url.user == nil && url.password == nil
+    }
+
+    // Lien vers l'extérieur ouvert dans le navigateur (ou l'application concernée) : seulement un clic de
+    // l'utilisateur vers http(s) ou mailto, et claude:// (bouton « Continuer dans Claude ») ; le reste
+    // (smb://, ssh://, schémas d'autres applications, redirections, cadres) est ignoré
+    func openOutside(_ url: URL, _ action: WKNavigationAction) {
+        let scheme = url.scheme?.lowercased() ?? ""
+        let clicked = action.navigationType == .linkActivated
+        guard (["http", "https", "mailto"].contains(scheme) && clicked) || scheme == "claude" else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     // Liens : ceux de l'application restent dans la fenêtre, les autres (arXiv, DOI, claude://…) s'ouvrent à côté
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        guard let url = action.request.url else { return decisionHandler(.allow) }
-        if url.absoluteString.hasPrefix(app.origin) || url.scheme == "about" || url.scheme == "data" || url.scheme == "blob" {
+        guard let url = action.request.url else { return decisionHandler(.cancel) }
+        let mainFrame = action.targetFrame?.isMainFrame ?? true
+        let scheme = url.scheme?.lowercased() ?? ""
+        if isAppURL(url) || scheme == "about" {
             decisionHandler(action.shouldPerformDownload ? .download : .allow)
+        } else if scheme == "data" || scheme == "blob" {
+            // contenus construits par la page : dans un cadre (PDF, images) ou en téléchargement, jamais comme page
+            decisionHandler(action.shouldPerformDownload ? .download : mainFrame ? .cancel : .allow)
         } else {
-            NSWorkspace.shared.open(url)
+            if mainFrame { openOutside(url, action) }
             decisionHandler(.cancel)
         }
     }
@@ -466,14 +496,20 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
         decisionHandler(response.canShowMIMEType ? .allow : .download)
     }
 
-    // target="_blank", window.open : dans le navigateur
+    // target="_blank", window.open : page de l'application dans un nouvel onglet, le reste dans le navigateur
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if let url = action.request.url { NSWorkspace.shared.open(url) }
+        guard let url = action.request.url else { return nil }
+        if isAppURL(url) { app.openTab(url.fragment.map { "#\($0)" } ?? "#/", beside: window) } else { openOutside(url, action) }
         return nil
     }
 
-    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { webView.reload() }
+    // Page plantée (manque de mémoire…) : rechargée, mais pas en boucle si elle replante aussitôt
+    var crashes: [Date] = []
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        crashes = crashes.filter { $0.timeIntervalSinceNow > -60 } + [Date()]
+        if crashes.count <= 3 { webView.reload() }
+    }
 
     // Essais (premier onglet) : ARXIVREADER_SNAPSHOT=fichier.png, image de la page quelques secondes après le
     // chargement ; ARXIVREADER_WINDOWSHOT=fichier.png, la fenêtre entière (barre d'onglets) et un relevé

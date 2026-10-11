@@ -264,21 +264,31 @@ export async function renderLibrary(root) {
     return box;
   }
 
+  // formulaires de nom (création, renommage) gardés d'un dessin à l'autre : une recherche ou un filtre
+  // pendant la saisie ne les recrée pas (le texte tapé et le focus restent)
+  let createForm = null;
+  let renameForm = null;
+  // focus gardé sur le dossier cliqué (le dessin remplace les boutons)
+  const focusFolder = (id) => folderGrid.querySelector(`[data-folder="${id}"]`)?.focus();
+
   function drawFolders() {
     const cards = folderList.map((folder) => {
       const count = inLibrary(folder).length;
       return h("button", { class: "folder", type: "button", "aria-expanded": String(view.openFolder === folder.id), "aria-controls": "folder-panel",
-        onclick: () => toggleFolder(folder.id) },
+        dataset: { folder: folder.id }, onclick: () => toggleFolder(folder.id) },
         h("span", { class: "folder-icon", html: icons.folder }),
         h("span", { class: "folder-text" }, h("span", { class: "folder-name" }, folder.name), h("span", { class: "folder-count" }, tn("feed.count", count))));
     });
+    if (!creating) createForm = null;
+    createForm ||= creating && h("div", { class: "folder folder-new editing" }, nameForm("", async (name) => {
+      const folder = await api.createFolder(name);
+      creating = false;
+      view.openFolder = folder.id;
+      panelOpening = true;
+      await reloadFolders();
+    }, () => { creating = false; drawFolders(); }, t("library.folder.create")));
     const add = creating
-      ? h("div", { class: "folder folder-new editing" }, nameForm("", async (name) => {
-        const folder = await api.createFolder(name);
-        creating = false;
-        view.openFolder = folder.id;
-        await reloadFolders();
-      }, () => { creating = false; drawFolders(); }, t("library.folder.create")))
+      ? createForm
       : h("button", { class: "folder folder-new", type: "button", onclick: () => { creating = true; drawFolders(); } },
         h("span", { class: "folder-icon", html: icons.add }), t("library.folder.new"));
     foldersTitle.textContent = folderList.length ? t("library.foldersCount", { n: folderList.length }) : t("library.folders");
@@ -301,30 +311,43 @@ export async function renderLibrary(root) {
       return;
     }
     const members = papers.filter((p) => folder.papers.includes(p.id)).sort(SORTERS[view.sort]);
-    const title = renaming
-      ? nameForm(folder.name, async (name) => { await api.renameFolder(folder.id, name); renaming = false; await reloadFolders(); },
-        () => { renaming = false; drawPanel(); }, t("library.folder.save"))
-      : h("h3", {}, folder.name);
+    if (!renaming) renameForm = null;
+    renameForm ||= renaming && nameForm(folder.name, async (name) => { await api.renameFolder(folder.id, name); renaming = false; await reloadFolders(); },
+      () => { renaming = false; drawPanel(); }, t("library.folder.save"));
+    const title = renaming ? renameForm : h("h3", {}, folder.name);
     inner.replaceChildren(
       h("div", { class: "folder-panel-head" },
         h("span", { class: "folder-icon", html: icons.folder }), title,
         h("span", { class: "muted small" }, tn("feed.count", members.length)),
         !renaming && h("button", { class: "link-button", type: "button", onclick: () => { renaming = true; drawPanel(); } }, t("library.folder.rename")),
         h("button", { class: "link-button", type: "button", onclick: () => removeFolder(folder) }, t("library.folder.delete")),
-        h("button", { class: "link-button", type: "button", onclick: () => toggleFolder(folder.id) }, t("library.folder.close"))),
+        h("button", { class: "link-button", type: "button", onclick: () => { toggleFolder(folder.id); focusFolder(folder.id); } }, t("library.folder.close"))),
       members.length
         ? h("div", { class: "cards" }, members.map((p, i) => { const c = card(p, refreshList, cardContext); c.style.setProperty("--i", i); return c; }))
         : h("p", { class: "hint folder-empty" }, t("library.folder.empty")));
     if (!panel.classList.contains("open")) {
-      void panel.offsetHeight; // point de départ (replié) avant le déroulé
+      if (panelOpening) {
+        void panel.offsetHeight; // point de départ (replié) avant le déroulé
+        // articles qui apparaissent l'un après l'autre : à l'ouverture seulement (pas à chaque recherche)
+        panel.classList.add("opening");
+        setTimeout(() => panel.classList.remove("opening"), 900);
+      } else {
+        // dossier resté ouvert (retour sur la page) : affiché d'emblée, sans déroulé qui décalerait la page
+        panel.classList.add("no-anim");
+        requestAnimationFrame(() => requestAnimationFrame(() => panel.classList.remove("no-anim")));
+      }
       panel.classList.add("open");
     }
+    panelOpening = false;
   }
 
+  let panelOpening = false;
   function toggleFolder(id) {
     view.openFolder = view.openFolder === id ? null : id;
+    panelOpening = view.openFolder !== null;
     renaming = false;
     drawFolders();
+    focusFolder(id);
   }
 
   async function removeFolder(folder) {
@@ -334,7 +357,11 @@ export async function renderLibrary(root) {
       view.folders.delete(folder.id);
       await reloadFolders();
       toast(t("library.folder.deleted", { name: removed.name }), { action: { label: t("common.undo"),
-        onClick: () => api.createFolder(removed.name, removed.papers).then((again) => { view.openFolder = again.id; return reloadFolders(); }, toastError) } });
+        onClick: () => api.createFolder(removed.name, removed.papers).then((again) => {
+          view.openFolder = again.id;
+          panelOpening = true;
+          return reloadFolders();
+        }, toastError) } });
     } catch (error) {
       toastError(error);
     }
@@ -353,8 +380,11 @@ export async function renderLibrary(root) {
   function openFileMenu(paper, button) {
     if (fileMenu?.paperId === paper.id) { closeFileMenu(); return; }
     closeFileMenu();
+    // le menu peut avoir été fermé (ou un autre ouvert) pendant un enregistrement : rien n'est alors redessiné
+    let menu = null;
     const fill = () => {
-      fileMenu.replaceChildren(
+      if (!menu || fileMenu !== menu) return;
+      menu.replaceChildren(
         h("h4", {}, t("library.folder.fileTitle")),
         ...folderList.map((folder) => h("label", { class: "check" },
           h("input", { type: "checkbox", checked: folder.papers.includes(paper.id), onchange: async (event) => {
@@ -369,7 +399,7 @@ export async function renderLibrary(root) {
           h("input", { class: "text-input", type: "text", name: "name", maxlength: 80, placeholder: t("library.folder.newName"), "aria-label": t("library.folder.newName") }),
           h("button", { class: "button small-button", type: "submit" }, t("library.folder.create"))));
     };
-    fileMenu = h("div", { class: "folder-menu", role: "dialog", "aria-label": t("library.folder.fileTitle") });
+    fileMenu = menu = h("div", { class: "folder-menu", role: "dialog", "aria-label": t("library.folder.fileTitle") });
     Object.assign(fileMenu, { paperId: paper.id, opener: button });
     fill();
     document.body.append(fileMenu);
@@ -401,7 +431,10 @@ export async function renderLibrary(root) {
   await refreshList();
   // ⌘F : champ de recherche de la bibliothèque
   const unsubscribeFind = setFindHandler((command) => { if (command === "open") { search.focus(); search.select(); } });
-  return () => { closeMenu({ focus: false }); closeFileMenu(); unsubscribeFind(); };
+  // retour sur l'onglet (application Mac) : liste et dossiers relus, changés peut-être dans un autre onglet
+  const onRefresh = () => refreshList();
+  addEventListener("arxivreader:library-refresh", onRefresh);
+  return () => { closeMenu({ focus: false }); closeFileMenu(); unsubscribeFind(); removeEventListener("arxivreader:library-refresh", onRefresh); };
 }
 
 // « Ouvert il y a 2 jours · 3 notes · 5 énoncés compris · 2 réponses de Claude »

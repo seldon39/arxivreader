@@ -14,6 +14,8 @@ import tarfile
 MAX_FILES = 400
 MAX_FILE_BYTES = 5_000_000
 MAX_TOTAL_BYTES = 40_000_000
+MAX_MEMBERS = 5_000          # entrées parcourues dans l'archive (une archive piégée peut en compter des millions)
+MAX_WALKED_BYTES = 400_000_000  # octets décompressés parcourus, fichiers ignorés compris
 
 COMMENT = re.compile(r"(?<!\\)%.*")
 DOCUMENTCLASS = re.compile(r"\\documentclass\s*(?:\[([^\]]*)\])?\s*\{([^}]+)\}")
@@ -35,9 +37,14 @@ def _read_archive(data, extensions=(".tex", ".ltx")):
     files = {}
     try:
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as archive:
-            total = 0
-            for member in archive:
-                if len(files) >= MAX_FILES:
+            total = walked = 0
+            # au plus MAX_MEMBERS entrées lues (tarfile garde chacune en mémoire) et MAX_WALKED_BYTES parcourus
+            for _ in range(MAX_MEMBERS):
+                member = archive.next()
+                if member is None or len(files) >= MAX_FILES:
+                    break
+                walked += member.size
+                if walked > MAX_WALKED_BYTES:
                     break
                 if not member.isfile() or not member.name.lower().endswith(extensions):
                     continue

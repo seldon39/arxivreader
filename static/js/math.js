@@ -11,7 +11,10 @@ function loadMathJax() {
       loader: { load: [], paths: { mathjax: BASE } },
       // TeX des titres et résumés du feed ($L^2$, \(\mathbb{C}^n\)…)
       tex: { inlineMath: [["$", "$"], ["\\(", "\\)"]], displayMath: [["$$", "$$"], ["\\[", "\\]"]], processEscapes: true,
-        noundefined: { color: "" } },  // macro propre à l'auteur (\db…) : affichée telle quelle, sans rouge
+        noundefined: { color: "" },  // macro propre à l'auteur (\db…) : affichée telle quelle, sans rouge
+        // \href, \style, \class, \cssId désactivés : un résumé ou un titre (texte venu d'arXiv) pourrait y
+        // cacher un lien vers n'importe quelle adresse, invisible et étendu à toute la fenêtre
+        autoload: { html: [] } },
       startup: { typeset: false, ready: () => { window.MathJax.startup.defaultReady(); resolve(window.MathJax); } },
       options: { enableMenu: false, menuOptions: { settings: { assistiveMml: false } } },
       chtml: { fontURL: `${BASE}/fonts/woff-v2`, scale: 1, matchFontHeight: false, mtextInheritFont: true },

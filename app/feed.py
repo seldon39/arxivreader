@@ -90,6 +90,11 @@ def repair_abstracts(batch=50):
     return repaired
 
 
+def web_link(url):
+    """Lien venu de Semantic Scholar : gardé seulement s'il mène à une page web (http ou https)."""
+    return url if isinstance(url, str) and re.match(r"https?://", url, re.I) else None
+
+
 def _client(headers=None):
     return httpx.Client(headers={"User-Agent": USER_AGENT, **(headers or {})}, follow_redirects=True, timeout=40)
 
@@ -340,7 +345,7 @@ def refresh_recommendations(api_key=None, limit=60):
                 (key, arxiv_id, tex_text(paper.get("title")),
                  json.dumps([a.get("name", "") for a in paper.get("authors") or []], ensure_ascii=False),
                  tex_text(paper.get("abstract")), paper.get("publicationDate") or str(paper.get("year") or ""),
-                 rank, f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else paper.get("url"), _now()),
+                 rank, f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else web_link(paper.get("url")), _now()),
             )
     try:  # vecteurs de sens des recommandations, pour les comparer au profil
         relevance.fetch_embeddings([relevance.s2_key((p.get("externalIds") or {}).get("ArXiv"), f"s2:{p['paperId']}")
