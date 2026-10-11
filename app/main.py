@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Str
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import ai, alerts, annotations, citations, crossrefs, db, feed, folders, journals, library, profile, providers, related, relevance, search, updates
+from . import ai, alerts, annotations, citations, crossrefs, db, feed, folders, journals, library, profile, providers, related, relevance, search, updates, zotero
 from .arxiv import ArxivError, fetch_metadata, parse_arxiv_id
 from .config import HOST, PORT, STATIC
 
@@ -50,9 +50,15 @@ async def lifespan(_app):
     # vérification périodique des auteurs suivis (ARXIVREADER_NO_ALERTS=1 pour la couper, par ex. en test)
     alerts.stop.clear()
     task = None if os.environ.get("ARXIVREADER_NO_ALERTS") else asyncio.create_task(alerts.loop())
+    # synchronisation avec Zotero (coupée aussi par ARXIVREADER_NO_ALERTS : jamais pendant les essais)
+    zotero.stop.clear()
+    syncing = None if os.environ.get("ARXIVREADER_NO_ALERTS") else asyncio.create_task(zotero.loop())
     if os.environ.get("ARXIVREADER_WATCH_PARENT"):
         threading.Thread(target=_watch_parent, args=(os.getppid(),), daemon=True).start()
     yield
+    if syncing:
+        zotero.stop.set()
+        syncing.cancel()
     if task:
         alerts.stop.set()  # la vérification en cours s'arrête à l'auteur suivant
         task.cancel()
@@ -90,6 +96,10 @@ async def local_only(request: Request, call_next):
         if request.method != "DELETE" and content_type != "application/json":
             return PlainTextResponse("JSON expected", status_code=415)
     response = await call_next(request)
+    # bibliothèque ou dossiers modifiés : Zotero sera synchronisé sous peu
+    if request.method != "GET" and response.status_code < 400 and (
+            request.url.path.startswith("/api/folders") or request.url.path == "/api/papers" or request.url.path.endswith("/library")):
+        zotero.touch()
     # le PDF d'un article s'affiche dans un cadre de la page du lecteur (même origine)
     path = request.url.path
     response.headers["Content-Security-Policy"] = PDF_CSP if path.endswith("/pdf") else PDFJS_CSP if path.startswith(PDFJS) else CSP
@@ -756,6 +766,29 @@ async def prefill_profile(body: PrefillRequest):
     return get_profile()
 
 
+@app.get("/api/zotero")
+def zotero_status():
+    return zotero.status()
+
+
+@app.post("/api/zotero/sync")
+async def zotero_sync():
+    """Synchronisation demandée (bouton des réglages) ; l'erreur est aussi gardée pour l'état affiché."""
+    key = db.get_settings().get("zoteroApiKey")
+    if not key:
+        return JSONResponse({"code": "no-key", "error": "Pas de clé Zotero"}, status_code=400)
+    try:
+        report = await run_in_threadpool(zotero.sync, key)
+    except zotero.ZoteroError as error:
+        if error.code != "busy":
+            zotero.record_error(error)
+        return JSONResponse({"code": error.code, "error": str(error)}, status_code=409 if error.code == "busy" else 502)
+    except httpx.HTTPError as error:
+        zotero.record_error(f"Zotero injoignable ({type(error).__name__})")
+        return JSONResponse({"code": "network", "error": "Zotero injoignable"}, status_code=502)
+    return {**zotero.status(), "report": report}
+
+
 @app.get("/api/settings")
 def settings():
     return db.get_settings()
@@ -767,7 +800,7 @@ def update_settings(values: dict):
                "feedCategories", "feedTypes", "s2ApiKey", "feedSort", "feedSortS2", "aiModel", "notifyFollowed",
                "aiProvider", "aiLocalUrl", "aiLocalModel", "checkUpdates", "aiFontSize", "notifyCitations", "readerView",
                "citingCollapsed", "followedCollapsed", "geminiApiKey", "aiGeminiModel", "profileOpen",
-               "aiClaudeEffort", "aiCodexModel", "aiCodexEffort", "aiGeminiEffort"}
+               "aiClaudeEffort", "aiCodexModel", "aiCodexEffort", "aiGeminiEffort", "zoteroApiKey", "zoteroAutoSync"}
     values = {k: v for k, v in values.items() if k in allowed}
     if not all(_valid_setting(k, v) for k, v in values.items()):
         raise HTTPException(400, "Bad setting")
@@ -786,7 +819,7 @@ SETTING_CHOICES = {
     "feedSort": {"relevance", "arxiv"}, "feedSortS2": {"relevance", "s2"},
 }
 BOOLEAN_SETTINGS = {"proofsCollapsed", "tocOpen", "panelOpen", "marginMarks", "notifyFollowed", "checkUpdates", "notifyCitations",
-                    "citingCollapsed", "followedCollapsed"}
+                    "citingCollapsed", "followedCollapsed", "zoteroAutoSync"}
 
 
 def _valid_setting(key, value):
@@ -806,6 +839,8 @@ def _valid_setting(key, value):
         return isinstance(value, str) and len(value) <= 200 and value.isprintable()
     if key == "geminiApiKey":
         return value == "" or providers.valid_gemini_key(value)
+    if key == "zoteroApiKey":
+        return isinstance(value, str) and (value == "" or re.fullmatch(r"[A-Za-z0-9]{16,64}", value) is not None)
     if key in ("aiGeminiModel", "aiCodexModel", "aiModel"):
         return providers.valid_model_name(value) and value not in ("codex", "gemini")
     if key in ("aiClaudeEffort", "aiCodexEffort", "aiGeminiEffort"):

@@ -114,6 +114,17 @@ covers the whole library. A paper can be in several folders, shown at the end of
 "Sort" orders papers by last read, added, published, or alphabetically (title or first author, A → Z or
 Z → A, folders then being sorted by name in the same order).
 
+## Zotero
+
+Settings, "Zotero" section: with a personal Zotero web API key (created at zotero.org/settings/keys/new, library
+access with write access), the library and folders synchronise both ways with an "arXivReader" collection in
+Zotero, each folder being a subcollection. A paper added, filed or removed on one side is on the other; a Zotero
+item filed in "arXivReader" with an arXiv identifier is imported from arXiv. The rest of the Zotero library is never
+modified and nothing is deleted there (a removed paper is only taken out of these collections; a paper already in
+Zotero is reused, not duplicated). Automatic synchronisation shortly after each change and every ten minutes, or
+"Synchronise now". To be safe, an automatic synchronisation that would remove many papers at once (or sees
+subcollections vanish) waits for "Synchronise now".
+
 ## Published in a journal
 
 In the library and the feed, "Filters" → *Journal publication* keeps the papers published in a journal, or those not
@@ -267,7 +278,7 @@ app/            Python server (FastAPI)
   texsource.py  reading the TeX source (class options, font, list labels)
   feed.py       new arXiv papers (RSS, OAI-PMH), Semantic Scholar recommendations, identifier detection
   journals.py   journal where a paper appeared (arXiv, Semantic Scholar)
-  search.py     search across arXiv (Search tab); related.py: related papers (graph)
+  search.py     search across arXiv (Search tab); related.py: related papers (graph); zotero.py: Zotero synchronisation
   folders.py    library folders
   profile.py    research profile, prefill, followed authors; relevance.py: relevance ranking
   annotations.py  highlights, notes, reading state

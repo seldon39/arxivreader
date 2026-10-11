@@ -119,6 +119,18 @@ dossiers, affichés en fin de sa ligne ; « Filtres » permet aussi de réduire 
 « Tri » ordonne les articles par dernière lecture, ajout, publication, ou par ordre alphabétique (titre ou
 premier auteur, A → Z ou Z → A, les dossiers étant alors rangés par nom dans le même sens).
 
+## Zotero
+
+Réglages, rubrique « Zotero » : avec une clé personnelle de l'API web de Zotero (créée sur
+zotero.org/settings/keys/new, accès à la bibliothèque en écriture), la bibliothèque et les dossiers se
+synchronisent dans les deux sens avec une collection « arXivReader » de Zotero, dont chaque dossier est une
+sous-collection. Un article ajouté, rangé ou retiré d'un côté l'est de l'autre ; un élément Zotero rangé dans
+« arXivReader » avec un identifiant arXiv est importé d'arXiv. Le reste de la bibliothèque Zotero n'est jamais
+modifié et rien n'y est supprimé (un article retiré est seulement sorti de ces collections ; un article déjà dans
+Zotero est repris, pas dupliqué). Synchronisation automatique peu après chaque changement et toutes les dix
+minutes, ou « Synchroniser maintenant ». Par prudence, une synchronisation automatique qui retirerait beaucoup
+d'articles d'un coup (ou verrait disparaître des sous-collections) attend « Synchroniser maintenant ».
+
 ## Parus en revue
 
 Dans la bibliothèque et le feed, « Filtres » → *Parution en revue* garde les articles parus en revue, ou ceux qui
@@ -275,7 +287,7 @@ app/            serveur Python (FastAPI)
   texsource.py  lecture de la source TeX (options de classe, police, étiquettes de listes)
   feed.py       nouveautés arXiv (RSS, OAI-PMH), recommandations Semantic Scholar, repérage d'identifiants
   journals.py   revue où un article est paru (arXiv, Semantic Scholar)
-  search.py     recherche dans tout arXiv (onglet Recherche) ; related.py : papiers liés (graphe)
+  search.py     recherche dans tout arXiv (onglet Recherche) ; related.py : papiers liés (graphe) ; zotero.py : synchronisation avec Zotero
   folders.py    dossiers de la bibliothèque
   profile.py    profil de recherche, pré-remplissage, auteurs suivis ; relevance.py : tri par pertinence
   annotations.py  surlignages, notes, état de lecture

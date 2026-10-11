@@ -4,6 +4,7 @@ import { PROVIDERS, assistantName, modelControls, setupNotice } from "./aiprovid
 import { api } from "./api.js";
 import { applyStatic, setAIName, setLanguage, t } from "./i18n.js";
 import { updatesSection } from "./updates.js";
+import { zoteroSection } from "./zotero.js";
 import { h, icons, toast } from "./util.js";
 
 export const DEFAULT_FONT_SIZE = 18;
@@ -146,6 +147,7 @@ export function openSettingsDialog({ section = null } = {}) {
     hint && h("p", { class: "hint" }, hint),
   ];
   // Réglages en quatre sections, une à la fois ; chaque réglage sur une ligne d'un cadre
+  const zoteroBox = zoteroSection(() => Boolean(settings.zoteroApiKey)); // état de la synchronisation, bouton
   const sections = [
     ["reading", t("settings.reading"), [
       h("div", { class: "row" }, h("span", { id: "setting-language" }, t("settings.language")),
@@ -186,6 +188,16 @@ export function openSettingsDialog({ section = null } = {}) {
         h("input", { class: "text-input secret-input", type: "text", name: "s2ApiKey", value: settings.s2ApiKey || "", autocomplete: "off",
           spellcheck: "false", placeholder: t("settings.s2KeyPlaceholder") })),
       h("p", { class: "hint" }, t("settings.s2KeyHint")),
+    ]],
+    ["zotero", "Zotero", [
+      h("label", { class: "row" }, h("span", {}, t("settings.zoteroKey")),
+        h("input", { class: "text-input secret-input", type: "text", name: "zoteroApiKey", value: settings.zoteroApiKey || "", autocomplete: "off",
+          spellcheck: "false", placeholder: t("settings.s2KeyPlaceholder") })),
+      h("p", { class: "hint" }, t("settings.zoteroKeyHint"), " ",
+        h("a", { href: "https://www.zotero.org/settings/keys/new", target: "_blank", rel: "noopener noreferrer" }, "zotero.org/settings/keys/new"), "."),
+      h("p", { class: "hint" }, t("settings.zoteroHow")),
+      ...check("zoteroAutoSync", t("settings.zoteroAuto"), settings.zoteroAutoSync !== false, t("settings.zoteroAutoHint")),
+      zoteroBox,
     ]],
     ["updates", t("settings.updates"), [
       ...check("checkUpdates", t("settings.checkUpdates"), settings.checkUpdates !== false),
@@ -228,7 +240,7 @@ export function openSettingsDialog({ section = null } = {}) {
   form.addEventListener("input", (event) => {
     const { name, value, checked, type } = event.target;
     if (!name || event.target.classList.contains("ai-model")) return; // modèle et niveau : enregistrés par leurs menus
-    if (name === "feedCategories" || name === "s2ApiKey" || name === "aiLocalUrl" || name === "geminiApiKey") return; // enregistrés à la sortie du champ
+    if (name === "feedCategories" || name === "s2ApiKey" || name === "aiLocalUrl" || name === "geminiApiKey" || name === "zoteroApiKey") return; // enregistrés à la sortie du champ
     const parsed = type === "checkbox" ? checked : name === "fontSize" ? Number(value) : value;
     if (name === "fontSize") form.querySelector("#setting-fontSize").textContent = t("settings.fontSize", { n: value });
     const saved = saveSettings({ [name]: parsed });
@@ -246,6 +258,10 @@ export function openSettingsDialog({ section = null } = {}) {
       toast(t("settings.feedCategoriesSaved"));
     } else if (name === "s2ApiKey") {
       saveSettings({ s2ApiKey: value.trim() });
+    } else if (name === "zoteroApiKey") {
+      const key = value.trim();
+      if (key && !/^[A-Za-z0-9]{16,64}$/.test(key)) { toast(t("settings.zoteroKeyBad"), { error: true }); return; }
+      saveSettings({ zoteroApiKey: key }).then(() => zoteroBox.refresh());
     } else if (name === "geminiApiKey") {
       // focus rendu au champ seulement s'il l'a encore (sortie par Tab ou clic : il va ailleurs, et la clé resterait affichée)
       const keep = document.activeElement === event.target ? "geminiApiKey" : null;

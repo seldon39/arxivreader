@@ -20,6 +20,8 @@ async function request(method, url, body) {
 
 export const api = {
   papers: () => request("GET", "/api/papers"),
+  zoteroStatus: () => request("GET", "/api/zotero"),
+  zoteroSync: () => request("POST", "/api/zotero/sync", {}),
   papersRelevance: () => request("GET", "/api/papers/relevance"),
   folders: () => request("GET", "/api/folders"),
   createFolder: (name, papers = []) => request("POST", "/api/folders", { name, papers }),
