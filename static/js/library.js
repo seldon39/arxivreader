@@ -3,7 +3,8 @@
 import { setFindHandler } from "./find.js";
 import { api } from "./api.js";
 import { t, tn } from "./i18n.js";
-import { debounce, draggablePaper, droppedPaper, formatDate, h, icons, journalChip, mayBePaper, tidyTitle, timeAgo, toast, toastError, withMath } from "./util.js";
+import { debounce, draggablePaper, droppedPapers, formatDate, h, icons, journalChip, mayBePaper, tidyTitle, timeAgo, toast, toastError, withMath } from "./util.js";
+import { clearSelection, dragGroup, fileInFolder, selectButton, syncSelection, useSelectionBar } from "./selection.js";
 
 // Recherche et filtres, gardés d'une visite à l'autre (le temps de la session)
 const view = { search: "", categories: new Set(), reading: new Set(), years: new Set(), folders: new Set(), source: "any", publication: "any", sort: "opened",
@@ -310,7 +311,7 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
     const cardFor = (paper) => {
       const signature = cardSignature(paper, names.get(paper.id) || []);
       const known = built.get(paper.id);
-      if (known?.signature === signature) return known.card;
+      if (known?.signature === signature) { syncSelection(known.card); return known.card; } // sélection changée entre-temps
       const fresh = card(paper, refreshList, cardContext);
       built.set(paper.id, { signature, card: fresh });
       return fresh;
@@ -366,13 +367,20 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
     }
     drawActive();
     drawFolders();
-    const shown = papers.filter(matches).sort(sorterFor(view));
-    heading.textContent = shown.length === papers.length ? t("library.papers", { n: papers.length })
-      : t("library.papersShown", { n: shown.length, total: papers.length });
+    // une fois des articles rangés, la liste générale ne garde que les autres (« Autres articles ») ; une
+    // recherche ou un filtre porte sur toute la bibliothèque
+    const filed = new Set(folderList.flatMap((f) => f.papers));
+    const everywhere = Boolean(view.search.trim()) || activeCount() > 0;
+    const others = filed.size && !everywhere ? papers.filter((p) => !filed.has(p.id)) : papers;
+    const shown = others.filter(matches).sort(sorterFor(view));
+    heading.textContent = everywhere ? t("library.papersShown", { n: shown.length, total: papers.length })
+      : others !== papers ? t("library.others", { n: others.length }) : t("library.papers", { n: papers.length });
     if (!papers.length) {
       const example = h("code", {}, "2608.24719");
       const text = t("library.empty", { example: "\u0000" }).split("\u0000");
       list.replaceChildren(h("div", { class: "empty" }, text[0], example, text[1]));
+    } else if (!shown.length && !everywhere) {
+      list.replaceChildren(h("div", { class: "empty" }, t("library.allFiled")));
     } else if (!shown.length) {
       list.replaceChildren(h("div", { class: "empty" }, t("library.noMatch"), " ",
         h("button", { class: "link-button", type: "button", onclick: () => { resetFilters(); view.search = ""; search.value = ""; changed(); } }, t("library.showAll"))));
@@ -455,27 +463,21 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
       if (!folderId()) return;
       event.preventDefault();
       element.classList.remove("drop-target");
-      fileDropped(droppedPaper(event.dataTransfer), folderId());
+      fileDropped(droppedPapers(event.dataTransfer), folderId());
     });
     return element;
   }
   async function fileDropped(dropped, folderId) {
     const folder = folderList.find((f) => f.id === folderId);
     if (!folder) return;
-    if (!dropped) { toast(t("library.drop.notPaper"), { error: true }); return; }
+    if (!dropped.length) { toast(t("library.drop.notPaper"), { error: true }); return; }
     try {
-      let paper = papers.find((p) => p.id === dropped.paperId) || papers.find((p) => p.arxiv_id === dropped.arxivId);
-      if (!paper) {
-        toast(t("library.drop.importing"));
-        paper = await api.importPaper(dropped.arxivId);
-      }
-      if (folder.papers.includes(paper.id)) { toast(t("library.drop.already", { name: folder.name })); return; }
-      await api.setInFolder(folder.id, paper.id, true);
-      toast(t("library.drop.added", { name: folder.name, title: paper.title.length > 60 ? `${paper.title.slice(0, 58)}…` : paper.title }));
-      await refreshList();
+      await fileInFolder(dropped, folder, papers);
+      if (dropped.length > 1) clearSelection(); // sélection glissée : rangée, comme avec « Ranger dans… »
     } catch (error) {
       toastError(error);
     }
+    await refreshList();
   }
   dropTarget(panel, () => view.openFolder);
 
@@ -701,11 +703,13 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
   await refreshList();
   // ⌘F : champ de recherche de la bibliothèque
   const unsubscribeFind = setFindHandler((command) => { if (command === "open") { search.focus(); search.select(); } });
+  // plusieurs articles sélectionnés : barre en bas (« Ranger dans… »), glissés ensemble sur un dossier
+  const stopSelection = useSelectionBar({ papers: () => papers, onFiled: () => refreshList() });
   // retour sur l'onglet (application Mac) : liste et dossiers relus, changés peut-être dans un autre onglet
   const onRefresh = () => refreshList();
   addEventListener("arxivreader:library-refresh", onRefresh);
   return () => { closeMenu({ focus: false }); closeFileMenu(); unsubscribeFind(); removeEventListener("arxivreader:library-refresh", onRefresh);
-    moreObserver?.disconnect(); if (onMoreScroll) removeEventListener("scroll", onMoreScroll); };
+    moreObserver?.disconnect(); if (onMoreScroll) removeEventListener("scroll", onMoreScroll); stopSelection(); };
 }
 
 // « Ouvert il y a 2 jours · 3 notes · 5 énoncés compris · 2 réponses de Claude »
@@ -752,6 +756,7 @@ function card(paper, refreshList, context = null) {
       folderChip(paper, context),
     ),
     h("div", { class: "card-actions" },
+      selectButton({ arxivId: paper.arxiv_id, paperId: paper.id, title: paper.title }),
       context && action(icons.folder, t("library.folder.file"), (button) => context.openFileMenu(paper, button), "folder-action"),
       h("a", { class: "icon-button", href: `https://arxiv.org/abs/${paper.arxiv_id}`, target: "_blank", rel: "noopener noreferrer",
         title: "arXiv", "aria-label": "arXiv", html: icons.external }),
@@ -774,5 +779,5 @@ function card(paper, refreshList, context = null) {
         }
       }),
     ),
-  ), { arxivId: paper.arxiv_id, paperId: paper.id, version: paper.version });
+  ), { arxivId: paper.arxiv_id, paperId: paper.id, version: paper.version, title: paper.title }, dragGroup);
 }

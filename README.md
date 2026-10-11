@@ -89,7 +89,10 @@ choices as the library's (without the folder filter), sorting adding relevance t
 and a keyword search narrows the folder's list (title, authors, abstract, identifier, categories). The folder button of each paper opens "File in a folder":
 folders to tick, or a new folder. A paper can also be dragged (by its title) onto a folder or into the open
 folder, from the library, the feed, the search, another arXivReader window, or as an arXiv link from elsewhere
-(Safari…); a paper not yet in the library is imported first. A paper can be in several folders, shown at the end of its line;
+(Safari…); a paper not yet in the library is imported first. The ☐ button of each card (library, folders, feed,
+search) selects several papers: a bar at the bottom offers "File in…", and dragging one of them takes them all.
+Once papers are filed, the general list becomes "Other papers" (those in no folder); a search or filter there
+covers the whole library. A paper can be in several folders, shown at the end of its line;
 "Filters" can also narrow the list to one or more folders.
 "Sort" orders papers by last read, added, published, or alphabetically (title or first author, A → Z or
 Z → A, folders then being sorted by name in the same order).

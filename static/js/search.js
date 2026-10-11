@@ -7,6 +7,7 @@ import { typesetTex } from "./math.js";
 import { FEED_DEFAULT, settings } from "./settings.js";
 import { h, toastError } from "./util.js";
 import { feedCard, resetAbstractObserver } from "./feed.js";
+import { useSelectionBar } from "./selection.js";
 
 const FIELDS = ["all", "title", "author", "abstract", "comments", "journal", "category", "report", "id"];
 const OPERATORS = ["and", "or", "not"];
@@ -194,5 +195,6 @@ export async function renderSearch(root) {
   drawTerms(state.results ? null : 0);
   drawOptions();
   drawResults();
-  return () => { running++; resetAbstractObserver(); };
+  const stopSelection = useSelectionBar({ papers: () => null }); // résultats sélectionnés : « Ranger dans… »
+  return () => { running++; resetAbstractObserver(); stopSelection(); };
 }

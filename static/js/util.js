@@ -54,6 +54,7 @@ export const icons = {
   search: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m15 15 5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
   sort: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M8 19l-3.5-3.5M8 19l3.5-3.5M16 19V5M16 5l-3.5 3.5M16 5l3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   filter: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  check: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path class="check-mark" d="M8.2 12.4l2.6 2.6 5-5.4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   folder: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
   close: path("M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4L12 13.4 6.4 19 5 17.6 10.6 12 5 6.4z"),
 };
@@ -189,14 +190,16 @@ export const PAPER_DRAG = "application/x-arxivreader-paper";
 
 // On le saisit par son titre (un lien, glissable de lui-même) : le reste de la carte garde la sélection de
 // texte (résumé du feed). Bibliothèque : le lien du titre couvre toute la carte.
-export function draggablePaper(element, { arxivId, paperId = null, version = null }) {
+// `group(info)` : articles emportés (la sélection, si l'article saisi en fait partie)
+export function draggablePaper(element, { arxivId, paperId = null, version = null, title = "" }, group = (info) => [info]) {
   if (!arxivId) return element;
   element.addEventListener("dragstart", (event) => {
     if (!event.target.closest?.("a")) return; // texte sélectionné glissé ailleurs dans la carte : rien de spécial
-    const url = `https://arxiv.org/abs/${arxivId}${version ? `v${version}` : ""}`;
-    event.dataTransfer.setData(PAPER_DRAG, JSON.stringify({ arxivId, paperId }));
-    event.dataTransfer.setData("text/uri-list", url);
-    event.dataTransfer.setData("text/plain", url);
+    const papers = group({ arxivId, paperId, title });
+    const urls = papers.map((p) => `https://arxiv.org/abs/${p.arxivId}${p.arxivId === arxivId && version ? `v${version}` : ""}`);
+    event.dataTransfer.setData(PAPER_DRAG, JSON.stringify(papers.map((p) => ({ arxivId: p.arxivId, paperId: p.paperId || null, title: p.title || "" }))));
+    event.dataTransfer.setData("text/uri-list", urls.join("\r\n"));
+    event.dataTransfer.setData("text/plain", urls.join("\n"));
     event.dataTransfer.effectAllowed = "copyLink";
     element.classList.add("dragging");
   });
@@ -204,19 +207,27 @@ export function draggablePaper(element, { arxivId, paperId = null, version = nul
   return element;
 }
 
-// Article déposé : glissé depuis arXivReader, ou lien (ou identifiant) arXiv venu d'ailleurs ; null sinon
-export function droppedPaper(dataTransfer) {
+// Articles déposés : glissés depuis arXivReader (un ou plusieurs), ou liens (ou identifiants) arXiv venus
+// d'ailleurs, un par ligne ; [] si rien de reconnu
+export function droppedPapers(dataTransfer) {
   try {
     const own = dataTransfer.getData(PAPER_DRAG);
     if (own) {
-      const data = JSON.parse(own);
-      if (typeof data?.arxivId === "string") return { arxivId: data.arxivId, paperId: typeof data.paperId === "string" ? data.paperId : null };
+      const data = [JSON.parse(own)].flat().filter((p) => typeof p?.arxivId === "string")
+        .map((p) => ({ arxivId: p.arxivId, paperId: typeof p.paperId === "string" ? p.paperId : null, title: typeof p.title === "string" ? p.title : "" }));
+      if (data.length) return data;
     }
-  } catch { /* données d'une autre application : on regarde le lien */ }
-  const text = (dataTransfer.getData("text/uri-list") || dataTransfer.getData("text/plain") || "").trim();
-  const found = text.match(/arxiv\.org\/(?:abs|pdf|html)\/((?:[a-z-]+(?:\.[A-Z]{2})?\/\d{7})|\d{4}\.\d{4,5})/i)
-    || text.match(/^(?:arXiv:)?(\d{4}\.\d{4,5})(?:v\d+)?$/i);
-  return found ? { arxivId: found[1], paperId: null } : null;
+  } catch { /* données d'une autre application : on regarde les liens */ }
+  const text = dataTransfer.getData("text/uri-list") || dataTransfer.getData("text/plain") || "";
+  const ids = [];
+  for (const line of text.split(/\r?\n/)) {
+    const value = line.trim();
+    if (!value || value.startsWith("#")) continue;
+    const found = value.match(/arxiv\.org\/(?:abs|pdf|html)\/((?:[a-z-]+(?:\.[A-Z]{2})?\/\d{7})|\d{4}\.\d{4,5})/i)
+      || value.match(/^(?:arXiv:)?(\d{4}\.\d{4,5})(?:v\d+)?$/i);
+    if (found && !ids.includes(found[1])) ids.push(found[1]);
+  }
+  return ids.map((arxivId) => ({ arxivId, paperId: null, title: "" }));
 }
 
 export const mayBePaper = (event) => [...(event.dataTransfer?.types || [])].some((type) =>

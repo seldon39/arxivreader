@@ -5,6 +5,7 @@ import { getLanguage, t, tn } from "./i18n.js";
 import { typesetTex } from "./math.js";
 import { renderProfile } from "./profile.js";
 import { saveSettings, settings } from "./settings.js";
+import { dragGroup, selectButton, useSelectionBar } from "./selection.js";
 import { debounce, draggablePaper, h, hoursSince, icons, journalChip, openRoute, tidyTitle, timeAgo, toast, toastError, toggleIcon, wantsNewTab, withMath } from "./util.js";
 
 const TABS = [["arxiv", "#/feed"], ["recommended", "#/feed/recommended"], ["profile", "#/feed/profile"], ["import", "#/feed/import"]];
@@ -227,7 +228,10 @@ async function renderList(body, tab) {
   draw();
   const stale = hoursSince(data.refreshed?.[tab]) > (tab === "recommended" ? STALE_S2_HOURS : STALE_ARXIV_HOURS);
   if (stale) doRefresh(true);
+  // plusieurs articles sélectionnés : barre « Ranger dans… » (dossiers de la bibliothèque), ou glissés ensemble
+  const stopSelection = useSelectionBar({ papers: () => null });
   return () => {
+    stopSelection();
     removeEventListener("keydown", onKey);
     removeEventListener("arxivreader:section-opened", markSeenShown);
     abstractObserver.disconnect();
@@ -491,6 +495,7 @@ export function feedCard(item, onChange = () => {}, { compact = false, fresh = f
       statusButton("liked", t("feed.like"), "up"),
       statusButton("disliked", t("feed.dislike"), "down"),
       item.arxiv_id && libraryButton(item),
+      selectButton({ arxivId: item.arxiv_id, paperId: item.libraryId || null, title: item.title }),
       linker?.toggle,
       h("span", { class: "spacer" }),
       item.link && h("a", { class: "icon-button", href: item.link, target: "_blank", rel: "noopener noreferrer", title: item.arxiv_id ? "arXiv" : "Semantic Scholar", html: icons.external }),
@@ -505,7 +510,7 @@ export function feedCard(item, onChange = () => {}, { compact = false, fresh = f
     card.addEventListener("keydown", (event) => { if (event.target === card && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); expand(); } });
   }
   // glissé sur un dossier de la bibliothèque (même fenêtre ou une autre) : rangé dedans
-  return draggablePaper(card, { arxivId: item.arxiv_id, paperId: item.libraryId || null, version: item.version });
+  return draggablePaper(card, { arxivId: item.arxiv_id, paperId: item.libraryId || null, version: item.version, title: item.title }, dragGroup);
 }
 
 // Section repliable (« Citent vos articles », « Nouveaux articles de vos auteurs suivis ») : l'intertitre

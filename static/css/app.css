@@ -1136,6 +1136,25 @@ input.switch:focus-visible { outline: 2px solid var(--focus); outline-offset: 2p
 .folder-new { border-style: dashed; background: transparent; color: var(--muted); justify-content: center; }
 /* glisser-déposer : article en cours de déplacement, dossier visé */
 .card.dragging, .feed-card.dragging { opacity: .5; }
+/* sélection de plusieurs articles : case dans les boutons de la carte, carte teintée, barre en bas */
+.select-toggle .check-mark { opacity: 0; }
+.select-toggle[aria-pressed="true"] { color: var(--accent); }
+.select-toggle[aria-pressed="true"] .check-mark { opacity: 1; }
+.card.selected, .feed-card.selected { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.card.selected .card-actions { opacity: 1; }
+.selection-bar { position: fixed; left: 50%; bottom: 18px; translate: -50% 0; z-index: 40; display: flex; align-items: center; gap: 10px;
+  width: min(760px, calc(100vw - 32px)); padding: 10px 14px; border: 1.5px solid var(--accent); border-radius: 12px;
+  background: var(--surface); box-shadow: var(--shadow); font: 14px var(--font-ui); }
+.selection-bar .spacer { display: none; }
+.selection-bar .button { flex: none; white-space: nowrap; }
+.selection-count { flex: none; font-weight: 600; white-space: nowrap; }
+.selection-hint { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.selection-menu { position: absolute; right: 14px; bottom: calc(100% + 6px); display: grid; min-width: 220px; max-height: 50vh; overflow: auto;
+  padding: 6px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); }
+.selection-menu-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 0; border-radius: 6px; background: none;
+  color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.selection-menu-item:hover, .selection-menu-item:focus-visible { background: var(--surface-hover); }
+@media (max-width: 700px) { .selection-hint { display: none; } }
 .folder.drop-target { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); background: var(--accent-soft); }
 .folder-panel.drop-target .folder-panel-inner { box-shadow: inset 0 0 0 2px var(--accent); }
 .folder-new .folder-icon { background: transparent; color: var(--muted); width: 22px; }

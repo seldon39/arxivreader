@@ -92,7 +92,10 @@ identifiant, catégories). Le bouton dossier de chaque article
 ouvre « Ranger dans… » : dossiers à cocher, ou création d'un dossier. On peut aussi glisser un article (par son
 titre) sur un dossier ou dans le dossier ouvert, depuis la bibliothèque, le feed, la recherche, une autre fenêtre
 d'arXivReader, ou un lien arXiv venu d'ailleurs (Safari…) ; un article pas encore dans la bibliothèque y est
-d'abord importé. Un article peut être dans plusieurs
+d'abord importé. Le bouton ☐ de chaque carte (bibliothèque, dossiers, feed, recherche) sélectionne plusieurs
+articles : une barre en bas propose « Ranger dans… », et glisser l'un d'eux les emporte tous. Une fois des
+articles rangés, la liste générale devient « Autres articles » (ceux d'aucun dossier) ; une recherche ou un
+filtre y porte sur toute la bibliothèque. Un article peut être dans plusieurs
 dossiers, affichés en fin de sa ligne ; « Filtres » permet aussi de réduire la liste à un ou plusieurs dossiers.
 « Tri » ordonne les articles par dernière lecture, ajout, publication, ou par ordre alphabétique (titre ou
 premier auteur, A → Z ou Z → A, les dossiers étant alors rangés par nom dans le même sens).
