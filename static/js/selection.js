@@ -102,7 +102,7 @@ function drawBar() {
   file.addEventListener("click", () => openFolders(file));
   bar.replaceChildren(
     h("span", { class: "selection-count" }, tn("select.count", selected.size)),
-    h("span", { class: "muted small selection-hint" }, t("select.hint")),
+    h("span", { class: "muted small selection-hint" }, tn("select.hint", selected.size)),
     h("span", { class: "spacer" }),
     file,
     h("button", { class: "button small-button", type: "button", onclick: clearSelection }, t("select.clear")));
