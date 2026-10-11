@@ -72,6 +72,15 @@ class Import(unittest.TestCase):
         self.assertIn("data:image/png;base64,AAAA", self.html)
         self.assertEqual(self.assets[0][1], "https://arxiv.org/html/2101.00002v1/x1.png")
 
+    def test_image_paths(self):
+        # arXiv écrit « x1.png » (page servie avec « / ») ou « <id>v<n>/fig.png » (page sans « / ») : même dossier
+        html = """<html><body><article class="ltx_document"><img src="x1.png"/><img src="2609.40232v1/rho.png"/>
+                  <img src="https://arxiv.org/static/a.png"/></article></body></html>"""
+        _, assets = sanitize_document(html, "https://arxiv.org/html/2609.40232v1/")
+        self.assertEqual(sorted(remote for _, remote in assets), ["https://arxiv.org/html/2609.40232v1/rho.png",
+                                                                  "https://arxiv.org/html/2609.40232v1/x1.png",
+                                                                  "https://arxiv.org/static/a.png"])
+
     def test_statements_and_proofs(self):
         lemma, theorem = self.structure["nodes"]
         self.assertEqual((lemma["kind"], lemma["label"]), ("lemma", "Lemma 1.1"))
@@ -102,3 +111,29 @@ class Import(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MissingFigures(unittest.TestCase):
+    """Figures manquantes : repérées, puis redemandées d'après les adresses gardées à l'import (sans réseau)."""
+
+    def test_repair_from_saved_addresses(self):
+        import json
+        import pathlib
+        import tempfile
+        from unittest import mock
+        from app import library
+        saved = library.PAPERS
+        library.PAPERS = pathlib.Path(tempfile.mkdtemp())
+        try:
+            folder = library.PAPERS / "2609.40232"
+            (folder / "assets").mkdir(parents=True)
+            (folder / "content.html").write_text('<img src="assets/a.png"/><img src="assets/b.png"/>')
+            (folder / "assets" / "a.png").write_bytes(b"png")
+            (folder / "assets.json").write_text(json.dumps({"a.png": "https://arxiv.org/html/x/a.png", "b.png": "https://arxiv.org/html/x/b.png"}))
+            self.assertEqual(library.missing_assets("2609.40232"), ["b.png"])
+            with mock.patch.object(library, "fetch_asset", return_value=(b"png", "image/png")) as fetch:
+                library.repair_assets("2609.40232")
+            self.assertEqual(fetch.call_args.args[0], "https://arxiv.org/html/x/b.png")
+            self.assertEqual(library.missing_assets("2609.40232"), [])
+        finally:
+            library.PAPERS = saved

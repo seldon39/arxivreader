@@ -439,6 +439,16 @@ class Reader {
     } else {
       this.content.innerHTML = html; // HTML nettoyé côté serveur ; scripts bloqués par la CSP
       this.article.append(this.content);
+      // figure absente (import incomplet) : le serveur la redemande à arXiv ; nouvel essai à 5, 15, 40 et 90 s
+      this.content.addEventListener("error", (event) => {
+        const img = event.target;
+        if (img.tagName !== "IMG" || !img.getAttribute("src")?.includes("/assets/")) return;
+        const tries = Number(img.dataset.retries || 0);
+        if (tries >= 4) return;
+        img.dataset.retries = String(tries + 1);
+        const base = img.getAttribute("src").split("?")[0];
+        setTimeout(() => { if (img.isConnected) img.src = `${base}?retry=${tries + 1}`; }, [5, 15, 40, 90][tries] * 1000);
+      }, true);
     }
 
     this.root.append(toolbar, this.toc, this.paneResizer("toc"), this.scroller, this.panel, this.paneResizer("panel"),

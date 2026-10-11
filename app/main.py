@@ -284,6 +284,8 @@ async def add_paper(body: ImportRequest):
 def paper(paper_id: str):
     paper = checked_paper(paper_id)
     db.update_paper(paper_id, opened_at=_now())
+    if library.missing_assets(paper_id):  # figures manquantes : redemandées en arrière-plan
+        threading.Thread(target=library.repair_assets, args=(paper_id,), daemon=True).start()
     return {"paper": paper, "structure": library.load_structure(paper_id)}
 
 

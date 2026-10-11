@@ -121,7 +121,7 @@ def sanitize_document(html, base_url):
                 src = str(value).strip()
                 if DATA_IMAGE.match(src):
                     continue
-                remote = urljoin(base_url, src)
+                remote = urljoin(base_url, _relative(src, base_url))
                 if urlparse(remote).scheme not in ("http", "https"):
                     del element.attrs[attr]
                     continue
@@ -129,6 +129,16 @@ def sanitize_document(html, base_url):
                 assets[local] = remote
                 element.attrs[attr] = "assets/" + local
     return fragment, sorted(assets.items())
+
+
+def _relative(src, base_url):
+    """Chemin d'image relatif à la page. arXiv écrit parfois « 2609.40232v1/figure.png » pour une page servie sans
+    « / » final (…/html/2609.40232v1) : relatif au dossier /html/. L'adresse de base finit toujours par « / » (les
+    pages qui écrivent « x1.png ») : sans ce préfixe, les deux formes mènent à la même image."""
+    segment = urlparse(base_url).path.rstrip("/").rsplit("/", 1)[-1]
+    if segment and src.startswith(segment + "/") and "://" not in src:
+        return src[len(segment) + 1:]
+    return src
 
 
 def _extension(url):

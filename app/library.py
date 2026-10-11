@@ -1,12 +1,14 @@
 """Import d'un article dans la bibliothèque : métadonnées, HTML nettoyé, images et structure."""
 
 import json
+import logging
 import os
+import re
 import shutil
 import tempfile
 import threading
-import time
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 
 from pathlib import Path
 
@@ -20,6 +22,9 @@ from .structure import STRUCTURE_VERSION, extract_structure
 from .texsource import analyze_source
 
 ALLOWED_ASSET_TYPES = ("image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml")
+ASSET_WORKERS = 4  # images téléchargées en même temps (un article peut en avoir des centaines)
+ASSET_REF = re.compile(r'src="assets/([^"/]+)"')
+log = logging.getLogger("arxivreader.library")
 
 
 def paper_dir(paper_id):
@@ -109,15 +114,9 @@ def _fill(staging, paper_id, arxiv_id, meta):
         fragment, assets = sanitize_document(html, base_url)
         structure = extract_structure(fragment, annotations.proof_overrides(paper_id))
         (staging / "content.html").write_text(str(fragment), encoding="utf-8")
-        with open_client() as client:  # une seule connexion pour toutes les images
-            for local_name, remote in assets:
-                try:
-                    data, content_type = fetch_asset(remote, client)
-                except Exception:
-                    continue
-                if content_type.split(";")[0].strip() in ALLOWED_ASSET_TYPES:
-                    (staging / "assets" / local_name).write_bytes(data)
-                time.sleep(0.05)
+        # adresse d'origine de chaque image : une image qui n'a pas pu venir sera redemandée plus tard
+        (staging / "assets.json").write_text(json.dumps(dict(assets)), encoding="utf-8")
+        _fetch_assets(staging / "assets", assets)
     # Source TeX : options que la version HTML perd (numéros d'équation, police, étiquettes de listes)
     try:
         data = fetch_source(arxiv_id, meta.version)
@@ -146,6 +145,69 @@ def _fill(staging, paper_id, arxiv_id, meta):
     (staging / "structure.json").write_text(json.dumps(structure, ensure_ascii=False), encoding="utf-8")
     return source
 
+
+
+def _fetch_assets(folder, assets):
+    """Images de l'article, quelques-unes à la fois (un même client) ; celles qui échouent sont laissées."""
+    failed = []
+    with open_client() as client:
+        def one(item):
+            local_name, remote = item
+            try:
+                data, content_type = fetch_asset(remote, client)
+            except Exception as error:
+                failed.append((remote, error))
+                return
+            if content_type.split(";")[0].strip() in ALLOWED_ASSET_TYPES:
+                (folder / local_name).write_bytes(data)
+        with ThreadPoolExecutor(ASSET_WORKERS) as pool:
+            list(pool.map(one, assets))
+    if failed:
+        log.warning("%d image(s) sur %d non téléchargée(s), par ex. %s : %s", len(failed), len(assets), *failed[0])
+
+
+def missing_assets(paper_id):
+    """Images citées par le texte de l'article mais absentes du dossier (import interrompu, adresse fausse…)."""
+    folder = paper_dir(paper_id)
+    try:
+        names = set(ASSET_REF.findall((folder / "content.html").read_text(encoding="utf-8")))
+    except OSError:
+        return []
+    return sorted(name for name in names if not (folder / "assets" / name).exists())
+
+
+_repairing = set()
+_repairing_guard = threading.Lock()
+
+
+def repair_assets(paper_id):
+    """Images manquantes redemandées (une fois à la fois par article) : d'après leurs adresses d'origine si l'import
+    les a gardées, sinon par un nouvel import de l'article (notes, place dans la bibliothèque et dossiers gardés)."""
+    with _repairing_guard:
+        if paper_id in _repairing:
+            return
+        _repairing.add(paper_id)
+    try:
+        missing = missing_assets(paper_id)
+        if not missing:
+            return
+        try:
+            remote = json.loads((paper_dir(paper_id) / "assets.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            remote = None
+        if remote is None:  # importé avant que les adresses soient gardées : nouvel import
+            paper = db.get_paper(paper_id)
+            if paper:
+                import_paper(paper["arxiv_id"], add_to_library=False)
+            return
+        with paper_lock(paper_id):
+            (paper_dir(paper_id) / "assets").mkdir(exist_ok=True)
+            _fetch_assets(paper_dir(paper_id) / "assets", [(name, remote[name]) for name in missing if name in remote])
+    except Exception as error:
+        log.warning("réparation des images de %s impossible : %s", paper_id, error)
+    finally:
+        with _repairing_guard:
+            _repairing.discard(paper_id)
 
 
 def load_structure(paper_id):

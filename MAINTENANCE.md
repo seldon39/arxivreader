@@ -125,7 +125,7 @@ problème ; journal `~/Library/Logs/arXivReader-check.log`, résultat `check.jso
 | Service | Utilisé par | Ce qui casse d'habitude | Repli existant |
 |---|---|---|---|
 | API arXiv `export.arxiv.org/api/query` | `arxiv.py`, `search.py`, `feed.py` (jours passés), `profile.py`, `onboarding.py` | lenteur, 429/503, champs Atom | une requête toutes les 3 s (`arxiv._paced`, `search._wait_turn`), `with_retry` |
-| Pages HTML LaTeXML `arxiv.org/html/…` | `library.py`, `sanitize.py`, `structure.py` | classes `ltx_*`, balisage des énoncés et preuves | ar5iv, sinon PDF + structure tirée du TeX (`texstructure.py`) |
+| Pages HTML LaTeXML `arxiv.org/html/…` | `library.py`, `sanitize.py`, `structure.py` | classes `ltx_*`, balisage des énoncés et preuves, chemins des images (deux formes : `x1.png` ou `<id>v<n>/fig.png`, `sanitize._relative`) | ar5iv, sinon PDF + structure tirée du TeX (`texstructure.py`) |
 | RSS `rss.arxiv.org` | `feed.py` (`parse_rss`) | format des annonces (types new/cross/replace) | OAI-PMH, puis API de recherche |
 | OAI-PMH `oaipmh.arxiv.org/oai` | `feed.py` (jours passés) | lent au-delà d'une semaine | API de recherche (fenêtre de dépôt 14 h New York) |
 | Flux d'auteur `arxiv.org/a/<id>.atom2` | `onboarding.py` | format, ORCID non lié | recherche par nom |
@@ -186,6 +186,9 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
 - La synchronisation Zotero fusionne trois états (ici, Zotero, la fois précédente) : toute modification de
   `_sync` doit garder les tests de `tests/test_zotero.py` (écriture refusée, doublons fusionnés, sous-collection
   profonde, dossier supprimé pendant un ajout, corbeille, retraits massifs).
+- Figures : l'import garde l'adresse d'origine de chaque image (`assets.json`) ; à l'ouverture d'un article,
+  celles qui manquent sont redemandées (`library.repair_assets`, par ces adresses, sinon par un nouvel import), et
+  le lecteur réessaie de les afficher. Une image qui ne vient pas laisse une ligne dans `server.log`.
 - Les noms de personnes servent d'exemples dans l'interface : ne pas y mettre de vrais noms ni de vrais
   identifiants (« Votre nom », « arxiv.org/a/… »).
 
