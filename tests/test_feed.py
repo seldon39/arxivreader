@@ -114,14 +114,14 @@ class PastDayFallback(unittest.TestCase):
         import httpx
         from app import feed, search
         day = date.today().isoformat()
-        with mock.patch.object(feed, "_oai_failed", 0.0), \
+        with mock.patch.object(feed, "_oai_failed", None), \
              mock.patch.object(feed, "_fetch_day_oai", side_effect=httpx.ReadTimeout("slow")) as oai, \
              mock.patch.object(search, "_fetch", return_value=([], 0)) as fetch, \
              mock.patch.object(feed.relevance, "fetch_embeddings"), mock.patch.object(feed.db, "connect"), \
              mock.patch.object(feed.db, "get_settings", return_value={}), mock.patch.object(feed.db, "save_settings"):
             feed.fetch_day(day, ["math.DG"])
             self.assertTrue(oai.called and fetch.called)
-            self.assertGreater(feed._oai_failed, 0)
+            self.assertIsNotNone(feed._oai_failed)
             oai.reset_mock()
             feed.fetch_day(day, ["math.DG"])  # échec récent : l'OAI-PMH n'est pas réessayé
             self.assertFalse(oai.called)

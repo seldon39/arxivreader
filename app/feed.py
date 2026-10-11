@@ -254,7 +254,7 @@ def parse_oai_day(xml_text, day, categories):
 OAI_DAYS = 7
 OAI_TIMEOUT = httpx.Timeout(40, connect=10, read=25)
 OAI_PAUSE = 3600  # après un échec, l'OAI-PMH n'est plus essayé pendant une heure
-_oai_failed = 0.0
+_oai_failed = None  # moment (time.monotonic) du dernier échec
 NEW_YORK = ZoneInfo("America/New_York")
 
 
@@ -319,7 +319,7 @@ def fetch_day(day, categories=None, api_key=None):
     categories = categories or FEED_CATEGORIES
     today = datetime.now(timezone.utc).date()
     partial = False
-    if date.fromisoformat(day) >= today - timedelta(days=OAI_DAYS) and time.monotonic() - _oai_failed > OAI_PAUSE:
+    if date.fromisoformat(day) >= today - timedelta(days=OAI_DAYS) and (_oai_failed is None or time.monotonic() - _oai_failed > OAI_PAUSE):
         try:
             items = _fetch_day_oai(day, categories)
         except (httpx.TimeoutException, httpx.TransportError, httpx.HTTPStatusError, ET.ParseError):
