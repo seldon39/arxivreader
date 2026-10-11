@@ -1140,7 +1140,11 @@ input.switch:focus-visible { outline: 2px solid var(--focus); outline-offset: 2p
 .select-toggle .check-mark { opacity: 0; }
 .select-toggle[aria-pressed="true"] { color: var(--accent); }
 .select-toggle[aria-pressed="true"] .check-mark { opacity: 1; }
-.card.selected, .feed-card.selected { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.card.selected { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+/* feed : la carte n'a presque pas de marge sur les côtés ; la teinte déborde de 12 px, coins arrondis */
+.feed-card.selected { position: relative; isolation: isolate; }
+.feed-card.selected::before { content: ""; position: absolute; inset: 2px -12px; z-index: -1; border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 6%, transparent); }
 .card.selected .card-actions { opacity: 1; }
 .selection-bar { position: fixed; left: 50%; bottom: 18px; translate: -50% 0; z-index: 40; display: flex; align-items: center; gap: 10px;
   width: min(760px, calc(100vw - 32px)); padding: 10px 14px; border: 1.5px solid var(--accent); border-radius: 12px;
