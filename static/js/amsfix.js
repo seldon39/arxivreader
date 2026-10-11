@@ -208,9 +208,23 @@ function inScript(element) {
 }
 
 // \thanks d'amsart : LaTeXML les met dans le titre ; ils rejoignent les notes de première page
-// (mots-clés, classification), sous le résumé.
+// (mots-clés, classification), sous le résumé. De même pour les notes sans appel du début de l'article
+// (\footnotetext : financements, adresses), que LaTeXML numérote « 0 » et place avant le titre.
 export function moveTitleNotes(content) {
-  const notes = [...content.querySelectorAll(".ltx_title_document .ltx_pubnote")];
+  const firstSection = content.querySelector("section.ltx_section, .ltx_section, h2.ltx_title_section");
+  const before = (element) => !firstSection || Boolean(element.compareDocumentPosition(firstSection) & Node.DOCUMENT_POSITION_FOLLOWING);
+  for (const note of content.querySelectorAll(".ltx_note.ltx_role_footnotetext")) {
+    if (!before(note)) continue;
+    const text = note.querySelector(".ltx_note_content");
+    if (!text) { note.remove(); continue; }
+    text.querySelectorAll(":scope > .ltx_note_mark, :scope > .ltx_note_type").forEach((element) => element.remove());
+    const pubnote = document.createElement("span");
+    pubnote.className = "ltx_pubnote";
+    pubnote.append(...text.childNodes);
+    note.replaceWith(pubnote);
+    pubnote.dataset.frontNote = "1";
+  }
+  const notes = [...content.querySelectorAll(".ltx_title_document .ltx_pubnote, .ltx_pubnote[data-front-note]")];
   if (!notes.length) return;
   const after = [...content.querySelectorAll(".ltx_abstract, .ltx_keywords, .ltx_classification, .ltx_dates, .ltx_authors")].at(-1);
   const holder = document.createElement("div");
@@ -221,6 +235,7 @@ export function moveTitleNotes(content) {
     line.className = "ltx_titlenote";
     line.append(...note.childNodes);
     holder.append(line);
+    if (note.dataset.frontNote) note.remove(); // note de début d'article : vidée, place libérée
   }
   content.querySelectorAll(".ltx_title_document .ltx_pubnotes").forEach((element) => element.remove());
   (after || content.querySelector(".ltx_title_document"))?.after(holder);
