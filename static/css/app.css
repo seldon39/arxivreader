@@ -1153,10 +1153,7 @@ input.switch:focus-visible { outline: 2px solid var(--focus); outline-offset: 2p
 .card.selected .card-actions { opacity: 1; }
 .selection-bar { position: fixed; left: 50%; bottom: 18px; translate: -50% 0; z-index: 40; display: flex; align-items: center; gap: 10px;
   width: min(760px, calc(100vw - 32px)); padding: 10px 14px; border: 1.5px solid var(--accent); border-radius: 12px;
-  background: color-mix(in srgb, var(--accent) 5%, var(--bg)); box-shadow: var(--shadow); font: 14px var(--font-ui); }
-/* fond de la page, légèrement teinté de rouge comme l'annonce du jour (pas un blanc qui détonne) */
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .selection-bar { background: color-mix(in srgb, var(--accent) 10%, var(--bg)); } }
-:root[data-theme="dark"] .selection-bar { background: color-mix(in srgb, var(--accent) 10%, var(--bg)); }
+  background: var(--surface); box-shadow: var(--shadow); font: 14px var(--font-ui); }
 .selection-bar .spacer { display: none; }
 .selection-bar .button { flex: none; white-space: nowrap; }
 .selection-count { flex: none; font-weight: 600; white-space: nowrap; }
