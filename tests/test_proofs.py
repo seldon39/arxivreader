@@ -177,3 +177,15 @@ class NestedProofs(unittest.TestCase):
         self.assertEqual([e.get("id") for e in theorem_div.find_next_siblings()][:3], ["S3.Thm1.4", "S3.Thm1.p9", "S3.Thm2"])
         self.assertEqual(nodes["Theorem 3.1"]["proofs"], ["S3.Thm1.4"])
         self.assertEqual(nodes["Lemma 3.2"]["proofs"], [])
+
+
+    def test_claim_proof_stays_inside(self):
+        """Preuve d'un « Claim » imbriqué dans le théorème : laissée en place, le théorème garde sa vraie preuve."""
+        claim = '<div id="S3.Thm1.Thm1" class="ltx_theorem ltx_theorem_claim"><h6 class="ltx_title ltx_title_theorem"><span class="ltx_tag ltx_tag_theorem">Claim 1</span>.</h6><div class="ltx_para"><p class="ltx_p">Inner.</p></div></div>'
+        theorem = statement(1, "theorem", "Theorem 3.1").replace(
+            "</div></div>", f'</div>{claim}{proof("S3.Thm1.P", "Of the claim.")}<div id="S3.Thm1.p9" class="ltx_para"><p class="ltx_p">Then Z holds.</p></div></div>')
+        html = f'<article><section id="S3" class="ltx_section">{theorem}{proof("S3.P1", "Real proof.")}</section></article>'
+        fragment = BeautifulSoup(html, "html.parser")
+        nodes = {n["label"]: n for n in extract_structure(fragment)["nodes"]}
+        self.assertIsNotNone(fragment.find(id="S3.Thm1").find(id="S3.Thm1.p9"))  # texte de l'énoncé resté dedans
+        self.assertEqual(nodes["Theorem 3.1"]["proofs"], ["S3.P1"])

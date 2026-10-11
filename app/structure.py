@@ -152,6 +152,10 @@ def extract_structure(fragment, overrides=None):
         proof = theorem.find(class_="ltx_proof", recursive=False)
         if proof is None:
             continue
+        # preuve d'un énoncé imbriqué (« Claim » dans le théorème, aussitôt prouvé) : elle reste à sa place
+        previous = proof.find_previous_sibling(True)
+        if previous is not None and has_class(previous, "ltx_theorem"):
+            continue
         anchor = theorem
         for element in [proof, *proof.find_next_siblings()]:
             anchor.insert_after(element.extract())

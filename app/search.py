@@ -33,7 +33,11 @@ POOL = 200
 FILTER_POOL = 500
 POOL_TTL = 600
 _pools = {}
-CATEGORY = re.compile(r"[a-z-]+(\.[A-Za-z-]+)?")
+_pools_lock = threading.Lock()
+# catégorie arXiv : « archive.SOUS » (math.AG, cond-mat.mes-hall) ou une des catégories sans sous-catégorie
+CATEGORY = re.compile(r"[a-z-]+\.[A-Za-z-]+")
+STANDALONE = {"math-ph", "hep-th", "hep-ph", "hep-ex", "hep-lat", "quant-ph", "gr-qc", "nucl-th", "nucl-ex"}
+BOOLEAN_WORDS = {"AND", "OR", "NOT", "ANDNOT"}
 ARXIV_ID = re.compile(r"(\d{4}\.\d{4,5}|[a-z-]+(\.[A-Z]{2})?/\d{7})(v\d+)?", re.I)
 
 
@@ -55,14 +59,27 @@ def _wait_turn():
         _last = time.monotonic()
 
 
+def normalize_category(category):
+    """« math.ag » → « math.AG » (sous-catégories de deux lettres en majuscules) ; None si ce n'est pas une
+    catégorie (une archive seule, « math », ne donne aucun résultat sur arXiv)."""
+    category = str(category).strip()
+    if category.lower() in STANDALONE:
+        return category.lower()
+    if not CATEGORY.fullmatch(category):
+        return None
+    archive, sub = category.split(".", 1)
+    return f"{archive.lower()}.{sub.upper() if len(sub) == 2 else sub.lower()}"
+
+
 def _words(value):
-    """Mots d'un critère ; « entre guillemets » : expression exacte. Caractères de la syntaxe d'arXiv retirés."""
+    """Mots d'un critère ; « entre guillemets » : expression exacte. Caractères de la syntaxe d'arXiv retirés,
+    et mots AND / OR / NOT écartés (arXiv les prendrait pour des opérateurs et refuserait la requête)."""
     value = value.replace("“", '"').replace("”", '"')
     parts = re.findall(r'"([^"]+)"|(\S+)', value)
-    clean = lambda text: re.sub(r'[()":\[\]]', " ", text).strip()
+    clean = lambda text: re.sub(r'[()":\[\]\\{}~]', " ", text).strip()
     phrases = [clean(p) for p, _ in parts if p and clean(p)]
-    words = [clean(w) for _, w in parts if w and clean(w)]
-    return phrases, [w for word in words for w in word.split()]
+    words = [w for _, word in parts if word for w in clean(word).split()]
+    return phrases, [w for w in words if w.upper() not in BOOLEAN_WORDS]
 
 
 def _term(field, value):
@@ -75,21 +92,31 @@ def _term(field, value):
 
 
 def build_query(terms, categories=(), dates=None):
-    """Requête arXiv (search_query) et identifiants (id_list) d'après les critères ; SearchError si vide."""
+    """Requête arXiv (search_query) et identifiants (id_list) d'après les critères ; SearchError si vide.
+    Les critères ET / OU se combinent dans l'ordre, puis catégories et période ; les SAUF viennent en dernier
+    (une exclusion n'a de sens qu'après ce qu'on cherche, même si elle est sur la première ligne)."""
     expression = None
     ids = []
+    excluded = []
     for term in terms[:10]:
         field, value, op = term.get("field", "all"), str(term.get("value", ""))[:300], term.get("op", "and")
         if field not in FIELDS or op not in OPERATORS:
             raise SearchError("Critère invalide")
-        if field == "id":  # identifiants : liste à part, combinée par arXiv avec le reste (filtre)
-            ids += [m.group(1) for m in ARXIV_ID.finditer(value)]
+        if field == "id":
+            found = [m.group(1) for m in ARXIV_ID.finditer(value)]
+            if op == "not":  # identifiants à écarter
+                excluded += [f"id:{i}" for i in found]
+            else:  # identifiants cherchés : liste à part, combinée par arXiv avec le reste (filtre)
+                ids += found
             continue
         piece = _term(field, value)
         if piece is None:
             continue
-        expression = piece if expression is None else f"({expression}) {OPERATORS[op]} {piece}"
-    wanted = [c for c in categories if CATEGORY.fullmatch(c)][:20]
+        if op == "not":
+            excluded.append(piece)
+        else:
+            expression = piece if expression is None else f"({expression}) {OPERATORS[op]} {piece}"
+    wanted = list(dict.fromkeys(c for c in map(normalize_category, categories) if c))[:20]
     if wanted:
         cats = " OR ".join(f"cat:{c}" for c in wanted)
         cats = f"({cats})" if len(wanted) > 1 else cats
@@ -99,7 +126,11 @@ def build_query(terms, categories=(), dates=None):
         clause = f"submittedDate:[{span[0]}0000 TO {span[1]}2359]"
         expression = clause if expression is None else f"({expression}) AND {clause}"
     if expression is None and not ids:
-        raise SearchError("Recherche vide")
+        raise SearchError("Recherche vide" if not excluded else "Une exclusion (SAUF) demande aussi un critère à chercher")
+    if excluded and expression is None:  # seulement des identifiants cherchés : l'exclusion porte sur eux
+        expression = "(" + " OR ".join(f"id:{i}" for i in ids) + ")"
+    for piece in excluded:
+        expression = f"({expression}) ANDNOT {piece}"
     return expression, ids
 
 
@@ -162,30 +193,39 @@ def _fetch(expression, ids, sort, start, count):
     _wait_turn()
     with httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=60, follow_redirects=True) as client:
         response = with_retry(lambda: client.get(API, params=params))
+    if response.status_code == 400:  # requête refusée par arXiv (syntaxe) : erreur de l'utilisateur, pas du réseau
+        raise SearchError("Recherche refusée par arXiv : vérifiez les mots et les champs")
     response.raise_for_status()
     return parse(response.text)
 
 
 def search(terms, categories=(), cross=True, dates=None, sort="relevance", page=0, api_key=None):
     expression, ids = build_query(terms, categories, dates)
-    page = max(0, min(int(page), MAX_START // PAGE_SIZE))
-    only_primary = set(categories) if categories and not cross else None  # articles croisés exclus
+    page = max(0, min(int(page), MAX_START // PAGE_SIZE - 1))
+    wanted = {c for c in map(normalize_category, categories) if c}
+    only_primary = wanted if wanted and not cross else None  # articles croisés exclus
     if sort == "profile" or only_primary:
         return _pool_page(expression, ids, only_primary, sort, page, api_key)
     start = page * PAGE_SIZE
     items, total = _fetch(expression, ids, sort, start, PAGE_SIZE)
     remember(items)
-    return {"items": annotate(items), "total": total, "start": start, "pageSize": PAGE_SIZE}
+    # arXiv ne va pas au-delà de MAX_START résultats : dernière page atteignable
+    last_page = (min(total, MAX_START) - 1) // PAGE_SIZE if total else 0
+    return {"items": annotate(items), "total": total, "start": start, "pageSize": PAGE_SIZE, "page": page, "lastPage": last_page}
 
 
 def _pool_page(expression, ids, only_primary, sort, page, api_key):
     """Page d'un lot de résultats lu d'un coup : reclassé selon le profil, et/ou sans les articles croisés."""
     size = FILTER_POOL if only_primary else POOL
     key = json.dumps([expression, ids, sorted(only_primary or []), sort])
-    now = time.monotonic()
-    for old in [k for k, (stamp, _, _) in _pools.items() if now - stamp > POOL_TTL]:
-        del _pools[old]
-    if key not in _pools:
+    with _pools_lock:  # plusieurs requêtes à la fois (double clic sur « Suivants ») : cache protégé
+        now = time.monotonic()
+        for old in [k for k, (stamp, _, _) in _pools.items() if now - stamp > POOL_TTL]:
+            del _pools[old]
+        entry = _pools.get(key)
+        if entry:
+            _pools[key] = entry = (now, entry[1], entry[2])  # lot consulté : gardé plus longtemps
+    if entry is None:
         items, total = _fetch(expression, ids, "relevance" if sort == "profile" else sort, 0, size)
         if only_primary:
             items = [i for i in items if i["primary_category"] in only_primary]
@@ -198,17 +238,20 @@ def _pool_page(expression, ids, only_primary, sort, page, api_key):
         ranked = annotate(items)
         if sort == "profile":
             ranked = sorted(ranked, key=lambda i: i.get("relevance") or 0, reverse=True)
-        while len(_pools) >= 5:  # quelques recherches gardées seulement
-            del _pools[min(_pools, key=lambda k: _pools[k][0])]
-        _pools[key] = (now, ranked, total)
-    _, ranked, total = _pools[key]
+        entry = (time.monotonic(), ranked, total)
+        with _pools_lock:
+            while len(_pools) >= 5:  # quelques recherches gardées seulement
+                del _pools[min(_pools, key=lambda k: _pools[k][0])]
+            _pools[key] = entry
+    _, ranked, total = entry
+    page = min(page, max(0, (len(ranked) - 1) // PAGE_SIZE))
     start = page * PAGE_SIZE
     # avis donnés depuis : relus (le classement, lui, reste celui du premier calcul)
     items = annotate_status(ranked[start:start + PAGE_SIZE])
     # lot complet (moins de résultats sur arXiv que la taille du lot) : le total est exact, sans « parmi »
     complete = total <= size
     return {"items": items, "total": len(ranked), "arxivTotal": total, "start": start, "pageSize": PAGE_SIZE,
-            "pool": None if complete else size, "profile": sort == "profile", "crossExcluded": bool(only_primary)}
+            "page": page, "lastPage": max(0, (len(ranked) - 1) // PAGE_SIZE), "pool": None if complete else size, "profile": sort == "profile", "crossExcluded": bool(only_primary)}
 
 
 def remember(items):

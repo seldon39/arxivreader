@@ -341,7 +341,8 @@ def refresh_recommendations(api_key=None, limit=60):
                    ON CONFLICT(key) DO UPDATE SET s2_rank = excluded.s2_rank,
                        title = CASE WHEN feed_items.in_arxiv = 1 THEN feed_items.title ELSE excluded.title END,
                        authors = CASE WHEN feed_items.in_arxiv = 1 THEN feed_items.authors ELSE excluded.authors END,
-                       abstract = CASE WHEN feed_items.in_arxiv = 1 THEN feed_items.abstract ELSE excluded.abstract END""",
+                       abstract = CASE WHEN feed_items.in_arxiv = 1 THEN feed_items.abstract
+                                       ELSE COALESCE(excluded.abstract, feed_items.abstract) END""",  # résumé absent chez S2 : gardé
                 (key, arxiv_id, tex_text(paper.get("title")),
                  json.dumps([a.get("name", "") for a in paper.get("authors") or []], ensure_ascii=False),
                  tex_text(paper.get("abstract")), paper.get("publicationDate") or str(paper.get("year") or ""),

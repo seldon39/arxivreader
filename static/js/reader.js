@@ -370,7 +370,9 @@ class Reader {
     const toolbar = this.toolbar = h("div", { class: "reader-toolbar" },
       this.tocButton,
       // retour à la page d'où l'article a été ouvert (bibliothèque ou feed)
-      h("a", { class: "icon-button", href: navigation.listHash, title: t("reader.back"), "aria-label": t("reader.back"), html: icons.back }),
+      h("a", { class: "icon-button", href: navigation.listHash, html: icons.back,
+        ...(() => { const label = t(navigation.listHash.startsWith("#/feed") ? "reader.backFeed" : navigation.listHash === "#/search" ? "reader.backSearch" : "reader.back");
+          return { title: label, "aria-label": label }; })() }),
       this.toolbarTitle = h("div", { class: "title", title: paper.title }, titleTex(paper.title)),
       button(icons.minus, "reader.smaller", () => this.changeFont(-1), { class: "wide-only html-only" }),
       this.zoomButton = h("button", { class: "zoom-reset wide-only html-only", type: "button", onclick: () => { if (settings.fontSize !== DEFAULT_FONT_SIZE) saveSettings({ fontSize: DEFAULT_FONT_SIZE }); } }),

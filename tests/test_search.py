@@ -114,3 +114,24 @@ class CrossExcluded(ProfileSort):
         self.assertEqual(fetch.call_args.args[2:], ("newest", 0, search.FILTER_POOL))
         self.assertEqual((first["total"], len(first["items"]), len(second["items"]), first["pool"]), (60, 25, 25, None))
         self.assertTrue(all(i["primary_category"] == "math.DG" for i in first["items"] + second["items"]))
+
+
+class AuditFixes(ProfileSort):
+    """Mots AND / OR, exclusions, catégories écrites librement, dernière page atteignable."""
+
+    def test_boolean_words_and_exclusions(self):
+        self.assertEqual(build_query([{"field": "all", "value": "Bergman OR kernel and NOT"}])[0], "(all:Bergman AND all:kernel)")
+        self.assertEqual(build_query([{"field": "all", "value": "Bergman", "op": "not"}], ["math.cv"])[0], "(cat:math.CV) ANDNOT all:Bergman")
+        with self.assertRaises(SearchError):
+            build_query([{"field": "all", "value": "Bergman", "op": "not"}])
+        self.assertEqual(build_query([{"field": "title", "value": "x", "op": "not"}, {"field": "all", "value": "kernel"}])[0],
+                         "(all:kernel) ANDNOT ti:x")
+
+    def test_categories_and_last_page(self):
+        from unittest import mock
+        from app import search
+        self.assertEqual([search.normalize_category(c) for c in ["math.ag", "math", "MATH-PH"]], ["math.AG", None, "math-ph"])
+        with mock.patch.object(search, "_fetch", return_value=([], 5000)), \
+                mock.patch.object(search.relevance, "score_items", side_effect=lambda batch: batch):
+            result = search.search([{"field": "all", "value": "x"}], page=999)
+        self.assertEqual((result["page"], result["lastPage"]), (79, 79))

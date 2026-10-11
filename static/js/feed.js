@@ -500,6 +500,7 @@ export function feedCard(item, onChange = () => {}, { compact = false, fresh = f
 // Lien « Afficher tout le résumé » recalculé quand la largeur change ; un seul observateur pour tout le feed,
 // vidé à chaque nouvel affichage (voir draw)
 const abstractObserver = new ResizeObserver((entries) => entries.forEach((entry) => entry.target.updateMore?.()));
+export const resetAbstractObserver = () => abstractObserver.disconnect();
 
 function foldableSection(settingKey, title, cards, { extraClass = "", collapsedByDefault = false } = {}) {
   const section = h("section", { class: `feed-day followed-section foldable ${extraClass}`.trim() });
