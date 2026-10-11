@@ -1312,6 +1312,17 @@ body.has-selection-bar #toast { bottom: 96px; }
 .related-node text { font: 10px var(--font-ui); fill: var(--muted); pointer-events: none; }
 .related-node.origin text { font-weight: 700; font-size: 12px; fill: var(--text); }
 .related-node.selected text { fill: var(--text); font-weight: 600; }
+.related-graph-tools { position: absolute; top: 8px; right: 8px; display: flex; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent); }
+.related-graph-tools .icon-button { min-width: 32px; height: 32px; padding: 0 6px; color: var(--muted); }
+.related-graph-tools .icon-button:hover { color: var(--text); }
+.related-graph-tools .icon-button svg { width: 18px; height: 18px; }
+/* graphe agrandi : toute la fenêtre, l'article choisi à droite */
+body.related-expanded { overflow: hidden; }
+.related-grid.expanded::before { content: ""; position: fixed; inset: 0; z-index: 45; background: color-mix(in srgb, var(--bg) 75%, transparent); }
+.related-grid.expanded .related-graph { position: fixed; inset: 12px; z-index: 46; box-shadow: var(--shadow); }
+.related-grid.expanded .related-graph svg { width: 100%; height: 100%; aspect-ratio: auto; }
+.related-grid.expanded .related-detail { position: fixed; top: 60px; right: 26px; z-index: 47; width: min(400px, calc(100vw - 52px)); box-shadow: var(--shadow); }
 .related-legend { position: absolute; left: 12px; bottom: 8px; display: flex; flex-wrap: wrap; gap: 4px 14px; font: 12px var(--font-ui); color: var(--muted); pointer-events: none; }
 .related-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
 .related-legend .legend-old { background: color-mix(in srgb, var(--accent) 22%, var(--surface)); }

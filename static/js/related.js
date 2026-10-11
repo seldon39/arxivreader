@@ -11,7 +11,7 @@ import { typesetTex } from "./math.js";
 
 // dernier graphe et choix, gardés le temps de la session (retour depuis le lecteur : tout est là)
 // `pending` : construction en cours (gardée si l'on quitte la page : le graphe s'affichera au retour)
-const state = { query: "", graph: null, selected: null, tab: "graph", pending: null };
+const state = { query: "", graph: null, selected: null, tab: "graph", pending: null, expanded: false };
 const TABS = { graph: "nodes", prior: "prior", derivative: "derivative" }; // onglet → liste du graphe
 const SVG = "http://www.w3.org/2000/svg";
 const W = 800;
@@ -90,6 +90,7 @@ export async function renderRelated(root, arxivFromRoute = null) {
   });
   pick.addEventListener("click", () => libraryMenu(pick, form, (arxivId) => load(arxivId)));
   let mounted = true;
+  let collapse = () => {}; // graphe agrandi : réduit quand on quitte la page
 
   // ---- Résultat : en-tête, liste (onglets) et graphe, article choisi dessous ----
   function draw() {
@@ -161,12 +162,39 @@ export async function renderRelated(root, arxivFromRoute = null) {
       if (!mounted) return;
       typesetTex([detail]).catch(() => {});
     }
-    const { svg, highlight } = drawGraph(graph, chosen, select);
-    graphBox.append(svg, h("div", { class: "related-legend" },
+    const { svg, highlight, zoomBy, fit } = drawGraph(graph, chosen, select);
+    // agrandi : le graphe occupe la fenêtre, l'article choisi reste à droite ; zoom par les boutons ou + − 0
+    const grid = h("div", { class: "related-grid" });
+    const tool = (icon, label, onclick) => h("button", { class: "icon-button", type: "button", title: label, "aria-label": label, html: icons[icon], onclick });
+    const expand = tool("expand", t("related.expand"), () => setExpanded(!state.expanded));
+    const setExpanded = (on) => {
+      state.expanded = on;
+      grid.classList.toggle("expanded", on);
+      document.body.classList.toggle("related-expanded", on);
+      expand.innerHTML = icons[on ? "shrink" : "expand"];
+      expand.title = t(on ? "related.shrink" : "related.expand");
+      expand.setAttribute("aria-label", expand.title);
+      document.removeEventListener("keydown", keys);
+      if (on) document.addEventListener("keydown", keys);
+    };
+    const keys = (event) => {
+      if (!grid.isConnected) { document.removeEventListener("keydown", keys); return; }
+      if (event.target.closest?.("input, textarea, [contenteditable]") || event.metaKey || event.ctrlKey || event.altKey) return;
+      const act = { Escape: () => setExpanded(false), "+": () => zoomBy(1.25), "=": () => zoomBy(1.25), "-": () => zoomBy(0.8), "0": fit }[event.key];
+      if (!act) return;
+      event.preventDefault();
+      event.stopPropagation();
+      act();
+    };
+    collapse = () => setExpanded(false);
+    graphBox.append(svg, h("div", { class: "related-graph-tools" },
+      tool("zoomOut", t("related.zoomOut"), () => zoomBy(0.8)), tool("zoomIn", t("related.zoomIn"), () => zoomBy(1.25)),
+      tool("fit", t("related.fit"), fit), expand), h("div", { class: "related-legend" },
       h("span", {}, h("i", { class: "legend-old" }), t("related.legend.old")), h("span", {}, h("i", { class: "legend-new" }), t("related.legend.new")),
       h("span", {}, t("related.legend.size")), h("span", {}, h("i", { class: "legend-library" }), t("related.inLibrary"))));
-    result.replaceChildren(head, h("div", { class: "related-grid" },
-      h("div", { class: "related-side" }, tabs, list), graphBox, detail));
+    grid.append(h("div", { class: "related-side" }, tabs, list), graphBox, detail);
+    result.replaceChildren(head, grid);
+    setExpanded(state.expanded);
     drawList();
     drawDetail();
     typesetTex([head]).catch(() => {});
@@ -233,7 +261,7 @@ export async function renderRelated(root, arxivFromRoute = null) {
       }, () => {});
     }
   }
-  return () => { mounted = false; };
+  return () => { mounted = false; collapse(); };
 }
 
 // lien avec l'article (graphe) ou avec le graphe (travaux antérieurs et dérivés)
@@ -330,18 +358,31 @@ function drawGraph(graph, selected, select) {
     }
   };
   highlight();
-  // zoom à la molette (ou au pincement) et déplacement en faisant glisser le fond
+  // zoom au pincement (ou ⌘ + molette, ou boutons) et déplacement en faisant glisser le fond ; agrandi, le
+  // défilement à deux doigts déplace aussi le graphe (la page, elle, ne défile plus)
   let zoom = 1, panX = 0, panY = 0;
   const apply = () => view.setAttribute("transform", `translate(${panX} ${panY}) scale(${zoom})`);
-  svg.addEventListener("wheel", (event) => {
-    if (!event.ctrlKey && !event.metaKey) return; // pincement du trackpad (ctrlKey) ou ⌘ + molette ; sinon la page défile
-    event.preventDefault();
-    const box = svg.getBoundingClientRect();
-    const mx = (event.clientX - box.left) * (W / box.width), my = (event.clientY - box.top) * (H / box.height);
-    const next = Math.min(4, Math.max(0.6, zoom * Math.exp(-event.deltaY * 0.0015)));
+  // point de l'écran → coordonnées du graphe (le cadre agrandi garde les proportions, centré)
+  const toView = (x, y) => { const m = svg.getScreenCTM(); return m ? new DOMPoint(x, y).matrixTransform(m.inverse()) : { x: W / 2, y: H / 2 }; };
+  const unit = () => 1 / (svg.getScreenCTM()?.a || 1);
+  const zoomAt = (mx, my, factor) => {
+    const next = Math.min(6, Math.max(0.5, zoom * factor));
     panX = mx - (mx - panX) * (next / zoom); panY = my - (my - panY) * (next / zoom);
     zoom = next;
     apply();
+  };
+  const zoomBy = (factor) => zoomAt(W / 2, H / 2, factor);
+  const fit = () => { zoom = 1; panX = panY = 0; apply(); };
+  svg.addEventListener("wheel", (event) => {
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault();
+      const p = toView(event.clientX, event.clientY);
+      zoomAt(p.x, p.y, Math.exp(-event.deltaY * 0.0015));
+    } else if (svg.closest(".expanded")) {
+      event.preventDefault();
+      panX -= event.deltaX * unit(); panY -= event.deltaY * unit();
+      apply();
+    }
   }, { passive: false });
   let drag = null;
   svg.addEventListener("pointerdown", (event) => {
@@ -351,16 +392,15 @@ function drawGraph(graph, selected, select) {
   });
   svg.addEventListener("pointermove", (event) => {
     if (!drag) return;
-    const box = svg.getBoundingClientRect();
-    panX = drag.panX + (event.clientX - drag.x) * (W / box.width);
-    panY = drag.panY + (event.clientY - drag.y) * (H / box.height);
+    panX = drag.panX + (event.clientX - drag.x) * unit();
+    panY = drag.panY + (event.clientY - drag.y) * unit();
     apply();
   });
   svg.addEventListener("pointerup", () => { drag = null; });
   svg.addEventListener("pointercancel", () => { drag = null; });
   svg.addEventListener("lostpointercapture", () => { drag = null; });
-  svg.addEventListener("dblclick", (event) => { if (event.target.closest(".related-node")) return; zoom = 1; panX = panY = 0; apply(); });
-  return { svg, highlight };
+  svg.addEventListener("dblclick", (event) => { if (!event.target.closest(".related-node")) fit(); });
+  return { svg, highlight, zoomBy, fit };
 }
 
 // ---- Menus : articles de la bibliothèque, dossiers ----

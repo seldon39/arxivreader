@@ -92,7 +92,7 @@ listes (un classique cité partout n'écrase pas un travail proche). Onglets : l
 citent le plus d'articles du graphe : synthèses, travaux récents) ; en choisir un fait ressortir les articles
 du graphe qui lui sont liés. Graphe : plus deux articles
 sont proches, plus ils sont rapprochés ; seuls les liens les plus forts de chaque article sont tracés, tous ceux de l'article choisi apparaissent ; taille selon les citations, couleur selon l'année, cercle pour ceux de la
-bibliothèque ; pincement du trackpad (ou ⌘ + molette) pour zoomer, glisser le fond pour se déplacer. L'article choisi se lit, s'ajoute à la
+bibliothèque ; pincement du trackpad (ou ⌘ + molette, ou boutons − +) pour zoomer, glisser le fond pour se déplacer ; le graphe s'agrandit à toute la fenêtre (Échap pour revenir, touches + − 0). L'article choisi se lit, s'ajoute à la
 bibliothèque, se range dans un dossier (ou s'y glisse), ou devient le point de départ d'un nouveau graphe. Un
 graphe est gardé quinze jours (« Reconstruire » pour le refaire). Sans clé d'API Semantic Scholar, la
 construction peut attendre un peu (quota partagé).
