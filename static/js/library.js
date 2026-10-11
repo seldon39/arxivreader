@@ -3,8 +3,8 @@
 import { setFindHandler } from "./find.js";
 import { api } from "./api.js";
 import { t, tn } from "./i18n.js";
-import { debounce, draggablePaper, droppedPapers, formatDate, h, icons, journalChip, mayBePaper, tidyTitle, timeAgo, toast, toastError, withMath } from "./util.js";
-import { dragEnded, dragGroup, fileInFolder, forgetSelected, selectButton, selectionDropped, syncSelection, useSelectionBar } from "./selection.js";
+import { debounce, draggablePaper, droppedPapers, formatDate, h, icons, journalChip, localDrag, mayBePaper, tidyTitle, timeAgo, toast, toastError, withMath } from "./util.js";
+import { addToLibrary, dragEnded, dragGroup, fileInFolder, forgetSelected, selectButton, selectionDropped, syncSelection, useSelectionBar } from "./selection.js";
 
 // Recherche et filtres, gardés d'une visite à l'autre (le temps de la session)
 const view = { search: "", categories: new Set(), reading: new Set(), years: new Set(), folders: new Set(), source: "any", publication: "any", sort: "opened",
@@ -482,6 +482,35 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
     await refreshList();
   }
   dropTarget(panel, () => view.openFolder);
+
+  // Article déposé sur la liste générale (« Autres articles ») : ajouté à la bibliothèque, hors dossier.
+  // Déjà dans la bibliothèque (une carte glissée sur sa propre liste) : rien à faire, sans message.
+  function libraryDropTarget(element) {
+    element.addEventListener("dragover", (event) => {
+      if (!mayBePaper(event)) return;
+      // carte de la bibliothèque glissée (vers un dossier) : la liste n'est pas une cible
+      if (localDrag?.every((item) => papers.some((p) => p.id === item.paperId || p.arxiv_id === item.arxivId))) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+      list.classList.add("drop-target");
+    });
+    element.addEventListener("dragleave", (event) => { if (!element.contains(event.relatedTarget)) list.classList.remove("drop-target"); });
+    element.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      list.classList.remove("drop-target");
+      const dropped = droppedPapers(event.dataTransfer);
+      if (!dropped.length) { toast(t("library.drop.notPaper"), { error: true }); return; }
+      try {
+        if (await addToLibrary(dropped, papers)) await refreshList();
+        selectionDropped();
+      } catch (error) {
+        toastError(error);
+        await refreshList();
+      }
+    });
+  }
+  libraryDropTarget(list);
+  libraryDropTarget(tools);
 
   let renaming = false;
   // pertinence des articles de la bibliothèque : demandée au serveur la première fois qu'un dossier est

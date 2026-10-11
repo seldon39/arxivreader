@@ -187,6 +187,8 @@ const SUPERSCRIPTS = { 0: "⁰", 1: "¹", 2: "²", 3: "³", 4: "⁴", 5: "⁵", 
 // Glisser-déposer d'un article (bibliothèque, feed, recherche) vers un dossier, aussi d'une fenêtre de
 // l'application à l'autre : son identifiant (type propre à arXivReader) et un lien arXiv ordinaire
 export const PAPER_DRAG = "application/x-arxivreader-paper";
+// articles glissés depuis cette fenêtre (le temps du glissement) ; d'une autre fenêtre : inconnus ici
+export let localDrag = null;
 
 // On le saisit par son titre (un lien, glissable de lui-même) : le reste de la carte garde la sélection de
 // texte (résumé du feed). Bibliothèque : le lien du titre couvre toute la carte.
@@ -196,6 +198,7 @@ export function draggablePaper(element, { arxivId, paperId = null, version = nul
   element.addEventListener("dragstart", (event) => {
     if (!event.target.closest?.("a")) return; // texte sélectionné glissé ailleurs dans la carte : rien de spécial
     const papers = group({ arxivId, paperId, title });
+    localDrag = papers;
     const urls = papers.map((p) => `https://arxiv.org/abs/${p.arxivId}${p.arxivId === arxivId && version ? `v${version}` : ""}`);
     event.dataTransfer.setData(PAPER_DRAG, JSON.stringify(papers.map((p) => ({ arxivId: p.arxivId, paperId: p.paperId || null, title: p.title || "" }))));
     event.dataTransfer.setData("text/uri-list", urls.join("\r\n"));
@@ -203,7 +206,7 @@ export function draggablePaper(element, { arxivId, paperId = null, version = nul
     event.dataTransfer.effectAllowed = "copyLink";
     element.classList.add("dragging");
   });
-  element.addEventListener("dragend", (event) => { element.classList.remove("dragging"); onEnd?.(event); });
+  element.addEventListener("dragend", (event) => { element.classList.remove("dragging"); localDrag = null; onEnd?.(event); });
   return element;
 }
 

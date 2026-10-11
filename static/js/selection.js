@@ -120,6 +120,29 @@ export async function fileInFolder(items, folder, libraryPapers = null) {
   return added;
 }
 
+// Ajouter des articles à la bibliothèque (hors dossier) : ceux qui n'y sont pas encore y sont importés
+// (déposés sur « Autres articles »). Renvoie le nombre d'articles ajoutés.
+export async function addToLibrary(items, libraryPapers) {
+  items = items.filter((item, i) => items.findIndex((other) => other.arxivId === item.arxivId) === i);
+  const missing = items.filter((item) => !libraryPapers.some((p) => p.id === item.paperId || p.arxiv_id === item.arxivId));
+  let added = 0;
+  try {
+    for (const item of missing) {
+      toast(missing.length > 1 ? t("select.importing", { k: added + 1, n: missing.length }) : t("library.drop.importing"), { duration: 60000 });
+      const paper = await api.importPaper(item.arxivId);
+      libraryPapers.push(paper);
+      item.title ||= paper.title;
+      added++;
+    }
+  } catch (error) {
+    if (added) error.message = `${error.message} ${t("select.partialLibrary", { n: added, total: missing.length })}`;
+    throw error;
+  }
+  if (added === 1) toast(t("library.drop.addedLibrary", { title: missing[0].title.length > 60 ? `${missing[0].title.slice(0, 58)}…` : missing[0].title }));
+  else if (added) toast(tn("select.addedLibrary", added));
+  return added;
+}
+
 // Barre de sélection, en bas de la fenêtre : nombre, « Ranger dans… » (liste des dossiers), « Tout désélectionner »
 // `options` : { papers() : articles de la bibliothèque déjà connus (ou null), onFiled() : après un rangement }
 export function useSelectionBar(options) {
