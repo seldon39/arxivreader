@@ -534,8 +534,11 @@ async def feed_items(view: str = "arxiv", day: str | None = None):
                 return JSONResponse({"error": f"{type(error).__name__}: {error}"}, status_code=502)
             days = feed.known_days()
     latest = max((d for d, n in days.items() if n), default=None)
+    settings = db.get_settings()
     return {
         "day": day or latest,
+        # jour lu par l'API de recherche d'arXiv : sans les nouvelles versions
+        "partial": (day or latest) in (settings.get("feed.partialDays") or []),
         "latestDay": latest,
         "days": days,
         "items": await run_in_threadpool(feed.list_items, view, ["new", "cross", "replace", "replace-cross"], day),

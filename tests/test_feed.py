@@ -71,3 +71,57 @@ class OaiDay(unittest.TestCase):
                          {"2610.00001": "new", "2610.00002": "cross", "2401.00003": "replace"})
         self.assertEqual(items[0]["authors"], ["A. One", "B. Two", "C. Three"])
         self.assertIsNone(token)
+
+
+class SubmissionWindow(unittest.TestCase):
+    """Jour d'annonce → fenêtre de dépôt (14 h à New York, jours ouvrés)."""
+
+    def test_weekdays(self):
+        from app.feed import submission_window
+        start, end = submission_window("2026-10-07")  # mercredi : du lundi au mardi (heure d'été, UTC-4)
+        self.assertEqual((start.isoformat(), end.isoformat()), ("2026-10-05T18:00:00+00:00", "2026-10-06T18:00:00+00:00"))
+        start, end = submission_window("2026-10-06")  # mardi : du vendredi au lundi
+        self.assertEqual((start.isoformat(), end.isoformat()), ("2026-10-02T18:00:00+00:00", "2026-10-05T18:00:00+00:00"))
+        start, end = submission_window("2026-12-07")  # lundi, heure d'hiver (UTC-5) : du jeudi au vendredi
+        self.assertEqual((start.isoformat(), end.isoformat()), ("2026-12-03T19:00:00+00:00", "2026-12-04T19:00:00+00:00"))
+
+
+class PastDayFallback(unittest.TestCase):
+    """Jour ancien : l'API de recherche remplace l'OAI-PMH, sans les nouvelles versions."""
+
+    def test_old_day_uses_search_api(self):
+        from unittest import mock
+        from app import feed, search
+        page = [{"key": "2610.00001", "arxiv_id": "2610.00001", "version": 1, "title": "A", "authors": ["X"], "abstract": "",
+                 "categories": ["math.DG"], "primary_category": "math.DG", "announced": "2026-09-30", "link": ""},
+                {"key": "2610.00002", "arxiv_id": "2610.00002", "version": 2, "title": "B", "authors": ["Y"], "abstract": "",
+                 "categories": ["math.AP", "math.SP"], "primary_category": "math.AP", "announced": "2026-09-30", "link": ""}]
+        stored = []
+        with mock.patch.object(feed, "_fetch_day_oai", side_effect=AssertionError("OAI")), \
+             mock.patch.object(search, "_fetch", return_value=(page, 2)) as fetch, \
+             mock.patch.object(feed, "_store", side_effect=lambda c, item: stored.append(item)), \
+             mock.patch.object(feed.relevance, "fetch_embeddings"), \
+             mock.patch.object(feed.db, "connect"), mock.patch.object(feed.db, "get_settings", return_value={}), \
+             mock.patch.object(feed.db, "save_settings") as save:
+            self.assertEqual(feed.fetch_day("2020-10-01", ["math.DG", "math.SP"]), 2)
+        self.assertIn("submittedDate:[202009291800 TO 202009301800]", fetch.call_args[0][0])
+        self.assertEqual([(i["announce_type"], i["announced"]) for i in stored], [("new", "2020-10-01"), ("cross", "2020-10-01")])
+        self.assertEqual(save.call_args[0][0]["feed.partialDays"], ["2020-10-01"])
+
+    def test_slow_oai_falls_back(self):
+        from datetime import date
+        from unittest import mock
+        import httpx
+        from app import feed, search
+        day = date.today().isoformat()
+        with mock.patch.object(feed, "_oai_failed", 0.0), \
+             mock.patch.object(feed, "_fetch_day_oai", side_effect=httpx.ReadTimeout("slow")) as oai, \
+             mock.patch.object(search, "_fetch", return_value=([], 0)) as fetch, \
+             mock.patch.object(feed.relevance, "fetch_embeddings"), mock.patch.object(feed.db, "connect"), \
+             mock.patch.object(feed.db, "get_settings", return_value={}), mock.patch.object(feed.db, "save_settings"):
+            feed.fetch_day(day, ["math.DG"])
+            self.assertTrue(oai.called and fetch.called)
+            self.assertGreater(feed._oai_failed, 0)
+            oai.reset_mock()
+            feed.fetch_day(day, ["math.DG"])  # échec récent : l'OAI-PMH n'est pas réessayé
+            self.assertFalse(oai.called)

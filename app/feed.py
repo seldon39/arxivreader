@@ -7,7 +7,9 @@ import time
 import unicodedata
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta, timezone
+from datetime import time as clock
 from email.utils import parsedate_to_datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -246,25 +248,87 @@ def parse_oai_day(xml_text, day, categories):
     return items, (token.text.strip() if token is not None and token.text and token.text.strip() else None)
 
 
-def fetch_day(day, categories=None, api_key=None):
-    """Annonces d'un jour passé (date YYYY-MM-DD) ; 0 si arXiv n'a rien annoncé ce jour-là."""
-    categories = categories or FEED_CATEGORIES
+# L'OAI-PMH d'arXiv répond vite pour les tout derniers jours, mais pour un jour plus ancien il peut
+# mettre plusieurs minutes avant d'échouer : on ne l'essaie que pour la semaine écoulée, avec un délai
+# court, et l'API de recherche prend le relais (nouveaux articles et croisés, sans les nouvelles versions).
+OAI_DAYS = 7
+OAI_TIMEOUT = httpx.Timeout(40, connect=10, read=25)
+OAI_PAUSE = 3600  # après un échec, l'OAI-PMH n'est plus essayé pendant une heure
+_oai_failed = 0.0
+NEW_YORK = ZoneInfo("America/New_York")
+
+
+def _fetch_day_oai(day, categories):
     items = []
     requested = False
-    with _client() as client:
+    with httpx.Client(headers={"User-Agent": USER_AGENT}, follow_redirects=True, timeout=OAI_TIMEOUT) as client:
         for oai_set in sorted({_oai_set(c) for c in categories}):
             params = {"verb": "ListRecords", "metadataPrefix": "arXivRaw", "set": oai_set, "from": day, "until": day}
             while params:
                 if requested:
                     time.sleep(3.1)  # au plus une requête toutes les 3 s, comme le demande arXiv
                 requested = True
-                response = with_retry(lambda: client.get(OAI_URL, params=params), retry_on=(503,), delays=(5, 10, 20))
+                response = with_retry(lambda: client.get(OAI_URL, params=params), retry_on=(503,), delays=(5,))
                 response.raise_for_status()
                 if "noRecordsMatch" in response.text[:3000]:
                     break
                 page, token = parse_oai_day(response.text, day, categories)
                 items += page
                 params = {"verb": "ListRecords", "resumptionToken": token} if token else None
+    return items
+
+
+def submission_window(day):
+    """Dépôts annoncés le jour d'annonce `day` : de 14 h (heure de New York) l'avant-veille ouvrée
+    à 14 h la veille ouvrée (lundi : du jeudi au vendredi ; mardi : du vendredi au lundi), en UTC."""
+    def previous_weekday(d):
+        d -= timedelta(days=1)
+        while d.weekday() >= 5:
+            d -= timedelta(days=1)
+        return d
+    end = previous_weekday(date.fromisoformat(day))
+    start = previous_weekday(end)
+    at = lambda d: datetime.combine(d, clock(14), NEW_YORK).astimezone(timezone.utc)
+    return at(start), at(end)
+
+
+def _fetch_day_api(day, categories):
+    """Nouveaux articles et croisés d'un jour d'annonce, d'après leur date de dépôt (API de recherche).
+    Approché : un article retenu par la modération est rangé au jour de son dépôt."""
+    from . import search  # import tardif : search importe ce module
+    start, end = submission_window(day)
+    stamp = lambda moment: moment.strftime("%Y%m%d%H%M")
+    expression = f"({' OR '.join(f'cat:{c}' for c in categories)}) AND submittedDate:[{stamp(start)} TO {stamp(end)}]"
+    wanted = set(categories)
+    items, offset, total = [], 0, 1
+    while offset < min(total, 3000):
+        page, total = search._fetch(expression, None, "newest", offset, 500)
+        if not page:
+            break
+        offset += len(page)
+        for item in page:
+            if not wanted & set(item["categories"]):
+                continue
+            items.append({**item, "announce_type": "new" if item["primary_category"] in wanted else "cross", "announced": day})
+    return items
+
+
+def fetch_day(day, categories=None, api_key=None):
+    """Annonces d'un jour passé (date YYYY-MM-DD) ; 0 si arXiv n'a rien annoncé ce jour-là."""
+    global _oai_failed
+    categories = categories or FEED_CATEGORIES
+    today = datetime.now(timezone.utc).date()
+    partial = False
+    if date.fromisoformat(day) >= today - timedelta(days=OAI_DAYS) and time.monotonic() - _oai_failed > OAI_PAUSE:
+        try:
+            items = _fetch_day_oai(day, categories)
+        except (httpx.TimeoutException, httpx.TransportError, httpx.HTTPStatusError, ET.ParseError):
+            _oai_failed = time.monotonic()
+            partial = True
+    else:
+        partial = True
+    if partial:
+        items = _fetch_day_api(day, categories)
     with db.connect() as connection:
         for item in items:
             _store(connection, item)
@@ -274,11 +338,16 @@ def fetch_day(day, categories=None, api_key=None):
         pass
     # « 0 annonce » n'est retenu que pour un jour assez ancien : un jour récent peut ne pas être encore
     # publié par l'OAI-PMH d'arXiv, il sera redemandé à la prochaine visite
-    recent = date.fromisoformat(day) >= datetime.now(timezone.utc).date() - timedelta(days=3)
+    recent = date.fromisoformat(day) >= today - timedelta(days=3)
     if items or not recent:
-        fetched = db.get_settings().get("feed.days") or {}
+        settings = db.get_settings()
+        fetched = settings.get("feed.days") or {}
         fetched[day] = len(items)
-        db.save_settings({"feed.days": fetched})
+        changes = {"feed.days": fetched}
+        partial_days = set(settings.get("feed.partialDays") or [])
+        if partial != (day in partial_days):
+            changes["feed.partialDays"] = sorted(partial_days ^ {day})
+        db.save_settings(changes)
     return len(items)
 
 

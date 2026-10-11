@@ -1038,6 +1038,8 @@ dialog.figure-viewer::backdrop { background: rgba(20, 20, 24, .6); -webkit-backd
   :root:not([data-theme="light"]) .day-nav { --announce-tint: 10%; }
 }
 :root[data-theme="dark"] .day-nav { --announce-tint: 10%; }
+/* jour ancien sans les nouvelles versions : mention discrète sous l'annonce */
+.day-note { margin: -6px 4px 10px; font: 12.5px var(--font-ui); }
 /* proximité : la mention (« Très proche »…) soulignée par la jauge, de la même largeur */
 .relevance { flex-direction: column-reverse; align-items: stretch; gap: 3px; margin-top: 2px; line-height: 1.2; }
 .relevance .relevance-bar { width: auto; }

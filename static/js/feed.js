@@ -211,6 +211,8 @@ async function renderList(body, tab) {
       next.addEventListener("click", () => goToDay(1));
       sections.push(h("section", { class: "feed-day" },
         h("div", { class: "day-nav" }, previous, dayLabel, next),
+        // jour ancien lu par l'API de recherche d'arXiv : les nouvelles versions n'y figurent pas
+        data.partial && (state.types.has("replace") || state.types.has("replace-cross")) ? h("p", { class: "muted small day-note" }, t("feed.partialDay")) : "",
         shown.length ? shown.map(card) : h("div", { class: "empty" }, t("feed.noMatch"))));
     } else if (shown.length) {
       sections.push(h("section", { class: "feed-day" }, shown.map(card)));
