@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Str
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import ai, alerts, annotations, citations, crossrefs, db, feed, folders, library, profile, providers, relevance, updates
+from . import ai, alerts, annotations, citations, crossrefs, db, feed, folders, library, profile, providers, relevance, search, updates
 from .arxiv import ArxivError, fetch_metadata, parse_arxiv_id
 from .config import HOST, PORT, STATIC
 
@@ -563,6 +563,33 @@ async def feed_refresh(body: RefreshRequest):
     except Exception as error:  # réseau
         return JSONResponse({"error": f"{type(error).__name__}: {error}"}, status_code=502)
     return {"count": count}
+
+
+class SearchTerm(BaseModel):
+    field: str = "all"
+    value: str = ""
+    op: str = "and"
+
+
+class SearchRequest(BaseModel):
+    terms: list[SearchTerm] = []
+    categories: list[str] = []
+    cross: bool = True
+    dates: dict = {}
+    sort: str = "relevance"
+    page: int = 0
+
+
+@app.post("/api/search")
+async def search_arxiv(body: SearchRequest):
+    """Recherche dans tout arXiv (pas seulement la bibliothèque) : résultats présentés comme le feed."""
+    try:
+        return await run_in_threadpool(search.search, [t.model_dump() for t in body.terms[:10]], body.categories[:20],
+                                       body.cross, body.dates, body.sort, body.page)
+    except search.SearchError as error:
+        raise HTTPException(400, str(error))
+    except Exception as error:  # réseau, arXiv indisponible
+        return JSONResponse({"error": f"{type(error).__name__}: {error}"}, status_code=502)
 
 
 @app.put("/api/feed/status")

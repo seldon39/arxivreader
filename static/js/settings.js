@@ -26,7 +26,7 @@ const DEFAULTS = {
   aiLocalUrl: "",     // vide : Ollama (http://127.0.0.1:11434/v1)
 };
 const LOCAL_URL = "http://127.0.0.1:11434/v1";
-const FEED_DEFAULT = ["math.DG", "math.CV", "math.SP", "math-ph"];
+export const FEED_DEFAULT = ["math.DG", "math.CV", "math.SP", "math-ph"];
 const WIDTHS = { narrow: "42rem", normal: "56rem", wide: "72rem" };
 
 export const settings = { ...DEFAULTS };

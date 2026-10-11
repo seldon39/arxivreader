@@ -365,7 +365,7 @@ function formatDay(iso) {
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString(getLanguage() === "fr" ? "fr-FR" : "en-GB", { weekday: "long", day: "numeric", month: "long" });
 }
 
-function feedCard(item, onChange = () => {}, { compact = false, fresh = false, showDate = false } = {}) {
+export function feedCard(item, onChange = () => {}, { compact = false, fresh = false, showDate = false } = {}) {
   const authors = item.authors.length > 8 ? [...item.authors.slice(0, 8), t("feed.etAl")] : item.authors;
   // Résumé coupé à deux lignes : clic, Entrée ou Espace pour le déplier, ou le lien « Afficher tout le
   // résumé » dessous (seulement quand il est coupé)

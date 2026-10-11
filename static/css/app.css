@@ -1159,3 +1159,44 @@ input.switch:focus-visible { outline: 2px solid var(--focus); outline-offset: 2p
 .folder-menu label.check:hover { background: var(--surface-hover); }
 .folder-menu-new { display: flex; gap: 6px; padding: 8px 6px 4px; border-top: 1px solid var(--border); margin-top: 6px; }
 .folder-menu-new .text-input { flex: 1; height: 32px; font-size: 13px; min-width: 0; }
+
+/* ---------- Recherche dans arXiv ---------- */
+.search-page { max-width: 980px; margin: 0 auto; padding: 24px 16px 80px; }
+.search-page h1 { font-family: var(--font-read); font-size: 30px; font-weight: 600; margin: 0 0 14px; }
+.search-terms { display: grid; gap: 8px; }
+.search-term { display: grid; grid-template-columns: 74px 170px minmax(0, 1fr) 30px; gap: 8px; align-items: center; }
+.search-select { height: 36px; min-width: 0; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--surface); color: var(--text);
+  padding: 0 8px; font: 14px var(--font-ui); }
+.search-term .text-input { height: 36px; }
+.search-first { font: 13px var(--font-ui); color: var(--muted); text-align: right; padding-right: 4px; }
+.search-remove { width: 30px; min-width: 30px; height: 30px; padding: 0; font-size: 18px; color: var(--muted); }
+.search-remove:disabled { opacity: .3; cursor: default; }
+.search-add { justify-self: start; margin-left: 82px; font-size: 13px; text-decoration: none; }
+.search-add:hover { text-decoration: underline; }
+.search-options { display: grid; gap: 10px; margin: 14px 0 4px; }
+.search-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; font: 13.5px var(--font-ui); }
+.search-label { color: var(--muted); font-weight: 600; margin-right: 2px; }
+.search-sort-label { margin-left: 14px; }
+.search-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.search-cross { margin-left: 8px; }
+.search-cross:has(input:disabled) { opacity: .5; }
+.search-other { width: 160px; height: 30px; font-size: 13px; }
+.search-year { width: 90px; height: 32px; font-size: 13px; }
+.search-date { width: 150px; height: 32px; font-size: 13px; }
+.search-segmented { display: inline-flex; border: 0; background: var(--surface-hover); padding: 2px; border-radius: 8px; gap: 2px; overflow: visible; }
+.search-segmented label { flex: none; border: 0; border-radius: 6px; padding: 4px 11px; font-size: 13px; white-space: nowrap; color: var(--muted); }
+.search-segmented label:has(input:checked) { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, .14), 0 0 0 1px rgba(0, 0, 0, .04); }
+.search-go { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 16px 0 6px; }
+.search-results { scroll-margin-top: calc(var(--topbar-h) + 12px); }
+.search-results-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 22px 0 6px; padding: 0 4px 6px;
+  border-bottom: 1.5px solid var(--accent); }
+.search-results-head h2 { margin: 0; font: 600 18px var(--font-read); }
+.search-results .feed-day > .feed-card:first-child { border-top: 0; }
+.search-pager { display: flex; justify-content: center; gap: 8px; margin-top: 18px; }
+@media (max-width: 700px) {
+  .search-term { grid-template-columns: 64px minmax(0, 1fr) 30px; }
+  .search-term > .search-select:nth-child(2), .search-term > .search-first + .search-select { grid-column: 2; }
+  .search-term > .text-input { grid-column: 1 / 3; }
+  .search-add { margin-left: 0; }
+  .search-sort-label { margin-left: 0; }
+}

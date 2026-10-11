@@ -4,6 +4,7 @@ import { t, tn } from "./i18n.js";
 import { renderFeed } from "./feed.js";
 import { renderLibrary } from "./library.js";
 import { renderReader } from "./reader.js";
+import { renderSearch } from "./search.js";
 import { loadSettings, onSettingsChange, openSettingsDialog, settings } from "./settings.js";
 import { refreshUpdates } from "./updates.js";
 import { api } from "./api.js";
@@ -26,10 +27,11 @@ async function route() {
   scrollTo({ top: 0, behavior: "instant" });
   const match = location.hash.match(/^#\/paper\/(.+)$/);
   const feedMatch = location.hash.match(/^#\/feed(?:\/(recommended|import|profile))?$/);
-  const section = match ? "paper" : feedMatch ? "#/feed" : "#/";
+  const searchMatch = location.hash === "#/search";
+  const section = match ? "paper" : feedMatch ? "#/feed" : searchMatch ? "#/search" : "#/";
   if (!match) navigation.listHash = location.hash || "#/";
   // titre de l'onglet (et de la fenêtre) : la page ; le lecteur y met le titre de l'article
-  document.title = match ? "arXivReader" : feedMatch ? t("feed.title") : t("library.title");
+  document.title = match ? "arXivReader" : feedMatch ? t("feed.title") : searchMatch ? t("search.title") : t("library.title");
   document.querySelectorAll(".topnav a").forEach((a) => {
     const active = a.getAttribute("href") === section;
     a.classList.toggle("active", active);
@@ -37,6 +39,7 @@ async function route() {
   });
   try {
     const dispose = feedMatch ? await renderFeed(view, feedMatch[1] || "arxiv")
+      : searchMatch ? await renderSearch(view)
       : match ? await renderReader(view, ...decodeURIComponent(match[1]).split("/"), () => token === routeToken)
         : await renderLibrary(view);
     if (token !== routeToken) { dispose?.(); return; } // page déjà quittée pendant le chargement

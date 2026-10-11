@@ -32,6 +32,7 @@ export const api = {
   statement: (id, node) => request("GET", `/api/papers/${encodeURIComponent(id)}/statements/${encodeURIComponent(node)}`),
   savePosition: (id, anchor) => request("PUT", `/api/papers/${encodeURIComponent(id)}/position`, { anchor }),
   refresh: (id) => request("POST", `/api/papers/${encodeURIComponent(id)}/refresh`, {}),
+  search: (query) => request("POST", "/api/search", query),
   feed: (view, day) => request("GET", `/api/feed?view=${encodeURIComponent(view)}${day ? `&day=${day}` : ""}`),
   refreshFeed: (view) => request("POST", "/api/feed/refresh", { view }),
   linkArxiv: (key, query) => request("POST", "/api/feed/arxiv", { key, query }),

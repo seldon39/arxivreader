@@ -71,6 +71,17 @@ http://127.0.0.1:8710/ ; le serveur n'écoute que sur ce Mac (pas sur le Wi-Fi).
 Les dépendances viennent des renvois (`\ref`, `\eqref`, `\cite`) dans l'énoncé et dans sa preuve :
 un argument utilisé sans renvoi explicite n'apparaît pas.
 
+## Recherche
+
+L'onglet « Recherche » interroge tout arXiv (interface publique export.arxiv.org/api), avec les options de
+sa recherche avancée : critères par champ (tous les champs, titre, auteur, résumé, commentaires, référence de
+journal, catégorie, numéro de rapport, identifiant) reliés par ET / OU / SAUF, « expression exacte » entre
+guillemets, catégories (vos catégories du feed proposées, d'autres ajoutées), articles croisés compris ou
+non, période de soumission (12 derniers mois, une année, une période), tri par pertinence ou par date,
+pages de 25 résultats. Les résultats se présentent comme le feed (pertinence pour votre profil, avis, ajout
+à la bibliothèque, ⌘-clic pour un nouvel onglet). Non proposés, faute de prise en charge par l'interface
+d'arXiv : DOI, ORCID, classes MSC/ACM, licence. Une requête au plus toutes les 3 s, comme arXiv le demande.
+
 ## Dossiers
 
 Dans la bibliothèque, une rangée de dossiers précède la liste complète des articles (qui reste affichée).
