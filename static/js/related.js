@@ -15,7 +15,7 @@ const state = { query: "", graph: null, selected: null, tab: "graph", pending: n
 const TABS = { graph: "nodes", prior: "prior", derivative: "derivative" }; // onglet → liste du graphe
 const SVG = "http://www.w3.org/2000/svg";
 const W = 800;
-const H = 460;
+const H = 460; // hauteur par défaut ; à côté de la liste, celle de la place disponible (graphHeight)
 
 export async function renderRelated(root, arxivFromRoute = null) {
   const input = h("input", { class: "text-input", type: "text", value: state.query, spellcheck: "false", autocomplete: "off",
@@ -166,7 +166,8 @@ export async function renderRelated(root, arxivFromRoute = null) {
       if (!mounted) return;
       typesetTex([detail]).catch(() => {});
     }
-    const { svg, highlight, zoomBy, fit } = drawGraph(graph, chosen, select);
+    // graphe : dessiné une fois la page en place, à la hauteur disponible (voir mountGraph)
+    let svg = null, highlight = () => {}, zoomBy = () => {}, fit = () => {};
     // agrandi : le graphe occupe la fenêtre, l'article choisi reste à droite ; zoom par les boutons ou + − 0
     const grid = h("div", { class: "related-grid" });
     const tool = (icon, label, onclick) => h("button", { class: "icon-button", type: "button", title: label, "aria-label": label, html: icons[icon], onclick });
@@ -185,7 +186,7 @@ export async function renderRelated(root, arxivFromRoute = null) {
       document.removeEventListener("keydown", keys);
       if (on) document.addEventListener("keydown", keys);
     };
-    const zoomKeys = { "+": () => zoomBy(1.25), "=": () => zoomBy(1.25), "-": () => zoomBy(0.8), "0": fit };
+    const zoomKeys = { "+": () => zoomBy(1.25), "=": () => zoomBy(1.25), "-": () => zoomBy(0.8), "0": () => fit() };
     const keys = (event) => {
       if (!grid.isConnected) { document.removeEventListener("keydown", keys); return; }
       // touche déjà prise (menu des dossiers), réglages ouverts, champ de saisie : rien ici
@@ -203,9 +204,9 @@ export async function renderRelated(root, arxivFromRoute = null) {
     });
     collapse = () => setExpanded(false);
     detachKeys = () => document.removeEventListener("keydown", keys);
-    graphBox.append(svg, h("div", { class: "related-graph-tools" },
+    graphBox.append(h("div", { class: "related-graph-tools" },
       tool("zoomOut", t("related.zoomOut"), () => zoomBy(0.8)), tool("zoomIn", t("related.zoomIn"), () => zoomBy(1.25)),
-      tool("fit", t("related.fit"), fit), expand), h("div", { class: "related-legend" },
+      tool("fit", t("related.fit"), () => fit()), expand), h("div", { class: "related-legend" },
       h("span", {}, h("i", { class: "legend-old" }), t("related.legend.old")), h("span", {}, h("i", { class: "legend-new" }), t("related.legend.new")),
       h("span", {}, t("related.legend.size")), h("span", {}, h("i", { class: "legend-library" }), t("related.inLibrary"))));
     grid.append(h("div", { class: "related-side" }, tabs, list), graphBox, detail);
@@ -213,6 +214,26 @@ export async function renderRelated(root, arxivFromRoute = null) {
     setExpanded(state.expanded);
     drawList();
     drawDetail();
+    // à côté de la liste, le graphe descend jusqu'au panneau de l'article choisi ; redessiné si la fenêtre change
+    // assez de taille pour que cette hauteur change nettement
+    let height = 0;
+    const mountGraph = () => {
+      const wanted = graphHeight(grid, graphBox, detail);
+      if (svg && Math.abs(wanted - height) < 24) return;
+      height = wanted;
+      const old = svg;
+      ({ svg, highlight, zoomBy, fit } = drawGraph(graph, chosen, select, height));
+      old?.remove();
+      graphBox.prepend(svg);
+    };
+    mountGraph();
+    let resizing = 0, width = grid.clientWidth;
+    new ResizeObserver(() => { // largeur seulement (le panneau de l'article choisi change de hauteur d'un article à l'autre)
+      if (state.expanded || !grid.isConnected || grid.clientWidth === width) return;
+      width = grid.clientWidth;
+      cancelAnimationFrame(resizing);
+      resizing = requestAnimationFrame(mountGraph);
+    }).observe(grid);
     refreshMarks = () => { drawList(); drawDetail(); highlight(); };
     typesetTex([head]).catch(() => {});
   }
@@ -295,8 +316,17 @@ const authorLine = (authors) => !authors?.length ? "" : authors.length > 3 ? `${
 const shortTitle = (title) => (title.length > 60 ? `${title.slice(0, 58)}…` : title);
 const lastName = (name) => String(name || "").trim().split(/\s+/).at(-1) || "";
 
+// Hauteur du graphe (unités du dessin, largeur W) : à côté de la liste, la place entre le haut de la liste et le
+// panneau de l'article choisi ; en colonne unique (fenêtre étroite), la hauteur par défaut
+function graphHeight(grid, box, detail) {
+  if (getComputedStyle(grid).gridTemplateColumns.split(" ").length < 2 || !box.clientWidth) return H;
+  const side = grid.querySelector(".related-side").getBoundingClientRect().height;
+  const room = side - detail.getBoundingClientRect().height - parseFloat(getComputedStyle(grid).rowGap || 0) - 2; // bordures du cadre
+  return Math.round(Math.min(1.1 * W, Math.max(H, W * room / box.clientWidth)));
+}
+
 // ---- Graphe : disposition par forces (rapprochés selon leur proximité), recentrée dans le cadre ----
-function layout(graph) {
+function layout(graph, H) {
   const nodes = [{ ...graph.origin, id: "__origin", origin: true }, ...graph.nodes.map((n) => ({ ...n }))];
   const byId = new Map(nodes.map((n) => [n.id, n]));
   // tous les liens ; la disposition ne suit que ceux dessinés d'emblée (les plus forts de chaque article)
@@ -339,10 +369,11 @@ function layout(graph) {
   return { nodes, links };
 }
 
-function drawGraph(graph, selected, select) {
-  const { nodes, links } = layout(graph);
+function drawGraph(graph, selected, select, H) {
+  const { nodes, links } = layout(graph, H);
   const svg = document.createElementNS(SVG, "svg");
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.style.setProperty("--ratio", `${W} / ${H}`);
   svg.setAttribute("role", "group"); // les points restent atteignables (VoiceOver, clavier)
   svg.setAttribute("aria-label", t("related.graphLabel"));
   const el = (tag, attrs, parent) => { const e = document.createElementNS(SVG, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent?.append(e); return e; };
