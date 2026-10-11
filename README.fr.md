@@ -201,17 +201,19 @@ Pour un collègue sans abonnement Claude, l'onglet IA fonctionne aussi avec :
 - **Codex** (OpenAI, compte ChatGPT) : `npm install -g @openai/codex`, puis `codex login`. Appelé par
   `codex exec` sans commandes ni recherche web, sans réglages personnels ni session enregistrée, dans un
   dossier vide, bac à sable en lecture seule.
-- **Gemini** (Google, compte Google) : `npm install -g @google/gemini-cli`, puis lancer `gemini` une fois pour
-  se connecter. Appelé avec ses outils, extensions et serveurs MCP désactivés, consignes d'arXivReader à la
-  place des siennes.
+- **Gemini** (Google) : par l'API Gemini, avec une clé créée sur [Google AI Studio](https://aistudio.google.com/apikey)
+  et collée dans Réglages → Assistant IA ; le modèle se choisit parmi ceux que la clé permet. Une simple
+  requête, sans aucun outil. Offre gratuite limitée (et, sur celle-ci, Google peut utiliser les échanges pour
+  améliorer ses modèles), sinon payante à l'usage. Gemini CLI n'accepte plus les comptes Google gratuits
+  depuis juin 2026.
 - **Modèle local** (Ollama, LM Studio, llama.cpp… : tout serveur compatible OpenAI sur `127.0.0.1`) : rien ne
   quitte l'ordinateur. Prévoir un contexte d'au moins 32 000 jetons (`OLLAMA_CONTEXT_LENGTH=32768 ollama serve`) ;
   seul le début des longs articles (~120 000 caractères) est transmis. Les petits modèles sont nettement moins
   fiables en mathématiques.
 
-Codex et Gemini sont des agents : leurs outils sont coupés par leurs propres réglages, une garantie moins
-forte que pour Claude (appelé sans aucun outil). Leur intégration suit leur documentation (versions
-d'octobre 2026) mais n'a pas été essayée avec un vrai compte.
+Codex est un agent : ses outils sont coupés par ses propres réglages, une garantie moins forte que pour
+Claude et Gemini (appelés sans aucun outil). Son intégration suit sa documentation (version d'octobre 2026)
+mais n'a pas été essayée avec un vrai compte.
 
 ## Sécurité
 
@@ -239,7 +241,7 @@ app/            serveur Python (FastAPI)
   ai.py         texte de l'article et consignes pour Claude, appel sans outils (SDK Claude Agent)
   crossrefs.py  références qui sont des articles lus ici ; citations.py : articles qui citent les vôtres
   texstructure.py  structure tirée de la source TeX et pages du PDF (articles sans version HTML)
-  providers.py  autres assistants : Codex, Gemini (en ligne de commande), modèle local (Ollama, LM Studio)
+  providers.py  autres assistants : Codex (en ligne de commande), Gemini (API), modèle local (Ollama, LM Studio)
   library.py    import d'un article ; db.py : base SQLite ; main.py : routes web
 macos/          application Mac : main.swift (fenêtre, onglets, serveur), icon.swift, build.sh, release.sh
 static/         interface (HTML, CSS, JavaScript sans compilation) ;

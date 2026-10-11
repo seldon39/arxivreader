@@ -1,4 +1,4 @@
-"""Autres assistants : Codex et Gemini (programmes simulés), modèle local (serveur simulé), réglages."""
+"""Autres assistants : Codex (programme simulé), Gemini et modèle local (serveurs simulés), réglages."""
 
 import asyncio
 import json
@@ -81,7 +81,7 @@ class Providers(unittest.TestCase):
         self.assertEqual(caught.exception.code, "limit")
         self.events(exit=1, err="Loaded cached credentials.\nError: 429 Too Many Requests\n")  # pas « login »
         with self.assertRaises(providers.ProviderError) as caught:
-            asyncio.run(collect(providers.stream_gemini("S", "P")))
+            asyncio.run(collect(providers.stream_codex("S", "P")))
         self.assertEqual(caught.exception.code, "limit")
 
     def test_program_that_exits_at_once(self):
@@ -94,25 +94,12 @@ class Providers(unittest.TestCase):
             asyncio.run(collect(providers.stream_codex("S", "P" * 2_000_000)))
         self.assertIn("unexpected argument", str(caught.exception))
 
-    def test_gemini(self):
-        self.events({"type": "init"}, {"type": "message", "role": "user", "content": "PROMPT"},
-                    {"type": "message", "role": "assistant", "content": "Une ", "delta": True},
-                    {"type": "message", "role": "assistant", "content": "réponse.", "delta": True},
-                    {"type": "result", "status": "success"})
-        self.assertEqual(asyncio.run(collect(providers.stream_gemini("SYSTEM", "PROMPT"))), ["Une ", "réponse."])
-        log = self.log()
-        self.assertEqual(pathlib.Path(log["system"]).read_text(), "SYSTEM")
-        settings = json.loads(pathlib.Path(log["settings"]).read_text())
-        self.assertIn("run_shell_command", settings["tools"]["exclude"])
-        self.assertEqual(settings["mcpServers"], {})
-        self.assertIn("stream-json", log["argv"])
-
     def test_dispatch_and_model(self):
         self.events({"type": "item.completed", "item": {"type": "agent_message", "text": "ok"}})
         self.assertEqual(asyncio.run(collect(ai.stream_answer("S", "P", "codex"))), ["ok"])
         self.events(exit=2, err="boom\n")
         with self.assertRaises(ai.AIError):
-            asyncio.run(collect(ai.stream_answer("S", "P", "gemini")))
+            asyncio.run(collect(ai.stream_answer("S", "P", "codex")))
         self.assertEqual(ai.current_model({"aiProvider": "local", "aiLocalModel": "qwen3"}), "local:qwen3")
         self.assertEqual(ai.current_model({"aiProvider": "claude", "aiModel": "sonnet"}), "sonnet")
         self.assertEqual(ai.current_model({}), "opus")
@@ -194,6 +181,84 @@ class Local(unittest.TestCase):
         self.assertFalse(providers.status("local", {"aiLocalUrl": self.url})["available"])
 
 
+class Gemini(unittest.TestCase):
+    """API Gemini (serveur simulé) : clé dans l'en-tête, aucun outil, réponse au fil de l'eau, erreurs."""
+
+    def setUp(self):
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def reply(self, status, payload):
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(payload).encode())
+
+            def do_GET(self):
+                Handler.key = self.headers.get("x-goog-api-key")
+                if Handler.key != "good":
+                    return self.reply(400, {"error": {"code": 400, "message": "API key not valid.", "status": "INVALID_ARGUMENT",
+                                                      "details": [{"reason": "API_KEY_INVALID"}]}})
+                self.reply(200, {"models": [
+                    {"name": "models/gemini-flash-latest", "supportedGenerationMethods": ["generateContent"]},
+                    {"name": "models/gemini-2.5-pro", "supportedGenerationMethods": ["generateContent", "countTokens"]},
+                    {"name": "models/text-embedding-004", "supportedGenerationMethods": ["embedContent"]}]})
+
+            def do_POST(self):
+                Handler.path_seen, Handler.key = self.path, self.headers.get("x-goog-api-key")
+                Handler.body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                if Handler.key == "tired":
+                    return self.reply(429, {"error": {"code": 429, "message": "Quota exceeded", "status": "RESOURCE_EXHAUSTED"}})
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.end_headers()
+                for part in ({"text": "pensée", "thought": True}, {"text": "La "}, {"text": "réponse."}):
+                    chunk = {"candidates": [{"content": {"role": "model", "parts": [part]}}]}
+                    self.wfile.write(f"data: {json.dumps(chunk)}\r\n\r\n".encode())
+
+        self.handler = Handler
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.saved = providers.GEMINI_API
+        providers.GEMINI_API = f"http://127.0.0.1:{self.server.server_port}/v1beta"
+
+    def tearDown(self):
+        providers.GEMINI_API = self.saved
+        self.server.shutdown()
+        self.server.server_close()
+
+    def test_stream(self):
+        chunks = asyncio.run(collect(providers.stream_gemini("SYSTEM", "PROMPT", "gemini-flash-latest", "good")))
+        self.assertEqual("".join(chunks), "La réponse.")  # raisonnement non affiché
+        self.assertEqual(self.handler.key, "good")         # clé dans l'en-tête, pas dans l'adresse
+        self.assertNotIn("good", self.handler.path_seen)
+        self.assertIn("/models/gemini-flash-latest:streamGenerateContent", self.handler.path_seen)
+        self.assertEqual(self.handler.body["systemInstruction"]["parts"][0]["text"], "SYSTEM")
+        self.assertNotIn("tools", self.handler.body)       # aucun outil
+
+    def test_errors(self):
+        with self.assertRaises(providers.ProviderError) as caught:
+            asyncio.run(collect(providers.stream_gemini("S", "P", "gemini-flash-latest", "tired")))
+        self.assertEqual(caught.exception.code, "limit")
+        with self.assertRaises(providers.ProviderError) as caught:
+            asyncio.run(collect(providers.stream_gemini("S", "P", "gemini-flash-latest", "")))
+        self.assertEqual(caught.exception.code, "missing")
+        with self.assertRaises(providers.ProviderError):  # nom de modèle qui sortirait du chemin prévu
+            asyncio.run(collect(providers.stream_gemini("S", "P", "../x", "good")))
+
+    def test_status(self):
+        self.assertEqual(providers.status("gemini", {})["available"], False)  # pas de clé
+        bad = providers.status("gemini", {"geminiApiKey": "bad"})
+        self.assertEqual((bad["available"], bad["loggedIn"]), (True, False))
+        self.assertIn("API key not valid", bad["error"])
+        good = providers.status("gemini", {"geminiApiKey": "good"})
+        self.assertEqual((good["loggedIn"], good["models"], good["geminiModel"]),
+                         (True, ["gemini-2.5-pro", "gemini-flash-latest"], "gemini-flash-latest"))
+        self.assertEqual(providers.status("gemini", {"geminiApiKey": "good", "aiGeminiModel": "gemini-2.5-pro"})["geminiModel"],
+                         "gemini-2.5-pro")
+
+
 class Settings(unittest.TestCase):
     def setUp(self):
         self.saved = (db.DB_PATH, db.LIBRARY)
@@ -215,6 +280,9 @@ class Settings(unittest.TestCase):
         for url in ("http://127.0.0.1:abc/v1", "http://127.0.0.1:99999/v1", "http://127.0.0.1:11434/v1?x=1", "http://127.0.0.1/v1\n"):
             self.assertEqual(put({"aiLocalUrl": url}), 400, url)
         self.assertEqual(put({"aiProvider": ["codex"]}), 400)  # pas une erreur 500
+        self.assertEqual(put({"geminiApiKey": "AIzaSyExample_123", "aiGeminiModel": "gemini-2.5-flash"}), 200)
+        self.assertEqual(put({"geminiApiKey": "a b"}), 400)
+        self.assertEqual(put({"aiGeminiModel": "../../x"}), 400)
 
 
 if __name__ == "__main__":

@@ -730,7 +730,7 @@ def update_settings(values: dict):
     allowed = {"language", "theme", "fontSize", "readingWidth", "proofsCollapsed", "tocOpen", "panelOpen", "panelWidth", "tocWidth", "paperFont", "marginMarks", "mathRenderer",
                "feedCategories", "feedTypes", "s2ApiKey", "feedSort", "feedSortS2", "aiModel", "notifyFollowed",
                "aiProvider", "aiLocalUrl", "aiLocalModel", "checkUpdates", "aiFontSize", "notifyCitations", "readerView",
-               "citingCollapsed", "followedCollapsed"}
+               "citingCollapsed", "followedCollapsed", "geminiApiKey", "aiGeminiModel"}
     values = {k: v for k, v in values.items() if k in allowed}
     if not all(_valid_setting(k, v) for k, v in values.items()):
         raise HTTPException(400, "Bad setting")
@@ -767,6 +767,10 @@ def _valid_setting(key, value):
         return isinstance(value, str) and (value == "" or providers.valid_local_url(value))
     if key == "aiLocalModel":
         return isinstance(value, str) and len(value) <= 200 and value.isprintable()
+    if key == "geminiApiKey":
+        return value == "" or providers.valid_gemini_key(value)
+    if key == "aiGeminiModel":
+        return providers.valid_gemini_model(value)
     if key == "s2ApiKey":
         return isinstance(value, str) and len(value) <= 200 and value.isascii() and value.isprintable()
     if key == "feedTypes":

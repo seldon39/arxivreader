@@ -1,9 +1,11 @@
 """Autres assistants que Claude : Codex (OpenAI), Gemini (Google), modèle local (Ollama, LM Studio…).
 
 Comme pour Claude, chacun ne reçoit que le texte de l'article et la demande, et répond en texte :
-- Codex et Gemini : leurs outils en ligne de commande, avec le compte de l'utilisateur (ChatGPT,
-  Google), sans clé d'API. Ce sont des agents : leurs outils (commandes, fichiers, web, MCP) sont
-  désactivés par leurs réglages, dans un dossier de travail vide, sans session enregistrée.
+- Codex : son outil en ligne de commande, avec le compte ChatGPT de l'utilisateur, sans clé d'API. C'est
+  un agent : ses outils (commandes, fichiers, web, MCP) sont désactivés par ses réglages, dans un dossier
+  de travail vide, sans session enregistrée.
+- Gemini : l'API Gemini de Google, avec la clé de l'utilisateur (Google AI Studio) ; une simple requête,
+  sans aucun outil. (Gemini CLI n'accepte plus les comptes Google gratuits depuis juin 2026.)
 - Modèle local : serveur compatible OpenAI sur cet ordinateur (127.0.0.1) ; rien ne sort de la machine.
 """
 
@@ -145,8 +147,6 @@ def _workdir(name):
 SETUP = {
     ("codex", "login"): "codex login",
     ("codex", "missing"): "npm install -g @openai/codex && codex login",
-    ("gemini", "login"): "gemini",
-    ("gemini", "missing"): "npm install -g @google/gemini-cli && gemini",
     ("local", "login"): "ollama pull qwen3",
     ("local", "missing"): "OLLAMA_CONTEXT_LENGTH=32768 ollama serve",
 }
@@ -166,8 +166,8 @@ def open_setup(provider, step, claude_cli=None):
     folder.mkdir(parents=True, exist_ok=True)
     script = folder / f"setup-{provider}.command"
     shown = "claude auth login" if provider == "claude" else command
-    # codex et gemini : sans Node assez récent, un message clair plutôt qu'une erreur de JavaScript
-    node_check = ("" if provider not in ("codex", "gemini") else
+    # codex : sans Node assez récent, un message clair plutôt qu'une erreur de JavaScript
+    node_check = ("" if provider != "codex" else
                   "major=$(node -p 'process.versions.node.split(\".\")[0]' 2>/dev/null || echo 0)\n"
                   f"if [ \"$major\" -lt {NODE_MIN} ]; then\n"
                   f"  echo \"Node.js {NODE_MIN} ou plus est nécessaire (trouvé : $(node --version 2>/dev/null || echo aucun)).\"\n"
@@ -196,9 +196,16 @@ def status(provider, settings):
             logged = False
         return {"available": True, "loggedIn": logged}
     if provider == "gemini":
-        if not find("gemini"):
-            return {"available": False, "loggedIn": False}
-        return {"available": True, "loggedIn": (Path.home() / ".gemini" / "oauth_creds.json").exists()}
+        key = settings.get("geminiApiKey") or ""
+        if not key:
+            return {"available": False, "loggedIn": False, "models": []}  # « missing » : pas de clé
+        try:
+            models = gemini_models(key)
+        except ProviderError as error:
+            return {"available": True, "loggedIn": False, "models": [], "error": str(error)}
+        except (httpx.HTTPError, ValueError):
+            return {"available": True, "loggedIn": False, "models": [], "error": "network"}
+        return {"available": True, "loggedIn": bool(models), "models": models, "geminiModel": gemini_model(settings, models)}
     if provider == "local":
         url = settings.get("aiLocalUrl") or LOCAL_URL
         try:
@@ -298,47 +305,93 @@ async def stream_codex(system, prompt):
         yield text
 
 
-# ---------- Gemini (Google) ----------
+# ---------- Gemini (Google), par l'API ----------
 
-GEMINI_TOOLS = ["run_shell_command", "read_file", "read_many_files", "write_file", "replace", "edit", "glob",
-                "list_directory", "search_file_content", "grep_search", "web_fetch", "google_web_search",
-                "save_memory", "write_todos"]
-
-
-def _gemini_events(event, state):
-    kind = event.get("type")
-    if kind == "message" and event.get("role") == "assistant":
-        text = event.get("content") or ""
-        if isinstance(text, str) and text:
-            yield text
-    elif kind == "result" and event.get("status") not in (None, "success"):
-        error = event.get("error") or {}
-        message = error.get("message") if isinstance(error, dict) else str(error)
-        raise ProviderError(message or "Gemini error", _code(message or ""))
-    elif kind == "error":
-        state["error"] = event.get("message")
-    elif "response" in event and isinstance(event["response"], str):  # ancienne sortie --output-format json
-        yield event["response"]
+GEMINI_API = "https://generativelanguage.googleapis.com/v1beta"
+GEMINI_DEFAULT = ("gemini-flash-latest", "gemini-pro-latest")  # préférés, s'ils sont proposés à la clé
 
 
-async def stream_gemini(system, prompt):
-    cli = find("gemini")
-    if not cli:
-        raise ProviderError("gemini is not installed", "missing")
-    workdir = _workdir("gemini")
-    folder = workdir.parent
-    _write(folder / "gemini-system.md", system)
-    # Réglages « système » (prioritaires sur ceux de l'utilisateur) : aucun outil, aucun serveur MCP,
-    # pas de fichier de mémoire GEMINI.md
-    settings = {"tools": {"core": ["__none__"], "exclude": GEMINI_TOOLS}, "mcpServers": {},
-                "context": {"fileName": "__arxivreader_none__.md"}}
-    _write(folder / "gemini-settings.json", json.dumps(settings))
-    env = _environment()
-    env["GEMINI_SYSTEM_MD"] = str(folder / "gemini-system.md")  # remplace les consignes d'agent de Gemini
-    env["GEMINI_CLI_SYSTEM_SETTINGS_PATH"] = str(folder / "gemini-settings.json")
-    argv = [cli, "--output-format", "stream-json", "--extensions", "none", "--allowed-mcp-server-names", "__none__"]
-    async for text in _run(argv, prompt, workdir, _gemini_events, env=env):
-        yield text
+def valid_gemini_key(key):
+    return isinstance(key, str) and len(key) <= 200 and key.isascii() and key.isprintable() and " " not in key
+
+
+def valid_gemini_model(model):
+    return isinstance(model, str) and bool(re.fullmatch(r"[a-z0-9][a-z0-9.\-]{0,99}", model))
+
+
+def _gemini_error(status, body):
+    """Message et nature d'une erreur de l'API Gemini (clé refusée, quota, autre)."""
+    try:
+        error = json.loads(body).get("error") or {}
+    except (ValueError, AttributeError):
+        error = {}
+    message = error.get("message") if isinstance(error, dict) else None
+    message = message or f"HTTP {status}"
+    text = f"{message} {json.dumps(error)[:2000]}" if isinstance(error, dict) else message
+    if status == 429 or "RESOURCE_EXHAUSTED" in text:
+        return ProviderError(message, "limit")
+    if status in (401, 403) or "API_KEY_INVALID" in text or "API key not valid" in text:
+        return ProviderError(message, "login")
+    return ProviderError(message)
+
+
+def gemini_models(key):
+    """Modèles Gemini que la clé peut utiliser pour répondre (generateContent)."""
+    with httpx.Client(timeout=10) as client:
+        response = client.get(f"{GEMINI_API}/models", params={"pageSize": 1000}, headers={"x-goog-api-key": key})
+    if response.status_code != 200:
+        raise _gemini_error(response.status_code, response.text)
+    models = []
+    for model in response.json().get("models") or []:
+        name = str(model.get("name") or "").removeprefix("models/")
+        if name.startswith("gemini") and "generateContent" in (model.get("supportedGenerationMethods") or []) \
+                and valid_gemini_model(name):
+            models.append(name)
+    return sorted(set(models))
+
+
+def gemini_model(settings, models):
+    """Modèle choisi dans les réglages s'il est proposé, sinon le préféré, sinon le premier « flash »."""
+    chosen = settings.get("aiGeminiModel")
+    if chosen in models:
+        return chosen
+    return next((m for m in GEMINI_DEFAULT if m in models), None) or next((m for m in models if "flash" in m), None) \
+        or (models[0] if models else GEMINI_DEFAULT[0])
+
+
+async def stream_gemini(system, prompt, model, key):
+    if not key:
+        raise ProviderError("No Gemini API key (Settings → AI)", "missing")
+    if not valid_gemini_model(model):
+        raise ProviderError("Unknown Gemini model")
+    # aucun outil déclaré : Gemini ne peut que répondre par du texte
+    body = {"systemInstruction": {"parts": [{"text": system}]},
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}]}
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(900, connect=10)) as client:
+            async with client.stream("POST", f"{GEMINI_API}/models/{model}:streamGenerateContent", params={"alt": "sse"},
+                                     headers={"x-goog-api-key": key}, json=body) as response:
+                if response.status_code != 200:
+                    raise _gemini_error(response.status_code, (await response.aread()).decode(errors="replace"))
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    try:
+                        chunk = json.loads(line[5:].strip())
+                    except ValueError:
+                        continue
+                    if not isinstance(chunk, dict):
+                        continue
+                    if chunk.get("error"):
+                        raise _gemini_error(200, json.dumps(chunk))
+                    for candidate in (chunk.get("candidates") or [])[:1]:
+                        for part in ((candidate.get("content") or {}).get("parts") or []):
+                            if isinstance(part, dict) and isinstance(part.get("text"), str) and not part.get("thought"):
+                                yield part["text"]
+    except httpx.ConnectError:
+        raise ProviderError("Google's Gemini API cannot be reached (network?)", "offline")
+    except (httpx.HTTPError, httpx.InvalidURL) as error:
+        raise ProviderError(f"{type(error).__name__}: {error}")
 
 
 # ---------- Modèle local (serveur compatible OpenAI : Ollama, LM Studio, llama.cpp…) ----------

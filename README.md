@@ -198,16 +198,18 @@ For a colleague without a Claude subscription, the AI tab also works with:
 - **Codex** (OpenAI, ChatGPT account): `npm install -g @openai/codex`, then `codex login`. Called through
   `codex exec` without commands or web search, without personal settings or saved session, in an empty
   folder, read-only sandbox.
-- **Gemini** (Google, Google account): `npm install -g @google/gemini-cli`, then run `gemini` once to sign in.
-  Called with its tools, extensions and MCP servers disabled, with arXivReader's instructions instead of its own.
+- **Gemini** (Google): through the Gemini API, with a key created on [Google AI Studio](https://aistudio.google.com/apikey)
+  and pasted in Settings → AI assistant; the model is chosen among those the key allows. A plain request,
+  with no tools at all. Limited free tier (on which Google may use the exchanges to improve its models),
+  otherwise pay as you go. Gemini CLI no longer accepts free Google accounts since June 2026.
 - **Local model** (Ollama, LM Studio, llama.cpp…: any OpenAI-compatible server on `127.0.0.1`): nothing
   leaves the computer. Allow a context of at least 32,000 tokens (`OLLAMA_CONTEXT_LENGTH=32768 ollama serve`);
   only the beginning of long papers (~120,000 characters) is sent. Small models are much less reliable
   in mathematics.
 
-Codex and Gemini are agents: their tools are switched off through their own settings, a weaker guarantee
-than for Claude (called with no tools at all). Their integration follows their documentation (October 2026
-versions) but has not been tried with a real account.
+Codex is an agent: its tools are switched off through its own settings, a weaker guarantee than for Claude
+and Gemini (called with no tools at all). Its integration follows its documentation (October 2026 version)
+but has not been tried with a real account.
 
 ## Security
 
@@ -235,7 +237,7 @@ app/            Python server (FastAPI)
   ai.py         paper text and instructions for Claude, called without tools (Claude Agent SDK)
   crossrefs.py  references that are papers read here; citations.py: papers citing yours
   texstructure.py  structure from the TeX source and PDF pages (papers without an HTML version)
-  providers.py  other assistants: Codex, Gemini (command line), local model (Ollama, LM Studio)
+  providers.py  other assistants: Codex (command line), Gemini (API), local model (Ollama, LM Studio)
   library.py    importing a paper; db.py: SQLite database; main.py: web routes
 macos/          Mac app: main.swift (window, tabs, server), icon.swift, build.sh, release.sh
 static/         interface (HTML, CSS, JavaScript with no build step);

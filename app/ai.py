@@ -416,7 +416,11 @@ async def stream_answer(system, prompt, model):
     elif provider == "codex":
         stream = providers.stream_codex(system, prompt)
     elif provider == "gemini":
-        stream = providers.stream_gemini(system, prompt)
+        settings = db.get_settings()
+        key = settings.get("geminiApiKey") or ""
+        model_name = settings.get("aiGeminiModel") if providers.valid_gemini_model(settings.get("aiGeminiModel")) \
+            else providers.GEMINI_DEFAULT[0]
+        stream = providers.stream_gemini(system, prompt, model_name, key)
     else:
         url = db.get_settings().get("aiLocalUrl") or providers.LOCAL_URL
         stream = providers.stream_local(system, prompt, model.split(":", 1)[1], url)

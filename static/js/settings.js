@@ -84,7 +84,19 @@ async function renderAISettings(holder, keepFocus = null) {
   if (provider === "local" && models.length && !models.includes(settings.aiLocalModel)) {
     await saveSettings({ aiLocalModel: models[0] });
   }
-  const fields = provider !== "local" ? [] : [
+  if (provider === "gemini" && status.geminiModel && status.geminiModel !== settings.aiGeminiModel) {
+    await saveSettings({ aiGeminiModel: status.geminiModel });
+  }
+  const geminiFields = [
+    h("label", { class: "row" }, h("span", {}, t("settings.geminiKey")),
+      // texte masqué plutôt que « password » : Safari ne propose pas d'enregistrer un mot de passe
+      h("input", { class: "text-input secret-input", type: "text", name: "geminiApiKey", value: settings.geminiApiKey || "",
+        autocomplete: "off", spellcheck: "false", placeholder: t("settings.geminiKeyPlaceholder") })),
+    models.length > 0 && h("label", { class: "row" }, h("span", {}, t("settings.geminiModel")),
+      h("select", { class: "text-input", name: "aiGeminiModel" },
+        models.map((model) => h("option", { value: model, selected: model === settings.aiGeminiModel }, model)))),
+  ];
+  const fields = provider === "gemini" ? geminiFields : provider !== "local" ? [] : [
     h("label", { class: "row" }, h("span", {}, t("settings.aiLocalUrl")),
       h("input", { class: "text-input", type: "text", name: "aiLocalUrl", value: settings.aiLocalUrl || "", placeholder: LOCAL_URL,
         spellcheck: "false", autocomplete: "off" })),
@@ -211,7 +223,7 @@ export function openSettingsDialog({ section = null } = {}) {
   form.addEventListener("input", (event) => {
     const { name, value, checked, type } = event.target;
     if (!name) return;
-    if (name === "feedCategories" || name === "s2ApiKey" || name === "aiLocalUrl") return; // enregistrés à la sortie du champ
+    if (name === "feedCategories" || name === "s2ApiKey" || name === "aiLocalUrl" || name === "geminiApiKey") return; // enregistrés à la sortie du champ
     const parsed = type === "checkbox" ? checked : name === "fontSize" ? Number(value) : value;
     if (name === "fontSize") form.querySelector("#setting-fontSize").textContent = t("settings.fontSize", { n: value });
     const saved = saveSettings({ [name]: parsed });
@@ -229,6 +241,8 @@ export function openSettingsDialog({ section = null } = {}) {
       toast(t("settings.feedCategoriesSaved"));
     } else if (name === "s2ApiKey") {
       saveSettings({ s2ApiKey: value.trim() });
+    } else if (name === "geminiApiKey") {
+      saveSettings({ geminiApiKey: value.trim() }).then(() => renderAISettings(form.querySelector(".ai-settings"), "geminiApiKey"));
     } else if (name === "aiLocalUrl") {
       const url = value.trim().replace(/\/+$/, "");
       if (url && !localUrl(url)) {
