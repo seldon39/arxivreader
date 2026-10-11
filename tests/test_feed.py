@@ -100,7 +100,7 @@ class PastDayFallback(unittest.TestCase):
         with mock.patch.object(feed, "_fetch_day_oai", side_effect=AssertionError("OAI")), \
              mock.patch.object(search, "_fetch", return_value=(page, 2)) as fetch, \
              mock.patch.object(feed, "_store", side_effect=lambda c, item, **_: stored.append(item)), \
-             mock.patch.object(feed.relevance, "fetch_embeddings"), \
+             mock.patch.object(feed.relevance, "fetch_embeddings"), mock.patch.object(feed.journals, "fetch"), \
              mock.patch.object(feed.db, "connect"), mock.patch.object(feed.db, "get_settings", return_value={}), \
              mock.patch.object(feed.db, "save_settings") as save:
             self.assertEqual(feed.fetch_day("2020-10-01", ["math.DG", "math.SP"]), 2)
@@ -117,7 +117,7 @@ class PastDayFallback(unittest.TestCase):
         with mock.patch.object(feed, "_oai_failed", None), \
              mock.patch.object(feed, "_fetch_day_oai", side_effect=httpx.ReadTimeout("slow")) as oai, \
              mock.patch.object(search, "_fetch", return_value=([], 0)) as fetch, \
-             mock.patch.object(feed.relevance, "fetch_embeddings"), mock.patch.object(feed.db, "connect"), \
+             mock.patch.object(feed.relevance, "fetch_embeddings"), mock.patch.object(feed.journals, "fetch"), mock.patch.object(feed.db, "connect"), \
              mock.patch.object(feed.db, "get_settings", return_value={}), mock.patch.object(feed.db, "save_settings"):
             feed.fetch_day(day, ["math.DG"])
             self.assertTrue(oai.called and fetch.called)
@@ -166,7 +166,7 @@ class PastDayGuards(unittest.TestCase):
         with db.connect() as connection:
             feed._store(connection, item)  # vu par le RSS : nouvelle version annoncée le 5 octobre
         with mock.patch.object(search, "_fetch", return_value=([dict(item, announced="2020-09-30")], 1)), \
-             mock.patch.object(feed.relevance, "fetch_embeddings"):
+             mock.patch.object(feed.relevance, "fetch_embeddings"), mock.patch.object(feed.journals, "fetch"):
             feed.fetch_day("2020-10-01", ["math.DG"])
         with db.connect() as connection:
             row = connection.execute("SELECT announced, announce_type FROM feed_items WHERE key = '2009.00001'").fetchone()

@@ -348,7 +348,7 @@ function feedTools({ tab, state, data, draw, refresh }) {
       count ? h("span", { class: "filter-count" }, String(count)) : "");
     sortButton.replaceChildren(h("span", { class: "button-icon", html: icons.sort }), t("feed.sortLabel"));
     filterButton.title = count ? `${t("feed.filters")} (${count})` : t("feed.filters");
-    sortButton.title = `${t("feed.sortTitle")} : ${t(`feed.sort.${state.sort}`)}`;
+    sortButton.title = t("library.sortTooltip", { order: t(`feed.sort.${state.sort}`) });
     const pill = (label, remove) => h("span", { class: "active-filter" }, label,
       h("button", { type: "button", class: "active-filter-remove", title: t("library.filters.remove"), "aria-label": t("library.filters.removeOne", { label }),
         html: icons.close, onclick: () => { remove(); changed(); } }));

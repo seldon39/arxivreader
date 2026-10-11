@@ -370,6 +370,9 @@ def _fetch_day(day, categories, api_key):
             _store(connection, item, keep_announce=partial)
     try:
         relevance.fetch_embeddings([relevance.s2_key(i["arxiv_id"]) for i in items], api_key)
+    except Exception:
+        pass
+    try:
         journals.fetch([relevance.s2_key(i["arxiv_id"]) for i in items], api_key)
     except Exception:
         pass
@@ -456,7 +459,9 @@ def refresh_recommendations(api_key=None, limit=60):
             )
     try:  # revue de chaque recommandation (déjà dans la réponse)
         for paper in papers:
-            journals.store(relevance.s2_key((paper.get("externalIds") or {}).get("ArXiv"), f"s2:{paper['paperId']}"), paper)
+            arxiv_id = (paper.get("externalIds") or {}).get("ArXiv")
+            # même clé que celle qui servira à l'afficher : ArXiv:<id> si l'article est sur arXiv
+            journals.store(f"ArXiv:{arxiv_id}" if arxiv_id else paper["paperId"], paper)
     except Exception:
         pass
     try:  # vecteurs de sens des recommandations, pour les comparer au profil
@@ -500,7 +505,11 @@ def list_items(view, announce_types=None, day=None):
         item["libraryId"] = library.get(item["arxiv_id"])
         item["readId"] = cached.get(item["arxiv_id"])  # déjà téléchargé (lu), dans la bibliothèque ou non
         items.append(item)
-    journals.annotate(items)  # revue où l'article est paru (arXiv, sinon Semantic Scholar)
+    try:
+        journals.annotate(items)  # revue où l'article est paru (arXiv, sinon Semantic Scholar)
+    except Exception:
+        for item in items:
+            item.setdefault("publishedIn", None)
     return relevance.score_items(items)
 
 

@@ -27,6 +27,8 @@ class Journals(unittest.TestCase):
                                             "externalIds": {"DOI": "10.48550/arXiv.2601.00001"}}), (None, None))
         self.assertEqual(journals._from_s2(None), (None, None))
         self.assertEqual(journals._from_s2({"journal": {"name": "arXiv: Symplectic Geometry"}}), (None, None))
+        self.assertEqual(journals._from_s2({"journal": {"name": "SSRN Electronic Journal"}, "externalIds": {"DOI": "10.2139/ssrn.1"}}), (None, None))
+        self.assertEqual(journals._from_s2({"externalIds": {"DOI": "10.5281/zenodo.1"}}), (None, None))
         self.assertEqual(journals._from_s2({"journal": "odd", "externalIds": []}), (None, None))
 
     def test_published_in(self):
@@ -50,8 +52,12 @@ class Journals(unittest.TestCase):
 
     def test_refused_or_odd_reply(self):
         for response in (mock.Mock(status_code=429), mock.Mock(status_code=200, json=lambda: {"error": "x"})):
-            with mock.patch.object(journals, "with_retry", return_value=response):
+            with mock.patch.object(journals, "_failed", None), mock.patch.object(journals, "with_retry", return_value=response):
                 journals.fetch(["ArXiv:2601.00009"])  # rien d'enregistré, pas d'erreur
+                # refus : pas de nouvel essai avant la pause
+                with mock.patch.object(journals, "with_retry") as again:
+                    journals.fetch(["ArXiv:2601.00009"])
+                self.assertFalse(again.called)
         self.assertEqual(journals.known(["ArXiv:2601.00009"]), {})
 
     def test_feed_parsers_keep_the_journal(self):

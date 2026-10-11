@@ -261,9 +261,10 @@ def remember(items):
     with db.connect() as connection:
         connection.executemany(
             """INSERT OR IGNORE INTO feed_items (key, arxiv_id, version, title, authors, abstract, categories,
-                   primary_category, announced, in_arxiv, link) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)""",
+                   primary_category, announced, in_arxiv, link, journal_ref, doi) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)""",
             [(i["key"], i["arxiv_id"], i["version"], i["title"], json.dumps(i["authors"], ensure_ascii=False),
-              i["abstract"], json.dumps(i["categories"]), i["primary_category"], i["announced"], i["link"]) for i in items])
+              i["abstract"], json.dumps(i["categories"]), i["primary_category"], i["announced"], i["link"],
+              i.get("journal_ref"), i.get("doi")) for i in items])
 
 
 def annotate_status(items):
@@ -279,7 +280,11 @@ def annotate_status(items):
 
 def annotate(items):
     """Article déjà lu ou dans la bibliothèque, avis donné : comme dans le feed ; proximité avec le profil."""
-    items = journals.annotate([{**item, "citing": []} for item in annotate_status(items)])
+    items = [{**item, "citing": []} for item in annotate_status(items)]
+    try:
+        journals.annotate(items)
+    except Exception:  # revue inconnue : résultats sans elle
+        pass
     try:
         return relevance.score_items(items)
     except Exception:  # vecteurs de sens indisponibles : résultats sans proximité

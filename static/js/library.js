@@ -248,7 +248,7 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
       if (event.relatedTarget && !menu?.contains(event.relatedTarget) && !button.contains(event.relatedTarget)) closeMenu({ focus: false });
     });
     document.addEventListener("keydown", onEscape);
-    menu.querySelector("input:checked, button, input")?.focus();
+    (menu.querySelector("input:checked") || menu.querySelector("button, input"))?.focus();
   };
   const toggleMenu = (button, fill, label, extraClass, container) => {
     if (menu && menuButton === button) { closeMenu(); return; } // second clic sur le même bouton : fermé
@@ -263,7 +263,7 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
     filterButton.replaceChildren(h("span", { class: "button-icon", html: icons.filter }), t("library.filters.title"),
       count ? h("span", { class: "filter-count" }, String(count)) : "");
     sortButton.replaceChildren(h("span", { class: "button-icon", html: icons.sort }), t("library.sortLabel"));
-    sortButton.title = `${t("library.filters.sort")} : ${sortLabel(view)}`;
+    sortButton.title = t("library.sortTooltip", { order: sortLabel(view) });
     const pill = (label, remove) => h("span", { class: "active-filter" }, label,
       h("button", { type: "button", class: "active-filter-remove", title: t("library.filters.remove"), "aria-label": t("library.filters.removeOne", { label }),
         html: icons.close, onclick: (event) => {
@@ -294,9 +294,17 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
   let moreObserver = null;
   let onMoreScroll = null; // aussi au défilement : l'observateur ne suffit pas partout (fenêtre en arrière-plan)
   let restoring = restoreTo; // retour sur la page : assez de cartes pour revenir à l'endroit quitté
+  let shownQuery = null; // recherche, filtres et tri de la liste affichée
+  let shownCount = 0;     // et combien de cartes y étaient déjà affichées
   function showCards(shown) {
     moreObserver?.disconnect();
     if (onMoreScroll) removeEventListener("scroll", onMoreScroll);
+    // même recherche, mêmes filtres, même tri (retour dans l'application, article supprimé ou rangé) : au moins
+    // autant de cartes qu'avant, ajoutées d'un coup (sinon la page raccourcit et remonte)
+    const query = JSON.stringify([view.search, [...view.categories], [...view.reading], [...view.years], [...view.folders],
+      view.source, view.publication, view.sort, view.alphaKey, view.alphaDir]);
+    const keep = query === shownQuery ? shownCount : 0;
+    shownQuery = query;
     const names = new Map(); // dossiers de chaque article, une fois pour toutes les cartes
     for (const folder of folderList) for (const id of folder.papers) names.set(id, [...(names.get(id) || []), folder.name]);
     const cardFor = (paper) => {
@@ -311,25 +319,29 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
     const more = h("button", { class: "button small-button", type: "button" });
     const moreRow = h("div", { class: "library-more" }, more);
     let count = 0;
-    const next = () => {
-      box.append(...shown.slice(count, count + CHUNK).map(cardFor));
-      count = Math.min(shown.length, count + CHUNK);
-      if (count >= shown.length) { moreRow.remove(); moreObserver?.disconnect(); removeEventListener("scroll", onMoreScroll); return; }
+    let observer = null;
+    let onScroll = null;
+    const next = (size = CHUNK) => {
+      if (!moreRow.isConnected && count) return; // liste remplacée depuis : rien à y ajouter
+      box.append(...shown.slice(count, count + size).map(cardFor));
+      count = Math.min(shown.length, count + size);
+      shownCount = count;
+      if (count >= shown.length) { moreRow.remove(); observer?.disconnect(); if (onScroll) removeEventListener("scroll", onScroll); return; }
       more.textContent = t("library.more", { n: shown.length - count });
       // fin de liste encore visible (grand écran) : lot suivant aussitôt après
-      if (!restoring && moreRow.isConnected && moreRow.getBoundingClientRect().top < innerHeight + 600) setTimeout(next);
+      if (!restoring && moreRow.isConnected && moreRow.getBoundingClientRect().top < innerHeight + 600) setTimeout(() => next());
     };
-    more.addEventListener("click", next);
+    more.addEventListener("click", () => next());
     list.replaceChildren(box, moreRow);
-    next();
+    next(Math.max(CHUNK, keep));
     // retour sur la page : lots ajoutés tout de suite jusqu'à l'endroit quitté (rétabli juste après l'affichage)
     while (restoring && count < shown.length && document.documentElement.scrollHeight < restoring + innerHeight) next();
     restoring = 0;
     if (count < shown.length) {
-      moreObserver = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) next(); }, { rootMargin: "600px" });
-      moreObserver.observe(moreRow);
-      onMoreScroll = () => { if (moreRow.isConnected && moreRow.getBoundingClientRect().top < innerHeight + 600) next(); };
-      addEventListener("scroll", onMoreScroll, { passive: true });
+      observer = moreObserver = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) next(); }, { rootMargin: "600px" });
+      observer.observe(moreRow);
+      onScroll = onMoreScroll = () => { if (moreRow.isConnected && moreRow.getBoundingClientRect().top < innerHeight + 600) next(); };
+      addEventListener("scroll", onScroll, { passive: true });
     }
     // articles retirés de la bibliothèque : leurs cartes ne sont plus gardées
     if (built.size > papers.length + CHUNK) {
@@ -350,7 +362,7 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
         list.replaceChildren(h("p", { class: "notice" }, t("error.generic", { message: error.message }), retry));
         return;
       }
-      if (menu) fillMenu();
+      if (menu && !panel.contains(menuButton)) fillOpen(); // menu ouvert (Filtres ou Tri) : redessiné tel quel
     }
     drawActive();
     drawFolders();
@@ -464,9 +476,11 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
   function drawPanel() {
     const folder = folderList.find((f) => f.id === view.openFolder);
     const inner = panel.firstChild;
+    if (menu && inner.contains(menuButton)) closeMenu({ focus: false }); // menu du dossier : redessiné avec lui
     if (!folder) {
       if (panel.classList.contains("open")) {
         panel.classList.remove("open", "settled");
+        clearTimeout(settleTimer);
         // contenu retiré une fois le dossier refermé (fin du déroulé)
         const clear = () => { if (!panel.classList.contains("open")) inner.replaceChildren(); };
         panel.addEventListener("transitionend", clear, { once: true });
@@ -481,14 +495,13 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
     const searching = all.length > 1 || Boolean(view.folderSearch) || activeCount(view.folderFilters) > 0; // gardé tant qu'un filtre s'applique
     const busy = h("span", { class: "busy", "aria-live": "polite" }, h("span", { class: "spinner" }), t("library.folder.scoring"));
     if (searching && view.folder.sort === "relevance" && !scores) loadScores();
-    if (menu && inner.contains(menuButton)) closeMenu({ focus: false }); // menu du dossier : redessiné avec lui
     // articles du dossier : redessinés seuls pendant la frappe (le champ de recherche garde le focus)
     const count = h("span", { class: "muted small" });
     const cards = h("div", {});
     const drawMembers = () => {
       busy.hidden = !(view.folder.sort === "relevance" && !scores);
       const members = all.filter((p) => matchesWords(p, view.folderSearch) && passes(p, view.folderFilters)).sort(sorterFor(view.folder, scores));
-      folderSort.title = `${t("library.filters.sort")} : ${sortLabel(view.folder)}`;
+      folderSort.title = t("library.sortTooltip", { order: sortLabel(view.folder) });
       const active = activeCount(view.folderFilters);
       folderFilter.replaceChildren(h("span", { class: "button-icon", html: icons.filter }), t("library.filters.title"),
         active ? h("span", { class: "filter-count" }, String(active)) : "");
@@ -545,14 +558,21 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
       }
       panel.classList.add("open");
       // une fois déroulé, le menu « Tri » du dossier peut dépasser du cadre (sinon coupé)
+      clearTimeout(settleTimer);
       const settle = () => { if (panel.classList.contains("open")) panel.classList.add("settled"); };
-      panel.addEventListener("transitionend", settle, { once: true });
-      setTimeout(settle, 450);
+      const onEnd = (event) => {
+        if (event.target !== panel || event.propertyName !== "grid-template-rows") return;
+        panel.removeEventListener("transitionend", onEnd);
+        settle();
+      };
+      panel.addEventListener("transitionend", onEnd);
+      settleTimer = setTimeout(() => { panel.removeEventListener("transitionend", onEnd); settle(); }, 450);
     }
     panelOpening = false;
   }
 
   let panelOpening = false;
+  let settleTimer = null;
   function toggleFolder(id) {
     openFolder(view.openFolder === id ? null : id);
     panelOpening = view.openFolder !== null;
