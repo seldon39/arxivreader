@@ -19,19 +19,19 @@ if [ ! -x .venv/bin/python ]; then
   echo "Première installation de l'environnement Python…"
   "$PYTHON" -m venv .venv
 fi
+# Versions figées (avant la réinstallation ci-dessous, qui sinon défairait la mise à jour voulue) : après
+# « .venv/bin/pip install -U <paquet> » (ou l'ajout d'un paquet à requirements.txt puis son installation) et les tests
+if [ "${1:-}" = "lock" ] && [ -x .venv/bin/python ]; then
+  .venv/bin/pip freeze --exclude-editable > requirements.lock
+  shasum requirements.lock | cut -d' ' -f1 > .venv/.requirements-hash
+  echo "requirements.lock mis à jour ($(wc -l < requirements.lock | tr -d ' ') paquets) : à committer."
+  exit 0
+fi
 HASH=$(shasum requirements.lock | cut -d' ' -f1)
 if [ "$(cat .venv/.requirements-hash 2>/dev/null)" != "$HASH" ]; then
   .venv/bin/pip install --quiet --upgrade pip
   .venv/bin/pip install --quiet -r requirements.lock
   echo "$HASH" > .venv/.requirements-hash
-fi
-
-# Versions figées : après « .venv/bin/pip install -U <paquet> » et les tests
-if [ "${1:-}" = "lock" ]; then
-  .venv/bin/pip freeze --exclude-editable > requirements.lock
-  shasum requirements.lock | cut -d' ' -f1 > .venv/.requirements-hash
-  echo "requirements.lock mis à jour ($(wc -l < requirements.lock | tr -d ' ') paquets) : à committer."
-  exit 0
 fi
 
 # Vérification des services extérieurs ; --weekly / --no-weekly : tâche hebdomadaire (launchd)
@@ -47,6 +47,7 @@ if [ "${1:-}" = "check" ]; then
   fi
   if [ "${2:-}" = "--weekly" ]; then
     [ -x "$INSTALLED/python/bin/python3" ] || { echo "Application introuvable dans /Applications."; exit 1; }
+    [ -f "$INSTALLED/arxivreader/app/check.py" ] || { echo "L'application installée est trop ancienne (1.7.0 ou plus récente : la vérification y est)."; exit 1; }
     mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
     # code et Python de l'application installée (le dossier Documents est protégé pour les tâches de fond) ;
     # PYTHONDONTWRITEBYTECODE : rien n'est écrit dans l'application (sa signature reste valide)
@@ -68,7 +69,12 @@ if [ "${1:-}" = "check" ]; then
 </plist>
 PLIST
     launchctl bootout "gui/$(id -u)" "$AGENT" 2>/dev/null || true
-    launchctl bootstrap "gui/$(id -u)" "$AGENT"
+    # l'ancienne tâche met parfois un instant à disparaître (« Bootstrap failed: 5 ») : nouvel essai
+    for attempt in 1 2 3 4 5; do
+      launchctl bootstrap "gui/$(id -u)" "$AGENT" 2>/dev/null && break
+      [ "$attempt" = 5 ] && { echo "launchctl bootstrap a échoué ; réessayer plus tard."; exit 1; }
+      sleep 1
+    done
     echo "Vérification chaque lundi à 10 h (ou au réveil du Mac) ; journal : ~/Library/Logs/arXivReader-check.log"
     exit 0
   fi

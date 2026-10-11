@@ -176,7 +176,18 @@ export function openSettingsDialog({ section = null } = {}) {
       ...check("proofsCollapsed", t("settings.proofs"), settings.proofsCollapsed),
       ...check("marginMarks", t("settings.marginMarks"), settings.marginMarks),
       h("div", { class: "row" }, h("span", {}, t("settings.notesExport")),
-        h("div", {}, h("a", { class: "button small-button", download: "", href: `/api/notes.zip?lang=${settings.language || "fr"}` }, t("settings.notesExportButton")))),
+        h("div", {}, h("a", { class: "button small-button", download: "", href: `/api/notes.zip?lang=${settings.language || "fr"}`,
+          // rien d'annoté : un message plutôt qu'une archive vide
+          onclick: async (event) => {
+            if (event.currentTarget.dataset.checked) return;
+            event.preventDefault();
+            const link = event.currentTarget;
+            const { papers } = await api.notesCount().catch(() => ({ papers: 1 }));
+            if (!papers) { toast(t("notes.exportNone")); return; }
+            link.dataset.checked = "1";
+            link.click();
+            delete link.dataset.checked;
+          } }, t("settings.notesExportButton")))),
       h("p", { class: "hint" }, t("settings.notesExportHint")),
     ]],
     ["ai", t("settings.ai"), [

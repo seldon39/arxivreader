@@ -13,7 +13,7 @@ Download `arXivReader.dmg` from the [Releases](https://github.com/seldon39/arxiv
 (Apple Silicon Mac, macOS 13 or later), open it and drag arXivReader to Applications. The app is
 self-contained (Python and its packages are included); there is nothing else to install.
 
-- **First launch**: the app is not signed with an Apple developer account, so macOS blocks it.
+- **Opening it the first time**: the app is not signed with an Apple developer account, so macOS blocks it.
   System Settings → Privacy & Security → *Open Anyway* (only once).
 - **Updates**: the app checks once a day whether a new version is available on GitHub
   (Settings → Updates); an "Update" pill then appears at the top right.
@@ -136,8 +136,9 @@ still not reported. Many authors never update arXiv: a paper not reported may st
 
 ## First launch
 
-On a fresh installation, an assistant finds your papers on arXiv (arXiv author identifier, ORCID, or name:
-namesakes, including those in another field, are unticked), suggests the feed categories (from your papers) and
+When the library and profile are empty (fresh installation), an assistant finds your papers on arXiv (arXiv
+author identifier or ORCID, the safest; or name: namesakes with another first name or in another field are
+unticked, untick the others yourself), suggests the feed categories (from your papers) and
 the authors to follow (coauthors, authors your papers cite most), then fills the profile; it can also add your
 papers to the library. Run it again from the Profile ("Getting-started assistant").
 
@@ -276,9 +277,11 @@ but has not been tried with a real account.
 - Paper HTML is cleaned (scripts, forms, `javascript:` links removed) and a CSP policy forbids any script
   coming from the paper.
 - Data (SQLite database + one folder per paper) in `~/Library/Application Support/arXivReader` for the app,
-  in `library/` when run from source; never anywhere else.
-- Outgoing connections: arXiv (papers, new papers), Semantic Scholar (recommendations), GitHub (once a day,
-  number of the latest version; can be turned off), and the chosen AI assistant.
+  in `library/` when run from source. Elsewhere, only what you ask for: exported notes (Downloads folder) and,
+  if you turn the weekly check on, its log (`~/Library/Logs`) and its job (`~/Library/LaunchAgents`).
+- Outgoing connections: arXiv (papers, new papers), Semantic Scholar (recommendations, related papers), GitHub
+  (once a day, number of the latest version; can be turned off), the chosen AI assistant, Zotero if a key is
+  given; `./arxivreader check` also calls each of them.
 
 ## Maintenance
 
@@ -308,7 +311,7 @@ app/            Python server (FastAPI)
   texsource.py  reading the TeX source (class options, font, list labels)
   feed.py       new arXiv papers (RSS, OAI-PMH), Semantic Scholar recommendations, identifier detection
   journals.py   journal where a paper appeared (arXiv, Semantic Scholar)
-  search.py     search across arXiv (Search tab); related.py: related papers (graph); zotero.py: Zotero synchronisation; check.py: check of the external services
+  search.py     search across arXiv (Search tab); related.py: related papers (graph); zotero.py: Zotero synchronisation; check.py: check of the external services; onboarding.py: getting-started assistant; export.py: notes export
   folders.py    library folders
   profile.py    research profile, prefill, followed authors; relevance.py: relevance ranking
   annotations.py  highlights, notes, reading state

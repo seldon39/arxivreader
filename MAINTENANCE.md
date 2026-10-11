@@ -50,12 +50,18 @@ anglais.
 | Zotero | `zotero.py` | `zotero.js`, `settings.js` |
 | Premier lancement | `onboarding.py` | `onboarding.js` |
 | Mises à jour, vérification des services | `updates.py`, `check.py` | `updates.js` |
+| Formules, construction du DOM | `feed.tex_text` (TeX des titres et résumés) | `math.js` (MathJax), `amsfix.js`, `util.js` (`h`, `withMath`, `tidyTitle`) |
 | Réglages | `main.py` (liste `allowed` et `_valid_setting` de `/api/settings`) | `settings.js` |
 | Textes de l'interface | — | `i18n.js` (blocs FR et EN : mêmes clés) |
 | Application Mac | — | `macos/main.swift` (onglets, glisser sur un onglet, téléchargements, essais), `macos/build.sh`, `macos/release.sh` |
 
 Base : `app/db.py` (`SCHEMA` en `CREATE TABLE IF NOT EXISTS`, colonnes ajoutées par `ALTER TABLE` après
-`PRAGMA table_info` dans `init()`) ; modules qui ont leurs tables : `related.py`, `zotero.py` (`_ensure`).
+`PRAGMA table_info` dans `init()`) ; modules qui ont leurs tables : `related.py`, `zotero.py`, `journals.py`
+(`_ensure`).
+
+Page : `h(tag, attrs, …)` ajoute les enfants comme texte ; `html:` est réservé aux icônes internes (`icons`). Tout
+texte venu d'arXiv, de Semantic Scholar, de Zotero ou d'une IA passe par du texte ou `withMath`, jamais par
+`html:` ni `innerHTML` (la politique CSP interdit de toute façon les scripts de l'article).
 
 ## 4. Boucle de travail
 
@@ -63,20 +69,27 @@ Base : `app/db.py` (`SCHEMA` en `CREATE TABLE IF NOT EXISTS`, colonnes ajoutées
   `.venv/bin/python -m unittest discover -s tests`. Pour s'assurer qu'aucun test ne sort, les relancer avec
   `HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9` (exception connue : les tests Gemini utilisent un
   faux serveur local que ce proxy intercepte).
-- **Serveur d'essai**, jamais celui de l'utilisateur :
+- **Serveur d'essai**, jamais celui de l'utilisateur, sur une copie **sans ses clés** (sinon une action sur la
+  copie, ou « Synchroniser maintenant », écrirait dans son vrai Zotero ou userait ses quotas) :
   ```bash
-  mkdir -p /tmp/arx-lib && sqlite3 -readonly ~/Library/Application\ Support/arXivReader/arxivreader.db ".backup /tmp/arx-lib/arxivreader.db"
-  ARXIVREADER_LIBRARY=/tmp/arx-lib ARXIVREADER_PORT=8711 ARXIVREADER_NO_ALERTS=1 .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8711
+  LIB=$(mktemp -d)   # dossier privé (0700) : la copie contient ses données
+  sqlite3 -readonly ~/Library/Application\ Support/arXivReader/arxivreader.db ".backup $LIB/arxivreader.db"
+  sqlite3 "$LIB/arxivreader.db" "DELETE FROM settings WHERE key LIKE 'zotero%' OR key IN ('s2ApiKey', 'geminiApiKey')"
+  ARXIVREADER_LIBRARY=$LIB ARXIVREADER_PORT=8711 ARXIVREADER_NO_ALERTS=1 .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8711
   ```
-  `ARXIVREADER_NO_ALERTS=1` coupe toutes les tâches de fond (auteurs suivis, citations, synchronisation Zotero).
-  Ajouter `HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9` si l'essai n'a pas besoin du réseau.
-  Bibliothèque vide (installation neuve, assistant de premier lancement) : un dossier vide pour
-  `ARXIVREADER_LIBRARY`. Effacer la copie après.
+  `ARXIVREADER_NO_ALERTS=1` est **obligatoire pour tout essai** (serveur comme application) : il coupe les
+  boucles de fond (auteurs suivis et citations, `alerts.loop` ; synchronisation Zotero, `zotero.loop`) ; ce que la
+  page déclenche elle-même (revues sur Semantic Scholar, vérification des mises à jour) tourne quand même.
+  Ajouter `HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9` si l'essai n'a pas besoin du réseau. La
+  copie n'a pas `papers/` : un article ouvert est retéléchargé d'arXiv ; pour lire un article sans réseau, copier
+  aussi son dossier (`papers/<id>`). Bibliothèque vide (installation neuve, assistant de premier lancement) : un
+  `mktemp -d` vide. Effacer la copie après.
 - **Vérifier dans le navigateur** (la page recharge ses fichiers : forcer `location.reload()`), en clair et en
   sombre, à plusieurs largeurs (une colonne sous 900 px). L'utilisateur lit dans WebKit (Safari) : c'est le moteur
   qui compte.
 - **Essais dans l'application Mac** (construite par `macos/build.sh` dans `~/Library/Caches/arXivReader-build`,
-  sans l'installer) : `ARXIVREADER_LIBRARY` (copie), `ARXIVREADER_START=#/paper/…,#/feed` (pages ouvertes, la
+  sans l'installer) : toujours `ARXIVREADER_NO_ALERTS=1` et `ARXIVREADER_LIBRARY` (copie sans clés, comme
+  ci-dessus), `ARXIVREADER_START=#/paper/…,#/feed` (pages ouvertes, la
   suivante en onglet), `ARXIVREADER_SNAPSHOT=fichier.png` (image de la page), `ARXIVREADER_WINDOWSHOT=fichier.png`
   (fenêtre entière et relevé dans `fichier.png.txt`), `ARXIVREADER_EVAL` (JavaScript exécuté au chargement),
   `ARXIVREADER_SNAPSHOT_DELAY`. Ne pas prendre la main sur l'écran de l'utilisateur.
@@ -87,9 +100,11 @@ Base : `app/db.py` (`SCHEMA` en `CREATE TABLE IF NOT EXISTS`, colonnes ajoutées
 
 1. Augmenter `VERSION` dans `app/version.py` (nouvelle fonction : mineure ; correction : correctif), committer.
 2. Accord de l'utilisateur ; application quittée (`pgrep -f /Applications/arXivReader.app` vide).
-3. Notes de version en anglais dans un fichier temporaire (une ligne par changement visible).
-4. `macos/release.sh notes.md` : tests, construction (refusée si `.venv` diffère de `requirements.lock`),
-   étiquette `vX.Y.Z`, poussée, publication du `.dmg` sur GitHub.
+3. Notes de version en anglais dans un fichier **hors du dépôt** (une ligne par changement visible), par exemple
+   `$(mktemp -d)/notes.md` : dans le dépôt, le fichier le rendrait « modifié » et le script refuserait.
+4. `macos/release.sh /chemin/absolu/notes.md` : il exige la branche `main`, un dépôt sans modification non
+   committée, `gh` connecté à GitHub et une étiquette `vX.Y.Z` encore libre ; puis tests, construction (refusée
+   si `.venv` diffère de `requirements.lock`), étiquette, poussée, publication du `.dmg` sur GitHub.
 5. Installer : `rm -rf /Applications/arXivReader.app && ditto ~/Library/Caches/arXivReader-build/arXivReader.app /Applications/arXivReader.app`,
    puis vérifier `defaults read /Applications/arXivReader.app/Contents/Info.plist CFBundleShortVersionString` et
    `codesign --verify --deep --strict /Applications/arXivReader.app`.
@@ -99,8 +114,11 @@ Ouvrir.
 
 ## 6. Services extérieurs : ce qui peut changer, où regarder
 
-`./arxivreader check` appelle chacun d'eux pour de vrai et vérifie la forme de la réponse (✓ bon, ✗ changé ou en
-panne, – non vérifié). La tâche hebdomadaire (`./arxivreader check --weekly`, launchd
+`./arxivreader check` appelle pour de vrai ceux que liste `CHECKS` (`app/check.py` : à compléter si l'application
+se met à dépendre d'un nouveau service) et vérifie la forme de la réponse (✓ bon, ✗ changé ou en panne, – non
+vérifié). Lancé à la main, il lit les réglages de la bibliothèque de l'utilisateur (clés) et y écrit `check.json`
+(sans toucher au repère macOS/WebKit de la tâche hebdomadaire) ; `ARXIVREADER_LIBRARY=<copie>` pour l'éviter. La
+tâche hebdomadaire (`./arxivreader check --weekly`, launchd
 `org.arxivreader.check`, lundi 10 h) le fait avec le Python de l'application installée et notifie en cas de
 problème ; journal `~/Library/Logs/arXivReader-check.log`, résultat `check.json` dans la bibliothèque.
 
@@ -130,6 +148,7 @@ par `_forget_all`).
 
 WebKit change avec macOS (surtout la version majeure, en septembre). `check.py` signale le changement ; revoir à la
 main, dans l'application installée :
+- (liste à tenir identique à `WEBKIT_POINTS` dans `app/check.py`, le texte de la notification)
 - glisser un article d'une fenêtre à l'autre, sur un onglet (ouverture après 0,6 s), sur « Bibliothèque » et
   « Papiers liés » ; types de glissement : `application/x-arxivreader-paper` et `text/uri-list`
   (`util.js`, `selection.js`, `TabWindow` dans `main.swift`, qui repère les onglets par les vues `NSTabButton` de
@@ -147,7 +166,8 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
 - Mettre à jour, exprès et un paquet à la fois : `.venv/bin/pip install -U <paquet>`, tests, essai, puis
   `./arxivreader lock` et committer `requirements.lock`. Lire les notes de version du paquet avant.
 - Changer de version de Python : `.venv` refait avec la nouvelle version ; `build.sh` crée le Python embarqué
-  depuis le cache de conda-forge (`miniforge`) à la même version.
+  depuis le cache de conda-forge (`miniforge`, `conda create --offline`) à la même version : il faut d'abord la
+  télécharger dans ce cache (`conda create` sans `--offline`), avec l'accord de l'utilisateur.
 
 ## 9. Pièges connus
 
@@ -160,8 +180,9 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   `_valid_setting`), sinon il n'est pas enregistré.
 - Le middleware exige `Content-Type: application/json` pour toute écriture sauf `DELETE` : un `POST` sans corps
   doit envoyer `{}`.
-- Les titres d'arXiv contiennent du TeX ; comparer des titres (doublons de Semantic Scholar, Zotero) se fait après
-  `_norm` (sans commandes TeX). Semantic Scholar abîme parfois des titres : préférer ceux d'arXiv.
+- Les titres d'arXiv contiennent du TeX ; les doublons de Semantic Scholar se comparent après `related._norm`
+  (sans commandes TeX). Semantic Scholar abîme parfois des titres : préférer ceux d'arXiv. Zotero, lui, relie les
+  éléments par identifiant arXiv (`zotero.arxiv_of`, index `zotero_index`), jamais par titre.
 - La synchronisation Zotero fusionne trois états (ici, Zotero, la fois précédente) : toute modification de
   `_sync` doit garder les tests de `tests/test_zotero.py` (écriture refusée, doublons fusionnés, sous-collection
   profonde, dossier supprimé pendant un ajout, corbeille, retraits massifs).

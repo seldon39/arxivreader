@@ -26,7 +26,8 @@ FROZEN=$(.venv/bin/pip freeze --exclude-editable | sort -f)
 if [ "$FROZEN" != "$(sort -f requirements.lock)" ]; then
   echo ".venv ne correspond pas à requirements.lock :"
   diff <(echo "$FROZEN") <(sort -f requirements.lock) | sed 's/^/  /' || true
-  echo "→ .venv/bin/pip install -r requirements.lock (revenir aux versions figées), ou ./arxivreader lock (figer une mise à jour voulue)"
+  echo "→ revenir aux versions figées : .venv/bin/pip install -r requirements.lock (un paquet en trop : .venv/bin/pip uninstall <paquet>,"
+  echo "  ou refaire .venv : rm -rf .venv && ./arxivreader) ; figer une mise à jour voulue : ./arxivreader lock"
   exit 1
 fi
 

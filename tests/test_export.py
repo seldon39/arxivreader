@@ -53,13 +53,25 @@ class Export(unittest.TestCase):
         self.assertIn("### Theorem 1.1 (Main) — *understood*", export.paper_markdown(pid, "en"))
         self.assertEqual(export.filename(db.get_paper(pid)), "0806.2370 Toeplitz operators on.md")
 
+    def test_order_within_a_paragraph_and_ai_notes(self):
+        pid = "0806.2370"
+        annotations.create(pid, "highlight", target={"start": {"id": "S1.p1", "offset": 5}, "end": {"id": "S1.p1", "offset": 9}}, quote="text")
+        annotations.create(pid, "highlight", target={"start": {"id": "S1.p1", "offset": 0}, "end": {"id": "S1.p1", "offset": 4}}, quote="Some",
+                           note="Proposed.", author="claude")
+        text = export.paper_markdown(pid, "fr")
+        self.assertLess(text.index("> Some"), text.index("> text"))
+        self.assertIn("Proposed. *(proposée par Claude, acceptée)*", text)
+
     def test_zip_skips_papers_without_notes(self):
         annotations.create("0806.2370", "general", note="Note")
+        annotations.create("0806.2370", "block", target={"id": "S1.Thmthm1"})  # vide : pas une note
         db.save_paper({"id": "1003.2523", "arxiv_id": "1003.2523", "title": "Review", "authors": [], "abstract": "", "categories": []})
+        annotations.create("1003.2523", "general", note="   ")  # fiche vide : rien à exporter
         with mock.patch.object(annotations, "annotated_papers", return_value={"0806.2370", "1003.2523"}):
             data = export.library_zip()
         names = zipfile.ZipFile(io.BytesIO(data)).namelist()
         self.assertEqual(names, ["0806.2370 Toeplitz operators on.md"])
+        self.assertEqual(export.annotated_count(), 1)
 
 
 if __name__ == "__main__":

@@ -13,7 +13,7 @@ Télécharger `arXivReader.dmg` depuis la page [Releases](https://github.com/sel
 (Mac Apple Silicon, macOS 13 ou plus), l'ouvrir et glisser arXivReader dans Applications. L'application est
 autonome (Python et ses paquets sont inclus) ; rien d'autre à installer.
 
-- **Premier lancement** : l'application n'est pas signée par un compte développeur Apple, macOS la bloque.
+- **Première ouverture** : l'application n'est pas signée par un compte développeur Apple, macOS la bloque.
   Réglages Système → Confidentialité et sécurité → *Ouvrir quand même* (une seule fois).
 - **Mises à jour** : l'application vérifie une fois par jour s'il existe une nouvelle version sur GitHub
   (réglable dans Réglages → Mises à jour) ; une pastille « Mise à jour » apparaît alors en haut à droite.
@@ -143,8 +143,9 @@ signalé n'est pas forcément inédit.
 
 ## Premier lancement
 
-Sur une installation neuve, un assistant retrouve vos articles sur arXiv (identifiant d'auteur arXiv, ORCID, ou
-nom : les homonymes, y compris ceux d'un autre domaine, sont décochés d'office), propose les catégories du feed
+Quand la bibliothèque et le profil sont vides (installation neuve), un assistant retrouve vos articles sur arXiv
+(identifiant d'auteur arXiv ou ORCID, le plus sûr ; ou nom : les homonymes au prénom différent ou d'un autre
+domaine sont décochés d'office, à vous de décocher les autres), propose les catégories du feed
 (d'après vos articles) et les auteurs à suivre (coauteurs, auteurs les plus cités par vos articles), puis remplit
 le profil ; il peut aussi ajouter vos articles à la bibliothèque. Relancé depuis le Profil (« Assistant de
 démarrage »).
@@ -286,9 +287,12 @@ mais n'a pas été essayée avec un vrai compte.
 - HTML des articles nettoyé (scripts, formulaires, liens `javascript:` retirés) et politique CSP qui
   interdit tout script venant de l'article.
 - Données (base SQLite + un dossier par article) dans `~/Library/Application Support/arXivReader` pour
-  l'application, dans `library/` depuis le code source ; jamais ailleurs.
-- Connexions sortantes : arXiv (articles, nouveautés), Semantic Scholar (recommandations), GitHub (une fois par
-  jour, numéro de la dernière version ; désactivable), et l'assistant IA choisi.
+  l'application, dans `library/` depuis le code source. Ailleurs, seulement ce que vous demandez : notes
+  exportées (dossier Téléchargements) et, si vous activez la vérification hebdomadaire, son journal
+  (`~/Library/Logs`) et sa tâche (`~/Library/LaunchAgents`).
+- Connexions sortantes : arXiv (articles, nouveautés), Semantic Scholar (recommandations, papiers liés), GitHub
+  (une fois par jour, numéro de la dernière version ; désactivable), l'assistant IA choisi, Zotero si une clé est
+  donnée ; `./arxivreader check` appelle aussi chacun d'eux.
 
 ## Maintenance
 
@@ -318,7 +322,7 @@ app/            serveur Python (FastAPI)
   texsource.py  lecture de la source TeX (options de classe, police, étiquettes de listes)
   feed.py       nouveautés arXiv (RSS, OAI-PMH), recommandations Semantic Scholar, repérage d'identifiants
   journals.py   revue où un article est paru (arXiv, Semantic Scholar)
-  search.py     recherche dans tout arXiv (onglet Recherche) ; related.py : papiers liés (graphe) ; zotero.py : synchronisation avec Zotero ; check.py : vérification des services extérieurs
+  search.py     recherche dans tout arXiv (onglet Recherche) ; related.py : papiers liés (graphe) ; zotero.py : synchronisation avec Zotero ; check.py : vérification des services extérieurs ; onboarding.py : assistant de premier lancement ; export.py : export des notes
   folders.py    dossiers de la bibliothèque
   profile.py    profil de recherche, pré-remplissage, auteurs suivis ; relevance.py : tri par pertinence
   annotations.py  surlignages, notes, état de lecture

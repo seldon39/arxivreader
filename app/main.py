@@ -818,13 +818,13 @@ def _onboarding_error(error):
 async def onboarding_find(body: OnboardingFind):
     try:
         return await run_in_threadpool(onboarding.find, body.name[:200], body.identifier[:300])
-    except (onboarding.OnboardingError, httpx.HTTPError, search.SearchError) as error:
+    except (onboarding.OnboardingError, httpx.HTTPError) as error:
         return _onboarding_error(error)
 
 
 @app.post("/api/onboarding/suggest")
 async def onboarding_suggest(body: OnboardingSuggest):
-    papers = [p.model_dump() for p in body.papers[:200]]
+    papers = [{**p.model_dump(), "authors": p.authors[:2000]} for p in body.papers[:200]]
     return await run_in_threadpool(onboarding.suggest, papers, body.owner[:200], db.get_settings().get("s2ApiKey") or None)
 
 
@@ -856,6 +856,11 @@ def _download(content, name, media_type):
 def paper_notes(paper_id: str, lang: str = "fr"):
     paper = checked_paper(paper_id)
     return _download(export.paper_markdown(paper_id, lang), export.filename(paper), "text/markdown; charset=utf-8")
+
+
+@app.get("/api/notes")
+def notes_count():
+    return {"papers": export.annotated_count()}
 
 
 @app.get("/api/notes.zip")

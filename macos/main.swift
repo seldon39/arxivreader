@@ -451,6 +451,7 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
     var pending: String?            // page à ouvrir dès que le serveur répond
     var tested = false
     var titleObserver: NSKeyValueObservation?
+    var downloads: [ObjectIdentifier: URL] = [:]  // téléchargement en cours → fichier où il s'écrit
 
     init(app: AppDelegate) {
         self.app = app
@@ -617,7 +618,21 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
             target = folder.appendingPathComponent(ext.isEmpty ? "\(base) \(n)" : "\(base) \(n).\(ext)")
             n += 1
         }
+        downloads[ObjectIdentifier(download)] = target
         completionHandler(target)
+    }
+    // enregistré : montré dans le Finder (export des notes…) ; échec : signalé
+    func downloadDidFinish(_ download: WKDownload) {
+        if let target = downloads.removeValue(forKey: ObjectIdentifier(download)) {
+            NSWorkspace.shared.activateFileViewerSelecting([target])
+        }
+    }
+    func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+        downloads.removeValue(forKey: ObjectIdentifier(download))
+        let alert = NSAlert()
+        alert.messageText = tr("Téléchargement impossible", "Download failed")
+        alert.informativeText = error.localizedDescription
+        alert.beginSheetModal(for: window)
     }
 
     // alert(), confirm(), prompt() et <input type="file"> : fenêtres du Mac

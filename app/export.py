@@ -6,32 +6,56 @@ Toute la bibliothèque : une archive .zip, un fichier par article annoté.
 """
 
 import io
+import json
 import re
 import time
 import zipfile
 
-from bs4 import BeautifulSoup
-
 from . import annotations, db
-from .library import load_structure, paper_dir
+from .library import paper_dir
+
+ID = re.compile(r"""\sid=["']([^"']+)["']""")
 
 STATES = {"fr": {"understood": "compris", "review": "à revoir", "verified": "vérifié"},
           "en": {"understood": "understood", "review": "to review", "verified": "verified"}}
 WORDS = {"fr": {"sheet": "Fiche de lecture", "statements": "Énoncés et preuves", "highlights": "Passages surlignés",
                 "proof": "Preuve de {label}", "exported": "Notes exportées d'arXivReader le {date}", "other": "Autres passages",
-                "empty": "Aucune note sur cet article."},
+                "empty": "Aucune note sur cet article.", "ai": "proposée par {who}, acceptée", "local": "un modèle local"},
          "en": {"sheet": "Reading notes", "statements": "Statements and proofs", "highlights": "Highlighted passages",
                 "proof": "Proof of {label}", "exported": "Notes exported from arXivReader on {date}", "other": "Other passages",
-                "empty": "No notes on this paper."}}
+                "empty": "No notes on this paper.", "ai": "suggested by {who}, accepted", "local": "a local model"}}
+AUTHORS = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini"}
 
 
 def _order(paper_id):
-    """Rang de chaque identifiant d'élément dans le texte de l'article (ordre de lecture)."""
+    """Rang de chaque identifiant d'élément dans le texte de l'article (ordre de lecture ; lecture rapide des
+    attributs id, sans analyser tout le HTML)."""
     content = paper_dir(paper_id) / "content.html"
     if not content.exists():
         return {}
-    soup = BeautifulSoup(content.read_text(encoding="utf-8"), "html.parser")
-    return {tag["id"]: rank for rank, tag in enumerate(soup.find_all(id=True))}
+    order = {}
+    for element_id in ID.findall(content.read_text(encoding="utf-8")):
+        order.setdefault(element_id, len(order))
+    return order
+
+
+def _structure(paper_id):
+    """Structure enregistrée telle quelle (l'export ne relance pas l'analyse d'un article)."""
+    try:
+        return json.loads((paper_dir(paper_id) / "structure.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def has_notes(notes):
+    return any((n["kind"] == "general" and (n.get("note") or "").strip())
+               or (n["kind"] == "block" and n.get("target") and ((n.get("note") or "").strip() or n.get("state")))
+               or (n["kind"] == "highlight" and n.get("target")) for n in notes)
+
+
+def _who(note, words):
+    who = words["local"] if note.get("author") == "local" else AUTHORS.get(note.get("author") or "")
+    return f" *({words['ai'].format(who=who)})*" if who else ""
 
 
 def _quote(text):
@@ -52,7 +76,7 @@ def paper_markdown(paper_id, language="fr"):
     words, states = WORDS.get(language, WORDS["en"]), STATES.get(language, STATES["en"])
     paper = db.get_paper(paper_id)
     notes = annotations.list_for(paper_id)
-    structure = load_structure(paper_id) or {}
+    structure = _structure(paper_id)
     nodes = {n["id"]: n for n in structure.get("nodes", [])}
     proof_of = {proof: node for node in nodes.values() for proof in node.get("proofs") or []}
     toc = structure.get("toc") or []
@@ -79,18 +103,19 @@ def paper_markdown(paper_id, language="fr"):
             state = f" — *{states[note['state']]}*" if note.get("state") in states else ""
             lines += [f"### {label}{state}", ""]
             if (note.get("note") or "").strip():
-                lines += [note["note"].strip(), ""]
+                lines += [note["note"].strip() + _who(note, words), ""]
     if highlights:
         lines += [f"## {words['highlights']}", ""]
         current = None  # section du passage précédent (titre répété seulement quand elle change)
-        for note in sorted(highlights, key=lambda n: (rank((n["target"].get("start") or {}).get("id", "")), n["id"])):
+        start_of = lambda n: n["target"].get("start") or {}  # noqa: E731
+        for note in sorted(highlights, key=lambda n: (rank(start_of(n).get("id", "")), start_of(n).get("offset") or 0, n["id"])):
             section = _section_of((note["target"].get("start") or {}).get("id", ""), toc)
             if current is None or (section or {}).get("id", "") != current:
                 lines += [f"### {section['title'] if section else words['other']}", ""]
                 current = (section or {}).get("id", "")
             lines += [_quote(note.get("quote")), ""]
             if (note.get("note") or "").strip():
-                lines += [note["note"].strip(), ""]
+                lines += [note["note"].strip() + _who(note, words), ""]
     return "\n".join(lines)
 
 
@@ -102,13 +127,24 @@ def filename(paper):
     return f"{paper['arxiv_id'].replace('/', '_')} {title}".strip() + ".md"
 
 
+def _with_notes():
+    """Articles qui ont de vraies notes (un emplacement de preuve indiqué à la main n'en est pas une)."""
+    found = []
+    for paper_id in sorted(annotations.annotated_papers()):
+        paper = db.get_paper(paper_id)
+        if paper and has_notes(annotations.list_for(paper_id)):
+            found.append(paper)
+    return found
+
+
+def annotated_count():
+    return len(_with_notes())
+
+
 def library_zip(language="fr"):
     """Archive des notes de tous les articles annotés (bibliothèque ou seulement lus)."""
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        for paper_id in sorted(annotations.annotated_papers()):
-            paper = db.get_paper(paper_id)
-            notes = [n for n in annotations.list_for(paper_id) if n["kind"] in ("highlight", "block", "general")]
-            if paper and notes:  # (un emplacement de preuve indiqué à la main n'est pas une note)
-                archive.writestr(filename(paper), paper_markdown(paper_id, language))
+        for paper in _with_notes():
+            archive.writestr(filename(paper), paper_markdown(paper["id"], language))
     return buffer.getvalue()
