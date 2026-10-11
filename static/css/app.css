@@ -1296,6 +1296,9 @@ body.has-selection-bar #toast { bottom: 96px; }
 .related-graph svg { display: block; width: 100%; height: auto; aspect-ratio: 800 / 460; cursor: grab; touch-action: none; }
 .related-graph svg:active { cursor: grabbing; }
 .related-edge { stroke: var(--border-strong); stroke-opacity: .55; }
+.related-edge.extra { display: none; }
+.related-edge.focus { display: inline; stroke: var(--accent); stroke-opacity: .75; }
+.related-node.neighbour text { fill: var(--text); }
 .related-node { cursor: pointer; }
 .related-node circle { stroke: var(--surface); stroke-width: 1; transition: stroke-width .12s; }
 .related-node.in-library circle { stroke: var(--accent-strong); stroke-width: 2.5; }

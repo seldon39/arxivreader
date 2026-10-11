@@ -88,7 +88,7 @@ references, the papers citing it and those these neighbours often cite (Semantic
 references and papers citing them together, relative to the size of the lists (a classic cited everywhere does
 not crowd out a close work). Tabs: the graph, prior works (those most cited by the papers in the graph: often
 the seminal works) and derivative works (those citing the most papers in the graph: surveys, recent work);
-choosing one highlights the papers in the graph linked to it. Graph: the closer two papers, the nearer they are drawn; size by
+choosing one highlights the papers in the graph linked to it. Graph: the closer two papers, the nearer they are drawn; only each paper's strongest links are drawn, all those of the chosen paper appear; size by
 citations, colour by year, a ring for those in the library; pinch (or ⌘ + scroll) to zoom, drag the background to move. The
 chosen paper can be read, added to the library, filed in a folder (or dragged onto one), or become the start of a
 new graph. A graph is kept fifteen days ("Rebuild" to redo it). Without a Semantic Scholar API key, building may

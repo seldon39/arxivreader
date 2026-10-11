@@ -36,7 +36,7 @@ DIRECT = 0.05       # proximité ajoutée pour un lien direct (référence de l'
 COCITED = 0.35      # co-citations rapportées à (citations · citations de l'article) ** COCITED
 CANDIDATES = 1200     # au-delà (article très cité), seules les 1000 citations rendues par S2 et les références comptent
 KEEP_DAYS = 15
-FORMAT = 2           # forme des graphes gardés (2 : second niveau, travaux antérieurs et dérivés)
+FORMAT = 3           # forme des graphes gardés (2 : second niveau, travaux antérieurs et dérivés ; 3 : tous les liens)
 SCHEMA = """CREATE TABLE IF NOT EXISTS related_graphs (
     arxiv_id TEXT PRIMARY KEY,
     data TEXT NOT NULL,
@@ -233,8 +233,9 @@ def compute(origin, candidates, refs_of):
         if any(_same(paper, kept) for kept in nodes) or any(_same(paper, kept) for kept in others):
             continue  # doublon d'une fiche déjà retenue (la plus proche)
         (nodes if len(nodes) < NODES and paper["score"] > 0 else others).append(paper)
-    # liens : les plus forts de chaque article (références communes rapportées aux deux listes, ou l'un cite
-    # l'autre), pour que le graphe reste lisible ; `strength` (références communes, + 3 si citation) règle la distance
+    # liens : tous, mais seuls les plus forts de chaque article (références communes rapportées aux deux listes,
+    # ou l'un cite l'autre) sont dessinés d'emblée, pour que le graphe reste lisible ; les autres apparaissent quand
+    # on choisit l'un des deux articles. `strength` (références communes, + 3 si citation) règle la distance
     pairs = {}
     for a, b in itertools.combinations(nodes, 2):
         ra, rb = refs_of.get(a["id"], set()), refs_of.get(b["id"], set())
@@ -247,7 +248,7 @@ def compute(origin, candidates, refs_of):
     for node in in_graph:
         mine = sorted((pair for pair in pairs if node in pair), key=lambda pair: -pairs[pair][0])
         kept.update(mine[:EDGES])
-    edges = [[a, b, pairs[a, b][1]] for a, b in pairs if (a, b) in kept]
+    edges = [[a, b, pairs[a, b][1], int((a, b) in kept)] for a, b in pairs]
     # antérieurs : cités par le plus d'articles du graphe (l'article compris) ; dérivés : citent le plus d'articles du graphe
     cited_by = {p["id"]: [n for n in in_graph if p["id"] in refs_of.get(n, ())] + (["origin"] if p["id"] in origin_refs else []) for p in others}
     citing = {p["id"]: [n for n in in_graph if n in refs_of.get(p["id"], ())] + (["origin"] if p["rel"] == "cite" else []) for p in others}
@@ -268,7 +269,7 @@ def _cached(arxiv_id, since=None):
             + (" AND built_at >= ?" if since else ""), (arxiv_id, *([since] if since else []))).fetchone()
     data = json.loads(row["data"]) if row else None
     if not data or data.get("format") != FORMAT:
-        return None  # absent, ou construit par une version précédente (sans les travaux antérieurs et dérivés)
+        return None  # absent, ou construit par une version précédente (sans tous les liens, ou sans travaux antérieurs et dérivés)
     return {**data, "builtAt": row["built_at"]}
 
 

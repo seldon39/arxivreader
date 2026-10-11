@@ -93,7 +93,7 @@ class Related(unittest.TestCase):
         self.assertEqual(ids[0], "C1")              # 3 références communes avec l'article, et cité avec lui par C2
         r2 = next(n for n in data["nodes"] if n["id"] == "R2")
         self.assertEqual((r2["coupling"], r2["cocited"]), (1, 2))  # cite R1 ; cité par C1 et C2
-        self.assertTrue(any({a, b} == {"C1", "C2"} for a, b, _ in data["edges"]))  # C2 cite C1
+        self.assertTrue(any({a, b} == {"C1", "C2"} for a, b, *_ in data["edges"]))  # C2 cite C1
         self.assertEqual(self.batches[1], ["S1"])   # second niveau : seul S1 est cité par trois voisins (X par deux)
         s1 = next(n for n in data["nodes"] if n["id"] == "S1")
         self.assertEqual((s1["rel"], s1["coupling"], s1["cocited"]), ("second", 1, 2))
@@ -132,6 +132,23 @@ class SideLists(unittest.TestCase):
         self.assertEqual([(x["id"], sorted(x["links"])) for x in data["prior"]], [("K", ["B", "C", "D", "origin"]), ("A", ["B", "C", "D", "origin"])])
         self.assertEqual([(x["id"], sorted(x["links"])) for x in data["derivative"]], [("E", ["C", "D", "origin"])])
         self.assertNotIn("refs", data["origin"])
+
+    def test_all_links_kept_strongest_drawn(self):
+        # tous les liens sont rendus ; chaque article en a au moins quatre dessinés d'emblée (ses plus forts), pas tous
+        def p(i, rel):
+            return {"id": i, "arxivId": None, "doi": None, "title": f"Paper about topic {i}", "year": 2000, "citations": 5, "authors": ["A. B"], "rel": rel}
+        ids = "ABCDEFG"
+        origin = {"id": "arXiv:1", "arxivId": "1", "doi": None, "title": "Origin", "year": 2001, "citations": 3, "authors": [], "refs": ["R1", "R2", "R3"]}
+        shared = [f"S{k}" for k in range(9)]
+        refs = {"A": ["R1", "R2", "R3", *shared], "B": ["R1", *shared[:8]], "C": ["R1", *shared[:7]], "D": ["R1", *shared[:6]],
+                "E": ["R1", *shared[:5]], "F": ["R1", *shared[:3]], "G": ["R2"]}
+        with mock.patch.object(related, "NODES", 7):
+            data = related.compute(origin, {i: p(i, "ref") for i in ids}, refs)
+        a_links = {(a if b == "A" else b) for a, b, *_ in data["edges"] if "A" in (a, b)}
+        self.assertEqual(a_links, {"B", "C", "D", "E", "F"})
+        for node in "ABCDEF":
+            self.assertGreaterEqual(sum(drawn for a, b, _, drawn in data["edges"] if node in (a, b)), 4)
+        self.assertTrue(any(not drawn for *_, drawn in data["edges"]))  # gardé mais pas dessiné d'emblée
 
 
 class Duplicates(unittest.TestCase):

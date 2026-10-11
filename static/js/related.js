@@ -246,9 +246,10 @@ const lastName = (name) => String(name || "").trim().split(/\s+/).at(-1) || "";
 function layout(graph) {
   const nodes = [{ ...graph.origin, id: "__origin", origin: true }, ...graph.nodes.map((n) => ({ ...n }))];
   const byId = new Map(nodes.map((n) => [n.id, n]));
-  const links = graph.edges.map(([a, b, s]) => ({ a: byId.get(a), b: byId.get(b), s })).filter((l) => l.a && l.b);
+  // tous les liens ; la disposition ne suit que ceux dessinés d'emblée (les plus forts de chaque article)
+  const links = graph.edges.map(([a, b, s, drawn = 1]) => ({ a: byId.get(a), b: byId.get(b), s, drawn: Boolean(drawn) })).filter((l) => l.a && l.b);
   const origin = byId.get("__origin");
-  for (const n of nodes) if (!n.origin) links.push({ a: origin, b: n, s: Math.max(1, n.score / 10) });
+  for (const n of nodes) if (!n.origin) links.push({ a: origin, b: n, s: Math.max(1, n.score / 10), drawn: true });
   // départ déterministe : en spirale, les plus proches au centre
   nodes.forEach((n, i) => { const r = 30 + 14 * i, a = i * 2.4; n.x = Math.cos(a) * r; n.y = Math.sin(a) * r; });
   origin.x = origin.y = 0;
@@ -260,6 +261,7 @@ function layout(graph) {
       p.x += dx / d * push; p.y += dy / d * push; q.x -= dx / d * push; q.y -= dy / d * push;
     }
     for (const l of links) {
+      if (!l.drawn) continue;
       const dx = l.b.x - l.a.x, dy = l.b.y - l.a.y, d = Math.hypot(dx, dy) || 1;
       const target = l.a.origin ? 320 / Math.sqrt(1 + l.s / 5) : 240 / Math.sqrt(1 + l.s / 4);
       const pull = (d - target) * 0.012 * cool;
@@ -288,7 +290,11 @@ function drawGraph(graph, selected, select) {
   const y0 = years.length ? Math.min(...years) : 2000, y1 = years.length ? Math.max(...years) : 2000;
   const shade = (n) => `color-mix(in srgb, var(--accent) ${Math.round(22 + 70 * (((n.year || y0) - y0) / Math.max(1, y1 - y0)))}%, var(--surface))`;
   const radius = (n) => (n.origin ? 14 : 4 + Math.min(18, Math.sqrt(n.citations || 0) * 0.36));
-  for (const l of links) if (!l.a.origin) el("line", { x1: l.a.x, y1: l.a.y, x2: l.b.x, y2: l.b.y, class: "related-edge", "stroke-width": Math.min(2.4, 0.4 + l.s / 12) }, view);
+  // liens entre articles (ceux de l'article de départ ne sont pas dessinés : la distance les montre) ; les moins
+  // forts n'apparaissent que pour l'article choisi
+  const edgeLayer = el("g", {}, view);
+  const lines = links.filter((l) => !l.a.origin).map((l) => ({ ...l, line: el("line", { x1: l.a.x, y1: l.a.y, x2: l.b.x, y2: l.b.y,
+    class: `related-edge${l.drawn ? "" : " extra"}`, "stroke-width": Math.min(2.4, 0.4 + l.s / 12) }, edgeLayer) }));
   const groups = new Map();
   for (const n of nodes) {
     const g = el("g", { class: `related-node${n.origin ? " origin" : ""}${n.libraryId ? " in-library" : ""}`, tabindex: n.origin ? -1 : 0 }, view);
@@ -308,8 +314,16 @@ function drawGraph(graph, selected, select) {
   const highlight = () => {
     const chosen = selected();
     svg.classList.toggle("focus-links", Boolean(chosen.links)); // les autres articles s'effacent
+    // liens de l'article choisi : tous, par-dessus les autres ; ses voisins ressortent
+    const neighbours = new Set();
+    for (const l of lines) {
+      const on = !chosen.links && (l.a.id === chosen.id || l.b.id === chosen.id);
+      l.line.classList.toggle("focus", on);
+      if (on) { edgeLayer.append(l.line); neighbours.add(l.a.id === chosen.id ? l.b.id : l.a.id); }
+    }
     for (const [id, g] of groups) {
       g.classList.toggle("selected", id === chosen.id);
+      g.classList.toggle("neighbour", neighbours.has(id));
       g.classList.toggle("linked", Boolean(chosen.links?.includes(id === "__origin" ? "origin" : id)));
       const paper = graph.nodes.find((n) => n.id === id);
       if (paper) g.classList.toggle("in-library", Boolean(paper.libraryId));
