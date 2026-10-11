@@ -48,14 +48,26 @@ def _ensure():
 RETRIES = (3, 6, 12, 20)  # sans clé, le quota de Semantic Scholar est partagé : on patiente plus longtemps
 
 
-def _get(client, url, **params):
-    response = with_retry(lambda: client.get(url, params=params), retry_on=(429,), delays=RETRIES)
+def _answer(response):
+    """Réponse JSON de Semantic Scholar, ou une erreur dont la page dit la cause."""
     if response.status_code == 404:
         raise RelatedError("not-found")
     if response.status_code == 429:
         raise RelatedError("rate-limited")
+    if response.status_code in (500, 502, 503, 504):
+        raise RelatedError("unavailable")
     response.raise_for_status()
-    return response.json()
+    try:
+        return response.json()
+    except ValueError:  # page HTML (proxy, panne) au lieu du JSON attendu
+        raise RelatedError("bad-response")
+
+
+def _get(client, url, **params):
+    data = _answer(with_retry(lambda: client.get(url, params=params), retry_on=(429, 503, 504), delays=RETRIES))
+    if not isinstance(data, dict):
+        raise RelatedError("bad-response")
+    return data
 
 
 def _paper(raw):
@@ -71,10 +83,19 @@ def _norm(title):
     return re.sub(r"[^a-z0-9]", "", unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode().lower())
 
 
+NUMBERS = re.compile(r"\b(?:\d+|[IVX]+)\b")
+
+
 def _same(a, b):
     """Doublons de Semantic Scholar (même article sous deux fiches, titre à peine différent : « anggl(N) » et
-    « and gl(N) ») : même année et titres presque identiques."""
+    « and gl(N) ») : même année et titres presque identiques, avec les mêmes numéros (« I » et « II », « part 1 »
+    et « part 2 » restent deux articles), et pas deux identifiants arXiv ou DOI différents."""
     if (a["year"] or 0) != (b["year"] or 0):
+        return False
+    for key in ("arxivId", "doi"):
+        if a.get(key) and b.get(key) and a[key].lower() != b[key].lower():
+            return False
+    if NUMBERS.findall(a["title"]) != NUMBERS.findall(b["title"]):
         return False
     x, y = _norm(a["title"]), _norm(b["title"])
     return x == y or (min(len(x), len(y)) > 20 and difflib.SequenceMatcher(None, x, y).ratio() >= 0.9)
@@ -82,12 +103,7 @@ def _same(a, b):
 
 def build(arxiv_id, api_key=None):
     """Graphe des papiers liés à l'article arXiv `arxiv_id` (sans version)."""
-    if not _lock.acquire(timeout=120):
-        raise RelatedError("busy")
-    try:
-        return _build(arxiv_id, api_key)
-    finally:
-        _lock.release()
+    return _build(arxiv_id, api_key)
 
 
 def _build(arxiv_id, api_key):
@@ -103,7 +119,8 @@ def _build(arxiv_id, api_key):
         refs = _get(client, f"{S2}/paper/{pid}/references", limit=1000, fields=FIELDS).get("data") or []
         time.sleep(0 if api_key else 1.2)  # sans clé : au plus une requête par seconde
         cites = _get(client, f"{S2}/paper/{pid}/citations", limit=1000, fields=FIELDS).get("data") or []
-        origin["citations"] = len(cites)
+        origin["citations"] = sum(1 for row in cites if isinstance(row, dict) and row.get("citingPaper"))
+        origin["citationsCapped"] = len(cites) >= 1000  # Semantic Scholar n'en rend que 1000 d'un coup
         candidates = {}
         for rel, rows, key in (("ref", refs, "citedPaper"), ("cite", cites, "citingPaper")):
             for row in rows:
@@ -118,13 +135,13 @@ def _build(arxiv_id, api_key):
         for start in range(0, len(ids), 500):
             time.sleep(0 if api_key else 1.2)
             batch = ids[start:start + 500]
-            response = with_retry(lambda: client.post(f"{S2}/paper/batch", params={"fields": "paperId,references.paperId"}, json={"ids": batch}),
-                                  retry_on=(429,), delays=RETRIES)
-            if response.status_code == 429:
-                raise RelatedError("rate-limited")
-            response.raise_for_status()
-            for key, item in zip(batch, response.json()):
-                refs_of[key] = {r["paperId"] for r in (item or {}).get("references") or [] if isinstance(r, dict) and r.get("paperId")}
+            answer = _answer(with_retry(lambda: client.post(f"{S2}/paper/batch", params={"fields": "paperId,references.paperId"}, json={"ids": batch}),
+                                        retry_on=(429, 503, 504), delays=RETRIES))
+            if not isinstance(answer, list):
+                raise RelatedError("bad-response")
+            for key, item in zip(batch, answer):
+                found = item.get("references") if isinstance(item, dict) else None
+                refs_of[key] = {r["paperId"] for r in found or [] if isinstance(r, dict) and r.get("paperId")}
     origin_refs = {c for c in candidates if candidates[c]["rel"] == "ref"}
     citers = [c for c in candidates if candidates[c]["rel"] == "cite"]
     for key, paper in candidates.items():
@@ -136,6 +153,8 @@ def _build(arxiv_id, api_key):
     ranked = sorted(candidates.values(), key=lambda p: (-p["score"], -p["citations"]))
     nodes = []
     for paper in ranked:
+        if paper.get("arxivId") == arxiv_id or _same({**paper, "arxivId": None, "doi": None}, {**origin, "doi": None}):
+            continue  # une autre fiche de l'article lui-même (version publiée, doublon)
         if any(_same(paper, kept) for kept in nodes):
             continue  # doublon d'une fiche déjà retenue (la plus proche)
         nodes.append(paper)
@@ -151,23 +170,42 @@ def _build(arxiv_id, api_key):
             "candidates": len(candidates), "withReferences": sum(1 for k in candidates if refs_of.get(k))}
 
 
-def graph(arxiv_id, api_key=None, refresh=False):
-    """Graphe gardé (moins de 15 jours), sinon construit et gardé."""
-    _ensure()
-    if not refresh:
-        with db.connect() as connection:
-            row = connection.execute(
-                f"SELECT data, built_at FROM related_graphs WHERE arxiv_id = ? AND built_at > datetime('now', '-{KEEP_DAYS} days')",
-                (arxiv_id,)).fetchone()
-        if row:
-            return {**json.loads(row["data"]), "builtAt": row["built_at"]}
-    data = build(arxiv_id, api_key)
+def _cached(arxiv_id, since=None):
     with db.connect() as connection:
-        connection.execute("INSERT INTO related_graphs (arxiv_id, data, built_at) VALUES (?, ?, datetime('now')) "
-                           "ON CONFLICT(arxiv_id) DO UPDATE SET data = excluded.data, built_at = excluded.built_at",
-                           (arxiv_id, json.dumps(data, ensure_ascii=False)))
-        built = connection.execute("SELECT built_at FROM related_graphs WHERE arxiv_id = ?", (arxiv_id,)).fetchone()["built_at"]
-    return {**data, "builtAt": built}
+        row = connection.execute(
+            f"SELECT data, built_at FROM related_graphs WHERE arxiv_id = ? AND built_at > datetime('now', '-{KEEP_DAYS} days')"
+            + (" AND built_at >= ?" if since else ""), (arxiv_id, *([since] if since else []))).fetchone()
+    return {**json.loads(row["data"]), "builtAt": row["built_at"]} if row else None
+
+
+def normalize(arxiv_id):
+    """Identifiant tel que Semantic Scholar et la bibliothèque l'écrivent : sans la sous-catégorie des anciens
+    identifiants (math.DG/0404494 → math/0404494)."""
+    return re.sub(r"^([a-z-]+)\.[A-Z]{2}/", r"\1/", arxiv_id)
+
+
+def graph(arxiv_id, api_key=None, refresh=False):
+    """Graphe gardé (moins de 15 jours), sinon construit et gardé ; un seul construit à la fois (une demande
+    arrivée pendant ce temps pour le même article reprend celui qui vient d'être fait)."""
+    _ensure()
+    arxiv_id = normalize(arxiv_id)
+    if not refresh and (found := _cached(arxiv_id)):
+        return found
+    asked = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
+    if not _lock.acquire(timeout=90):
+        raise RelatedError("busy")
+    try:
+        if found := _cached(arxiv_id, since=None if not refresh else asked):
+            return found  # construit par une autre demande pendant l'attente
+        data = build(arxiv_id, api_key)
+        with db.connect() as connection:
+            connection.execute("INSERT INTO related_graphs (arxiv_id, data, built_at) VALUES (?, ?, datetime('now')) "
+                               "ON CONFLICT(arxiv_id) DO UPDATE SET data = excluded.data, built_at = excluded.built_at",
+                               (arxiv_id, json.dumps(data, ensure_ascii=False)))
+            built = connection.execute("SELECT built_at FROM related_graphs WHERE arxiv_id = ?", (arxiv_id,)).fetchone()["built_at"]
+        return {**data, "builtAt": built}
+    finally:
+        _lock.release()
 
 
 def annotate(data):

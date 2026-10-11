@@ -88,7 +88,7 @@ article, choisi par son lien arXiv, dans la bibliothèque (menu, ou bouton ⊙ d
 cadre. Candidats : ses références et les articles qui le citent (Semantic Scholar) ; proximité : références
 communes et articles qui les citent ensemble. Liste (tous, antérieurs, dérivés) et graphe : plus deux articles
 sont proches, plus ils sont rapprochés ; taille selon les citations, couleur selon l'année, cercle pour ceux de la
-bibliothèque ; molette pour zoomer, glisser le fond pour se déplacer. L'article choisi se lit, s'ajoute à la
+bibliothèque ; pincement du trackpad (ou ⌘ + molette) pour zoomer, glisser le fond pour se déplacer. L'article choisi se lit, s'ajoute à la
 bibliothèque, se range dans un dossier (ou s'y glisse), ou devient le point de départ d'un nouveau graphe. Un
 graphe est gardé quinze jours (« Reconstruire » pour le refaire). Sans clé d'API Semantic Scholar, la
 construction peut attendre un peu (quota partagé).

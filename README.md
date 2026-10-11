@@ -86,7 +86,7 @@ The "Related papers" tab (in the spirit of Connected Papers) shows the 30 papers
 its arXiv link, from the library (menu, or the ⊙ button of each card), or dropped in the frame. Candidates: its
 references and the papers citing it (Semantic Scholar); closeness: shared references and papers citing them
 together. List (all, prior, derivative) and graph: the closer two papers, the nearer they are drawn; size by
-citations, colour by year, a ring for those in the library; scroll to zoom, drag the background to move. The
+citations, colour by year, a ring for those in the library; pinch (or ⌘ + scroll) to zoom, drag the background to move. The
 chosen paper can be read, added to the library, filed in a folder (or dragged onto one), or become the start of a
 new graph. A graph is kept fifteen days ("Rebuild" to redo it). Without a Semantic Scholar API key, building may
 take a little longer (shared quota).

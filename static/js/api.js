@@ -11,7 +11,9 @@ async function request(method, url, body) {
   const data = type.includes("application/json") ? await response.json() : await response.text();
   if (!response.ok) {
     const message = (data && (data.error || data.detail)) || `HTTP ${response.status}`;
-    throw new Error(message);
+    const error = new Error(message);
+    if (data && typeof data.code === "string") error.code = data.code; // cause précise (traduite par la page)
+    throw error;
   }
   return data;
 }

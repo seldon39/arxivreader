@@ -103,3 +103,17 @@ class Related(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Duplicates(unittest.TestCase):
+    """Deux fiches du même article sont fusionnées, mais pas les parties I et II d'un article."""
+
+    def test_same(self):
+        a = {"title": "Toeplitz operators on symplectic manifolds I", "year": 2008, "arxivId": None, "doi": None}
+        self.assertFalse(related._same(a, {**a, "title": "Toeplitz operators on symplectic manifolds II"}))
+        self.assertFalse(related._same({**a, "title": "Bergman kernels on singular spaces, part 1"}, {**a, "title": "Bergman kernels on singular spaces, part 2"}))
+        self.assertTrue(related._same({**a, "title": "Toeplitz quantization of Kahler manifolds and gl(N)"},
+                                      {**a, "title": "Toeplitz quantization of Kahler manifolds anggl(N)"}))
+        self.assertFalse(related._same({**a, "arxivId": "0801.0001"}, {**a, "arxivId": "0801.0002"}))
+        self.assertEqual(related.normalize("math.DG/0404494"), "math/0404494")
+        self.assertEqual(related.normalize("0806.2370"), "0806.2370")

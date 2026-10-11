@@ -5,11 +5,12 @@
 import { api } from "./api.js";
 import { t, tn } from "./i18n.js";
 import { fileInFolder } from "./selection.js";
-import { draggablePaper, droppedPapers, h, icons, mayBePaper, openRoute, plainTitle, tidyTitle, toast, toastError, wantsNewTab, withMath } from "./util.js";
+import { draggablePaper, droppedPapers, h, icons, mayBePaper, navigation, openRoute, plainTitle, tidyTitle, toast, toastError, wantsNewTab, withMath } from "./util.js";
 import { typesetTex } from "./math.js";
 
 // dernier graphe et choix, gardés le temps de la session (retour depuis le lecteur : tout est là)
-const state = { query: "", graph: null, selected: null, tab: "all" };
+// `pending` : construction en cours (gardée si l'on quitte la page : le graphe s'affichera au retour)
+const state = { query: "", graph: null, selected: null, tab: "all", pending: null };
 const SVG = "http://www.w3.org/2000/svg";
 const W = 800;
 const H = 460;
@@ -27,27 +28,43 @@ export async function renderRelated(root, arxivFromRoute = null) {
     h("p", { class: "related-lead" }, t("related.lead")),
     form, h("p", { class: "muted small related-drop-hint" }, t("related.dropHint")), status, result));
 
-  let token = 0;
-  async function load(query, refresh = false) {
-    const mine = ++token;
+  function load(query, refresh = false) {
     state.query = query;
     input.value = query;
-    build.disabled = true;
-    status.replaceChildren(h("span", { class: "busy" }, h("span", { class: "spinner" }), t("related.building")));
-    try {
-      const graph = await api.related(query, refresh);
-      if (mine !== token || !root.isConnected) return;
+    // la demande vit hors de la page : quittée puis rouverte, celle-ci retrouve la construction en cours
+    const pending = { query, promise: api.related(query, refresh) };
+    state.pending = pending;
+    pending.promise.then((graph) => {
+      if (state.pending !== pending) return;
+      state.pending = null;
       state.graph = graph;
       state.selected = graph.nodes[0]?.id || null;
-      status.replaceChildren();
-      draw();
-    } catch (error) {
-      if (mine !== token) return;
-      const key = `related.error.${error.message}`;
-      status.replaceChildren(h("p", { class: "notice" }, t(key) !== key ? t(key) : t("error.generic", { message: error.message })));
-    } finally {
-      if (mine === token) build.disabled = false;
+    }, (error) => {
+      if (state.pending !== pending) return;
+      state.pending = null;
+      pending.error = error;
+    });
+    follow(pending);
+  }
+  // affichage d'une construction (lancée ici ou avant de quitter la page)
+  async function follow(pending) {
+    build.disabled = true;
+    status.replaceChildren(h("span", { class: "busy" }, h("span", { class: "spinner" }), t("related.building")));
+    try { await pending.promise; } catch { /* erreur montrée ci-dessous */ }
+    if (!root.isConnected || (state.pending && state.pending !== pending)) return;
+    build.disabled = false;
+    if (pending.error) {
+      const code = pending.error.code || pending.error.message;
+      const key = `related.error.${code}`;
+      status.replaceChildren(h("p", { class: "notice" }, t(key) !== key ? t(key) : t("error.generic", { message: pending.error.message })));
+      return;
     }
+    status.replaceChildren();
+    // adresse de la page : celle de ce graphe (retour du lecteur, changement de langue, « Partir de cet article »)
+    const hash = `#/related/${encodeURIComponent(state.graph.origin.arxivId)}`;
+    if (location.hash !== hash) history.replaceState(null, "", hash);
+    navigation.listHash = hash;
+    draw();
   }
 
   form.addEventListener("submit", (event) => {
@@ -70,6 +87,7 @@ export async function renderRelated(root, arxivFromRoute = null) {
     if (paper) load(paper.arxivId); else toast(t("library.drop.notPaper"), { error: true });
   });
   pick.addEventListener("click", () => libraryMenu(pick, form, (arxivId) => load(arxivId)));
+  let mounted = true;
 
   // ---- Résultat : en-tête, liste (onglets) et graphe, article choisi dessous ----
   function draw() {
@@ -78,7 +96,7 @@ export async function renderRelated(root, arxivFromRoute = null) {
     const o = graph.origin;
     const head = h("div", { class: "related-origin" },
       h("h2", {}, withMath(tidyTitle(o.title))),
-      h("span", { class: "muted small" }, [authorLine(o.authors), o.year, tn("related.citations", o.citations),
+      h("span", { class: "muted small" }, [authorLine(o.authors), o.year, o.citationsCapped ? t("related.citationsCapped") : tn("related.citations", o.citations),
         tn("related.count", graph.nodes.length)].filter(Boolean).join(" · ")),
       h("span", { class: "spacer" }),
       h("button", { class: "link-button small", type: "button", title: t("related.rebuildHint", { date: (graph.builtAt || "").slice(0, 10) }),
@@ -93,13 +111,21 @@ export async function renderRelated(root, arxivFromRoute = null) {
     const list = h("div", { class: "related-list" });
     const graphBox = h("div", { class: "related-graph" });
     const detail = h("div", { class: "related-detail" });
-    const select = (id) => { state.selected = id; drawList(); drawDetail(); highlight(); };
+    const select = (id) => {
+      state.selected = id;
+      for (const item of list.querySelectorAll(".related-item")) item.classList.toggle("on", item.dataset.id === id);
+      drawDetail();
+      highlight();
+    };
     function drawList() {
       const shown = graph.nodes.filter((n) => state.tab === "all" || n.rel === state.tab);
       list.replaceChildren(...shown.map((n) => {
-        const title = n.arxivId ? h("a", { class: "related-item-title", href: `https://arxiv.org/abs/${n.arxivId}`, onclick: (e) => { e.preventDefault(); select(n.id); } },
-          withMath(tidyTitle(n.title))) : h("span", { class: "related-item-title" }, withMath(tidyTitle(n.title)));
-        const item = h("div", { class: `related-item${n.id === state.selected ? " on" : ""}`, onclick: () => select(n.id) }, title,
+        // titre : un lien (pour le glisser sur un dossier) qui choisit l'article ; sans arXiv, l'élément se choisit au clavier
+        const title = n.arxivId ? h("a", { class: "related-item-title", href: `https://arxiv.org/abs/${n.arxivId}`,
+          onclick: (e) => { e.preventDefault(); e.stopPropagation(); select(n.id); } }, withMath(tidyTitle(n.title)))
+          : h("span", { class: "related-item-title" }, withMath(tidyTitle(n.title)));
+        const item = h("div", { class: `related-item${n.id === state.selected ? " on" : ""}`, dataset: { id: n.id }, onclick: () => select(n.id),
+          tabindex: n.arxivId ? null : 0, onkeydown: (e) => { if (!n.arxivId && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); select(n.id); } } }, title,
           h("span", { class: "muted small" }, [authorLine(n.authors), n.year, tn("related.citations", n.citations),
             t(n.rel === "ref" ? "related.prior" : "related.derived")].filter(Boolean).join(" · "),
             n.libraryId ? h("span", { class: "related-in-library" }, ` · ${t("related.inLibrary")}`) : ""));
@@ -115,6 +141,7 @@ export async function renderRelated(root, arxivFromRoute = null) {
         h("p", { class: "muted small" }, [n.authors.join(", "), n.year, tn("related.citations", n.citations),
           t("related.closeness", { shared: n.coupling, cocited: n.cocited })].filter(Boolean).join(" · ")),
         h("div", { class: "related-actions" }, ...actions(n, () => { drawList(); drawDetail(); highlight(); })));
+      if (!mounted) return;
       typesetTex([detail]).catch(() => {});
     }
     const { svg, highlight } = drawGraph(graph, () => state.selected, select);
@@ -159,20 +186,37 @@ export async function renderRelated(root, arxivFromRoute = null) {
     });
     const file = h("button", { class: "button small-button", type: "button", "aria-haspopup": "menu" }, h("span", { class: "button-icon", html: icons.folder }), t("select.file"));
     file.addEventListener("click", () => folderMenu(file, async (folder) => {
+      file.disabled = true;
       try {
         await fileInFolder([{ arxivId: n.arxivId, paperId: n.libraryId, title: n.title }], folder);
         const papers = await api.papers();
         n.libraryId = papers.find((p) => p.arxiv_id === n.arxivId)?.id || n.libraryId;
         refresh();
-      } catch (error) { toastError(error); }
+      } catch (error) { toastError(error); } finally { file.disabled = false; }
     }));
     const from = h("a", { class: "button small-button", href: `#/related/${encodeURIComponent(n.arxivId)}` }, t("related.startHere"));
     return [read, add, file, from];
   }
 
-  if (arxivFromRoute && arxivFromRoute !== state.graph?.origin?.arxivId) load(arxivFromRoute);
-  else draw();
-  return () => { token++; };
+  const same = (a, b) => (a || "").replace(/^([a-z-]+)\.[A-Z]{2}\//, "$1/") === (b || "");
+  if (state.pending) follow(state.pending); // construction lancée avant de quitter la page
+  else if (arxivFromRoute && !same(arxivFromRoute, state.graph?.origin?.arxivId)) load(arxivFromRoute);
+  else {
+    draw();
+    if (state.graph) {
+      const hash = `#/related/${encodeURIComponent(state.graph.origin.arxivId)}`;
+      if (location.hash !== hash) history.replaceState(null, "", hash); // adresse de ce graphe
+      navigation.listHash = hash;
+      // retour sur la page : « dans la bibliothèque » remis à jour (graphe gardé par le serveur : pas de nouvelle requête)
+      const shown = state.graph;
+      api.related(shown.origin.arxivId).then((fresh) => {
+        if (!mounted || state.graph !== shown || state.pending) return;
+        state.graph = fresh;
+        draw();
+      }, () => {});
+    }
+  }
+  return () => { mounted = false; };
 }
 
 const authorLine = (authors) => !authors?.length ? "" : authors.length > 3 ? `${authors.slice(0, 2).join(", ")} ${t("feed.etAl")}` : authors.join(", ");
@@ -217,19 +261,20 @@ function drawGraph(graph, selected, select) {
   const { nodes, links } = layout(graph);
   const svg = document.createElementNS(SVG, "svg");
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-  svg.setAttribute("role", "img");
+  svg.setAttribute("role", "group"); // les points restent atteignables (VoiceOver, clavier)
   svg.setAttribute("aria-label", t("related.graphLabel"));
   const el = (tag, attrs, parent) => { const e = document.createElementNS(SVG, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent?.append(e); return e; };
   const view = el("g", {}, svg);
   const years = graph.nodes.map((n) => n.year).filter(Boolean);
-  const y0 = Math.min(...years), y1 = Math.max(...years);
+  const y0 = years.length ? Math.min(...years) : 2000, y1 = years.length ? Math.max(...years) : 2000;
   const shade = (n) => `color-mix(in srgb, var(--accent) ${Math.round(22 + 70 * (((n.year || y0) - y0) / Math.max(1, y1 - y0)))}%, var(--surface))`;
   const radius = (n) => (n.origin ? 14 : 4 + Math.min(18, Math.sqrt(n.citations || 0) * 0.36));
   for (const l of links) if (!l.a.origin) el("line", { x1: l.a.x, y1: l.a.y, x2: l.b.x, y2: l.b.y, class: "related-edge", "stroke-width": Math.min(2.4, 0.4 + l.s / 12) }, view);
   const groups = new Map();
   for (const n of nodes) {
     const g = el("g", { class: `related-node${n.origin ? " origin" : ""}${n.libraryId ? " in-library" : ""}`, tabindex: n.origin ? -1 : 0 }, view);
-    el("circle", { cx: n.x, cy: n.y, r: radius(n), fill: n.origin ? "var(--accent)" : shade(n) }, g);
+    // couleur en style : WebKit (l'application) n'accepte pas var() dans l'attribut fill
+    el("circle", { cx: n.x, cy: n.y, r: radius(n), style: `fill: ${n.origin ? "var(--accent)" : shade(n)}` }, g);
     const label = el("text", { x: n.x, y: n.y + radius(n) + 11, "text-anchor": "middle" }, g);
     label.textContent = `${lastName(n.authors?.[0])} ${n.year || ""}`.trim();
     el("title", {}, g).textContent = `${plainTitle(n.title)} (${n.year || "?"})`;
@@ -252,6 +297,7 @@ function drawGraph(graph, selected, select) {
   let zoom = 1, panX = 0, panY = 0;
   const apply = () => view.setAttribute("transform", `translate(${panX} ${panY}) scale(${zoom})`);
   svg.addEventListener("wheel", (event) => {
+    if (!event.ctrlKey && !event.metaKey) return; // pincement du trackpad (ctrlKey) ou ⌘ + molette ; sinon la page défile
     event.preventDefault();
     const box = svg.getBoundingClientRect();
     const mx = (event.clientX - box.left) * (W / box.width), my = (event.clientY - box.top) * (H / box.height);
@@ -274,15 +320,21 @@ function drawGraph(graph, selected, select) {
     apply();
   });
   svg.addEventListener("pointerup", () => { drag = null; });
-  svg.addEventListener("dblclick", () => { zoom = 1; panX = panY = 0; apply(); });
+  svg.addEventListener("pointercancel", () => { drag = null; });
+  svg.addEventListener("lostpointercapture", () => { drag = null; });
+  svg.addEventListener("dblclick", (event) => { if (event.target.closest(".related-node")) return; zoom = 1; panX = panY = 0; apply(); });
   return { svg, highlight };
 }
 
 // ---- Menus : articles de la bibliothèque, dossiers ----
+let menuOpening = false;
 async function libraryMenu(button, anchor, choose) {
-  anchor.querySelector(".related-menu")?.remove();
+  const open = anchor.querySelector(".related-menu");
+  if (open) { open.remove(); return; } // second clic sur le bouton : fermé
+  if (menuOpening) return;
+  menuOpening = true;
   let papers;
-  try { papers = await api.papers(); } catch (error) { toastError(error); return; }
+  try { papers = await api.papers(); } catch (error) { toastError(error); return; } finally { menuOpening = false; }
   const filter = h("input", { class: "text-input", type: "search", placeholder: t("related.filterLibrary"), "aria-label": t("related.filterLibrary") });
   const items = h("div", { class: "related-menu-items" });
   const fold = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();

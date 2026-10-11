@@ -617,12 +617,12 @@ async def related_papers(body: RelatedRequest):
     """Papiers liés à un article arXiv (onglet « Papiers liés »), d'après Semantic Scholar."""
     try:
         arxiv_id, _ = parse_arxiv_id(body.query[:500])
-    except ArxivError as error:
-        raise HTTPException(400, str(error))
+    except ArxivError:
+        return JSONResponse({"error": "bad-id", "code": "bad-id"}, status_code=400)
     try:
         data = await run_in_threadpool(related.graph, arxiv_id, db.get_settings().get("s2ApiKey") or None, body.refresh)
     except related.RelatedError as error:
-        status = {"not-found": 404, "rate-limited": 429, "busy": 409}.get(str(error), 502)
+        status = {"not-found": 404, "rate-limited": 429, "busy": 409, "unavailable": 503}.get(str(error), 502)
         return JSONResponse({"error": str(error), "code": str(error)}, status_code=status)
     except httpx.HTTPError as error:
         return JSONResponse({"error": f"{type(error).__name__}: {error}", "code": "network"}, status_code=502)
