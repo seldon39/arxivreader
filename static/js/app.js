@@ -7,7 +7,7 @@ import { renderReader } from "./reader.js";
 import { loadSettings, onSettingsChange, openSettingsDialog, settings } from "./settings.js";
 import { refreshUpdates } from "./updates.js";
 import { api } from "./api.js";
-import { h, navigation } from "./util.js";
+import { h, navigation, openRoute, wantsNewTab } from "./util.js";
 
 const view = document.getElementById("view");
 let cleanup = null;
@@ -28,6 +28,8 @@ async function route() {
   const feedMatch = location.hash.match(/^#\/feed(?:\/(recommended|import|profile))?$/);
   const section = match ? "paper" : feedMatch ? "#/feed" : "#/";
   if (!match) navigation.listHash = location.hash || "#/";
+  // titre de l'onglet (et de la fenêtre) : la page ; le lecteur y met le titre de l'article
+  document.title = match ? "arXivReader" : feedMatch ? t("feed.title") : t("library.title");
   document.querySelectorAll(".topnav a").forEach((a) => {
     const active = a.getAttribute("href") === section;
     a.classList.toggle("active", active);
@@ -75,6 +77,24 @@ onSettingsChange(() => {
 document.getElementById("settings-button").addEventListener("click", () => openSettingsDialog());
 addEventListener("arxivreader:settings", (event) => openSettingsDialog({ section: event.detail }));
 addEventListener("hashchange", route);
+// ⌘-clic ou clic du milieu sur un lien de l'application (article, renvoi) : dans un nouvel onglet
+for (const type of ["click", "auxclick"]) {
+  document.addEventListener(type, (event) => {
+    const link = event.target.closest?.('a[href^="#/"]');
+    if (!link || event.defaultPrevented || !wantsNewTab(event) || (type === "auxclick" && event.button !== 1)) return;
+    event.preventDefault();
+    openRoute(link.getAttribute("href"), true, event.shiftKey);
+  });
+}
+// retour sur un onglet : réglages changés dans un autre onglet (thème, taille du texte…) appliqués sans
+// recharger la page (langue ou moteur de formules : page redessinée, comme plus haut) ; la bibliothèque
+// est redessinée (dossiers, articles ajoutés ailleurs)
+document.addEventListener("visibilitychange", async () => {
+  if (document.visibilityState !== "visible") return;
+  await loadSettings();
+  if (!location.hash || location.hash === "#/") route();
+  refreshAlerts();
+});
 route();
 refreshAlerts();
 setInterval(refreshAlerts, 10 * 60 * 1000);

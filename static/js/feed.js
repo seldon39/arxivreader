@@ -5,7 +5,7 @@ import { getLanguage, t, tn } from "./i18n.js";
 import { typesetTex } from "./math.js";
 import { renderProfile } from "./profile.js";
 import { saveSettings, settings } from "./settings.js";
-import { debounce, h, hoursSince, icons, tidyTitle, timeAgo, toast, toastError, toggleIcon, withMath } from "./util.js";
+import { debounce, h, hoursSince, icons, openRoute, tidyTitle, timeAgo, toast, toastError, toggleIcon, wantsNewTab, withMath } from "./util.js";
 
 const TABS = [["arxiv", "#/feed"], ["recommended", "#/feed/recommended"], ["profile", "#/feed/profile"], ["import", "#/feed/import"]];
 const COMPACT_BELOW = 0.12;
@@ -407,24 +407,30 @@ function feedCard(item, onChange = () => {}, { compact = false, fresh = false, s
     ? h("a", { class: "feed-title-link", href: known() ? `#/paper/${encodeURIComponent(known())}` : `#/feed`, title: t("feed.read") }, tidyTitle(item.title))
     : h("a", { class: "feed-title-link", href: item.link, target: "_blank", rel: "noopener noreferrer" }, tidyTitle(item.title));
   if (item.arxiv_id) {
-    title.addEventListener("click", async (event) => {
+    const open = async (event) => {
+      if (event.type === "auxclick" && event.button !== 1) return;
       event.preventDefault();
       event.stopPropagation();
-      if (known()) { location.hash = `#/paper/${encodeURIComponent(known())}`; return; }
+      const newTab = wantsNewTab(event); // ⌘-clic ou clic du milieu : dans un nouvel onglet
+      const front = event.shiftKey;
+      if (known()) { openRoute(`#/paper/${encodeURIComponent(known())}`, newTab, front); return; }
       if (title.dataset.loading) return;
       title.dataset.loading = "1";
       const spinner = h("span", { class: "spinner title-spinner", "aria-label": t("feed.importing") });
       title.after(spinner);
       try {
         const paper = await api.importPaper(item.arxiv_id, false);
-        location.hash = `#/paper/${encodeURIComponent(paper.id)}`;
+        item.readId = paper.id;
+        openRoute(`#/paper/${encodeURIComponent(paper.id)}`, newTab, front);
       } catch (error) {
         toastError(error);
       } finally {
         delete title.dataset.loading;
         spinner.remove();
       }
-    });
+    };
+    title.addEventListener("click", open);
+    title.addEventListener("auxclick", open);
   }
 
   const reasons = (item.reasons || []).map((reason) => h("span", { class: `reason reason-${reason.kind}` },

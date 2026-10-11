@@ -16,7 +16,7 @@ import { typesetFragment, typesetMath, typesetTex } from "./math.js";
 const typesetTexSafe = (element) => typesetTex([element]).catch(() => {});
 import { t } from "./i18n.js";
 import { DEFAULT_FONT_SIZE, onSettingsChange, saveSettings, settings } from "./settings.js";
-import { debounce, formatDate, h, icons, navigation, titleTex, toast, toggleIcon, withMath } from "./util.js";
+import { debounce, formatDate, h, icons, navigation, plainTitle, titleTex, toast, toggleIcon, withMath } from "./util.js";
 
 const NEEDS_PROOF = new Set(["theorem", "proposition", "lemma", "corollary", "claim"]);
 const WIDE = 1280;
@@ -32,6 +32,7 @@ export async function renderReader(view, paperId, at, isCurrent = () => true) {
   const { paper, structure } = await api.paper(paperId);
   const html = paper.source === "none" || paper.source === "tex" ? "" : await api.content(paperId);
   if (!isCurrent()) return () => {}; // page déjà quittée pendant le chargement : rien n'est affiché
+  document.title = plainTitle(paper.title); // titre de l'onglet
   const reader = new Reader(view, paper, structure || { toc: [], nodes: [], bibliography: [], hiddenText: 0 }, html, at);
   return () => reader.destroy();
 }

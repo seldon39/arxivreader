@@ -28,6 +28,10 @@ Safari), qui embarque Python et ses paquets. `macos/release.sh` la publie comme 
 augmenté `VERSION` dans `app/version.py`) : étiquette Git, envoi sur GitHub, image disque jointe.
 
 - Quitter (⌘Q) arrête aussi le serveur.
+- Onglets : la barre d'onglets du Mac est toujours affichée, son « + » (ou ⌘T) ouvre la bibliothèque dans
+  un nouvel onglet ; ⌘-clic (ou clic du milieu) sur un article, dans la bibliothèque, le feed ou un renvoi,
+  l'ouvre dans un nouvel onglet en arrière-plan (⇧⌘-clic : au premier plan). Un onglet glissé hors de la
+  barre devient une fenêtre (deux articles côte à côte) ; ⌘N ouvre une nouvelle fenêtre.
 - **Bibliothèque** : `~/Library/Application Support/arXivReader` (menu arXivReader → Afficher la bibliothèque
   dans le Finder). À la première ouverture, l'application propose de recopier une bibliothèque existante (le
   dossier `library/` de ce projet) : quitter d'abord l'ancienne version. Ensuite, l'ancienne et la nouvelle ne

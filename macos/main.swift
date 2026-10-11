@@ -1,4 +1,4 @@
-// arXivReader pour Mac : une fenêtre (WebKit, le moteur de Safari) sur le serveur local de l'application.
+// arXivReader pour Mac : des fenêtres à onglets (WebKit, le moteur de Safari) sur le serveur local de l'application.
 //
 // Au lancement, l'application démarre le serveur Python qu'elle embarque (Contents/Resources/python et
 // Contents/Resources/arxivreader), sur 127.0.0.1 seulement, avec la bibliothèque dans
@@ -11,9 +11,9 @@ import WebKit
 let french = Locale.preferredLanguages.first?.hasPrefix("fr") ?? true
 func tr(_ fr: String, _ en: String) -> String { french ? fr : en }
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
-    var window: NSWindow!
-    var webView: WKWebView!
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    var tabs: [Tab] = []
+    var serverReady = false
     var server: Process?
     var port = 8720
     var quitting = false
@@ -28,7 +28,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
         try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
-        makeWindow()
+        // premier onglet (essais : ARXIVREADER_START=#/paper/…,#/feed ouvre ces pages, les suivantes en onglets)
+        let routes = (ProcessInfo.processInfo.environment["ARXIVREADER_START"] ?? "").split(separator: ",").map(String.init)
+        let first = openTab(routes.first ?? "", beside: nil)
+        for route in routes.dropFirst() { openTab(route, beside: first.window, front: false) }
+        NSApp.activate(ignoringOtherApps: true)
         offerImport()
         port = freePort(preferred: 8720)
         startServer()
@@ -94,9 +98,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
             DispatchQueue.main.async {
                 guard let self, !self.quitting, self.server?.isRunning == true else { return }
                 if (response as? HTTPURLResponse)?.statusCode == 200 {
-                    // Essais : ARXIVREADER_START=#/paper/… ouvre directement cette page
-                    let route = ProcessInfo.processInfo.environment["ARXIVREADER_START"] ?? ""
-                    self.webView.load(URLRequest(url: URL(string: "\(self.origin)/\(route)")!))
+                    self.serverReady = true
+                    self.tabs.forEach { $0.reconnect() }
                 } else if Date().timeIntervalSince(start) > 90 {
                     self.fail(tr("Le serveur d'arXivReader ne répond pas.", "The arXivReader server does not answer."), detail: self.logTail())
                 } else {
@@ -114,6 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         alert.addButton(withTitle: tr("Relancer", "Restart"))
         alert.addButton(withTitle: tr("Quitter", "Quit"))
         if alert.runModal() == .alertFirstButtonReturn {
+            serverReady = false
             port = freePort(preferred: port)
             startServer()
         } else {
@@ -205,30 +209,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         }
     }
 
-    // ---------- Fenêtre ----------
+    // ---------- Onglets et fenêtres ----------
 
-    func makeWindow() {
-        let config = WKWebViewConfiguration()
-        config.websiteDataStore = .default()
-        webView = WKWebView(frame: .zero, configuration: config)
-        webView.navigationDelegate = self
-        webView.uiDelegate = self
-        webView.allowsBackForwardNavigationGestures = true
-        if #available(macOS 13.3, *) { webView.isInspectable = true }
-        webView.loadHTMLString(startPage(), baseURL: nil)
+    // onglet de la fenêtre active (destinataire des menus : réglages, rechercher, recharger…)
+    var keyTab: Tab? { tabs.first { $0.window.isKeyWindow } ?? tabs.first { $0.window.isMainWindow } ?? tabs.last }
 
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 860),
-                          styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = "arXivReader"
-        window.minSize = NSSize(width: 420, height: 480)
-        window.tabbingMode = .disallowed
-        window.contentView = webView
-        window.delegate = self
-        window.center()
-        window.setFrameAutosaveName("arXivReader.main")
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+    // Nouvel onglet à côté de `anchor` (sinon une nouvelle fenêtre) ; `front` : affiché aussitôt
+    @discardableResult
+    func openTab(_ route: String, beside anchor: NSWindow?, front: Bool = true) -> Tab {
+        let first = tabs.isEmpty
+        let tab = Tab(app: self)
+        tabs.append(tab)
+        if let anchor {
+            tab.window.setFrame(anchor.frame, display: false)
+            anchor.addTabbedWindow(tab.window, ordered: .above)
+            if front { tab.window.makeKeyAndOrderFront(nil) } else { anchor.makeKeyAndOrderFront(nil) }
+        } else {
+            if first {
+                tab.window.center()
+                tab.window.setFrameAutosaveName("arXivReader.main")
+            } else if let frame = tabs.dropLast().last?.window.frame {
+                tab.window.setFrame(frame.offsetBy(dx: 28, dy: -28), display: false) // en cascade
+            }
+            tab.window.makeKeyAndOrderFront(nil)
+        }
+        showTabBar(tab.window)
+        tab.load(route)
+        return tab
     }
+
+    // Barre d'onglets toujours affichée, même avec un seul onglet (son « + » ouvre un nouvel onglet)
+    func showTabBar(_ window: NSWindow) {
+        DispatchQueue.main.async {
+            guard window.isVisible, let group = window.tabGroup, !group.isTabBarVisible else { return }
+            window.toggleTabBar(nil)
+        }
+    }
+
+    func closed(_ tab: Tab) { tabs.removeAll { $0 === tab } }
 
     func startPage() -> String {
         """
@@ -240,11 +258,202 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         """
     }
 
+    // ---------- Menus ----------
+
+    @objc func openSettings() {
+        keyTab?.webView.evaluateJavaScript("document.getElementById('settings-button')?.click()")
+    }
+    @objc func reloadPage() { keyTab?.webView.reload() }
+    @objc func newTab() { openTab("#/", beside: keyTab?.window) }
+    @objc func newWindow() { openTab("#/", beside: nil) }
+    // tous les onglets de la fenêtre
+    @objc func closeWindow() { (keyTab?.window.tabGroup?.windows ?? keyTab.map { [$0.window] } ?? []).forEach { $0.performClose(nil) } }
+    // Rechercher : la page s'en charge (barre de recherche du lecteur, champ de la bibliothèque)
+    func find(_ command: String) {
+        keyTab?.webView.evaluateJavaScript("document.dispatchEvent(new CustomEvent('app:find', { detail: '\(command)' }))")
+    }
+    @objc func findOpen() { find("open") }
+    @objc func findNext() { find("next") }
+    @objc func findPrevious() { find("previous") }
+    @objc func goBack() { keyTab?.webView.goBack() }
+    @objc func goForward() { keyTab?.webView.goForward() }
+    @objc func showLibraryFolder() { NSWorkspace.shared.activateFileViewerSelecting([support]) }
+
+    func buildMenu() {
+        let main = NSMenu()
+        func submenu(_ title: String, _ items: [NSMenuItem]) {
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            let menu = NSMenu(title: title)
+            items.forEach(menu.addItem)
+            item.submenu = menu
+            main.addItem(item)
+        }
+        func entry(_ title: String, _ action: Selector?, _ key: String = "", _ modifiers: NSEvent.ModifierFlags = .command,
+                   target: AnyObject? = nil) -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            item.keyEquivalentModifierMask = modifiers
+            item.target = target
+            return item
+        }
+        submenu("arXivReader", [
+            entry(tr("À propos d'arXivReader", "About arXivReader"), #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+            .separator(),
+            entry(tr("Réglages…", "Settings…"), #selector(openSettings), ",", target: self),
+            entry(tr("Afficher la bibliothèque dans le Finder", "Show the library in Finder"), #selector(showLibraryFolder), target: self),
+            .separator(),
+            entry(tr("Masquer arXivReader", "Hide arXivReader"), #selector(NSApplication.hide(_:)), "h"),
+            entry(tr("Masquer les autres", "Hide Others"), #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
+            entry(tr("Tout afficher", "Show All"), #selector(NSApplication.unhideAllApplications(_:))),
+            .separator(),
+            entry(tr("Quitter arXivReader", "Quit arXivReader"), #selector(NSApplication.terminate(_:)), "q"),
+        ])
+        submenu(tr("Fichier", "File"), [
+            entry(tr("Nouvel onglet", "New Tab"), #selector(newTab), "t", target: self),
+            entry(tr("Nouvelle fenêtre", "New Window"), #selector(newWindow), "n", target: self),
+            .separator(),
+            entry(tr("Fermer l'onglet", "Close Tab"), #selector(NSWindow.performClose(_:)), "w"),
+            entry(tr("Fermer la fenêtre", "Close Window"), #selector(closeWindow), "w", [.command, .shift], target: self),
+            .separator(),
+            entry(tr("Afficher tous les onglets", "Show All Tabs"), #selector(NSWindow.toggleTabOverview(_:)), "\\", [.command, .shift]),
+        ])
+        submenu(tr("Édition", "Edit"), [
+            entry(tr("Annuler", "Undo"), Selector(("undo:")), "z"),
+            entry(tr("Rétablir", "Redo"), Selector(("redo:")), "z", [.command, .shift]),
+            .separator(),
+            entry(tr("Couper", "Cut"), #selector(NSText.cut(_:)), "x"),
+            entry(tr("Copier", "Copy"), #selector(NSText.copy(_:)), "c"),
+            entry(tr("Coller", "Paste"), #selector(NSText.paste(_:)), "v"),
+            entry(tr("Tout sélectionner", "Select All"), #selector(NSText.selectAll(_:)), "a"),
+            .separator(),
+            entry(tr("Rechercher…", "Find…"), #selector(findOpen), "f", target: self),
+            entry(tr("Rechercher le suivant", "Find Next"), #selector(findNext), "g", target: self),
+            entry(tr("Rechercher le précédent", "Find Previous"), #selector(findPrevious), "g", [.command, .shift], target: self),
+        ])
+        submenu(tr("Présentation", "View"), [
+            entry(tr("Recharger", "Reload"), #selector(reloadPage), "r", target: self),
+            .separator(),
+            entry(tr("Plein écran", "Enter Full Screen"), #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
+        ])
+        submenu(tr("Aller", "Go"), [
+            entry(tr("Précédent", "Back"), #selector(goBack), "[", target: self),
+            entry(tr("Suivant", "Forward"), #selector(goForward), "]", target: self),
+        ])
+        let windowMenu: [NSMenuItem] = [
+            entry(tr("Placer dans le Dock", "Minimize"), #selector(NSWindow.performMiniaturize(_:)), "m"),
+            entry(tr("Réduire/agrandir", "Zoom"), #selector(NSWindow.performZoom(_:))),
+            .separator(),
+            entry(tr("Afficher l'onglet précédent", "Show Previous Tab"), #selector(NSWindow.selectPreviousTab(_:)), "[", [.command, .shift]),
+            entry(tr("Afficher l'onglet suivant", "Show Next Tab"), #selector(NSWindow.selectNextTab(_:)), "]", [.command, .shift]),
+            entry(tr("Placer l'onglet dans une nouvelle fenêtre", "Move Tab to New Window"), #selector(NSWindow.moveTabToNewWindow(_:))),
+            entry(tr("Fusionner toutes les fenêtres", "Merge All Windows"), #selector(NSWindow.mergeAllWindows(_:))),
+        ]
+        submenu(tr("Fenêtre", "Window"), windowMenu)
+        NSApp.mainMenu = main
+        NSApp.windowsMenu = main.items.last?.submenu
+    }
+}
+
+// ---------- Onglets : une fenêtre (WebKit) par onglet, regroupées par la barre d'onglets du Mac ----------
+
+/// Fenêtre d'un onglet ; le « + » de la barre d'onglets ouvre la bibliothèque dans un nouvel onglet
+final class TabWindow: NSWindow {
+    override func newWindowForTab(_ sender: Any?) {
+        (NSApp.delegate as? AppDelegate)?.openTab("#/", beside: self)
+    }
+}
+
+/// Messages de la page (⌘-clic sur un article : nouvel onglet). Intermédiaire faible : WebKit retient son destinataire
+final class MessageProxy: NSObject, WKScriptMessageHandler {
+    weak var tab: Tab?
+    init(_ tab: Tab) { self.tab = tab }
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) { tab?.received(message) }
+}
+
+final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
+    unowned let app: AppDelegate
+    let window: TabWindow
+    let webView: WKWebView
+    var pending: String?            // page à ouvrir dès que le serveur répond
+    var tested = false
+    var titleObserver: NSKeyValueObservation?
+
+    init(app: AppDelegate) {
+        self.app = app
+        let config = WKWebViewConfiguration()
+        config.websiteDataStore = .default()
+        webView = WKWebView(frame: .zero, configuration: config)
+        window = TabWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 860),
+                           styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        super.init()
+        config.userContentController.add(MessageProxy(self), name: "arxivreader")
+        webView.navigationDelegate = self
+        webView.uiDelegate = self
+        webView.allowsBackForwardNavigationGestures = true
+        if #available(macOS 13.3, *) { webView.isInspectable = true }
+        window.isReleasedWhenClosed = false
+        window.title = "arXivReader"
+        window.minSize = NSSize(width: 420, height: 480)
+        window.tabbingIdentifier = "arXivReader"
+        window.tabbingMode = .automatic
+        window.contentView = webView
+        window.delegate = self
+        // titre de l'onglet et de la fenêtre : celui de la page (article lu, « Bibliothèque », « Feed »)
+        titleObserver = webView.observe(\.title) { [weak self] web, _ in
+            let title = web.title ?? ""
+            self?.window.title = title.isEmpty ? "arXivReader" : title
+        }
+    }
+
+    // Page de l'application (« #/paper/… ») ; avant que le serveur réponde : page d'attente
+    func load(_ route: String) {
+        if app.serverReady {
+            pending = nil
+            webView.load(URLRequest(url: URL(string: "\(app.origin)/\(route)")!))
+        } else {
+            pending = route
+            webView.loadHTMLString(app.startPage(), baseURL: nil)
+        }
+    }
+
+    // Serveur prêt (ou relancé, peut-être sur un autre port) : page en attente, sinon la même page
+    func reconnect() {
+        let route = pending ?? webView.url.flatMap { $0.fragment.map { "#\($0)" } } ?? ""
+        load(route)
+    }
+
+    func received(_ message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any], body["action"] as? String == "openTab",
+              let route = body["route"] as? String, route.hasPrefix("#/") else { return }
+        // comme Safari : nouvel onglet en arrière-plan (⇧ en plus : affiché aussitôt)
+        app.openTab(route, beside: window, front: body["front"] as? Bool ?? false)
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) { app.showTabBar(window) }
+
+    func windowWillClose(_ notification: Notification) {
+        titleObserver = nil
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "arxivreader")
+        app.closed(self)
+    }
+
+    func windowShot(_ path: String) {
+        let lines = [
+            "tabs=\(window.tabGroup?.windows.count ?? 0)",
+            "tabBarVisible=\(window.tabGroup?.isTabBarVisible ?? false)",
+            "titles=\(window.tabGroup?.windows.map(\.title) ?? [])",
+            "menus=\(NSApp.mainMenu?.items.map { "\($0.title): " + ($0.submenu?.items.map { $0.isSeparatorItem ? "—" : $0.title } ?? []).joined(separator: " | ") } ?? [])",
+        ]
+        try? lines.joined(separator: "\n").write(toFile: path + ".txt", atomically: true, encoding: .utf8)
+        guard let frame = window.contentView?.superview, let rep = frame.bitmapImageRepForCachingDisplay(in: frame.bounds) else { return }
+        frame.cacheDisplay(in: frame.bounds, to: rep)
+        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+    }
+
     // Liens : ceux de l'application restent dans la fenêtre, les autres (arXiv, DOI, claude://…) s'ouvrent à côté
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard let url = action.request.url else { return decisionHandler(.allow) }
-        if url.absoluteString.hasPrefix(origin) || url.scheme == "about" || url.scheme == "data" || url.scheme == "blob" {
+        if url.absoluteString.hasPrefix(app.origin) || url.scheme == "about" || url.scheme == "data" || url.scheme == "blob" {
             decisionHandler(action.shouldPerformDownload ? .download : .allow)
         } else {
             NSWorkspace.shared.open(url)
@@ -266,11 +475,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { webView.reload() }
 
-    // Essais : ARXIVREADER_SNAPSHOT=fichier.png, image de la fenêtre quelques secondes après le chargement
+    // Essais (premier onglet) : ARXIVREADER_SNAPSHOT=fichier.png, image de la page quelques secondes après le
+    // chargement ; ARXIVREADER_WINDOWSHOT=fichier.png, la fenêtre entière (barre d'onglets) et un relevé
+    // (onglets, barre, menus) dans fichier.png.txt ; ARXIVREADER_EVAL : JavaScript exécuté une fois la page chargée
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        guard let path = ProcessInfo.processInfo.environment["ARXIVREADER_SNAPSHOT"], webView.url?.absoluteString.hasPrefix(origin) == true
-        else { return }
-        let delay = Double(ProcessInfo.processInfo.environment["ARXIVREADER_SNAPSHOT_DELAY"] ?? "") ?? 4
+        let env = ProcessInfo.processInfo.environment
+        guard app.tabs.first === self, webView.url?.absoluteString.hasPrefix(app.origin) == true, !tested else { return }
+        tested = true
+        if let script = env["ARXIVREADER_EVAL"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { webView.evaluateJavaScript(script) }
+        }
+        let delay = Double(env["ARXIVREADER_SNAPSHOT_DELAY"] ?? "") ?? 4
+        if let path = env["ARXIVREADER_WINDOWSHOT"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.windowShot(path) }
+        }
+        guard let path = env["ARXIVREADER_SNAPSHOT"] else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
             webView.takeSnapshot(with: nil) { image, _ in
                 guard let tiff = image?.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
@@ -334,82 +553,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         panel.beginSheetModal(for: window) { completionHandler($0 == .OK ? panel.urls : nil) }
     }
 
-    // ---------- Menus ----------
-
-    @objc func openSettings() {
-        webView.evaluateJavaScript("document.getElementById('settings-button')?.click()")
-    }
-    @objc func reloadPage() { webView.reload() }
-    // Rechercher : la page s'en charge (barre de recherche du lecteur, champ de la bibliothèque)
-    func find(_ command: String) {
-        webView.evaluateJavaScript("document.dispatchEvent(new CustomEvent('app:find', { detail: '\(command)' }))")
-    }
-    @objc func findOpen() { find("open") }
-    @objc func findNext() { find("next") }
-    @objc func findPrevious() { find("previous") }
-    @objc func goBack() { webView.goBack() }
-    @objc func goForward() { webView.goForward() }
-    @objc func showLibraryFolder() { NSWorkspace.shared.activateFileViewerSelecting([support]) }
-
-    func buildMenu() {
-        let main = NSMenu()
-        func submenu(_ title: String, _ items: [NSMenuItem]) {
-            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-            let menu = NSMenu(title: title)
-            items.forEach(menu.addItem)
-            item.submenu = menu
-            main.addItem(item)
-        }
-        func entry(_ title: String, _ action: Selector?, _ key: String = "", _ modifiers: NSEvent.ModifierFlags = .command,
-                   target: AnyObject? = nil) -> NSMenuItem {
-            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
-            item.keyEquivalentModifierMask = modifiers
-            item.target = target
-            return item
-        }
-        submenu("arXivReader", [
-            entry(tr("À propos d'arXivReader", "About arXivReader"), #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
-            .separator(),
-            entry(tr("Réglages…", "Settings…"), #selector(openSettings), ",", target: self),
-            entry(tr("Afficher la bibliothèque dans le Finder", "Show the library in Finder"), #selector(showLibraryFolder), target: self),
-            .separator(),
-            entry(tr("Masquer arXivReader", "Hide arXivReader"), #selector(NSApplication.hide(_:)), "h"),
-            entry(tr("Masquer les autres", "Hide Others"), #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
-            entry(tr("Tout afficher", "Show All"), #selector(NSApplication.unhideAllApplications(_:))),
-            .separator(),
-            entry(tr("Quitter arXivReader", "Quit arXivReader"), #selector(NSApplication.terminate(_:)), "q"),
-        ])
-        submenu(tr("Édition", "Edit"), [
-            entry(tr("Annuler", "Undo"), Selector(("undo:")), "z"),
-            entry(tr("Rétablir", "Redo"), Selector(("redo:")), "z", [.command, .shift]),
-            .separator(),
-            entry(tr("Couper", "Cut"), #selector(NSText.cut(_:)), "x"),
-            entry(tr("Copier", "Copy"), #selector(NSText.copy(_:)), "c"),
-            entry(tr("Coller", "Paste"), #selector(NSText.paste(_:)), "v"),
-            entry(tr("Tout sélectionner", "Select All"), #selector(NSText.selectAll(_:)), "a"),
-            .separator(),
-            entry(tr("Rechercher…", "Find…"), #selector(findOpen), "f", target: self),
-            entry(tr("Rechercher le suivant", "Find Next"), #selector(findNext), "g", target: self),
-            entry(tr("Rechercher le précédent", "Find Previous"), #selector(findPrevious), "g", [.command, .shift], target: self),
-        ])
-        submenu(tr("Présentation", "View"), [
-            entry(tr("Recharger", "Reload"), #selector(reloadPage), "r", target: self),
-            .separator(),
-            entry(tr("Plein écran", "Enter Full Screen"), #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
-        ])
-        submenu(tr("Aller", "Go"), [
-            entry(tr("Précédent", "Back"), #selector(goBack), "[", target: self),
-            entry(tr("Suivant", "Forward"), #selector(goForward), "]", target: self),
-        ])
-        let windowMenu: [NSMenuItem] = [
-            entry(tr("Placer dans le Dock", "Minimize"), #selector(NSWindow.performMiniaturize(_:)), "m"),
-            entry(tr("Réduire/agrandir", "Zoom"), #selector(NSWindow.performZoom(_:))),
-            entry(tr("Fermer", "Close"), #selector(NSWindow.performClose(_:)), "w"),
-        ]
-        submenu(tr("Fenêtre", "Window"), windowMenu)
-        NSApp.mainMenu = main
-        NSApp.windowsMenu = main.items.last?.submenu
-    }
 }
 
 let app = NSApplication.shared

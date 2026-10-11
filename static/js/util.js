@@ -181,6 +181,26 @@ export function titleTex(title) {
 // Dernière page de liste visitée (bibliothèque ou onglet du feed) : où revient la flèche du lecteur
 export const navigation = { listHash: "#/" };
 
+// Titre d'article en texte simple (onglets, titre de la fenêtre) : formules réduites à leurs symboles
+const SUPERSCRIPTS = { 0: "⁰", 1: "¹", 2: "²", 3: "³", 4: "⁴", 5: "⁵", 6: "⁶", 7: "⁷", 8: "⁸", 9: "⁹", n: "ⁿ" };
+export function plainTitle(title) {
+  return titleTex(title).split(/(\$[^$]*\$|\\\(.*?\\\))/).map((part, i) => {
+    if (!(i % 2)) return part;
+    return texToText(part.replace(/^\$|\$$|^\\\(|\\\)$/g, ""))
+      .replace(/\^\{?([0-9n])\}?/g, (_, c) => SUPERSCRIPTS[c]).replace(/[_^{}]/g, "");
+  }).join("").replace(/\s+/g, " ").trim();
+}
+
+// Ouvre une page de l'application (« #/paper/… ») ; dans un nouvel onglet si demandé (⌘-clic, clic du
+// milieu) : onglet de l'application Mac (en arrière-plan, au premier plan avec ⇧), sinon du navigateur
+export function openRoute(hash, newTab = false, front = false) {
+  const bridge = window.webkit?.messageHandlers?.arxivreader;
+  if (!newTab) location.hash = hash;
+  else if (bridge) bridge.postMessage({ action: "openTab", route: hash, front });
+  else window.open(`${location.pathname}${hash}`, "_blank", "noopener");
+}
+export const wantsNewTab = (event) => Boolean(event.metaKey || event.ctrlKey || event.button === 1);
+
 // Bouton à bascule à la YouTube (contour au repos, plein une fois activé)
 export function toggleIcon(off, on, { pressed = false, label = "", className = "" } = {}) {
   return h("button", { class: `icon-button thumb ${className}`, type: "button", title: label, "aria-label": label, "aria-pressed": String(pressed) },
