@@ -295,7 +295,7 @@ export async function renderLibrary(root) {
     createForm ||= creating && h("div", { class: "folder folder-new editing" }, nameForm("", async (name) => {
       const folder = await api.createFolder(name);
       creating = false;
-      view.openFolder = folder.id;
+      openFolder(folder.id);
       panelOpening = true;
       await reloadFolders();
     }, () => { creating = false; drawFolders(); }, t("library.folder.create")));
@@ -305,7 +305,7 @@ export async function renderLibrary(root) {
         h("span", { class: "folder-icon", html: icons.add }), t("library.folder.new"));
     foldersTitle.textContent = folderList.length ? t("library.foldersCount", { n: folderList.length }) : t("library.folders");
     folderGrid.replaceChildren(...cards, add);
-    drawPanel();
+    keepFocus(drawPanel); // redessin au retour dans l'application, après une action : la frappe en cours continue
   }
 
   let renaming = false;
@@ -313,19 +313,33 @@ export async function renderLibrary(root) {
   // trié ainsi pendant cette visite (le profil a pu changer entre deux visites)
   let scores = null;
   let scoring = null;
+  let rescored = false; // articles ajoutés depuis le calcul : un seul nouveau calcul par visite
+  let redrawMembers = null; // liste du dossier ouvert seule (pas son en-tête ni le champ de recherche)
   const loadScores = () => {
     scoring ||= api.papersRelevance()
-      .then((result) => { scores = result; })
-      .catch((error) => { toastError(error); scoring = null; view.folderSort = "newest"; }) // pas de nouvel essai en boucle
-      .finally(() => { if (root.isConnected) keepFocus(drawPanel); });
+      .then((result) => { scores = result; if (root.isConnected) redrawMembers?.(); })
+      .catch((error) => {
+        toastError(error);
+        scoring = null;
+        if (view.folderSort === "relevance") view.folderSort = "newest"; // pas de nouvel essai en boucle
+        if (root.isConnected) keepFocus(drawPanel);
+      });
   };
-  const keepFocus = (draw) => {
-    const key = document.activeElement?.dataset?.focus;
+  const openFolder = (id) => {
+    view.openFolder = id;
+    view.folderSearch = ""; // recherche propre au dossier ouvert
+  };
+  // les commandes du dossier sont redessinées : le focus (et le curseur dans le champ) reviennent au même endroit
+  function keepFocus(draw) {
+    const active = document.activeElement;
+    const key = active?.dataset?.focus;
+    const caret = active?.type === "search" ? [active.selectionStart, active.selectionEnd] : null;
     draw();
     const field = key && panel.querySelector(`[data-focus="${CSS.escape(key)}"]`);
-    field?.focus();
-    if (field?.type === "search") field.setSelectionRange(field.value.length, field.value.length);
-  };
+    if (!field || field === active) return;
+    field.focus();
+    if (caret && field.type === "search") field.setSelectionRange(...caret);
+  }
   function drawPanel() {
     const folder = folderList.find((f) => f.id === view.openFolder);
     const inner = panel.firstChild;
@@ -337,15 +351,19 @@ export async function renderLibrary(root) {
         panel.addEventListener("transitionend", clear, { once: true });
         setTimeout(clear, 400);
       }
+      redrawMembers = null;
       return;
     }
-    const waiting = view.folderSort === "relevance" && !scores;
-    if (waiting) loadScores();
     const all = papers.filter((p) => folder.papers.includes(p.id));
+    if (scores && !rescored && all.some((p) => !(p.id in scores))) { rescored = true; scores = scoring = null; }
+    const searching = all.length > 1 || Boolean(view.folderSearch); // champ gardé tant qu'un filtre s'applique
+    const busy = h("span", { class: "busy", "aria-live": "polite" }, h("span", { class: "spinner" }), t("library.folder.scoring"));
+    if (searching && view.folderSort === "relevance" && !scores) loadScores();
     // articles du dossier : redessinés seuls pendant la frappe (le champ de recherche garde le focus)
     const count = h("span", { class: "muted small" });
     const cards = h("div", {});
     const drawMembers = () => {
+      busy.hidden = !(view.folderSort === "relevance" && !scores);
       const members = all.filter((p) => matchesWords(p, view.folderSearch)).sort(folderSorter(scores));
       count.textContent = members.length === all.length ? tn("feed.count", all.length)
         : t("library.folder.matching", { n: members.length, total: all.length });
@@ -356,12 +374,13 @@ export async function renderLibrary(root) {
     const search = h("input", { class: "text-input folder-search-input", type: "search", value: view.folderSearch,
       placeholder: t("library.folder.search"), "aria-label": t("library.folder.search"), autocomplete: "off", spellcheck: "false",
       dataset: { focus: "folder-search" }, oninput: () => { view.folderSearch = search.value; drawMembers(); } });
-    const sort = all.length > 1 && h("div", { class: "folder-sort" },
+    redrawMembers = drawMembers;
+    const sort = searching && h("div", { class: "folder-sort" },
       h("span", { class: "folder-sort-label", id: "folder-sort-label" }, t("library.folder.sort")),
       h("span", { class: "segmented search-segmented", role: "radiogroup", "aria-labelledby": "folder-sort-label" }, FOLDER_SORTS.map((key) => h("label", {},
         h("input", { type: "radio", name: "folder-sort", value: key, checked: key === view.folderSort, dataset: { focus: `folder-sort:${key}` },
           onchange: () => { view.folderSort = key; keepFocus(drawPanel); } }), t(`library.folderSort.${key}`)))),
-      waiting && h("span", { class: "busy" }, h("span", { class: "spinner" }), t("library.folder.scoring")),
+      busy,
       h("span", { class: "search-field folder-search" }, h("span", { class: "search-icon", html: icons.search }), search));
     if (!renaming) renameForm = null;
     renameForm ||= renaming && nameForm(folder.name, async (name) => { await api.renameFolder(folder.id, name); renaming = false; await reloadFolders(); },
@@ -395,8 +414,7 @@ export async function renderLibrary(root) {
 
   let panelOpening = false;
   function toggleFolder(id) {
-    view.openFolder = view.openFolder === id ? null : id;
-    view.folderSearch = ""; // recherche propre au dossier ouvert
+    openFolder(view.openFolder === id ? null : id);
     panelOpening = view.openFolder !== null;
     renaming = false;
     drawFolders();
@@ -411,7 +429,7 @@ export async function renderLibrary(root) {
       await reloadFolders();
       toast(t("library.folder.deleted", { name: removed.name }), { action: { label: t("common.undo"),
         onClick: () => api.createFolder(removed.name, removed.papers).then((again) => {
-          view.openFolder = again.id;
+          openFolder(again.id);
           panelOpening = true;
           return reloadFolders();
         }, toastError) } });

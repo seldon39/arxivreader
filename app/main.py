@@ -529,10 +529,14 @@ async def feed_items(view: str = "arxiv", day: str | None = None):
     days = feed.known_days()
     if view == "arxiv" and day:
         try:
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+                raise ValueError(day)
             date.fromisoformat(day)
         except ValueError:
             raise HTTPException(400, "Bad day")
-        if day not in days and day <= _now()[:10]:  # jour pas encore chargé : demandé à l'OAI-PMH d'arXiv
+        # jour pas encore chargé, ou chargé sans les nouvelles versions alors que l'OAI-PMH peut les donner
+        stale = day in (settings.get("feed.partialDays") or []) and feed.oai_available(day)
+        if (day not in days or stale) and day <= _now()[:10]:
             try:
                 await run_in_threadpool(feed.fetch_day, day, settings.get("feedCategories") or None,
                                         settings.get("s2ApiKey") or None)

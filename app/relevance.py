@@ -114,7 +114,7 @@ def cached_embeddings(keys):
     return {r["key"]: json.loads(r["vector"]) if r["vector"] else None for r in rows}
 
 
-def fetch_embeddings(keys, api_key=None):
+def fetch_embeddings(keys, api_key=None, timeout=60):
     """Demande à Semantic Scholar les vecteurs manquants (par lots de 500) ; inconnus mémorisés comme NULL
     et redemandés après deux jours (les nouveaux articles y arrivent avec un peu de retard)."""
     keys = list(dict.fromkeys(k for k in keys if k))
@@ -126,7 +126,7 @@ def fetch_embeddings(keys, api_key=None):
         }
     missing = [k for k in keys if k not in known]
     headers = {"User-Agent": USER_AGENT, **({"x-api-key": api_key} if api_key else {})}
-    with httpx.Client(headers=headers, timeout=60) as client:
+    with httpx.Client(headers=headers, timeout=timeout) as client:
         for start in range(0, len(missing), 500):
             batch = missing[start:start + 500]
             response = with_retry(lambda: client.post(S2_BATCH, params={"fields": "embedding.specter_v2"}, json={"ids": batch}),
@@ -150,7 +150,7 @@ def library_relevance(api_key=None):
     items = [{"key": p["id"], "arxiv_id": p["arxiv_id"], "title": p["title"] or "", "abstract": p["abstract"] or "",
               "authors": p["authors"]} for p in db.list_papers()]
     try:
-        fetch_embeddings([s2_key(i["arxiv_id"]) for i in items], api_key)
+        fetch_embeddings([s2_key(i["arxiv_id"]) for i in items], api_key, timeout=15)  # le tri attend : délai court
     except Exception:
         pass  # sans réseau : vecteurs déjà connus et vocabulaire seulement
     score_items(items, skip_self=True)

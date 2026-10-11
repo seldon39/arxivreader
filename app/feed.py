@@ -3,6 +3,7 @@ et repérage d'articles arXiv dans un texte collé (e-mail Scholar Inbox, export
 
 import json
 import re
+import threading
 import time
 import unicodedata
 import xml.etree.ElementTree as ET
@@ -141,7 +142,12 @@ def parse_rss(xml_text):
 FOLLOWED_DAYS = 45  # articles récents des auteurs suivis : section du feed, alertes
 
 
-def _store(connection, item, followed=False):
+def _store(connection, item, followed=False, keep_announce=False):
+    """`keep_announce` : jour et type d'annonce approchés (API de recherche) ; ceux déjà connus par le RSS
+    ou l'OAI-PMH ne sont pas remplacés."""
+    announce = ("announce_type = CASE WHEN feed_items.in_arxiv = 1 THEN feed_items.announce_type ELSE excluded.announce_type END, "
+                "announced = CASE WHEN feed_items.in_arxiv = 1 THEN feed_items.announced ELSE excluded.announced END, "
+                if keep_announce else "announce_type = excluded.announce_type, announced = excluded.announced, ")
     connection.execute(
         f"""INSERT INTO feed_items (key, arxiv_id, version, title, authors, abstract, categories,
                primary_category, announce_type, announced, in_arxiv, followed, link, fetched_at)
@@ -150,8 +156,8 @@ def _store(connection, item, followed=False):
            ON CONFLICT(key) DO UPDATE SET {"followed = 1" if followed else
                "version = excluded.version, title = excluded.title, authors = excluded.authors, "
                "abstract = excluded.abstract, categories = excluded.categories, "
-               "primary_category = excluded.primary_category, announce_type = excluded.announce_type, "
-               "announced = excluded.announced, in_arxiv = 1, link = excluded.link"}""",
+               "primary_category = excluded.primary_category, " + announce +
+               "in_arxiv = 1, link = excluded.link"}""",
         {**item, "authors": json.dumps(item["authors"], ensure_ascii=False), "categories": json.dumps(item["categories"]),
          "announce_type": item.get("announce_type"), "in_arxiv": 0 if followed else 1, "followed": 1 if followed else 0,
          "fetched_at": _now()},
@@ -218,7 +224,7 @@ def parse_oai_day(xml_text, day, categories):
     """Notices arXivRaw d'une date d'annonce → articles de vos catégories, classés comme dans le RSS :
     une seule version → nouveau (ou croisé si la catégorie principale n'est pas suivie) ;
     version récente → nouvelle version ; sinon simple mise à jour des métadonnées, ignorée."""
-    wanted = set(categories)
+    wanted = _followed(categories)
     root = ET.fromstring(xml_text)
     items = []
     for raw in root.iter(f"{RAW}arXivRaw"):
@@ -255,6 +261,19 @@ OAI_DAYS = 7
 OAI_TIMEOUT = httpx.Timeout(40, connect=10, read=25)
 OAI_PAUSE = 3600  # après un échec, l'OAI-PMH n'est plus essayé pendant une heure
 _oai_failed = None  # moment (time.monotonic) du dernier échec
+_day_lock = threading.Lock()  # un jour chargé à la fois (réglages feed.days lus puis réécrits)
+# math-ph est aussi math.MP : suivre l'une, c'est suivre l'autre
+ALIASES = {"math-ph": "math.MP", "math.MP": "math-ph"}
+
+
+def _followed(categories):
+    return set(categories) | {ALIASES[c] for c in categories if c in ALIASES}
+
+
+def oai_available(day):
+    """Jour assez récent pour l'OAI-PMH, et pas d'échec de celui-ci dans l'heure."""
+    recent = date.fromisoformat(day) >= datetime.now(timezone.utc).date() - timedelta(days=OAI_DAYS)
+    return recent and (_oai_failed is None or time.monotonic() - _oai_failed > OAI_PAUSE)
 NEW_YORK = ZoneInfo("America/New_York")
 
 
@@ -289,7 +308,8 @@ def submission_window(day):
     end = previous_weekday(date.fromisoformat(day))
     start = previous_weekday(end)
     at = lambda d: datetime.combine(d, clock(14), NEW_YORK).astimezone(timezone.utc)
-    return at(start), at(end)
+    # bornes comprises par l'API : la minute de 14 h appartient au jour suivant seulement
+    return at(start), at(end) - timedelta(minutes=1)
 
 
 def _fetch_day_api(day, categories):
@@ -299,11 +319,13 @@ def _fetch_day_api(day, categories):
     start, end = submission_window(day)
     stamp = lambda moment: moment.strftime("%Y%m%d%H%M")
     expression = f"({' OR '.join(f'cat:{c}' for c in categories)}) AND submittedDate:[{stamp(start)} TO {stamp(end)}]"
-    wanted = set(categories)
+    wanted = _followed(categories)
     items, offset, total = [], 0, 1
     while offset < min(total, 3000):
         page, total = search._fetch(expression, None, "newest", offset, 500)
         if not page:
+            if offset < total:  # page vide passagère : surtout ne pas retenir « aucune annonce »
+                raise FeedError("Réponse incomplète de l'API d'arXiv, réessayez")
             break
         offset += len(page)
         for item in page:
@@ -315,23 +337,27 @@ def _fetch_day_api(day, categories):
 
 def fetch_day(day, categories=None, api_key=None):
     """Annonces d'un jour passé (date YYYY-MM-DD) ; 0 si arXiv n'a rien annoncé ce jour-là."""
+    with _day_lock:
+        return _fetch_day(day, categories or FEED_CATEGORIES, api_key)
+
+
+def _fetch_day(day, categories, api_key):
     global _oai_failed
-    categories = categories or FEED_CATEGORIES
     today = datetime.now(timezone.utc).date()
-    partial = False
-    if date.fromisoformat(day) >= today - timedelta(days=OAI_DAYS) and (_oai_failed is None or time.monotonic() - _oai_failed > OAI_PAUSE):
+    if date.fromisoformat(day).weekday() >= 5:
+        return 0  # pas d'annonce le week-end
+    partial = not oai_available(day)
+    if not partial:
         try:
             items = _fetch_day_oai(day, categories)
-        except (httpx.TimeoutException, httpx.TransportError, httpx.HTTPStatusError, ET.ParseError):
+        except (httpx.HTTPError, ET.ParseError):
             _oai_failed = time.monotonic()
             partial = True
-    else:
-        partial = True
     if partial:
         items = _fetch_day_api(day, categories)
     with db.connect() as connection:
         for item in items:
-            _store(connection, item)
+            _store(connection, item, keep_announce=partial)
     try:
         relevance.fetch_embeddings([relevance.s2_key(i["arxiv_id"]) for i in items], api_key)
     except Exception:

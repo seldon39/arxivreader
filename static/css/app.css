@@ -966,7 +966,7 @@ dialog.figure-viewer::backdrop { background: rgba(20, 20, 24, .6); -webkit-backd
 }
 .card > * { grid-column: 1; }
 .card:hover { border-color: var(--border); box-shadow: none; background: color-mix(in srgb, var(--surface-hover) 55%, transparent); }
-.card-title { font-size: 18.5px; }
+.card-title { font-size: 18.5px; overflow-wrap: anywhere; }
 .card-authors { color: var(--text); opacity: .82; font-size: 14.5px; -webkit-line-clamp: 1; }
 .card-reading { margin-top: 0; font-size: 13px; }
 /* boutons en bas à droite, comme dans le feed ; visibles au survol (toujours sur écran tactile) */

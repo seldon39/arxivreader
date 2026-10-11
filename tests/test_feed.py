@@ -79,11 +79,11 @@ class SubmissionWindow(unittest.TestCase):
     def test_weekdays(self):
         from app.feed import submission_window
         start, end = submission_window("2026-10-07")  # mercredi : du lundi au mardi (heure d'été, UTC-4)
-        self.assertEqual((start.isoformat(), end.isoformat()), ("2026-10-05T18:00:00+00:00", "2026-10-06T18:00:00+00:00"))
+        self.assertEqual((start.isoformat(), end.isoformat()), ("2026-10-05T18:00:00+00:00", "2026-10-06T17:59:00+00:00"))
         start, end = submission_window("2026-10-06")  # mardi : du vendredi au lundi
-        self.assertEqual((start.isoformat(), end.isoformat()), ("2026-10-02T18:00:00+00:00", "2026-10-05T18:00:00+00:00"))
+        self.assertEqual((start.isoformat(), end.isoformat()), ("2026-10-02T18:00:00+00:00", "2026-10-05T17:59:00+00:00"))
         start, end = submission_window("2026-12-07")  # lundi, heure d'hiver (UTC-5) : du jeudi au vendredi
-        self.assertEqual((start.isoformat(), end.isoformat()), ("2026-12-03T19:00:00+00:00", "2026-12-04T19:00:00+00:00"))
+        self.assertEqual((start.isoformat(), end.isoformat()), ("2026-12-03T19:00:00+00:00", "2026-12-04T18:59:00+00:00"))
 
 
 class PastDayFallback(unittest.TestCase):
@@ -99,21 +99,21 @@ class PastDayFallback(unittest.TestCase):
         stored = []
         with mock.patch.object(feed, "_fetch_day_oai", side_effect=AssertionError("OAI")), \
              mock.patch.object(search, "_fetch", return_value=(page, 2)) as fetch, \
-             mock.patch.object(feed, "_store", side_effect=lambda c, item: stored.append(item)), \
+             mock.patch.object(feed, "_store", side_effect=lambda c, item, **_: stored.append(item)), \
              mock.patch.object(feed.relevance, "fetch_embeddings"), \
              mock.patch.object(feed.db, "connect"), mock.patch.object(feed.db, "get_settings", return_value={}), \
              mock.patch.object(feed.db, "save_settings") as save:
             self.assertEqual(feed.fetch_day("2020-10-01", ["math.DG", "math.SP"]), 2)
-        self.assertIn("submittedDate:[202009291800 TO 202009301800]", fetch.call_args[0][0])
+        self.assertIn("submittedDate:[202009291800 TO 202009301759]", fetch.call_args[0][0])
         self.assertEqual([(i["announce_type"], i["announced"]) for i in stored], [("new", "2020-10-01"), ("cross", "2020-10-01")])
         self.assertEqual(save.call_args[0][0]["feed.partialDays"], ["2020-10-01"])
 
     def test_slow_oai_falls_back(self):
-        from datetime import date
+        from datetime import date, timedelta
         from unittest import mock
         import httpx
         from app import feed, search
-        day = date.today().isoformat()
+        day = next(d for d in (date.today() - timedelta(days=k) for k in range(7)) if d.weekday() < 5).isoformat()
         with mock.patch.object(feed, "_oai_failed", None), \
              mock.patch.object(feed, "_fetch_day_oai", side_effect=httpx.ReadTimeout("slow")) as oai, \
              mock.patch.object(search, "_fetch", return_value=([], 0)) as fetch, \
@@ -125,3 +125,58 @@ class PastDayFallback(unittest.TestCase):
             oai.reset_mock()
             feed.fetch_day(day, ["math.DG"])  # échec récent : l'OAI-PMH n'est pas réessayé
             self.assertFalse(oai.called)
+
+
+class PastDayGuards(unittest.TestCase):
+    """Jours anciens : week-end, page vide passagère, jour d'annonce déjà connu."""
+
+    def setUp(self):
+        import pathlib, tempfile
+        from app import db
+        self.saved = (db.DB_PATH, db.LIBRARY)
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        db.DB_PATH, db.LIBRARY = tmp / "test.db", tmp
+        db.init()
+
+    def tearDown(self):
+        from app import db
+        db.DB_PATH, db.LIBRARY = self.saved
+
+    def test_weekend_is_not_fetched(self):
+        from unittest import mock
+        from app import feed, search
+        with mock.patch.object(search, "_fetch") as fetch, mock.patch.object(feed, "_fetch_day_oai") as oai:
+            self.assertEqual(feed.fetch_day("2020-10-03", ["math.DG"]), 0)  # samedi
+        self.assertFalse(fetch.called or oai.called)
+
+    def test_empty_page_is_an_error_not_an_empty_day(self):
+        from unittest import mock
+        from app import db, feed, search
+        with mock.patch.object(search, "_fetch", return_value=([], 40)):
+            with self.assertRaises(feed.FeedError):
+                feed.fetch_day("2020-10-01", ["math.DG"])
+        self.assertNotIn("2020-10-01", db.get_settings().get("feed.days") or {})
+
+    def test_known_announcement_kept(self):
+        from unittest import mock
+        from app import db, feed, search
+        item = {"key": "2009.00001", "arxiv_id": "2009.00001", "version": 2, "title": "A", "authors": ["X"], "abstract": "",
+                "categories": ["math.DG"], "primary_category": "math.DG", "announced": "2020-10-05", "announce_type": "replace",
+                "link": ""}
+        with db.connect() as connection:
+            feed._store(connection, item)  # vu par le RSS : nouvelle version annoncée le 5 octobre
+        with mock.patch.object(search, "_fetch", return_value=([dict(item, announced="2020-09-30")], 1)), \
+             mock.patch.object(feed.relevance, "fetch_embeddings"):
+            feed.fetch_day("2020-10-01", ["math.DG"])
+        with db.connect() as connection:
+            row = connection.execute("SELECT announced, announce_type FROM feed_items WHERE key = '2009.00001'").fetchone()
+        self.assertEqual((row["announced"], row["announce_type"]), ("2020-10-05", "replace"))
+
+    def test_math_ph_follows_math_mp(self):
+        from unittest import mock
+        from app import feed, search
+        page = [{"key": "2009.00002", "arxiv_id": "2009.00002", "version": 1, "title": "B", "authors": [], "abstract": "",
+                 "categories": ["math-ph", "math.MP"], "primary_category": "math-ph", "announced": "", "link": ""}]
+        with mock.patch.object(search, "_fetch", return_value=(page, 1)):
+            items = feed._fetch_day_api("2020-10-01", ["math.MP"])
+        self.assertEqual(items[0]["announce_type"], "new")
