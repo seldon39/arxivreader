@@ -82,10 +82,13 @@ API does not support them: DOI, ORCID, MSC/ACM classes, license. At most one req
 
 ## Related papers
 
-The "Related papers" tab (in the spirit of Connected Papers) shows the 30 papers closest to a paper, chosen by
+The "Related papers" tab (in the spirit of Connected Papers) shows the 40 papers closest to a paper, chosen by
 its arXiv link, from the library (menu, or the ⊙ button of each card), or dropped in the frame. Candidates: its
-references and the papers citing it (Semantic Scholar); closeness: shared references and papers citing them
-together. List (all, prior, derivative) and graph: the closer two papers, the nearer they are drawn; size by
+references, the papers citing it and those these neighbours often cite (Semantic Scholar); closeness: shared
+references and papers citing them together, relative to the size of the lists (a classic cited everywhere does
+not crowd out a close work). Tabs: the graph, prior works (those most cited by the papers in the graph: often
+the seminal works) and derivative works (those citing the most papers in the graph: surveys, recent work);
+choosing one highlights the papers in the graph linked to it. Graph: the closer two papers, the nearer they are drawn; size by
 citations, colour by year, a ring for those in the library; pinch (or ⌘ + scroll) to zoom, drag the background to move. The
 chosen paper can be read, added to the library, filed in a folder (or dragged onto one), or become the start of a
 new graph. A graph is kept fifteen days ("Rebuild" to redo it). Without a Semantic Scholar API key, building may

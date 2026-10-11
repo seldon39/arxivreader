@@ -1290,6 +1290,8 @@ body.has-selection-bar #toast { bottom: 96px; }
 .related-item.on { background: color-mix(in srgb, var(--surface-hover) 85%, transparent); box-shadow: inset 3px 0 0 var(--accent); }
 .related-item-title { font: 600 14px/1.3 var(--font-read); color: var(--text); text-decoration: none; }
 .related-in-library { color: var(--accent); font-weight: 600; }
+.related-item.linked:not(.on) { background: color-mix(in srgb, var(--accent-soft) 55%, transparent); box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 50%, transparent); }
+.related-empty { padding: 10px 8px; margin: 0; }
 .related-graph { position: relative; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; }
 .related-graph svg { display: block; width: 100%; height: auto; aspect-ratio: 800 / 460; cursor: grab; touch-action: none; }
 .related-graph svg:active { cursor: grabbing; }
@@ -1299,6 +1301,9 @@ body.has-selection-bar #toast { bottom: 96px; }
 .related-node.in-library circle { stroke: var(--accent-strong); stroke-width: 2.5; }
 .related-node.origin circle { stroke: var(--accent-strong); stroke-width: 2; }
 .related-node.selected circle { stroke: var(--text); stroke-width: 2.5; }
+.related-node.linked circle { stroke: var(--accent-strong); stroke-width: 2.5; }
+.related-graph svg.focus-links .related-node:not(.linked):not(.origin), .related-graph svg.focus-links .related-edge { opacity: .25; }
+.related-graph svg.focus-links .related-node.linked text { fill: var(--text); font-weight: 600; }
 .related-node:focus-visible { outline: none; }
 .related-node:focus-visible circle { stroke: var(--focus); stroke-width: 3; }
 .related-node text { font: 10px var(--font-ui); fill: var(--muted); pointer-events: none; }

@@ -83,10 +83,14 @@ d'arXiv : DOI, ORCID, classes MSC/ACM, licence. Une requête au plus toutes les 
 
 ## Papiers liés
 
-L'onglet « Papiers liés » (à la manière de Connected Papers) montre les 30 articles les plus proches d'un
+L'onglet « Papiers liés » (à la manière de Connected Papers) montre les 40 articles les plus proches d'un
 article, choisi par son lien arXiv, dans la bibliothèque (menu, ou bouton ⊙ de chaque carte), ou glissé dans le
-cadre. Candidats : ses références et les articles qui le citent (Semantic Scholar) ; proximité : références
-communes et articles qui les citent ensemble. Liste (tous, antérieurs, dérivés) et graphe : plus deux articles
+cadre. Candidats : ses références, les articles qui le citent et ceux que ces voisins citent souvent (Semantic
+Scholar) ; proximité : références communes et articles qui les citent ensemble, rapportées à la taille des
+listes (un classique cité partout n'écrase pas un travail proche). Onglets : le graphe, les travaux antérieurs
+(les plus cités par les articles du graphe : souvent les travaux fondateurs) et les travaux dérivés (ceux qui
+citent le plus d'articles du graphe : synthèses, travaux récents) ; en choisir un fait ressortir les articles
+du graphe qui lui sont liés. Graphe : plus deux articles
 sont proches, plus ils sont rapprochés ; taille selon les citations, couleur selon l'année, cercle pour ceux de la
 bibliothèque ; pincement du trackpad (ou ⌘ + molette) pour zoomer, glisser le fond pour se déplacer. L'article choisi se lit, s'ajoute à la
 bibliothèque, se range dans un dossier (ou s'y glisse), ou devient le point de départ d'un nouveau graphe. Un

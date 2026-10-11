@@ -1,6 +1,7 @@
 // Onglet « Papiers liés » (à la manière de Connected Papers) : les articles les plus proches d'un article,
-// d'après Semantic Scholar (références communes et co-citations), en liste et en graphe. On choisit
-// l'article par son lien arXiv, dans la bibliothèque, ou en le glissant dans le cadre.
+// d'après Semantic Scholar (références communes et co-citations), en liste et en graphe, avec à côté les
+// travaux antérieurs (les plus cités par le graphe) et dérivés (ceux qui citent le plus d'articles du graphe).
+// On choisit l'article par son lien arXiv, dans la bibliothèque, ou en le glissant dans le cadre.
 
 import { api } from "./api.js";
 import { t, tn } from "./i18n.js";
@@ -10,7 +11,8 @@ import { typesetTex } from "./math.js";
 
 // dernier graphe et choix, gardés le temps de la session (retour depuis le lecteur : tout est là)
 // `pending` : construction en cours (gardée si l'on quitte la page : le graphe s'affichera au retour)
-const state = { query: "", graph: null, selected: null, tab: "all", pending: null };
+const state = { query: "", graph: null, selected: null, tab: "graph", pending: null };
+const TABS = { graph: "nodes", prior: "prior", derivative: "derivative" }; // onglet → liste du graphe
 const SVG = "http://www.w3.org/2000/svg";
 const W = 800;
 const H = 460;
@@ -106,19 +108,34 @@ export async function renderRelated(root, arxivFromRoute = null) {
       return;
     }
     const tabs = h("div", { class: "segmented search-segmented related-tabs", role: "radiogroup", "aria-label": t("related.show") },
-      ["all", "ref", "cite"].map((key) => h("label", {}, h("input", { type: "radio", name: "related-tab", value: key, checked: state.tab === key,
-        onchange: () => { state.tab = key; drawList(); } }), t(`related.tab.${key}`))));
+      Object.keys(TABS).map((key) => h("label", { title: t(`related.tabHint.${key}`) }, h("input", { type: "radio", name: "related-tab", value: key,
+        checked: state.tab === key, onchange: () => { state.tab = key; drawList(); } }), t(`related.tab.${key}`))));
     const list = h("div", { class: "related-list" });
     const graphBox = h("div", { class: "related-graph" });
     const detail = h("div", { class: "related-detail" });
+    // article choisi : du graphe, ou d'une des listes (antérieurs, dérivés) ; ceux qui lui sont liés ressortent
+    const papers = () => [...graph.nodes, ...(graph.prior || []), ...(graph.derivative || [])];
+    const chosen = () => papers().find((x) => x.id === state.selected) || graph.nodes[0];
+    const marks = () => {
+      const n = chosen();
+      for (const item of list.querySelectorAll(".related-item")) {
+        item.classList.toggle("on", item.dataset.id === n.id);
+        const other = papers().find((x) => x.id === item.dataset.id);
+        item.classList.toggle("linked", Boolean(other?.links?.includes(n.id)));
+      }
+    };
     const select = (id) => {
       state.selected = id;
-      for (const item of list.querySelectorAll(".related-item")) item.classList.toggle("on", item.dataset.id === id);
+      marks();
       drawDetail();
       highlight();
     };
     function drawList() {
-      const shown = graph.nodes.filter((n) => state.tab === "all" || n.rel === state.tab);
+      const shown = graph[TABS[state.tab]] || [];
+      if (!shown.length) {
+        list.replaceChildren(h("p", { class: "muted small related-empty" }, t(`related.emptyTab.${state.tab}`)));
+        return;
+      }
       list.replaceChildren(...shown.map((n) => {
         // titre : un lien (pour le glisser sur un dossier) qui choisit l'article ; sans arXiv, l'élément se choisit au clavier
         const title = n.arxivId ? h("a", { class: "related-item-title", href: `https://arxiv.org/abs/${n.arxivId}`,
@@ -126,25 +143,25 @@ export async function renderRelated(root, arxivFromRoute = null) {
           : h("span", { class: "related-item-title" }, withMath(tidyTitle(n.title)));
         const item = h("div", { class: `related-item${n.id === state.selected ? " on" : ""}`, dataset: { id: n.id }, onclick: () => select(n.id),
           tabindex: n.arxivId ? null : 0, onkeydown: (e) => { if (!n.arxivId && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); select(n.id); } } }, title,
-          h("span", { class: "muted small" }, [authorLine(n.authors), n.year, tn("related.citations", n.citations),
-            t(n.rel === "ref" ? "related.prior" : "related.derived")].filter(Boolean).join(" · "),
+          h("span", { class: "muted small" }, [authorLine(n.authors), n.year, tn("related.citations", n.citations), relation(n)].filter(Boolean).join(" · "),
             n.libraryId ? h("span", { class: "related-in-library" }, ` · ${t("related.inLibrary")}`) : ""));
         // glissé (par son titre) sur un dossier de la bibliothèque, comme les cartes du feed
         return draggablePaper(item, { arxivId: n.arxivId, paperId: n.libraryId, title: n.title });
       }));
+      marks();
       typesetTex([list]).catch(() => {});
     }
     function drawDetail() {
-      const n = graph.nodes.find((x) => x.id === state.selected) || graph.nodes[0];
+      const n = chosen();
       detail.replaceChildren(
         h("h3", {}, withMath(tidyTitle(n.title))),
         h("p", { class: "muted small" }, [n.authors.join(", "), n.year, tn("related.citations", n.citations),
-          t("related.closeness", { shared: n.coupling, cocited: n.cocited })].filter(Boolean).join(" · ")),
+          n.links ? relation(n) : t("related.closeness", { shared: n.coupling, cocited: n.cocited })].filter(Boolean).join(" · ")),
         h("div", { class: "related-actions" }, ...actions(n, () => { drawList(); drawDetail(); highlight(); })));
       if (!mounted) return;
       typesetTex([detail]).catch(() => {});
     }
-    const { svg, highlight } = drawGraph(graph, () => state.selected, select);
+    const { svg, highlight } = drawGraph(graph, chosen, select);
     graphBox.append(svg, h("div", { class: "related-legend" },
       h("span", {}, h("i", { class: "legend-old" }), t("related.legend.old")), h("span", {}, h("i", { class: "legend-new" }), t("related.legend.new")),
       h("span", {}, t("related.legend.size")), h("span", {}, h("i", { class: "legend-library" }), t("related.inLibrary"))));
@@ -219,6 +236,8 @@ export async function renderRelated(root, arxivFromRoute = null) {
   return () => { mounted = false; };
 }
 
+// lien avec l'article (graphe) ou avec le graphe (travaux antérieurs et dérivés)
+const relation = (n) => (n.links ? tn(n.rel === "cite" ? "related.citesGraph" : "related.citedByGraph", n.links.length) : t(`related.rel.${n.rel}`));
 const authorLine = (authors) => !authors?.length ? "" : authors.length > 3 ? `${authors.slice(0, 2).join(", ")} ${t("feed.etAl")}` : authors.join(", ");
 const shortTitle = (title) => (title.length > 60 ? `${title.slice(0, 58)}…` : title);
 const lastName = (name) => String(name || "").trim().split(/\s+/).at(-1) || "";
@@ -229,7 +248,7 @@ function layout(graph) {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const links = graph.edges.map(([a, b, s]) => ({ a: byId.get(a), b: byId.get(b), s })).filter((l) => l.a && l.b);
   const origin = byId.get("__origin");
-  for (const n of nodes) if (!n.origin) links.push({ a: origin, b: n, s: Math.max(1, n.score / 3) });
+  for (const n of nodes) if (!n.origin) links.push({ a: origin, b: n, s: Math.max(1, n.score / 10) });
   // départ déterministe : en spirale, les plus proches au centre
   nodes.forEach((n, i) => { const r = 30 + 14 * i, a = i * 2.4; n.x = Math.cos(a) * r; n.y = Math.sin(a) * r; });
   origin.x = origin.y = 0;
@@ -284,10 +303,14 @@ function drawGraph(graph, selected, select) {
     }
     groups.set(n.id, g);
   }
-  // choisi, et « dans la bibliothèque » (un article ajouté depuis le panneau prend aussitôt son cercle)
+  // choisi (ou, pour un travail antérieur ou dérivé, les articles du graphe qui lui sont liés), et « dans la
+  // bibliothèque » (un article ajouté depuis le panneau prend aussitôt son cercle)
   const highlight = () => {
+    const chosen = selected();
+    svg.classList.toggle("focus-links", Boolean(chosen.links)); // les autres articles s'effacent
     for (const [id, g] of groups) {
-      g.classList.toggle("selected", id === selected());
+      g.classList.toggle("selected", id === chosen.id);
+      g.classList.toggle("linked", Boolean(chosen.links?.includes(id === "__origin" ? "origin" : id)));
       const paper = graph.nodes.find((n) => n.id === id);
       if (paper) g.classList.toggle("in-library", Boolean(paper.libraryId));
     }
