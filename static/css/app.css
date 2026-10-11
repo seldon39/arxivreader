@@ -831,6 +831,9 @@ mark.hl:hover { filter: brightness(.95); }
 .ai-ask-row .spacer { flex: 1; }
 .ai-ask-row .button { height: 32px; padding: 0 12px; font-size: 14px; }
 .ai-model { height: 32px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); font: 14px var(--font-ui); padding: 0 6px; }
+/* modèle et niveau de réflexion côte à côte (l'un sous l'autre si le panneau est étroit) */
+.ai-model-picker { display: inline-flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.ai-model-picker .ai-model { max-width: 100%; }
 .ai-hint { margin: 0; }
 .ai-chip { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-soft); }
 .ai-chip .ai-quote { grid-column: 1 / -1; }

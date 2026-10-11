@@ -1,6 +1,6 @@
 // Réglages de l'interface, enregistrés côté serveur (library/arxivreader.db).
 
-import { PROVIDERS, assistantName, setupNotice } from "./aiproviders.js";
+import { PROVIDERS, assistantName, modelControls, setupNotice } from "./aiproviders.js";
 import { api } from "./api.js";
 import { applyStatic, setAIName, setLanguage, t } from "./i18n.js";
 import { updatesSection } from "./updates.js";
@@ -92,9 +92,6 @@ async function renderAISettings(holder, keepFocus = null) {
       // texte masqué plutôt que « password » : Safari ne propose pas d'enregistrer un mot de passe
       h("input", { class: "text-input secret-input", type: "text", name: "geminiApiKey", value: settings.geminiApiKey || "",
         autocomplete: "off", spellcheck: "false", placeholder: t("settings.geminiKeyPlaceholder") })),
-    models.length > 0 && h("label", { class: "row" }, h("span", {}, t("settings.geminiModel")),
-      h("select", { class: "text-input", name: "aiGeminiModel" },
-        models.map((model) => h("option", { value: model, selected: model === settings.aiGeminiModel }, model)))),
   ];
   const fields = provider === "gemini" ? geminiFields : provider !== "local" ? [] : [
     h("label", { class: "row" }, h("span", {}, t("settings.aiLocalUrl")),
@@ -104,7 +101,15 @@ async function renderAISettings(holder, keepFocus = null) {
       h("select", { class: "text-input", name: "aiLocalModel" },
         models.map((model) => h("option", { value: model, selected: model === settings.aiLocalModel }, model)))),
   ];
-  line.replaceWith(...fields.filter(Boolean),
+  // modèle et niveau de réflexion (assistant prêt ; modèle local : son choix ci-dessus)
+  const [modelChoice, effortChoice] = provider === "local" ? [null, null]
+    : modelControls({ ...status, provider }, () => renderAISettings(holder, document.activeElement?.name));
+  const choices = [
+    modelChoice && h("label", { class: "row" }, h("span", {}, t("ai.model")), modelChoice),
+    effortChoice && h("label", { class: "row" }, h("span", {}, t("ai.effort")), effortChoice),
+    effortChoice && h("p", { class: "hint" }, t("settings.effortHint")),
+  ];
+  line.replaceWith(...fields.filter(Boolean), ...choices.filter(Boolean),
     status.loggedIn ? h("p", { class: "hint ai-ready" }, `✓ ${t("settings.aiReady")}`)
       : setupNotice({ ...status, provider }, () => renderAISettings(holder)));
   if (keepFocus && !holder.contains(document.activeElement)) holder.querySelector(`[name="${keepFocus}"]`)?.focus();

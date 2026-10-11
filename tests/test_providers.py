@@ -70,6 +70,31 @@ class Providers(unittest.TestCase):
         instructions = next(a for a in log["argv"] if a.startswith("model_instructions_file="))
         self.assertEqual(pathlib.Path(json.loads(instructions.split("=", 1)[1])).read_text(), "SYSTEM")
 
+    def test_codex_model_and_effort(self):
+        self.events({"type": "item.completed", "item": {"type": "agent_message", "text": "ok"}})
+        asyncio.run(collect(providers.stream_codex("S", "P", "gpt-6-luna", "high")))
+        argv = self.log()["argv"]
+        self.assertEqual(argv[argv.index("-m") + 1], "gpt-6-luna")
+        self.assertIn('model_reasoning_effort="high"', argv)
+        asyncio.run(collect(providers.stream_codex("S", "P", "bad model; rm", "turbo")))  # refusés : réglages de Codex
+        argv = self.log()["argv"]
+        self.assertNotIn("-m", argv)
+        self.assertFalse(any("model_reasoning_effort" in a for a in argv))
+
+    def test_codex_models_from_its_cache(self):
+        from unittest import mock
+        home = self.tmp / "home"
+        (home / ".codex").mkdir(parents=True)
+        (home / ".codex" / "models_cache.json").write_text(json.dumps({"models": [
+            {"slug": "gpt-old", "display_name": "Old", "visibility": "list", "priority": 9,
+             "supported_reasoning_levels": [{"effort": "low"}, {"effort": "ultra"}]},
+            {"slug": "gpt-new", "display_name": "New", "visibility": "list", "priority": 4,
+             "supported_reasoning_levels": [{"effort": "medium"}, {"effort": "weird"}]},
+            {"slug": "gpt-hidden", "visibility": "hide", "priority": 1}]}))
+        with mock.patch.object(providers.Path, "home", return_value=home):
+            models = providers.codex_models()
+        self.assertEqual([(m["value"], m["levels"]) for m in models], [("gpt-new", ["medium"]), ("gpt-old", ["low", "ultra"])])
+
     def test_codex_errors(self):
         self.events({"type": "error", "message": "Not logged in"}, exit=1)
         with self.assertRaises(providers.ProviderError) as caught:
@@ -208,6 +233,10 @@ class Gemini(unittest.TestCase):
             def do_POST(self):
                 Handler.path_seen, Handler.key = self.path, self.headers.get("x-goog-api-key")
                 Handler.body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                Handler.bodies = getattr(Handler, "bodies", []) + [Handler.body]
+                if "generationConfig" in Handler.body and "old" in self.path:
+                    return self.reply(400, {"error": {"code": 400, "message": "Thinking level is not supported for this model.",
+                                                      "status": "INVALID_ARGUMENT"}})
                 if Handler.key == "tired":
                     return self.reply(429, {"error": {"code": 429, "message": "Quota exceeded", "status": "RESOURCE_EXHAUSTED"}})
                 self.send_response(200)
@@ -236,6 +265,14 @@ class Gemini(unittest.TestCase):
         self.assertIn("/models/gemini-flash-latest:streamGenerateContent", self.handler.path_seen)
         self.assertEqual(self.handler.body["systemInstruction"]["parts"][0]["text"], "SYSTEM")
         self.assertNotIn("tools", self.handler.body)       # aucun outil
+
+    def test_thinking_level(self):
+        asyncio.run(collect(providers.stream_gemini("S", "P", "gemini-flash-latest", "good", "high")))
+        self.assertEqual(self.handler.body["generationConfig"], {"thinkingConfig": {"thinkingLevel": "high"}})
+        self.handler.bodies = []
+        chunks = asyncio.run(collect(providers.stream_gemini("S", "P", "gemini-old", "good", "low")))
+        self.assertEqual("".join(chunks), "La réponse.")  # niveau refusé : redemandé sans
+        self.assertEqual(["generationConfig" in b for b in self.handler.bodies], [True, False])
 
     def test_errors(self):
         with self.assertRaises(providers.ProviderError) as caught:
@@ -283,6 +320,10 @@ class Settings(unittest.TestCase):
         self.assertEqual(put({"geminiApiKey": "AIzaSyExample_123", "aiGeminiModel": "gemini-2.5-flash"}), 200)
         self.assertEqual(put({"geminiApiKey": "a b"}), 400)
         self.assertEqual(put({"aiGeminiModel": "../../x"}), 400)
+        self.assertEqual(put({"aiModel": "fable", "aiClaudeEffort": "xhigh", "aiCodexModel": "gpt-6-luna", "aiCodexEffort": "ultra",
+                              "aiGeminiEffort": ""}), 200)
+        self.assertEqual(put({"aiModel": "codex"}), 400)
+        self.assertEqual(put({"aiCodexEffort": "turbo"}), 400)
 
 
 if __name__ == "__main__":

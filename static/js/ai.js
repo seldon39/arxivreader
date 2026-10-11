@@ -3,7 +3,7 @@
 // ses réponses sont à vérifier.
 
 import { api, streamAI } from "./api.js";
-import { authorName, currentModel as modelFor, modelLabel, providerOf, setupNotice } from "./aiproviders.js";
+import { authorName, currentModel as modelFor, modelControls, modelLabel, providerOf, setupNotice } from "./aiproviders.js";
 import { COLORS, rangeForQuote } from "./annotations.js";
 import { markdownToHtml } from "./markdown.js";
 import { typesetTex } from "./math.js";
@@ -79,7 +79,12 @@ export class Assistant {
     this.statusFor = expected;
     this.checking = true;
     let status;
-    try { status = await api.aiStatus(); } catch { status = { available: false, loggedIn: false, provider: providerOf(expected), model: expected }; }
+    // réponse antérieure au choix qui vient d'être enregistré (requête partie avant) : redemandée
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try { status = await api.aiStatus(); } catch { status = { available: false, loggedIn: false, provider: providerOf(expected), model: expected }; }
+      if (token !== this.statusToken || !status.model || status.model === currentModel()) break;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
     if (token !== this.statusToken) return;
     const models = status.models || [];
     if (status.provider === "local" && models.length && !models.includes(settings.aiLocalModel)) {
@@ -309,21 +314,13 @@ export class Assistant {
       button(icons.minus, "ai.textSmaller", -1), value, button(icons.plus, "ai.textLarger", 1));
   }
 
-  // Choix du modèle : Opus ou Sonnet pour Claude, modèles installés pour un modèle local (sinon rien)
+  // Choix du modèle et du niveau de réflexion (liste du compte connecté), à côté du bouton d'envoi
   modelPicker() {
-    const provider = providerOf(currentModel());
-    const options = provider === "claude" ? [["opus", "Opus"], ["sonnet", "Sonnet"]]
-      : provider === "local" ? (this.status?.models || []).map((name) => [name, name]) : [];
-    if (!options.length) return null;
-    const current = provider === "local" ? settings.aiLocalModel : settings.aiModel || "opus";
-    const select = h("select", { class: "ai-model", "aria-label": t("ai.model"), title: t("ai.model") },
-      options.map(([value, label]) => h("option", { value, selected: current === value }, label)));
-    select.addEventListener("change", async () => {
-      await saveSettings(provider === "local" ? { aiLocalModel: select.value } : { aiModel: select.value });
+    const [model, effort] = modelControls(this.status, () => {
       if (this.status) this.status.model = currentModel();
       this.onChange();
     });
-    return select;
+    return model ? h("span", { class: "ai-model-picker" }, model, effort) : null;
   }
 
   card(exchange) {

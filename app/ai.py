@@ -5,12 +5,14 @@ d'API). Il ne reçoit que le texte de l'article et n'a aucun outil : ni fichiers
 Autres assistants possibles (réglages) : Codex, Gemini, modèle local, voir providers.py.
 """
 
+import asyncio
 import contextlib
 import re
 import json
 import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 from bs4 import BeautifulSoup, Comment, NavigableString, Tag
@@ -19,7 +21,6 @@ from . import db, library, providers
 from .config import LIBRARY
 
 TASKS = ("explain", "detail", "audit", "annotate", "passage", "ask", "summary", "review")
-MODELS = ("opus", "sonnet")
 PAPER_LIMIT = 400_000  # caractères (~110 000 jetons) ; au-delà, l'article est tronqué (l'énoncé visé reste entier)
 
 BLOCKS = {"p", "div", "section", "article", "li", "ul", "ol", "dl", "dt", "dd", "table", "tr", "figure",
@@ -366,15 +367,56 @@ def _environment():
     return env
 
 
+# Modèles de Claude proposés au compte (liste de Claude Code), gardés quelques heures : le CLI met du temps à
+# démarrer. Par défaut, ou si la liste ne peut être lue : Opus et Sonnet.
+CLAUDE_FALLBACK = [{"value": "opus", "label": "Opus", "levels": ["low", "medium", "high", "xhigh", "max"]},
+                   {"value": "sonnet", "label": "Sonnet", "levels": ["low", "medium", "high", "xhigh", "max"]}]
+_claude_models = {"at": 0.0, "models": None}
+
+
+def claude_models():
+    if _claude_models["models"] is not None and time.monotonic() - _claude_models["at"] < 6 * 3600:
+        return _claude_models["models"]
+    models = None
+    try:
+        from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
+        workdir = LIBRARY / "ai"
+        workdir.mkdir(parents=True, exist_ok=True)
+        options = ClaudeAgentOptions(tools=[], strict_mcp_config=True, setting_sources=[], max_turns=1, cwd=str(workdir),
+                                     cli_path=cli_path(), extra_args={"no-session-persistence": None})
+        os.environ.pop("ANTHROPIC_API_KEY", None)  # la connexion Claude de l'utilisateur, pas une clé d'API
+
+        async def read():
+            async with ClaudeSDKClient(options) as client:
+                return await client.get_server_info()
+
+        info = asyncio.run(asyncio.wait_for(read(), 30)) or {}
+        models = []
+        for model in info.get("models") or []:
+            value = model.get("value") if isinstance(model, dict) else None
+            # alias (dernier modèle de chaque famille) seulement : opus, fable, sonnet, haiku
+            if not providers.valid_model_name(value) or value == "default" or value.startswith("claude-"):
+                continue
+            levels = [level for level in model.get("supportedEffortLevels") or [] if level in providers.EFFORTS]
+            models.append({"value": value, "label": str(model.get("displayName") or value)[:60],
+                           "description": str(model.get("description") or "")[:200], "levels": levels})
+    except Exception:
+        models = None
+    if models:
+        _claude_models.update(at=time.monotonic(), models=models)
+        return models
+    return _claude_models["models"] or CLAUDE_FALLBACK
+
+
 def current_model(settings):
-    """Modèle enregistré avec chaque échange : opus ou sonnet (Claude), codex, gemini, local:<nom>."""
+    """Modèle enregistré avec chaque échange : opus, fable, sonnet… (Claude), codex, gemini, local:<nom>."""
     provider = settings.get("aiProvider")
     if provider in ("codex", "gemini"):
         return provider
     if provider == "local":
         return f"local:{settings.get('aiLocalModel') or ''}"
     model = settings.get("aiModel")
-    return model if model in MODELS else "opus"
+    return model if providers.valid_model_name(model) and model not in ("codex", "gemini") else "opus"
 
 
 def paper_limit(model):
@@ -391,6 +433,9 @@ def status(settings):
     model = current_model(settings)
     provider = providers.provider_of(model)
     info = _claude_status() if provider == "claude" else providers.status(provider, settings)
+    if provider == "claude" and info.get("loggedIn"):
+        choices = claude_models()
+        info.update(choices=choices, chosen=model, effort=providers._effort(settings, "aiClaudeEffort", choices, model))
     return {**info, "provider": provider, "model": model}
 
 
@@ -411,18 +456,21 @@ def _claude_status():
 async def stream_answer(system, prompt, model):
     """Morceaux de texte de la réponse, au fil de l'eau."""
     provider = providers.provider_of(model)
+    settings = db.get_settings()
+    effort = lambda key: settings.get(key) if providers.valid_effort(settings.get(key) or "") else ""  # noqa: E731
     if provider == "claude":
-        stream = _stream_claude(system, prompt, model)
+        stream = _stream_claude(system, prompt, model, effort("aiClaudeEffort"))
     elif provider == "codex":
-        stream = providers.stream_codex(system, prompt)
+        codex_model = settings.get("aiCodexModel")
+        stream = providers.stream_codex(system, prompt, codex_model if providers.valid_model_name(codex_model) else None,
+                                        effort("aiCodexEffort"))
     elif provider == "gemini":
-        settings = db.get_settings()
         key = settings.get("geminiApiKey") or ""
         model_name = settings.get("aiGeminiModel") if providers.valid_gemini_model(settings.get("aiGeminiModel")) \
             else providers.GEMINI_DEFAULT[0]
-        stream = providers.stream_gemini(system, prompt, model_name, key)
+        stream = providers.stream_gemini(system, prompt, model_name, key, effort("aiGeminiEffort"))
     else:
-        url = db.get_settings().get("aiLocalUrl") or providers.LOCAL_URL
+        url = settings.get("aiLocalUrl") or providers.LOCAL_URL
         stream = providers.stream_local(system, prompt, model.split(":", 1)[1], url)
     try:
         async with contextlib.aclosing(stream) as chunks:
@@ -432,7 +480,7 @@ async def stream_answer(system, prompt, model):
         raise AIError(str(error), error.code)
 
 
-async def _stream_claude(system, prompt, model):
+async def _stream_claude(system, prompt, model, effort=""):
     try:
         from claude_agent_sdk import ClaudeAgentOptions, query
         from claude_agent_sdk.types import AssistantMessage, ResultMessage, StreamEvent, TextBlock
@@ -452,6 +500,7 @@ async def _stream_claude(system, prompt, model):
         cwd=str(workdir),
         cli_path=cli_path(),
         extra_args={"no-session-persistence": None},
+        **({"effort": effort} if effort in ("low", "medium", "high", "xhigh", "max") else {}),
     )
     streamed = False
     pending = []  # texte reçu d'un bloc (sans flux) : gardé jusqu'au résultat, car il peut s'agir d'une erreur

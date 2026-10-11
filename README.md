@@ -183,7 +183,9 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   critical review, or a free question; *Follow-up* to continue a conversation.
 - Answers stream live, formulas are rendered, references ("Lemma 2.3", "(2.11)") are clickable;
   *Add to my notes* copies them into the note of the statement or proof (otherwise into the reading sheet).
-  Opus or Sonnet model, chosen in the AI tab. Answers are kept with the paper.
+  Model (Opus, Fable, Sonnet, Haiku… depending on your subscription) and reasoning level chosen in the AI tab
+  or the settings; likewise for Codex and Gemini, from the list of your account or key. Answers are kept
+  with the paper.
 - **Annotations suggested by Claude**: *Annotate* button on a statement, or any request such as
   "highlight… / annotate…". Claude attaches a list of annotations (passages quoted word for word, colour,
   note; notes on a statement or a proof): each passage is located in the paper, you tick what you keep,

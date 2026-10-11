@@ -186,7 +186,9 @@ il suffit de la fermer et d'aller dans le feed.
   structuré, relecture critique, ou question libre ; *Question de suite* pour poursuivre un échange.
 - Réponses en direct, formules rendues, renvois (« Lemma 2.3 », « (2.11) ») cliquables ; *Ajouter à mes
   notes* les copie dans la note de l'énoncé ou de la preuve (sinon dans la fiche de lecture). Modèle
-  Opus ou Sonnet au choix dans l'onglet IA. Les réponses sont conservées avec l'article.
+  (Opus, Fable, Sonnet, Haiku… selon votre abonnement) et niveau de réflexion au choix, dans l'onglet IA ou
+  les réglages ; de même pour Codex et Gemini, d'après la liste de votre compte ou de votre clé. Les réponses
+  sont conservées avec l'article.
 - **Annotations proposées par Claude** : bouton *Annoter* sur un énoncé, ou toute demande du type « surligne… /
   annote… ». Claude joint une liste d'annotations (passages cités mot pour mot, couleur, note ; notes sur un
   énoncé ou une preuve) : chaque passage est retrouvé dans l'article, vous cochez ce que vous gardez,

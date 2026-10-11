@@ -35,6 +35,20 @@ LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 LOCAL_LIMIT = 120_000  # caractères d'article (~33 000 jetons) : contexte des modèles locaux plus court
 
 
+# Niveaux de réflexion (« effort ») ; "" : celui de l'assistant par défaut
+EFFORTS = ("low", "medium", "high", "xhigh", "max", "ultra")
+GEMINI_EFFORTS = ("low", "medium", "high")  # thinkingLevel de l'API Gemini
+MODEL_NAME = re.compile(r"[a-z0-9][a-z0-9.\-]{0,99}")
+
+
+def valid_model_name(name):
+    return isinstance(name, str) and bool(MODEL_NAME.fullmatch(name))
+
+
+def valid_effort(effort):
+    return effort == "" or effort in EFFORTS
+
+
 class ProviderError(Exception):
     def __init__(self, message, code="other"):
         super().__init__(message)
@@ -183,6 +197,15 @@ def open_setup(provider, step, claude_cli=None):
     subprocess.run(["open", "-a", "Terminal", str(script)], check=True, timeout=20)
 
 
+def _effort(settings, key, choices, chosen=None):
+    """Niveau enregistré, s'il est proposé pour le modèle choisi ; sinon "" (celui de l'assistant)."""
+    effort = settings.get(key) or ""
+    levels = next((c["levels"] for c in choices if c["value"] == chosen), None) if chosen else None
+    if levels is None:
+        levels = sorted({level for c in choices for level in c["levels"]})
+    return effort if effort in levels else ""
+
+
 def status(provider, settings):
     if provider == "codex":
         cli = find("codex")
@@ -194,7 +217,11 @@ def status(provider, settings):
             logged = result.returncode == 0 and "not logged in" not in output
         except (OSError, subprocess.TimeoutExpired):
             logged = False
-        return {"available": True, "loggedIn": logged}
+        choices = codex_models()
+        chosen = settings.get("aiCodexModel") if any(c["value"] == settings.get("aiCodexModel") for c in choices) \
+            else (choices[0]["value"] if choices else "")
+        return {"available": True, "loggedIn": logged, "choices": choices, "chosen": chosen,
+                "effort": _effort(settings, "aiCodexEffort", choices, chosen)}
     if provider == "gemini":
         key = settings.get("geminiApiKey") or ""
         if not key:
@@ -205,7 +232,9 @@ def status(provider, settings):
             return {"available": True, "loggedIn": False, "models": [], "error": str(error)}
         except (httpx.HTTPError, ValueError):
             return {"available": True, "loggedIn": False, "models": [], "error": "network"}
-        return {"available": True, "loggedIn": bool(models), "models": models, "geminiModel": gemini_model(settings, models)}
+        choices = [{"value": m, "label": m, "levels": list(GEMINI_EFFORTS)} for m in models]
+        return {"available": True, "loggedIn": bool(models), "models": models, "geminiModel": gemini_model(settings, models),
+                "choices": choices, "chosen": gemini_model(settings, models), "effort": _effort(settings, "aiGeminiEffort", choices)}
     if provider == "local":
         url = settings.get("aiLocalUrl") or LOCAL_URL
         try:
@@ -273,6 +302,26 @@ def _code(message):
 
 # ---------- Codex (OpenAI) ----------
 
+def codex_models():
+    """Modèles que Codex propose au compte connecté (sa liste en cache, tenue à jour par Codex lui-même),
+    du plus recommandé au moins recommandé : [{value, label, description, levels}]."""
+    try:
+        cache = json.loads((Path.home() / ".codex" / "models_cache.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    models = []
+    for model in sorted((m for m in cache.get("models") or [] if isinstance(m, dict) and m.get("visibility") == "list"),
+                        key=lambda m: m.get("priority") if isinstance(m.get("priority"), (int, float)) else 999):
+        slug = model.get("slug")
+        if not valid_model_name(slug):
+            continue
+        levels = [r.get("effort") if isinstance(r, dict) else r for r in model.get("supported_reasoning_levels") or []]
+        models.append({"value": slug, "label": str(model.get("display_name") or slug)[:60],
+                       "description": str(model.get("description") or "")[:200],
+                       "levels": [level for level in levels if level in EFFORTS]})
+    return models
+
+
 def _codex_events(event, state):
     kind = event.get("type")
     if kind == "item.completed" and (event.get("item") or {}).get("type") == "agent_message":
@@ -286,7 +335,7 @@ def _codex_events(event, state):
         state["error"] = event.get("message")  # parfois passager (reconnexion) : signalé seulement en cas d'échec
 
 
-async def stream_codex(system, prompt):
+async def stream_codex(system, prompt, model=None, effort=""):
     cli = find("codex")
     if not cli:
         raise ProviderError("codex is not installed", "missing")
@@ -300,6 +349,8 @@ async def stream_codex(system, prompt):
             "-c", 'approval_policy="never"',
             "-c", "project_doc_max_bytes=0",                                       # pas d'AGENTS.md
             "-c", f"model_instructions_file={json.dumps(str(instructions))}",      # consignes d'arXivReader
+            *(["-m", model] if valid_model_name(model) else []),
+            *(["-c", f"model_reasoning_effort={json.dumps(effort)}"] if effort in EFFORTS else []),
             "-"]
     async for text in _run(argv, prompt, workdir, _codex_events):
         yield text
@@ -359,7 +410,7 @@ def gemini_model(settings, models):
         or (models[0] if models else GEMINI_DEFAULT[0])
 
 
-async def stream_gemini(system, prompt, model, key):
+async def stream_gemini(system, prompt, model, key, effort=""):
     if not key:
         raise ProviderError("No Gemini API key (Settings → AI)", "missing")
     if not valid_gemini_model(model):
@@ -367,6 +418,21 @@ async def stream_gemini(system, prompt, model, key):
     # aucun outil déclaré : Gemini ne peut que répondre par du texte
     body = {"systemInstruction": {"parts": [{"text": system}]},
             "contents": [{"role": "user", "parts": [{"text": prompt}]}]}
+    if effort in GEMINI_EFFORTS:
+        body["generationConfig"] = {"thinkingConfig": {"thinkingLevel": effort}}
+    try:
+        async for text in _gemini_request(model, key, body):
+            yield text
+    except ProviderError as error:
+        # modèle qui n'accepte pas ce niveau (anciens modèles, niveau propre à Flash) : redemandé sans
+        if "generationConfig" not in body or "thinking" not in str(error).lower():
+            raise
+        del body["generationConfig"]
+        async for text in _gemini_request(model, key, body):
+            yield text
+
+
+async def _gemini_request(model, key, body):
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(900, connect=10)) as client:
             async with client.stream("POST", f"{GEMINI_API}/models/{model}:streamGenerateContent", params={"alt": "sse"},
