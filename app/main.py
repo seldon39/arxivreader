@@ -207,6 +207,12 @@ def papers():
             for paper in db.list_papers()]
 
 
+
+@app.get("/api/papers/relevance")
+async def papers_relevance():
+    """Pertinence de chaque article de la bibliothèque pour le profil (tri des dossiers)."""
+    return await run_in_threadpool(relevance.library_relevance, db.get_settings().get("s2ApiKey") or None)
+
 async def _import(query, add_to_library):
     try:
         return await run_in_threadpool(library.import_paper, query, add_to_library)

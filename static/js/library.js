@@ -7,7 +7,7 @@ import { debounce, formatDate, h, icons, tidyTitle, timeAgo, toast, toastError, 
 
 // Recherche et filtres, gardés d'une visite à l'autre (le temps de la session)
 const view = { search: "", categories: new Set(), reading: new Set(), years: new Set(), folders: new Set(), source: "any", sort: "opened",
-  openFolder: null };
+  openFolder: null, folderSort: "newest" };
 // Dossiers ({id, name, papers}), relus avec la liste des articles
 let folderList = [];
 const READING = ["unread", "annotated", "understood", "claude"];
@@ -52,6 +52,14 @@ const SORTERS = {
   published: (a, b) => (b.published || "").localeCompare(a.published || ""),
   title: (a, b) => fold(a.title).localeCompare(fold(b.title)),
 };
+
+// Tri d'un dossier ouvert : pertinence pour le profil (comme le feed) ou date de publication
+const FOLDER_SORTS = ["relevance", "newest", "oldest"];
+const folderSorter = (scores) => ({
+  relevance: (a, b) => ((scores?.[b.id] ?? -1) - (scores?.[a.id] ?? -1)) || SORTERS.published(a, b),
+  newest: SORTERS.published,
+  oldest: (a, b) => SORTERS.published(b, a),
+}[view.folderSort]);
 
 // le tri n'est pas un filtre : il ne compte pas, et « Tout réinitialiser » le garde
 const activeCount = () => view.categories.size + view.reading.size + view.years.size + view.folders.size + (view.source !== "any" ? 1 : 0);
@@ -297,6 +305,21 @@ export async function renderLibrary(root) {
   }
 
   let renaming = false;
+  // pertinence des articles de la bibliothèque : demandée au serveur la première fois qu'un dossier est
+  // trié ainsi pendant cette visite (le profil a pu changer entre deux visites)
+  let scores = null;
+  let scoring = null;
+  const loadScores = () => {
+    scoring ||= api.papersRelevance()
+      .then((result) => { scores = result; })
+      .catch((error) => { toastError(error); scoring = null; view.folderSort = "newest"; }) // pas de nouvel essai en boucle
+      .finally(() => { if (root.isConnected) keepFocus(drawPanel); });
+  };
+  const keepFocus = (draw) => {
+    const key = document.activeElement?.dataset?.focus;
+    draw();
+    if (key) panel.querySelector(`[data-focus="${CSS.escape(key)}"]`)?.focus();
+  };
   function drawPanel() {
     const folder = folderList.find((f) => f.id === view.openFolder);
     const inner = panel.firstChild;
@@ -310,7 +333,15 @@ export async function renderLibrary(root) {
       }
       return;
     }
-    const members = papers.filter((p) => folder.papers.includes(p.id)).sort(SORTERS[view.sort]);
+    const waiting = view.folderSort === "relevance" && !scores;
+    if (waiting) loadScores();
+    const members = papers.filter((p) => folder.papers.includes(p.id)).sort(folderSorter(scores));
+    const sort = members.length > 1 && h("div", { class: "folder-sort", role: "radiogroup", "aria-label": t("library.folder.sort") },
+      h("span", { class: "folder-sort-label" }, t("library.folder.sort")),
+      h("span", { class: "segmented search-segmented" }, FOLDER_SORTS.map((key) => h("label", {},
+        h("input", { type: "radio", name: "folder-sort", value: key, checked: key === view.folderSort, dataset: { focus: `folder-sort:${key}` },
+          onchange: () => { view.folderSort = key; keepFocus(drawPanel); } }), t(`library.folderSort.${key}`)))),
+      waiting && h("span", { class: "busy" }, h("span", { class: "spinner" }), t("library.folder.scoring")));
     if (!renaming) renameForm = null;
     renameForm ||= renaming && nameForm(folder.name, async (name) => { await api.renameFolder(folder.id, name); renaming = false; await reloadFolders(); },
       () => { renaming = false; drawPanel(); }, t("library.folder.save"));
@@ -322,6 +353,7 @@ export async function renderLibrary(root) {
         !renaming && h("button", { class: "link-button", type: "button", onclick: () => { renaming = true; drawPanel(); } }, t("library.folder.rename")),
         h("button", { class: "link-button", type: "button", onclick: () => removeFolder(folder) }, t("library.folder.delete")),
         h("button", { class: "link-button", type: "button", onclick: () => { toggleFolder(folder.id); focusFolder(folder.id); } }, t("library.folder.close"))),
+      sort || "",
       members.length
         ? h("div", { class: "cards" }, members.map((p, i) => { const c = card(p, refreshList, cardContext); c.style.setProperty("--i", i); return c; }))
         : h("p", { class: "hint folder-empty" }, t("library.folder.empty")));

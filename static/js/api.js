@@ -18,6 +18,7 @@ async function request(method, url, body) {
 
 export const api = {
   papers: () => request("GET", "/api/papers"),
+  papersRelevance: () => request("GET", "/api/papers/relevance"),
   folders: () => request("GET", "/api/folders"),
   createFolder: (name, papers = []) => request("POST", "/api/folders", { name, papers }),
   renameFolder: (id, name) => request("PUT", `/api/folders/${id}`, { name }),

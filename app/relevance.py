@@ -144,6 +144,19 @@ def fetch_embeddings(keys, api_key=None):
     return True
 
 
+def library_relevance(api_key=None):
+    """Pertinence pour le profil des articles de la bibliothèque (tri d'un dossier) : calculée sur toute la
+    bibliothèque à la fois, car la proximité de sens est relative au lot comparé."""
+    items = [{"key": p["id"], "arxiv_id": p["arxiv_id"], "title": p["title"] or "", "abstract": p["abstract"] or "",
+              "authors": p["authors"]} for p in db.list_papers()]
+    try:
+        fetch_embeddings([s2_key(i["arxiv_id"]) for i in items], api_key)
+    except Exception:
+        pass  # sans réseau : vecteurs déjà connus et vocabulaire seulement
+    score_items(items, skip_self=True)
+    return {i["key"]: i["score"] for i in items}
+
+
 # ---------- Profil ----------
 
 def profile_documents():
@@ -203,11 +216,13 @@ def _robust_z(values):
     return [(v - median) / spread for v in values]
 
 
-def score_items(items):
+def score_items(items, skip_self=False):
     """Ajoute à chaque article « relevance » (0 à 1) et « reasons » (pourquoi il est mis en avant).
 
     Pour chaque texte de référence, on combine la proximité de vocabulaire (absolue) et la proximité
-    de sens (relative au lot d'articles affiché) ; on garde la meilleure référence.
+    de sens (relative au lot d'articles affiché) ; on garde la meilleure référence. « score » : la même
+    valeur sans plafond, pour départager des articles tous très pertinents (tri d'un dossier).
+    `skip_self` : un article n'est pas comparé à lui-même s'il figure dans le profil (bibliothèque).
     """
     if not items:
         return items
@@ -241,6 +256,8 @@ def score_items(items):
         reasons = []
         positive, best = 0.0, None
         for row, doc in zip(positive_rows, positives):
+            if skip_self and doc["s2"] and doc["s2"] == keys[index]:
+                continue
             value = row[index] * doc.get("weight", 1.0)
             if value > positive:
                 positive, best = value, doc
@@ -270,5 +287,6 @@ def score_items(items):
         if item.get("status") == "liked":
             score = max(score, 0.9)
         item["relevance"] = round(max(0.0, min(1.0, score)), 3)
+        item["score"] = round(score, 4)
         item["reasons"] = reasons
     return items

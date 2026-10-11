@@ -36,3 +36,21 @@ class Relevance(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LibraryRelevance(unittest.TestCase):
+    """Tri des dossiers : une pertinence par article de la bibliothèque, calculée sans réseau si besoin."""
+
+    def test_scores_by_paper_id(self):
+        from unittest import mock
+        from app import relevance
+        papers = [{"id": "2601.00001", "arxiv_id": "2601.00001", "title": "Bergman kernels", "abstract": "", "authors": ["A"]},
+                  {"id": "2601.00002", "arxiv_id": "2601.00002", "title": "Fluid dynamics", "abstract": None, "authors": []}]
+        profile = ([{"label": "Bergman", "text": "Bergman kernels and Toeplitz operators", "s2": None, "weight": 1.0}], [], {}, [])
+        with mock.patch.object(relevance.db, "list_papers", return_value=papers), \
+             mock.patch.object(relevance, "fetch_embeddings", side_effect=OSError("offline")), \
+             mock.patch.object(relevance, "profile_documents", return_value=profile), \
+             mock.patch.object(relevance, "cached_embeddings", return_value={}):
+            scores = relevance.library_relevance()
+        self.assertEqual(set(scores), {"2601.00001", "2601.00002"})
+        self.assertGreater(scores["2601.00001"], scores["2601.00002"])

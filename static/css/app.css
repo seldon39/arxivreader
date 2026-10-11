@@ -1147,6 +1147,9 @@ input.switch:focus-visible { outline: 2px solid var(--focus); outline-offset: 2p
 .folder-panel-head .folder-name-form { flex: 1; width: auto; }
 .folder-panel-head .link-button { font-size: 13px; text-decoration: none; }
 .folder-panel-head .link-button:hover { text-decoration: underline; }
+/* tri du dossier ouvert, sous son en-tête : même commande que la page Recherche */
+.folder-sort { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 0; border-bottom: 1px solid var(--border); font: 13.5px var(--font-ui); }
+.folder-sort-label { color: var(--muted); font-weight: 600; }
 .folder-panel .cards { border-top: 0; }
 .folder-panel .card:last-child { border-bottom: 0; }
 .folder-empty { margin: 12px 0 8px; }
