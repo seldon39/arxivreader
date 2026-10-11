@@ -31,14 +31,54 @@ ACCENTS = {'"': "\u0308", "'": "\u0301", "`": "\u0300", "^": "\u0302", "~": "\u0
 ACCENT = re.compile(r"""\\(["'`^~=]|[cv](?=[\s{]))\s*(?:\{\s*\\?([A-Za-z])\s*\}|\\?([A-Za-z]))""")
 
 
+# Formules gardées telles quelles : $…$, $$…$$, \(…\), \[…\] et environnements (equation, align…)
+MATH = re.compile(r"\$\$.*?\$\$|\$[^$]*\$|\\\(.*?\\\)|\\\[.*?\\\]"
+                  r"|\\begin\{(equation|align|gather|multline|eqnarray|displaymath)\*?\}.*?\\end\{\1\*?\}", re.S)
+
+
+def _plain_tex(part):
+    part = ACCENT.sub(lambda m: unicodedata.normalize("NFC", (m.group(2) or m.group(3)) + ACCENTS[m.group(1)]), part)
+    part = part.replace("``", "“").replace("''", "”").replace("---", "—").replace("--", "–").replace("\\ ", " ").replace("\\&", "&")
+    return re.sub(r"\{\\(?:em|it|bf)\s+([^{}]*)\}", r"\1", part).replace("{", "").replace("}", "")
+
+
 def tex_text(text):
-    parts = re.split(r"(\$[^$]*\$)", text or "")
-    for i in range(0, len(parts), 2):  # hors des formules $…$ seulement
-        part = ACCENT.sub(lambda m: unicodedata.normalize("NFC", (m.group(2) or m.group(3)) + ACCENTS[m.group(1)]), parts[i])
-        part = part.replace("``", "“").replace("''", "”").replace("---", "—").replace("--", "–").replace("\\ ", " ").replace("\\&", "&")
-        part = re.sub(r"\{\\(?:em|it|bf)\s+([^{}]*)\}", r"\1", part).replace("{", "").replace("}", "")
-        parts[i] = part
-    return " ".join("".join(parts).split())
+    text, out, last = text or "", [], 0
+    for match in MATH.finditer(text):  # hors des formules seulement
+        out += [_plain_tex(text[last:match.start()]), match.group(0)]
+        last = match.end()
+    out.append(_plain_tex(text[last:]))
+    return " ".join("".join(out).split())
+
+
+# Résumé abîmé par l'ancienne version de tex_text (accolades d'une équation hors $…$ retirées :
+# « \beginequation* », « \fracn(n-2)4 », « \mathrmVol ») : à relire sur arXiv
+BROKEN = re.compile(r"\\(?:begin|end|frac|mathrm|mathbb|mathcal|mathfrak|operatorname|text)(?=[A-Za-z0-9])")
+
+
+def repair_abstracts(limit=40):
+    """Relit sur arXiv (une requête groupée) les résumés abîmés ; nombre de résumés réparés."""
+    with db.connect() as connection:
+        rows = connection.execute("SELECT key, arxiv_id, abstract FROM feed_items WHERE arxiv_id IS NOT NULL "
+                                  "AND (abstract LIKE '%\\begin%' OR abstract LIKE '%\\frac%' OR abstract LIKE '%\\math%' "
+                                  "OR abstract LIKE '%\\text%' OR abstract LIKE '%\\operatorname%' OR abstract LIKE '%\\end%')").fetchall()
+    broken = {row["arxiv_id"]: row["key"] for row in rows if BROKEN.search(re.sub(r"\$[^$]*\$", "", row["abstract"] or ""))}
+    ids = list(broken)[:limit]
+    if not ids:
+        return 0
+    with _client() as client:
+        response = with_retry(lambda: client.get("https://export.arxiv.org/api/query",
+                                                 params={"id_list": ",".join(ids), "max_results": len(ids)}))
+    response.raise_for_status()
+    repaired = 0
+    with db.connect() as connection:
+        for entry in ET.fromstring(response.text).findall(f"{ATOM}entry"):
+            found = re.search(r"abs/([^v]+)(?:v\d+)?$", entry.findtext(f"{ATOM}id") or "")
+            summary = " ".join((entry.findtext(f"{ATOM}summary") or "").split())
+            if found and found.group(1) in broken and summary:
+                connection.execute("UPDATE feed_items SET abstract = ? WHERE key = ?", (tex_text(summary), broken[found.group(1)]))
+                repaired += 1
+    return repaired
 
 
 def _client(headers=None):
@@ -126,6 +166,10 @@ def refresh_arxiv(categories=None, api_key=None):
     keys = [relevance.s2_key(i["arxiv_id"]) for i in items + followed] + [d["s2"] for d in positives + negatives]
     try:
         relevance.fetch_embeddings(keys, api_key)
+    except Exception:
+        pass
+    try:
+        repair_abstracts()
     except Exception:
         pass
     db.save_settings({"feed.arxivRefreshed": _now()})

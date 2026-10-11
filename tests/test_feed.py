@@ -31,6 +31,10 @@ class Feed(unittest.TestCase):
         self.assertEqual((item["categories"], item["primary_category"]), (["math.DG", "math.AP"], "math.DG"))
         self.assertEqual(item["announced"], "2026-10-09")
 
+    def test_tex_text_keeps_environments(self):
+        text = r"then \begin{equation*} \frac{n}{4} \mathrm{Vol} \end{equation*} and \[ a^{2} \], \(b_{1}\), Bohr--Sommerfeld"
+        self.assertEqual(tex_text(text), r"then \begin{equation*} \frac{n}{4} \mathrm{Vol} \end{equation*} and \[ a^{2} \], \(b_{1}\), Bohr–Sommerfeld")
+
     def test_tex_text_keeps_math(self):
         self.assertEqual(tex_text(r"Poincar\'e--Lelong, $\"a--b$ and {\em see}"), r'Poincaré–Lelong, $\"a--b$ and see')
 
