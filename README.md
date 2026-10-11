@@ -295,6 +295,9 @@ Versions: `requirements.txt` lists the wanted packages, `requirements.lock` thei
 package, deliberately and one at a time: `.venv/bin/pip install -U <package>`, the tests, then `./arxivreader lock`
 (and commit). MathJax and pdf.js are pinned in `static/vendor`.
 
+For an AI assistant in charge of maintenance: `MAINTENANCE.md` (in French: rules, work loop, release, what to do
+when a service changes, known pitfalls), read automatically by Claude Code (`CLAUDE.md`) and Codex (`AGENTS.md`).
+
 ## Code layout
 
 ```
