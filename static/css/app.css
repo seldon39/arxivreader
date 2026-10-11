@@ -1333,11 +1333,14 @@ body.related-expanded { overflow: hidden; }
 .related-grid.expanded::before { content: ""; position: fixed; inset: 0; z-index: 45; background: color-mix(in srgb, var(--bg) 75%, transparent); }
 .related-grid.expanded .related-graph { position: fixed; inset: 12px; z-index: 46; box-shadow: var(--shadow); }
 .related-grid.expanded .related-graph svg { width: 100%; height: 100%; aspect-ratio: auto; }
-.related-grid.expanded .related-detail { position: fixed; top: 60px; right: 26px; z-index: 47; width: min(400px, calc(100vw - 52px)); max-height: calc(100vh - 84px);
+/* agrandi : l'article choisi en haut à droite, les boutons de zoom en bas au milieu, serrés */
+.related-grid.expanded .related-detail { position: fixed; top: 26px; right: 26px; z-index: 47; width: min(400px, calc(100vw - 52px)); max-height: calc(100vh - 110px);
   box-shadow: var(--shadow); }
-@media (max-width: 900px) { /* fenêtre étroite : l'article choisi en bas, sans couvrir tout le graphe */
-  .related-grid.expanded .related-detail { top: auto; left: 24px; right: 24px; bottom: 24px; width: auto; max-height: 40vh; overflow: auto; }
-  .related-grid.expanded .related-folder-menu { top: auto; bottom: calc(100% + 6px); }
+.related-grid.expanded .related-graph-tools { top: auto; right: auto; bottom: 12px; left: 50%; translate: -50% 0; box-shadow: var(--shadow); }
+.related-grid.expanded .related-graph-tools .icon-button { min-width: 28px; height: 28px; padding: 0 4px; }
+.related-grid.expanded .related-graph-tools .icon-button svg { width: 16px; height: 16px; }
+@media (max-width: 900px) { /* fenêtre étroite : l'article choisi sur toute la largeur, sans couvrir tout le graphe */
+  .related-grid.expanded .related-detail { left: 24px; right: 24px; width: auto; max-height: 40vh; overflow: auto; }
 }
 .related-legend { position: absolute; left: 8px; bottom: 8px; display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 3px 8px; border-radius: 8px;
   background: color-mix(in srgb, var(--surface) 85%, transparent); font: 12px var(--font-ui); color: var(--muted); pointer-events: none; }
