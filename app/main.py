@@ -13,11 +13,12 @@ from datetime import date, datetime, timezone
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import ai, alerts, annotations, citations, crossrefs, db, feed, folders, journals, library, profile, providers, related, relevance, search, updates, zotero
+from . import (ai, alerts, annotations, citations, crossrefs, db, export, feed, folders, journals, library, onboarding, profile, providers, related,
+               relevance, search, updates, zotero)
 from .arxiv import ArxivError, fetch_metadata, parse_arxiv_id
 from .config import HOST, PORT, STATIC
 
@@ -211,6 +212,34 @@ class ResolveRequest(BaseModel):
 
 class PrefillRequest(BaseModel):
     owner: str
+
+
+class OnboardingFind(BaseModel):
+    name: str = ""
+    identifier: str = ""
+
+
+class OnboardingPaper(BaseModel):
+    arxivId: str
+    title: str
+    authors: list[str] = []
+    year: str | None = None
+    categories: list[str] = []
+    primary: str | None = None
+    abstract: str = ""
+
+
+class OnboardingSuggest(BaseModel):
+    owner: str = ""
+    papers: list[OnboardingPaper]
+
+
+class OnboardingApply(BaseModel):
+    owner: str = ""
+    papers: list[OnboardingPaper] = []
+    categories: list[str] = []
+    authors: list[str] = []
+    importMine: bool = False
 
 
 @app.get("/api/papers")
@@ -777,6 +806,63 @@ async def prefill_profile(body: PrefillRequest):
     return get_profile()
 
 
+# ---- Assistant de premier lancement ----
+
+def _onboarding_error(error):
+    if isinstance(error, onboarding.OnboardingError):
+        return JSONResponse({"code": error.code, "error": error.code}, status_code=400)
+    return JSONResponse({"code": "network", "error": f"{type(error).__name__}"}, status_code=502)
+
+
+@app.post("/api/onboarding/find")
+async def onboarding_find(body: OnboardingFind):
+    try:
+        return await run_in_threadpool(onboarding.find, body.name[:200], body.identifier[:300])
+    except (onboarding.OnboardingError, httpx.HTTPError, search.SearchError) as error:
+        return _onboarding_error(error)
+
+
+@app.post("/api/onboarding/suggest")
+async def onboarding_suggest(body: OnboardingSuggest):
+    papers = [p.model_dump() for p in body.papers[:200]]
+    return await run_in_threadpool(onboarding.suggest, papers, body.owner[:200], db.get_settings().get("s2ApiKey") or None)
+
+
+@app.post("/api/onboarding/apply")
+def onboarding_apply(body: OnboardingApply):
+    categories = [c for c in body.categories[:12] if re.fullmatch(r"[a-z-]+(\.[A-Za-z-]+)?", c)]
+    authors = [" ".join(a.split())[:200] for a in body.authors[:50] if a.strip()]
+    papers = [p.model_dump() for p in body.papers[:200] if parse_ok(p.arxivId)]
+    return onboarding.apply(body.owner.strip()[:200], papers, categories, authors, body.importMine)
+
+
+def parse_ok(arxiv_id):
+    try:
+        parse_arxiv_id(arxiv_id)
+        return True
+    except ArxivError:
+        return False
+
+
+# ---- Export des notes (Markdown) ----
+
+def _download(content, name, media_type):
+    from urllib.parse import quote
+    return Response(content, media_type=media_type,
+                    headers={"Content-Disposition": f"attachment; filename=\"notes.{name.rsplit('.', 1)[-1]}\"; filename*=UTF-8''{quote(name)}"})
+
+
+@app.get("/api/papers/{paper_id}/notes.md")
+def paper_notes(paper_id: str, lang: str = "fr"):
+    paper = checked_paper(paper_id)
+    return _download(export.paper_markdown(paper_id, lang), export.filename(paper), "text/markdown; charset=utf-8")
+
+
+@app.get("/api/notes.zip")
+def all_notes(lang: str = "fr"):
+    return _download(export.library_zip(lang), "arXivReader notes.zip", "application/zip")
+
+
 @app.get("/api/zotero")
 def zotero_status():
     return zotero.status()
@@ -809,7 +895,7 @@ def update_settings(values: dict):
                "feedCategories", "feedTypes", "s2ApiKey", "feedSort", "feedSortS2", "aiModel", "notifyFollowed",
                "aiProvider", "aiLocalUrl", "aiLocalModel", "checkUpdates", "aiFontSize", "notifyCitations", "readerView",
                "citingCollapsed", "followedCollapsed", "geminiApiKey", "aiGeminiModel", "profileOpen",
-               "aiClaudeEffort", "aiCodexModel", "aiCodexEffort", "aiGeminiEffort", "zoteroApiKey", "zoteroAutoSync"}
+               "aiClaudeEffort", "aiCodexModel", "aiCodexEffort", "aiGeminiEffort", "zoteroApiKey", "zoteroAutoSync", "onboarded"}
     values = {k: v for k, v in values.items() if k in allowed}
     if not all(_valid_setting(k, v) for k, v in values.items()):
         raise HTTPException(400, "Bad setting")
@@ -828,7 +914,7 @@ SETTING_CHOICES = {
     "feedSort": {"relevance", "arxiv"}, "feedSortS2": {"relevance", "s2"},
 }
 BOOLEAN_SETTINGS = {"proofsCollapsed", "tocOpen", "panelOpen", "marginMarks", "notifyFollowed", "checkUpdates", "notifyCitations",
-                    "citingCollapsed", "followedCollapsed", "zoteroAutoSync"}
+                    "citingCollapsed", "followedCollapsed", "zoteroAutoSync", "onboarded"}
 
 
 def _valid_setting(key, value):

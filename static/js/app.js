@@ -12,6 +12,7 @@ import { api } from "./api.js";
 import { droppedPapers, h, mayBePaper, navigation, openRoute, toast, toastError, wantsNewTab } from "./util.js";
 import { addToLibrary, selectionDropped } from "./selection.js";
 import { watchZotero } from "./zotero.js";
+import { maybeOnboard } from "./onboarding.js";
 
 const view = document.getElementById("view");
 let cleanup = null;
@@ -133,6 +134,7 @@ document.addEventListener("visibilitychange", async () => {
   refreshAlerts();
 });
 route();
+maybeOnboard(); // nouvelle installation : assistant de premier lancement
 refreshAlerts();
 setInterval(refreshAlerts, 10 * 60 * 1000);
 watchZotero();

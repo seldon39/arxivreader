@@ -5,6 +5,7 @@ import { t, tn } from "./i18n.js";
 import { typesetTex } from "./math.js";
 import { saveSettings, settings } from "./settings.js";
 import { h, icons, toast, toastError, withMath } from "./util.js";
+import { openOnboarding } from "./onboarding.js";
 
 const SECTIONS = [
   { key: "mine", kinds: ["mine"], resolver: "paper" },
@@ -46,7 +47,8 @@ export async function renderProfile(body) {
 
   body.replaceChildren(
     h("p", { class: "lead" }, t("profile.lead")),
-    h("div", { class: "profile-owner" }, h("label", { for: "profile-owner" }, t("profile.owner")), owner, prefill),
+    h("div", { class: "profile-owner" }, h("label", { for: "profile-owner" }, t("profile.owner")), owner, prefill,
+      h("button", { class: "button", type: "button", onclick: openOnboarding }, t("onboarding.again"))),
     container,
   );
   draw();

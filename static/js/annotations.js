@@ -616,6 +616,10 @@ export class Annotator {
       : h("p", { class: "hint" }, t("notes.none")));
     body.append(h("div", { class: "panel-section" }, h("h3", {}, t("notes.annotations", { n: located.length })), list,
       h("p", { class: "hint" }, t("notes.howTo"))));
+    // export : fiche, énoncés et preuves, passages, en Markdown (dossier Téléchargements)
+    body.append(h("div", { class: "panel-section" }, h("a", { class: "button small-button", download: "",
+      href: `/api/papers/${encodeURIComponent(this.paperId)}/notes.md?lang=${document.documentElement.lang || "fr"}` }, t("notes.export")),
+      h("p", { class: "hint" }, t("notes.exportHint"))));
     typesetTex([body]).catch(() => {});
   }
 

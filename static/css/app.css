@@ -528,6 +528,20 @@ dialog.settings::backdrop { background: rgba(0, 0, 0, .3); }
 .settings .check { display: flex; gap: 8px; align-items: center; }
 .secret-input:not(:focus) { -webkit-text-security: disc; }
 .settings .actions { display: flex; justify-content: flex-end; }
+/* assistant de premier lancement */
+dialog.settings.onboarding { width: min(640px, calc(100vw - 32px)); }
+.onboarding-body { display: grid; gap: 10px; }
+.onboarding-body p { margin: 0; }
+.onboarding-body h3 { margin: 6px 0 0; font: 600 15px var(--font-ui); }
+.onboarding-actions { gap: 8px; }
+.onboarding-list { display: grid; gap: 2px; max-height: 46vh; overflow: auto; border: 1px solid var(--border); border-radius: 8px; padding: 4px; }
+.onboarding-paper { display: flex; gap: 8px; align-items: baseline; padding: 6px 8px; border-radius: 6px; font: 13.5px/1.35 var(--font-ui); cursor: pointer; }
+.onboarding-paper:hover { background: var(--surface-hover); }
+.onboarding-paper strong { font: 600 14px var(--font-read); }
+.onboarding-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.onboarding-chip { padding: 4px 10px; border: 1px solid var(--border-strong); border-radius: 999px; font-size: 13.5px; cursor: pointer; }
+.onboarding-chip:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.onboarding-tips { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: 14px; }
 #toast {
   position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px); z-index: 70;
   background: var(--text); color: var(--surface); padding: 10px 16px; border-radius: 10px; box-shadow: var(--shadow);

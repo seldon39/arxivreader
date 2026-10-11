@@ -134,6 +134,13 @@ reported as such; the journal shows on the card ("Published: …"). From the ref
 the authors, otherwise from Semantic Scholar, queried in batches and asked again after 30 days for a paper
 still not reported. Many authors never update arXiv: a paper not reported may still be published.
 
+## First launch
+
+On a fresh installation, an assistant finds your papers on arXiv (arXiv author identifier, ORCID, or name:
+namesakes, including those in another field, are unticked), suggests the feed categories (from your papers) and
+the authors to follow (coauthors, authors your papers cite most), then fills the profile; it can also add your
+papers to the library. Run it again from the Profile ("Getting-started assistant").
+
 ## Feed
 
 **Feed** menu at the top, four tabs:
@@ -215,6 +222,9 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   the paper (a click takes you there).
 - Notes in Markdown (**bold**, *italics*, lists, quotes) with formulas `$…$`, `$$…$$`, saved automatically.
   An annotated paper is never removed from the cache.
+- **Export**: "Export notes (Markdown)" at the bottom of the Notes tab (reading sheet, statements and proofs with
+  their state, highlighted passages by section, formulas in LaTeX); Settings > Reading: all notes, one file per
+  paper, in a .zip archive (Downloads folder).
 
 ## Claude on the paper
 

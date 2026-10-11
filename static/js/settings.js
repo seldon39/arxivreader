@@ -175,6 +175,9 @@ export function openSettingsDialog({ section = null } = {}) {
         segmented("mathRenderer", [["mathjax", t("settings.math.mathjax")], ["native", t("settings.math.native")]], settings.mathRenderer)),
       ...check("proofsCollapsed", t("settings.proofs"), settings.proofsCollapsed),
       ...check("marginMarks", t("settings.marginMarks"), settings.marginMarks),
+      h("div", { class: "row" }, h("span", {}, t("settings.notesExport")),
+        h("div", {}, h("a", { class: "button small-button", download: "", href: `/api/notes.zip?lang=${settings.language || "fr"}` }, t("settings.notesExportButton")))),
+      h("p", { class: "hint" }, t("settings.notesExportHint")),
     ]],
     ["ai", t("settings.ai"), [
       h("div", { class: "row" }, h("span", { id: "setting-aiProvider" }, t("settings.aiProvider")),

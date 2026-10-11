@@ -141,6 +141,14 @@ DOI) indiquée sur arXiv par les auteurs, sinon d'après Semantic Scholar, inter
 30 jours pour un article encore non signalé. Beaucoup d'auteurs ne mettent pas arXiv à jour : un article non
 signalé n'est pas forcément inédit.
 
+## Premier lancement
+
+Sur une installation neuve, un assistant retrouve vos articles sur arXiv (identifiant d'auteur arXiv, ORCID, ou
+nom : les homonymes, y compris ceux d'un autre domaine, sont décochés d'office), propose les catégories du feed
+(d'après vos articles) et les auteurs à suivre (coauteurs, auteurs les plus cités par vos articles), puis remplit
+le profil ; il peut aussi ajouter vos articles à la bibliothèque. Relancé depuis le Profil (« Assistant de
+démarrage »).
+
 ## Feed (étape 2)
 
 Menu **Feed** en haut, quatre onglets :
@@ -223,6 +231,9 @@ il suffit de la fermer et d'aller dans le feed.
   annotations dans l'ordre de l'article (un clic y ramène).
 - Notes en Markdown (**gras**, *italique*, listes, citations) avec formules `$…$`, `$$…$$`,
   enregistrées automatiquement. Un article annoté n'est jamais effacé du cache.
+- **Export** : « Exporter les notes (Markdown) » en bas de l'onglet Notes (fiche de lecture, énoncés et preuves
+  avec leur état, passages surlignés par section, formules en LaTeX) ; Réglages > Lecture : toutes les notes,
+  un fichier par article, dans une archive .zip (dossier Téléchargements).
 
 ## Claude sur l'article (étape 4)
 
