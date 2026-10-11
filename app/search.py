@@ -26,9 +26,11 @@ FIELDS = {"all": "all", "title": "ti", "author": "au", "abstract": "abs", "comme
 OPERATORS = {"and": "AND", "or": "OR", "not": "ANDNOT"}
 SORTS = {"relevance": ("relevance", "descending"), "newest": ("submittedDate", "descending"),
          "oldest": ("submittedDate", "ascending"), "profile": ("relevance", "descending")}
-# « Pertinence pour vous » : les POOL meilleurs résultats d'arXiv, reclassés selon le profil (comme le feed),
-# gardés quelques minutes pour passer d'une page à l'autre sans nouvelle requête
+# « Pertinence pour vous » : les POOL meilleurs résultats d'arXiv, reclassés selon le profil (comme le feed) ;
+# articles croisés exclus : arXiv ne sait pas les écarter, l'app en lit FILTER_POOL d'un coup et les retire.
+# Lots gardés quelques minutes pour passer d'une page à l'autre sans nouvelle requête
 POOL = 200
+FILTER_POOL = 500
 POOL_TTL = 600
 _pools = {}
 CATEGORY = re.compile(r"[a-z-]+(\.[A-Za-z-]+)?")
@@ -168,31 +170,34 @@ def search(terms, categories=(), cross=True, dates=None, sort="relevance", page=
     expression, ids = build_query(terms, categories, dates)
     page = max(0, min(int(page), MAX_START // PAGE_SIZE))
     only_primary = set(categories) if categories and not cross else None  # articles croisés exclus
-    if sort == "profile":
-        return _profile_page(expression, ids, only_primary, page, api_key)
+    if sort == "profile" or only_primary:
+        return _pool_page(expression, ids, only_primary, sort, page, api_key)
     start = page * PAGE_SIZE
     items, total = _fetch(expression, ids, sort, start, PAGE_SIZE)
-    if only_primary:
-        items = [i for i in items if i["primary_category"] in only_primary]
     remember(items)
     return {"items": annotate(items), "total": total, "start": start, "pageSize": PAGE_SIZE}
 
 
-def _profile_page(expression, ids, only_primary, page, api_key):
-    key = json.dumps([expression, ids, sorted(only_primary or [])])
+def _pool_page(expression, ids, only_primary, sort, page, api_key):
+    """Page d'un lot de résultats lu d'un coup : reclassé selon le profil, et/ou sans les articles croisés."""
+    size = FILTER_POOL if only_primary else POOL
+    key = json.dumps([expression, ids, sorted(only_primary or []), sort])
     now = time.monotonic()
     for old in [k for k, (stamp, _, _) in _pools.items() if now - stamp > POOL_TTL]:
         del _pools[old]
     if key not in _pools:
-        items, total = _fetch(expression, ids, "relevance", 0, POOL)
+        items, total = _fetch(expression, ids, "relevance" if sort == "profile" else sort, 0, size)
         if only_primary:
             items = [i for i in items if i["primary_category"] in only_primary]
         remember(items)
-        try:  # vecteurs de sens (Semantic Scholar) : proximité de sens en plus de celle du vocabulaire
-            relevance.fetch_embeddings([relevance.s2_key(i["arxiv_id"]) for i in items], api_key)
-        except Exception:
-            pass
-        ranked = sorted(annotate(items), key=lambda i: i.get("relevance") or 0, reverse=True)
+        if sort == "profile":
+            try:  # vecteurs de sens (Semantic Scholar) : proximité de sens en plus de celle du vocabulaire
+                relevance.fetch_embeddings([relevance.s2_key(i["arxiv_id"]) for i in items], api_key)
+            except Exception:
+                pass
+        ranked = annotate(items)
+        if sort == "profile":
+            ranked = sorted(ranked, key=lambda i: i.get("relevance") or 0, reverse=True)
         while len(_pools) >= 5:  # quelques recherches gardées seulement
             del _pools[min(_pools, key=lambda k: _pools[k][0])]
         _pools[key] = (now, ranked, total)
@@ -200,7 +205,10 @@ def _profile_page(expression, ids, only_primary, page, api_key):
     start = page * PAGE_SIZE
     # avis donnés depuis : relus (le classement, lui, reste celui du premier calcul)
     items = annotate_status(ranked[start:start + PAGE_SIZE])
-    return {"items": items, "total": len(ranked), "arxivTotal": total, "start": start, "pageSize": PAGE_SIZE, "pool": POOL}
+    # lot complet (moins de résultats sur arXiv que la taille du lot) : le total est exact, sans « parmi »
+    complete = total <= size
+    return {"items": items, "total": len(ranked), "arxivTotal": total, "start": start, "pageSize": PAGE_SIZE,
+            "pool": None if complete else size, "profile": sort == "profile", "crossExcluded": bool(only_primary)}
 
 
 def remember(items):

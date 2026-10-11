@@ -138,7 +138,7 @@ export async function renderSearch(root) {
     resultsBox.replaceChildren(
       h("div", { class: "search-results-head" },
         h("h2", {}, t("search.results")),
-        h("span", { class: "muted small", title: results.pool ? t("search.poolHint", { pool: results.pool }) : null }, !total ? ""
+        h("span", { class: "muted small", title: results.pool ? t(results.profile ? "search.poolHint" : "search.poolHintCross", { pool: results.pool }) : null }, !total ? ""
           // « pour vous » : les meilleurs résultats d'arXiv, reclassés selon votre profil
           : results.pool ? t("search.rangePool", { from: start + 1, to: last, total, arxiv: results.arxivTotal, sort: sortName })
             : t("search.range", { from: start + 1, to: last, total, sort: sortName }))),

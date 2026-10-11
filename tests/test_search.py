@@ -95,3 +95,22 @@ class ProfileSort(unittest.TestCase):
         self.assertEqual((first["total"], first["arxivTotal"], len(first["items"])), (60, 506, 25))
         self.assertEqual(first["items"][0]["arxiv_id"], "2601.00059")
         self.assertEqual(second["items"][0]["arxiv_id"], "2601.00034")
+
+
+class CrossExcluded(ProfileSort):
+    """Articles croisés exclus : lot lu d'un coup, filtré, puis découpé en pages pleines (total exact)."""
+
+    def test_full_pages(self):
+        from unittest import mock
+        from app import search
+        items = [{"key": f"2602.{n:05d}", "arxiv_id": f"2602.{n:05d}", "version": 1, "title": f"Paper {n}", "authors": [],
+                  "abstract": "", "categories": ["math.DG", "math.FA"], "primary_category": "math.DG" if n % 3 else "math.FA",
+                  "announced": "2026-02-01", "link": ""} for n in range(90)]
+        with mock.patch.object(search, "_fetch", return_value=(items, 90)) as fetch, \
+                mock.patch.object(search.relevance, "score_items", side_effect=lambda batch: batch):
+            first = search.search([{"field": "all", "value": "x"}], ["math.DG"], cross=False, sort="newest", page=0)
+            second = search.search([{"field": "all", "value": "x"}], ["math.DG"], cross=False, sort="newest", page=1)
+        self.assertEqual(fetch.call_count, 1)
+        self.assertEqual(fetch.call_args.args[2:], ("newest", 0, search.FILTER_POOL))
+        self.assertEqual((first["total"], len(first["items"]), len(second["items"]), first["pool"]), (60, 25, 25, None))
+        self.assertTrue(all(i["primary_category"] == "math.DG" for i in first["items"] + second["items"]))
