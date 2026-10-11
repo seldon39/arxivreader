@@ -7,7 +7,7 @@ import { debounce, formatDate, h, icons, tidyTitle, timeAgo, toast, toastError, 
 
 // Recherche et filtres, gardés d'une visite à l'autre (le temps de la session)
 const view = { search: "", categories: new Set(), reading: new Set(), years: new Set(), folders: new Set(), source: "any", sort: "opened",
-  openFolder: null, folderSort: "newest" };
+  openFolder: null, folderSort: "newest", folderSearch: "" };
 // Dossiers ({id, name, papers}), relus avec la liste des articles
 let folderList = [];
 const READING = ["unread", "annotated", "understood", "claude"];
@@ -27,12 +27,16 @@ function readingStates(paper) {
   };
 }
 
+// tous les mots cherchés dans le titre, les auteurs, le résumé, l'identifiant ou les catégories
+function matchesWords(paper, query) {
+  const words = fold(query).split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const haystack = fold([paper.title, paper.authors.join(" "), paper.abstract, paper.arxiv_id, paper.categories.join(" ")].join(" "));
+  return words.every((word) => haystack.includes(word));
+}
+
 function matches(paper) {
-  const words = fold(view.search).split(/\s+/).filter(Boolean);
-  if (words.length) {
-    const haystack = fold([paper.title, paper.authors.join(" "), paper.abstract, paper.arxiv_id, paper.categories.join(" ")].join(" "));
-    if (!words.every((word) => haystack.includes(word))) return false;
-  }
+  if (!matchesWords(paper, view.search)) return false;
   if (view.categories.size && !paper.categories.some((c) => view.categories.has(c))) return false;
   if (view.folders.size && !folderList.some((f) => view.folders.has(f.id) && f.papers.includes(paper.id))) return false;
   if (view.years.size && !view.years.has((paper.published || "").slice(0, 4))) return false;
@@ -318,7 +322,9 @@ export async function renderLibrary(root) {
   const keepFocus = (draw) => {
     const key = document.activeElement?.dataset?.focus;
     draw();
-    if (key) panel.querySelector(`[data-focus="${CSS.escape(key)}"]`)?.focus();
+    const field = key && panel.querySelector(`[data-focus="${CSS.escape(key)}"]`);
+    field?.focus();
+    if (field?.type === "search") field.setSelectionRange(field.value.length, field.value.length);
   };
   function drawPanel() {
     const folder = folderList.find((f) => f.id === view.openFolder);
@@ -335,13 +341,28 @@ export async function renderLibrary(root) {
     }
     const waiting = view.folderSort === "relevance" && !scores;
     if (waiting) loadScores();
-    const members = papers.filter((p) => folder.papers.includes(p.id)).sort(folderSorter(scores));
-    const sort = members.length > 1 && h("div", { class: "folder-sort", role: "radiogroup", "aria-label": t("library.folder.sort") },
-      h("span", { class: "folder-sort-label" }, t("library.folder.sort")),
-      h("span", { class: "segmented search-segmented" }, FOLDER_SORTS.map((key) => h("label", {},
+    const all = papers.filter((p) => folder.papers.includes(p.id));
+    // articles du dossier : redessinés seuls pendant la frappe (le champ de recherche garde le focus)
+    const count = h("span", { class: "muted small" });
+    const cards = h("div", {});
+    const drawMembers = () => {
+      const members = all.filter((p) => matchesWords(p, view.folderSearch)).sort(folderSorter(scores));
+      count.textContent = members.length === all.length ? tn("feed.count", all.length)
+        : t("library.folder.matching", { n: members.length, total: all.length });
+      cards.replaceChildren(members.length
+        ? h("div", { class: "cards" }, members.map((p, i) => { const c = card(p, refreshList, cardContext); c.style.setProperty("--i", i); return c; }))
+        : h("p", { class: "hint folder-empty" }, t(all.length ? "library.folder.noMatch" : "library.folder.empty")));
+    };
+    const search = h("input", { class: "text-input folder-search-input", type: "search", value: view.folderSearch,
+      placeholder: t("library.folder.search"), "aria-label": t("library.folder.search"), autocomplete: "off", spellcheck: "false",
+      dataset: { focus: "folder-search" }, oninput: () => { view.folderSearch = search.value; drawMembers(); } });
+    const sort = all.length > 1 && h("div", { class: "folder-sort" },
+      h("span", { class: "folder-sort-label", id: "folder-sort-label" }, t("library.folder.sort")),
+      h("span", { class: "segmented search-segmented", role: "radiogroup", "aria-labelledby": "folder-sort-label" }, FOLDER_SORTS.map((key) => h("label", {},
         h("input", { type: "radio", name: "folder-sort", value: key, checked: key === view.folderSort, dataset: { focus: `folder-sort:${key}` },
           onchange: () => { view.folderSort = key; keepFocus(drawPanel); } }), t(`library.folderSort.${key}`)))),
-      waiting && h("span", { class: "busy" }, h("span", { class: "spinner" }), t("library.folder.scoring")));
+      waiting && h("span", { class: "busy" }, h("span", { class: "spinner" }), t("library.folder.scoring")),
+      h("span", { class: "search-field folder-search" }, h("span", { class: "search-icon", html: icons.search }), search));
     if (!renaming) renameForm = null;
     renameForm ||= renaming && nameForm(folder.name, async (name) => { await api.renameFolder(folder.id, name); renaming = false; await reloadFolders(); },
       () => { renaming = false; drawPanel(); }, t("library.folder.save"));
@@ -349,14 +370,13 @@ export async function renderLibrary(root) {
     inner.replaceChildren(
       h("div", { class: "folder-panel-head" },
         h("span", { class: "folder-icon", html: icons.folder }), title,
-        h("span", { class: "muted small" }, tn("feed.count", members.length)),
+        count,
         !renaming && h("button", { class: "link-button", type: "button", onclick: () => { renaming = true; drawPanel(); } }, t("library.folder.rename")),
         h("button", { class: "link-button", type: "button", onclick: () => removeFolder(folder) }, t("library.folder.delete")),
         h("button", { class: "link-button", type: "button", onclick: () => { toggleFolder(folder.id); focusFolder(folder.id); } }, t("library.folder.close"))),
       sort || "",
-      members.length
-        ? h("div", { class: "cards" }, members.map((p, i) => { const c = card(p, refreshList, cardContext); c.style.setProperty("--i", i); return c; }))
-        : h("p", { class: "hint folder-empty" }, t("library.folder.empty")));
+      cards);
+    drawMembers();
     if (!panel.classList.contains("open")) {
       if (panelOpening) {
         void panel.offsetHeight; // point de départ (replié) avant le déroulé
@@ -376,6 +396,7 @@ export async function renderLibrary(root) {
   let panelOpening = false;
   function toggleFolder(id) {
     view.openFolder = view.openFolder === id ? null : id;
+    view.folderSearch = ""; // recherche propre au dossier ouvert
     panelOpening = view.openFolder !== null;
     renaming = false;
     drawFolders();

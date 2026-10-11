@@ -87,7 +87,8 @@ Dans la bibliothèque, une rangée de dossiers précède la liste complète des 
 Un clic sur un dossier le déroule juste dessous, avec ses articles ; « Renommer », « Supprimer le dossier »
 (annulable ; ses articles restent dans la bibliothèque) et « Fermer » ; ses articles se trient par pertinence
 pour votre profil (calculée comme pour le feed, un article n'étant pas comparé à lui-même) ou par date de
-publication (plus récents, plus anciens). Le bouton dossier de chaque article
+publication (plus récents, plus anciens), et une recherche par mots réduit la liste du dossier (titre,
+auteurs, résumé, identifiant, catégories). Le bouton dossier de chaque article
 ouvre « Ranger dans… » : dossiers à cocher, ou création d'un dossier. Un article peut être dans plusieurs
 dossiers, affichés en fin de sa ligne ; « Filtres » permet aussi de réduire la liste à un ou plusieurs dossiers.
 

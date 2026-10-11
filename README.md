@@ -85,7 +85,8 @@ API does not support them: DOI, ORCID, MSC/ACM classes, license. At most one req
 In the library, a row of folders comes before the full list of papers (which stays visible).
 Clicking a folder unfolds it just below, with its papers; "Rename", "Delete folder" (can be undone; its
 papers stay in the library) and "Close"; its papers can be sorted by relevance to your profile (computed as
-for the feed, a paper not being compared with itself) or by publication date (newest, oldest). The folder button of each paper opens "File in a folder":
+for the feed, a paper not being compared with itself) or by publication date (newest, oldest), and a keyword search narrows the folder's list (title, authors,
+abstract, identifier, categories). The folder button of each paper opens "File in a folder":
 folders to tick, or a new folder. A paper can be in several folders, shown at the end of its line;
 "Filters" can also narrow the list to one or more folders.
 

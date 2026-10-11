@@ -961,7 +961,7 @@ dialog.figure-viewer::backdrop { background: rgba(20, 20, 24, .6); -webkit-backd
 .lib-head .import-box .button { font-weight: 500; }
 .cards { display: block; border-top: 1px solid var(--border); }
 .card {
-  display: grid; grid-template-columns: 1fr auto; column-gap: 18px; row-gap: 3px;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 18px; row-gap: 3px;
   border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; padding: 16px 14px 15px;
 }
 .card > * { grid-column: 1; }
@@ -1150,6 +1150,10 @@ input.switch:focus-visible { outline: 2px solid var(--focus); outline-offset: 2p
 /* tri du dossier ouvert, sous son en-tête : même commande que la page Recherche */
 .folder-sort { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 0; border-bottom: 1px solid var(--border); font: 13.5px var(--font-ui); }
 .folder-sort-label { color: var(--muted); font-weight: 600; }
+/* recherche dans le dossier : à droite du tri, toute la ligne en fenêtre étroite */
+.folder-search { flex: 0 1 300px; margin-left: auto; min-width: 200px; }
+.folder-search-input { height: 32px; width: 100%; padding-left: 34px; font-size: 13.5px; }
+@media (max-width: 700px) { .folder-search { flex-basis: 100%; margin-left: 0; } }
 .folder-panel .cards { border-top: 0; }
 .folder-panel .card:last-child { border-bottom: 0; }
 .folder-empty { margin: 12px 0 8px; }
