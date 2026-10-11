@@ -571,6 +571,8 @@ svg.graph { color: var(--border-strong); }
 .tool-button.spinning svg { animation: spin 1s linear infinite; }
 .feed-status { margin: -4px 0 10px; display: flex; align-items: center; gap: 6px; }
 .filter-menu.sort-menu { width: min(300px, calc(100vw - 32px)); }
+/* tri de la bibliothèque : ses quatre ordres sur une ligne */
+.filter-menu.sort-menu.library-sort { width: min(420px, calc(100vw - 32px)); }
 .button-icon svg { width: 17px; height: 17px; display: block; }
 .filter-group { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .check { display: inline-flex; gap: 6px; align-items: center; }

@@ -89,6 +89,8 @@ for the feed, a paper not being compared with itself) or by publication date (ne
 abstract, identifier, categories). The folder button of each paper opens "File in a folder":
 folders to tick, or a new folder. A paper can be in several folders, shown at the end of its line;
 "Filters" can also narrow the list to one or more folders.
+"Sort" orders papers by last read, added, published, or alphabetically (title or first author, A → Z or
+Z → A, folders then being sorted by name in the same order).
 
 ## Feed
 

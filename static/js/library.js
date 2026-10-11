@@ -7,11 +7,11 @@ import { debounce, formatDate, h, icons, tidyTitle, timeAgo, toast, toastError, 
 
 // Recherche et filtres, gardés d'une visite à l'autre (le temps de la session)
 const view = { search: "", categories: new Set(), reading: new Set(), years: new Set(), folders: new Set(), source: "any", sort: "opened",
-  openFolder: null, folderSort: "newest", folderSearch: "" };
+  alphaKey: "title", alphaDir: "asc", openFolder: null, folderSort: "newest", folderSearch: "" };
 // Dossiers ({id, name, papers}), relus avec la liste des articles
 let folderList = [];
 const READING = ["unread", "annotated", "understood", "claude"];
-const SORTS = ["opened", "added", "published", "title"];
+const SORTS = ["opened", "added", "published", "alpha"];
 
 // Comparaison sans accents ni majuscules
 const fold = (text) => String(text || "").replace(/\\["'`^~=.uvHc]\{?(\w)\}?/g, "$1") // accents TeX : K\"ahler → Kahler
@@ -50,12 +50,28 @@ function matches(paper) {
   return true;
 }
 
+// Ordre alphabétique : titre (sans les formules ni la ponctuation du début) ou nom du premier auteur
+const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+const titleKey = (paper) => fold(paper.title).replace(/\$[^$]*\$/g, " ").replace(/^[^\p{L}\p{N}]+/u, "");
+const authorKey = (paper) => {
+  const name = fold(paper.authors?.[0] || "").trim();
+  const parts = name.split(/\s+/);
+  return parts.length > 1 ? `${parts.at(-1)} ${parts.slice(0, -1).join(" ")}` : name; // nom, puis prénom
+};
+const alphabetical = (a, b) => {
+  const order = view.alphaKey === "author" ? collator.compare(authorKey(a), authorKey(b)) || collator.compare(titleKey(a), titleKey(b))
+    : collator.compare(titleKey(a), titleKey(b));
+  return view.alphaDir === "desc" ? -order : order;
+};
 const SORTERS = {
   opened: (a, b) => (b.opened_at || b.added_at || "").localeCompare(a.opened_at || a.added_at || ""),
   added: (a, b) => (b.added_at || "").localeCompare(a.added_at || ""),
   published: (a, b) => (b.published || "").localeCompare(a.published || ""),
-  title: (a, b) => fold(a.title).localeCompare(fold(b.title)),
+  alpha: alphabetical,
 };
+// dossiers : ordre de création, ou par nom avec le tri alphabétique des articles (même sens)
+const folderOrder = (folders) => view.sort !== "alpha" ? folders
+  : [...folders].sort((a, b) => (view.alphaDir === "desc" ? -1 : 1) * collator.compare(a.name, b.name));
 
 // Tri d'un dossier ouvert : pertinence pour le profil (comme le feed) ou date de publication
 const FOLDER_SORTS = ["relevance", "newest", "oldest"];
@@ -100,11 +116,13 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
   });
   const filterButton = h("button", { class: "button filter-button", type: "button", "aria-haspopup": "dialog", "aria-expanded": "false",
     "aria-controls": "library-filters" });
+  const sortButton = h("button", { class: "button filter-button", type: "button", "aria-haspopup": "dialog", "aria-expanded": "false",
+    "aria-controls": "library-filters" });
   const activeRow = h("div", { class: "active-filters" });
   const tools = h("div", { class: "library-tools" }, heading,
     h("div", { class: "library-search-row" },
       h("span", { class: "search-field" }, h("span", { class: "search-icon", html: icons.search }), search),
-      filterButton));
+      sortButton, filterButton));
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -128,20 +146,22 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
 
   let papers = [];
   let menu = null;
+  let menuButton = null; // bouton qui a ouvert le menu (Filtres ou Tri)
+  let fillOpen = null;   // et de quoi le remplir
 
-  // ---- Menu « Filtres » ----
+  // ---- Menus « Filtres » et « Tri » ----
   const closeMenu = ({ focus = true } = {}) => {
     if (!menu) return;
     menu.remove();
     menu = null;
-    filterButton.setAttribute("aria-expanded", "false");
+    menuButton.setAttribute("aria-expanded", "false");
     document.removeEventListener("pointerdown", onOutside);
     document.removeEventListener("keydown", onEscape);
-    if (focus) filterButton.focus();
+    if (focus) menuButton.focus();
   };
-  const onOutside = (event) => { if (menu && !menu.contains(event.target) && !filterButton.contains(event.target)) closeMenu({ focus: false }); };
+  const onOutside = (event) => { if (menu && !menu.contains(event.target) && !menuButton.contains(event.target)) closeMenu({ focus: false }); };
   const onEscape = (event) => { if (event.key === "Escape") closeMenu(); };
-  const changed = () => { refreshList(false); if (menu) fillMenu(); };
+  const changed = () => { refreshList(false); if (menu) fillOpen(); };
 
   const chip = (label, active, toggle, focusId) => h("button", { class: "kind-filter", type: "button", "aria-pressed": active,
     dataset: { focus: focusId }, onclick: () => { toggle(); changed(); } }, label);
@@ -168,9 +188,7 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
         years.length > 1 && section("years", t("library.filters.years"), h("div", { class: "filter-chips" },
           years.map((y) => chip(y, view.years.has(y), toggleIn(view.years, y), `year:${y}`)))),
         section("source", t("library.filters.source"), choice("source",
-          [["any", t("library.source.any")], ["html", t("library.source.html")], ["pdf", t("library.source.pdf")]], view.source, (v) => { view.source = v; })),
-        section("sort", t("library.filters.sort"), choice("sort",
-          SORTS.map((key) => [key, t(`library.sort.${key}`)]), view.sort, (v) => { view.sort = v; }))),
+          [["any", t("library.source.any")], ["html", t("library.source.html")], ["pdf", t("library.source.pdf")]], view.source, (v) => { view.source = v; }))),
       h("div", { class: "filter-foot" },
         h("button", { class: "button small-button", type: "button", disabled: !activeCount(), dataset: { role: "reset" },
           onclick: () => { resetFilters(); changed(); } }, t("library.filters.reset")),
@@ -182,26 +200,57 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
       || menu.querySelector('[data-role="done"]')).focus();
   }
 
-  filterButton.addEventListener("click", () => {
-    if (menu) { closeMenu(); return; }
-    menu = h("div", { class: "filter-menu", id: "library-filters", role: "dialog", "aria-label": t("library.filters.title") });
-    fillMenu();
+  // Menu « Tri » : ordre des articles ; l'ordre alphabétique (titre ou premier auteur, A→Z ou Z→A) range
+  // aussi les dossiers par nom
+  function fillSort() {
+    const focused = menu.contains(document.activeElement) ? document.activeElement.dataset.focus || document.activeElement.dataset.role : null;
+    menu.replaceChildren(
+      h("div", { class: "filter-body" },
+        section("sort", t("library.filters.sort"), choice("sort", SORTS.map((key) => [key, t(`library.sort.${key}`)]), view.sort, (v) => { view.sort = v; })),
+        view.sort === "alpha" && section("alphaKey", t("library.sort.alphaKey"), choice("alphaKey",
+          [["title", t("library.sort.alphaTitle")], ["author", t("library.sort.alphaAuthor")]], view.alphaKey, (v) => { view.alphaKey = v; })),
+        view.sort === "alpha" && section("alphaDir", t("library.sort.alphaDir"), choice("alphaDir",
+          [["asc", "A → Z"], ["desc", "Z → A"]], view.alphaDir, (v) => { view.alphaDir = v; })),
+        view.sort === "alpha" && h("p", { class: "hint" }, t("library.sort.alphaHint"))),
+      h("div", { class: "filter-foot" }, h("span", { class: "spacer" }),
+        h("button", { class: "button small-button primary", type: "button", dataset: { role: "done" }, onclick: () => closeMenu() }, t("library.filters.done"))));
+    if (focused) (menu.querySelector(`[data-focus="${CSS.escape(focused)}"], [data-role="${CSS.escape(focused)}"]`)
+      || menu.querySelector('[data-role="done"]')).focus();
+  }
+
+  const openMenu = (button, fill, label, extraClass = "") => {
+    if (menu) closeMenu({ focus: false }); // l'autre menu ouvert : remplacé
+    menuButton = button;
+    fillOpen = fill;
+    menu = h("div", { class: `filter-menu ${extraClass}`.trim(), id: "library-filters", role: "dialog", "aria-label": label });
+    fill();
     tools.append(menu);
-    filterButton.setAttribute("aria-expanded", "true");
+    button.setAttribute("aria-expanded", "true");
     document.addEventListener("pointerdown", onOutside); // aussi au doigt (iPhone)
     // Tab hors du menu : il se ferme, sans reprendre le focus
     menu.addEventListener("focusout", (event) => {
-      if (event.relatedTarget && !menu?.contains(event.relatedTarget) && !filterButton.contains(event.relatedTarget)) closeMenu({ focus: false });
+      if (event.relatedTarget && !menu?.contains(event.relatedTarget) && !button.contains(event.relatedTarget)) closeMenu({ focus: false });
     });
     document.addEventListener("keydown", onEscape);
-    menu.querySelector("button, input")?.focus();
-  });
+    menu.querySelector("input:checked, button, input")?.focus();
+  };
+  const toggleMenu = (button, fill, label, extraClass) => {
+    if (menu && menuButton === button) { closeMenu(); return; } // second clic sur le même bouton : fermé
+    openMenu(button, fill, label, extraClass);
+  };
+  filterButton.addEventListener("click", () => toggleMenu(filterButton, fillMenu, t("library.filters.title")));
+  sortButton.addEventListener("click", () => toggleMenu(sortButton, fillSort, t("library.filters.sort"), "sort-menu library-sort"));
 
   // Pastilles des filtres actifs, chacune retirable ; bouton « Filtres » avec leur nombre
   function drawActive() {
     const count = activeCount();
     filterButton.replaceChildren(h("span", { class: "button-icon", html: icons.filter }), t("library.filters.title"),
       count ? h("span", { class: "filter-count" }, String(count)) : "");
+    sortButton.replaceChildren(h("span", { class: "button-icon", html: icons.sort }), t("library.sortLabel"));
+    const order = view.sort === "alpha"
+      ? `${t("library.sort.alpha")} (${t(view.alphaKey === "author" ? "library.sort.alphaAuthor" : "library.sort.alphaTitle")}, ${view.alphaDir === "desc" ? "Z → A" : "A → Z"})`
+      : t(`library.sort.${view.sort}`);
+    sortButton.title = `${t("library.filters.sort")} : ${order}`;
     const pill = (label, remove) => h("span", { class: "active-filter" }, label,
       h("button", { type: "button", class: "active-filter-remove", title: t("library.filters.remove"), "aria-label": t("library.filters.removeOne", { label }),
         html: icons.close, onclick: (event) => {
@@ -341,7 +390,7 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
   const focusFolder = (id) => folderGrid.querySelector(`[data-folder="${id}"]`)?.focus();
 
   function drawFolders() {
-    const cards = folderList.map((folder) => {
+    const cards = folderOrder(folderList).map((folder) => {
       const count = inLibrary(folder).length;
       return h("button", { class: "folder", type: "button", "aria-expanded": String(view.openFolder === folder.id), "aria-controls": "folder-panel",
         dataset: { folder: folder.id }, onclick: () => toggleFolder(folder.id) },

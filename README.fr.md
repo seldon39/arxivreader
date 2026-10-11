@@ -91,6 +91,8 @@ publication (plus récents, plus anciens), et une recherche par mots réduit la 
 auteurs, résumé, identifiant, catégories). Le bouton dossier de chaque article
 ouvre « Ranger dans… » : dossiers à cocher, ou création d'un dossier. Un article peut être dans plusieurs
 dossiers, affichés en fin de sa ligne ; « Filtres » permet aussi de réduire la liste à un ou plusieurs dossiers.
+« Tri » ordonne les articles par dernière lecture, ajout, publication, ou par ordre alphabétique (titre ou
+premier auteur, A → Z ou Z → A, les dossiers étant alors rangés par nom dans le même sens).
 
 ## Feed (étape 2)
 
