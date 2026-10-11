@@ -114,6 +114,26 @@ def fetch_metadata(arxiv_id):
     )
 
 
+def fetch_titles(arxiv_ids):
+    """Titres et auteurs d'après arXiv, en une requête par centaine d'articles : {identifiant: (titre, auteurs)}."""
+    ids = list(dict.fromkeys(arxiv_ids))
+    found = {}
+    with _client() as client:
+        for start in range(0, len(ids), 100):
+            if start:
+                time.sleep(3)  # arXiv : une requête toutes les 3 s au plus
+            chunk = ids[start:start + 100]
+            response = with_retry(lambda: client.get("https://export.arxiv.org/api/query",
+                                                     params={"id_list": ",".join(chunk), "max_results": len(chunk)}))
+            response.raise_for_status()
+            for entry in ET.fromstring(response.text).findall(f"{ATOM}entry"):
+                key = re.search(r"abs/(.+?)(?:v\d+)?$", _text(entry, f"{ATOM}id"))
+                title = _text(entry, f"{ATOM}title")
+                if key and title:
+                    found[key.group(1)] = (title, [_text(a, f"{ATOM}name") for a in entry.findall(f"{ATOM}author")])
+    return found
+
+
 def fetch_html(arxiv_id, version):
     """Version HTML (LaTeXML) de l'article : arxiv.org/html, sinon ar5iv.
 

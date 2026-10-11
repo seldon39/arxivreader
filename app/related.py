@@ -23,8 +23,9 @@ import unicodedata
 import httpx
 
 from . import db
-from .arxiv import fetch_metadata, with_retry
+from .arxiv import fetch_metadata, fetch_titles, with_retry
 from .config import USER_AGENT
+from .feed import tex_text
 
 S2 = "https://api.semanticscholar.org/graph/v1"
 FIELDS = "paperId,title,year,citationCount,externalIds,authors"
@@ -36,7 +37,7 @@ DIRECT = 0.05       # proximité ajoutée pour un lien direct (référence de l'
 COCITED = 0.35      # co-citations rapportées à (citations · citations de l'article) ** COCITED
 CANDIDATES = 1200     # au-delà (article très cité), seules les 1000 citations rendues par S2 et les références comptent
 KEEP_DAYS = 15
-FORMAT = 3           # forme des graphes gardés (2 : second niveau, travaux antérieurs et dérivés ; 3 : tous les liens)
+FORMAT = 4           # forme des graphes gardés (2 : second niveau, travaux antérieurs et dérivés ; 3 : tous les liens ; 4 : titres d'arXiv)
 SCHEMA = """CREATE TABLE IF NOT EXISTS related_graphs (
     arxiv_id TEXT PRIMARY KEY,
     data TEXT NOT NULL,
@@ -133,14 +134,27 @@ def _same(a, b):
 
 
 def build(arxiv_id, api_key=None):
-    """Graphe des papiers liés à l'article arXiv `arxiv_id` (sans version)."""
-    return compute(*fetch(arxiv_id, api_key))
+    """Graphe des papiers liés à l'article arXiv `arxiv_id` (sans version). Les articles affichés qui sont sur
+    arXiv y prennent leur titre et leurs auteurs (Semantic Scholar en abîme parfois : « anggl(N) »), puis le
+    graphe est recalculé (les doublons se reconnaissent mieux)."""
+    origin, candidates, refs_of = fetch(arxiv_id, api_key)
+    first = compute(origin, candidates, refs_of)
+    shown = {p["arxivId"] for p in [*first["nodes"], *first["prior"], *first["derivative"]] if p.get("arxivId")}
+    try:
+        titles = fetch_titles(sorted(shown)) if shown else {}
+    except Exception:
+        return first  # arXiv injoignable : titres de Semantic Scholar
+    for paper in candidates.values():
+        if paper.get("arxivId") in titles:
+            title, authors = titles[paper["arxivId"]]
+            paper["title"], paper["authors"] = tex_text(title), [a for a in authors if a][:12] or paper["authors"]  # « -- » → « – »…
+    return compute(origin, candidates, refs_of)
 
 
 def _origin(arxiv_id):
     try:
         meta = fetch_metadata(arxiv_id)  # titre, auteurs, année : d'après arXiv
-        return {"id": f"arXiv:{arxiv_id}", "arxivId": arxiv_id, "doi": meta.doi or None, "title": meta.title,
+        return {"id": f"arXiv:{arxiv_id}", "arxivId": arxiv_id, "doi": meta.doi or None, "title": tex_text(meta.title),
                 "year": int(meta.published[:4]) if meta.published[:4].isdigit() else None, "citations": 0, "authors": meta.authors[:12]}
     except Exception:
         return {"id": f"arXiv:{arxiv_id}", "arxivId": arxiv_id, "doi": None, "title": f"arXiv:{arxiv_id}", "year": None, "citations": 0, "authors": []}

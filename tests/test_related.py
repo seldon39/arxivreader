@@ -54,7 +54,7 @@ class Related(unittest.TestCase):
                                                           "references": [{"paperId": r} for r in BATCH[i]]} for i in body["ids"]],
                          raise_for_status=lambda: None)
 
-    def run_build(self):
+    def run_build(self, titles=None):
         test = self
 
         class Client:
@@ -81,7 +81,9 @@ class Related(unittest.TestCase):
         meta = Metadata(arxiv_id="0806.2370", version=1, title="Toeplitz operators on symplectic manifolds", authors=["X. Ma", "G. Marinescu"],
                         abstract="", published="2008-06-14", updated="", categories=[], primary_category="math.DG")
         with mock.patch.object(related.httpx, "Client", Client), mock.patch.object(related, "with_retry", with_retry), \
-             mock.patch.object(related, "fetch_metadata", return_value=meta), mock.patch.object(related.time, "sleep"):
+             mock.patch.object(related, "fetch_metadata", return_value=meta), mock.patch.object(related.time, "sleep"), \
+             mock.patch.object(related, "fetch_titles", **({"side_effect": titles} if isinstance(titles, Exception) else {"return_value": titles or {}})) as arxiv:
+            self.arxiv = arxiv
             return related.graph("0806.2370")
 
     def test_closeness_duplicates_and_cache(self):
@@ -101,6 +103,20 @@ class Related(unittest.TestCase):
         again = self.run_build()                    # gardé : pas de nouvelle requête
         self.assertEqual(len(self.calls), n)
         self.assertEqual(again["nodes"][0]["id"], "C1")
+
+    def test_titles_from_arxiv(self):
+        # titre abîmé par Semantic Scholar (« anggl(N) ») : repris d'arXiv, avec ses auteurs ; « -- » devient « – »
+        data = self.run_build({"hep-th/9309134": ("Toeplitz quantization of Kähler manifolds and $gl(N)$, $N\\to\\infty$ limits",
+                                                   ["Martin Bordemann", "Eckhard Meinrenken", "Martin Schlichenmaier"]),
+                               "1003.2523": ("Berezin--Toeplitz quantization", ["Martin Schlichenmaier"])})
+        self.assertEqual(sorted(self.arxiv.call_args.args[0]), ["1003.2523", "hep-th/9309134", "math/0404494"])  # les articles affichés sur arXiv
+        r1 = next(n for n in data["nodes"] if n["id"] == "R1")
+        self.assertEqual((r1["title"], r1["authors"][0]), ("Toeplitz quantization of Kähler manifolds and $gl(N)$, $N\\to\\infty$ limits", "Martin Bordemann"))
+        self.assertEqual(next(n for n in data["nodes"] if n["id"] == "C1")["title"], "Berezin–Toeplitz quantization")
+
+    def test_titles_arxiv_unreachable(self):
+        data = self.run_build(OSError("hors ligne"))  # titres de Semantic Scholar
+        self.assertEqual(next(n for n in data["nodes"] if n["id"] == "R1")["title"], "Toeplitz quantization of Kahler manifolds and gl(N)")
 
     def test_old_format_rebuilt(self):
         related._ensure()
