@@ -137,3 +137,39 @@ class MissingFigures(unittest.TestCase):
             self.assertEqual(library.missing_assets("2609.40232"), [])
         finally:
             library.PAPERS = saved
+
+
+class QuickAdd(unittest.TestCase):
+    """Signet : article dans la bibliothèque tout de suite, import en arrière-plan ; ouvert avant la fin, attendu."""
+
+    def setUp(self):
+        import pathlib
+        import tempfile
+        from app import db, library
+        self.saved = (db.DB_PATH, db.LIBRARY, library.PAPERS)
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        db.DB_PATH, db.LIBRARY, library.PAPERS = tmp / "test.db", tmp, tmp / "papers"
+        db.init()
+
+    def tearDown(self):
+        from app import db, library
+        db.DB_PATH, db.LIBRARY, library.PAPERS = self.saved
+
+    def test_quick_add_then_open(self):
+        import threading
+        from unittest import mock
+        from app import db, library
+        release = threading.Event()
+
+        def slow_import(arxiv_id, add_to_library=True):
+            release.wait(5)  # import long (figures, source)
+            previous = db.get_paper(arxiv_id)
+            db.update_paper(arxiv_id, source="arxiv-html", version=1)
+            return db.get_paper(arxiv_id)
+        with mock.patch.object(library, "import_paper", side_effect=slow_import):
+            paper = library.quick_add("2609.40232", {"title": "Spectra", "authors": ["A. B"]})
+            self.assertEqual((paper["in_library"], paper["source"], paper["title"]), (1, "pending", "Spectra"))  # tout de suite
+            library.set_in_library("2609.40232", False)  # retiré avant la fin : reste retiré
+            threading.Timer(0.2, release.set).start()
+            ready = library.ensure_ready("2609.40232")  # ouvert : attend l'import
+        self.assertEqual((ready["source"], ready["in_library"]), ("arxiv-html", 0))

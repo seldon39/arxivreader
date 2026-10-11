@@ -601,7 +601,9 @@ function libraryButton(item) {
         await api.setInLibrary(item.readId, true);
         item.libraryId = item.readId;
       } else {
-        const paper = await api.importPaper(item.arxiv_id, true);
+        const paper = await api.quickAdd(item.arxiv_id, { title: item.title, authors: item.authors || [], abstract: item.abstract || "",
+          categories: item.categories || [], primary_category: item.primary_category || null, published: item.announced || null,
+          doi: item.doi || null, journal_ref: item.journal_ref || null });
         item.libraryId = item.readId = paper.id;
       }
       toast(t(item.libraryId ? "feed.added" : "feed.removed"));

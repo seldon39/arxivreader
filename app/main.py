@@ -280,9 +280,41 @@ async def add_paper(body: ImportRequest):
     return answer
 
 
+class QuickAddRequest(BaseModel):
+    query: str
+    title: str | None = None
+    authors: list[str] = []
+    abstract: str | None = None
+    categories: list[str] = []
+    primary_category: str | None = None
+    published: str | None = None
+    doi: str | None = None
+    journal_ref: str | None = None
+
+
+@app.post("/api/papers/quick")
+async def quick_add(body: QuickAddRequest):
+    """Signet : ajouté à la bibliothèque tout de suite (import en arrière-plan)."""
+    known = {"title": (body.title or "").strip()[:1000], "authors": [a[:200] for a in body.authors[:500]], "abstract": (body.abstract or "")[:20000],
+             "categories": body.categories[:20], "primary_category": body.primary_category, "published": (body.published or "")[:40],
+             "doi": body.doi, "journal_ref": body.journal_ref}
+    try:
+        paper = await run_in_threadpool(library.quick_add, body.query, known)
+    except ArxivError as error:
+        return JSONResponse({"error": str(error)}, status_code=400)
+    except Exception as error:
+        return JSONResponse({"error": f"{type(error).__name__}: {error}"}, status_code=502)
+    zotero.touch()
+    return paper
+
+
 @app.get("/api/papers/{paper_id}")
 def paper(paper_id: str):
-    paper = checked_paper(paper_id)
+    checked_paper(paper_id)
+    try:
+        paper = library.ensure_ready(paper_id)  # ajouté d'un clic, import pas fini : attendu
+    except Exception as error:
+        raise HTTPException(502, f"Import impossible : {error}")
     db.update_paper(paper_id, opened_at=_now())
     if library.missing_assets(paper_id):  # figures manquantes : redemandées en arrière-plan
         threading.Thread(target=library.repair_assets, args=(paper_id,), daemon=True).start()
@@ -299,6 +331,7 @@ def paper_share_text(paper_id: str):
 @app.get("/api/papers/{paper_id}/content")
 def content(paper_id: str):
     checked_paper(paper_id)
+    library.ensure_ready(paper_id)
     path = library.paper_dir(paper_id) / "content.html"
     if not path.exists():
         raise HTTPException(404, "No HTML version")

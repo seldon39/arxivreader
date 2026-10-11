@@ -29,6 +29,8 @@ export const api = {
   deleteFolder: (id) => request("DELETE", `/api/folders/${id}`),
   setInFolder: (id, paper, member) => request(member ? "PUT" : "DELETE", `/api/folders/${id}/papers/${encodeURIComponent(paper)}`, member ? {} : undefined),
   importPaper: (query, library = true) => request("POST", "/api/papers", { query, library }),
+  // ajout immédiat à la bibliothèque (import en arrière-plan), d'après ce que la page sait déjà de l'article
+  quickAdd: (query, known = {}) => request("POST", "/api/papers/quick", { query, ...known }),
   setInLibrary: (id, value) => request("PUT", `/api/papers/${encodeURIComponent(id)}/library`, { in_library: value }),
   paper: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}`),
   content: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/content`),

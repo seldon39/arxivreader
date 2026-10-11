@@ -263,7 +263,7 @@ export async function renderRelated(root, arxivFromRoute = null) {
     add.addEventListener("click", async () => {
       add.disabled = true;
       try {
-        const paper = await api.importPaper(n.arxivId);
+        const paper = await api.quickAdd(n.arxivId, { title: n.title, authors: n.authors || [] });
         n.libraryId = n.readId = paper.id;
         toast(t("library.drop.addedLibrary", { title: shortTitle(n.title) }));
         refresh();

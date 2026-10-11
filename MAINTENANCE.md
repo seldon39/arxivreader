@@ -186,6 +186,10 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
 - La synchronisation Zotero fusionne trois états (ici, Zotero, la fois précédente) : toute modification de
   `_sync` doit garder les tests de `tests/test_zotero.py` (écriture refusée, doublons fusionnés, sous-collection
   profonde, dossier supprimé pendant un ajout, corbeille, retraits massifs).
+- Ajout d'un clic (signet du feed, de la recherche, « Ajouter », dépôt sur un dossier) : `library.quick_add` inscrit
+  l'article tout de suite (`source = "pending"`, d'après ce que la page en sait) et l'importe en arrière-plan ;
+  `library.ensure_ready` fait attendre son ouverture (ou refait l'import s'il avait échoué). L'import de fond garde
+  la place dans la bibliothèque telle qu'elle est à sa fin (retiré entre-temps : reste retiré).
 - Figures : l'import garde l'adresse d'origine de chaque image (`assets.json`) ; à l'ouverture d'un article,
   celles qui manquent sont redemandées (`library.repair_assets`, par ces adresses, sinon par un nouvel import qui
   peut renommer les fichiers), et le lecteur suit la réparation (`/api/papers/{id}/figures`) puis recharge

@@ -94,8 +94,8 @@ export async function fileInFolder(items, folder, libraryPapers = null) {
       let paper = papers.find((p) => p.id === item.paperId) || papers.find((p) => p.arxiv_id === item.arxivId);
       if (!paper) {
         imported++;
-        toast(missing > 1 ? t("select.importing", { k: imported, n: missing }) : t("library.drop.importing"), { duration: 60000 });
-        paper = await api.importPaper(item.arxivId);
+        if (missing > 3) toast(t("select.importing", { k: imported, n: missing }), { duration: 60000 });
+        paper = await api.quickAdd(item.arxivId, item.title ? { title: item.title } : {}); // texte et figures en arrière-plan
         papers.push(paper); // connu désormais (un second rangement ne le réimporte pas)
       }
       if (folder.papers.includes(paper.id)) { already++; continue; }
@@ -128,8 +128,8 @@ export async function addToLibrary(items, libraryPapers) {
   let added = 0;
   try {
     for (const item of missing) {
-      toast(missing.length > 1 ? t("select.importing", { k: added + 1, n: missing.length }) : t("library.drop.importing"), { duration: 60000 });
-      const paper = await api.importPaper(item.arxivId);
+      if (missing.length > 3) toast(t("select.importing", { k: added + 1, n: missing.length }), { duration: 60000 });
+      const paper = await api.quickAdd(item.arxivId, item.title ? { title: item.title } : {}); // texte et figures en arrière-plan
       libraryPapers.push(paper);
       item.title ||= paper.title;
       added++;

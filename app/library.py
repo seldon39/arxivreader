@@ -147,6 +147,67 @@ def _fill(staging, paper_id, arxiv_id, meta):
 
 
 
+# ---------- Ajout immédiat (signet) : l'article entre dans la bibliothèque tout de suite, d'après ce que la page
+# en sait déjà (feed, recherche) ; le texte, les figures et la source arrivent en arrière-plan. Ouvert avant la fin,
+# il attend son import (ensure_ready). ----------
+
+PENDING = "pending"
+_imports = {}  # article → événement de fin de son import en arrière-plan
+_imports_guard = threading.Lock()
+
+
+def quick_add(arxiv_id, known=None):
+    """Article ajouté à la bibliothèque sans attendre son import ; renvoie sa fiche."""
+    arxiv_id, _ = parse_arxiv_id(arxiv_id)
+    paper_id = paper_key(arxiv_id)
+    if db.get_paper(paper_id):
+        return set_in_library(paper_id, True)
+    known = known or {}
+    if not known.get("title"):
+        meta = fetch_metadata(arxiv_id)  # rien de connu : la fiche d'arXiv (une requête, pas tout l'import)
+        known = {"title": meta.title, "authors": meta.authors, "abstract": meta.abstract, "categories": meta.categories,
+                 "primary_category": meta.primary_category, "published": meta.published, "doi": meta.doi, "journal_ref": meta.journal_ref}
+    db.save_paper({"id": paper_id, "arxiv_id": arxiv_id, "version": None, "title": known["title"], "authors": known.get("authors") or [],
+                   "abstract": known.get("abstract") or "", "categories": known.get("categories") or [],
+                   "primary_category": known.get("primary_category") or "", "published": known.get("published") or "",
+                   "updated": "", "doi": known.get("doi"), "journal_ref": known.get("journal_ref"), "comment": None,
+                   "source": PENDING, "position": None, "in_library": 1})
+    _start_import(arxiv_id, paper_id)
+    return db.get_paper(paper_id)
+
+
+def _start_import(arxiv_id, paper_id):
+    with _imports_guard:
+        if paper_id in _imports:
+            return
+        done = _imports[paper_id] = threading.Event()
+
+    def run():
+        try:
+            import_paper(arxiv_id, add_to_library=False)  # garde la place dans la bibliothèque telle qu'elle est alors
+        except Exception as error:
+            log.warning("import de %s en arrière-plan impossible : %s", arxiv_id, error)
+        finally:
+            with _imports_guard:
+                _imports.pop(paper_id, None)
+            done.set()
+    threading.Thread(target=run, daemon=True).start()
+
+
+def ensure_ready(paper_id, timeout=180):
+    """Article ajouté d'un clic dont l'import n'est pas fini : on l'attend (ou on le fait, s'il avait échoué)."""
+    paper = db.get_paper(paper_id)
+    if not paper or paper.get("source") != PENDING:
+        return paper
+    with _imports_guard:
+        done = _imports.get(paper_id)
+    if done:
+        done.wait(timeout)
+    else:
+        import_paper(paper["arxiv_id"], add_to_library=False)
+    return db.get_paper(paper_id)
+
+
 def _fetch_assets(folder, assets):
     """Images de l'article, quelques-unes à la fois (un même client) ; celles qui échouent sont laissées."""
     failed = []
