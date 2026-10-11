@@ -20,6 +20,16 @@ VERSION=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' app/version.py)  # app/version.py
 [ -n "$VERSION" ] || { echo "VERSION introuvable dans app/version.py."; exit 1; }
 BUILD_NUMBER=$(git rev-list --count HEAD 2>/dev/null || echo 1)
 
+# 0. Paquets de .venv : exactement les versions figées dans requirements.lock (l'application les embarque).
+# Une mise à jour se fait exprès : .venv/bin/pip install -U <paquet>, tests, puis ./arxivreader lock.
+FROZEN=$(.venv/bin/pip freeze --exclude-editable | sort -f)
+if [ "$FROZEN" != "$(sort -f requirements.lock)" ]; then
+  echo ".venv ne correspond pas à requirements.lock :"
+  diff <(echo "$FROZEN") <(sort -f requirements.lock) | sed 's/^/  /' || true
+  echo "→ .venv/bin/pip install -r requirements.lock (revenir aux versions figées), ou ./arxivreader lock (figer une mise à jour voulue)"
+  exit 1
+fi
+
 rm -rf "$APP" "$DIST/arXivReader.dmg"
 mkdir -p "$APP/Contents/MacOS" "$RES" "$BUILD" "$DIST"
 

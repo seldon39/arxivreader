@@ -279,6 +279,21 @@ mais n'a pas été essayée avec un vrai compte.
 - Connexions sortantes : arXiv (articles, nouveautés), Semantic Scholar (recommandations), GitHub (une fois par
   jour, numéro de la dernière version ; désactivable), et l'assistant IA choisi.
 
+## Maintenance
+
+L'application dépend de services qu'elle ne contrôle pas (arXiv et ses pages LaTeXML, Semantic Scholar, Zotero,
+les assistants IA, GitHub) et de WebKit, qui change avec macOS. Les tests (`tests/`) simulent ces services ;
+`./arxivreader check` les appelle vraiment, une requête minimale chacun, et vérifie la forme des réponses (✓ bon,
+✗ changé ou en panne, – non vérifié : pas de clé, quota atteint). Elle signale aussi un changement de macOS ou de
+WebKit depuis la fois précédente, avec les points à revoir à la main. `./arxivreader check --weekly` la lance
+chaque lundi à 10 h par l'application installée (notification macOS en cas de problème ; journal dans
+`~/Library/Logs/arXivReader-check.log`) ; `--no-weekly` l'arrête.
+
+Versions : `requirements.txt` liste les paquets voulus, `requirements.lock` leurs versions exactes, testées, que
+`.venv` installe et que l'application embarque ; `macos/build.sh` refuse de construire si `.venv` en diffère. Pour
+mettre à jour un paquet, exprès et un à la fois : `.venv/bin/pip install -U <paquet>`, les tests, puis
+`./arxivreader lock` (et committer). MathJax et pdf.js sont figés dans `static/vendor`.
+
 ## Organisation du code
 
 ```
@@ -289,7 +304,7 @@ app/            serveur Python (FastAPI)
   texsource.py  lecture de la source TeX (options de classe, police, étiquettes de listes)
   feed.py       nouveautés arXiv (RSS, OAI-PMH), recommandations Semantic Scholar, repérage d'identifiants
   journals.py   revue où un article est paru (arXiv, Semantic Scholar)
-  search.py     recherche dans tout arXiv (onglet Recherche) ; related.py : papiers liés (graphe) ; zotero.py : synchronisation avec Zotero
+  search.py     recherche dans tout arXiv (onglet Recherche) ; related.py : papiers liés (graphe) ; zotero.py : synchronisation avec Zotero ; check.py : vérification des services extérieurs
   folders.py    dossiers de la bibliothèque
   profile.py    profil de recherche, pré-remplissage, auteurs suivis ; relevance.py : tri par pertinence
   annotations.py  surlignages, notes, état de lecture

@@ -270,6 +270,21 @@ but has not been tried with a real account.
 - Outgoing connections: arXiv (papers, new papers), Semantic Scholar (recommendations), GitHub (once a day,
   number of the latest version; can be turned off), and the chosen AI assistant.
 
+## Maintenance
+
+The application depends on services it does not control (arXiv and its LaTeXML pages, Semantic Scholar, Zotero,
+the AI assistants, GitHub) and on WebKit, which changes with macOS. The tests (`tests/`) simulate these services;
+`./arxivreader check` really calls them, one minimal request each, and checks the shape of the answers (✓ fine,
+✗ changed or down, – not checked: no key, quota reached). It also reports a change of macOS or WebKit since the
+previous time, with the points to review by hand. `./arxivreader check --weekly` runs it every Monday at 10 am
+through the installed application (macOS notification if something is wrong; log in
+`~/Library/Logs/arXivReader-check.log`); `--no-weekly` stops it.
+
+Versions: `requirements.txt` lists the wanted packages, `requirements.lock` their exact, tested versions, which
+`.venv` installs and the application ships; `macos/build.sh` refuses to build if `.venv` differs. To update a
+package, deliberately and one at a time: `.venv/bin/pip install -U <package>`, the tests, then `./arxivreader lock`
+(and commit). MathJax and pdf.js are pinned in `static/vendor`.
+
 ## Code layout
 
 ```
@@ -280,7 +295,7 @@ app/            Python server (FastAPI)
   texsource.py  reading the TeX source (class options, font, list labels)
   feed.py       new arXiv papers (RSS, OAI-PMH), Semantic Scholar recommendations, identifier detection
   journals.py   journal where a paper appeared (arXiv, Semantic Scholar)
-  search.py     search across arXiv (Search tab); related.py: related papers (graph); zotero.py: Zotero synchronisation
+  search.py     search across arXiv (Search tab); related.py: related papers (graph); zotero.py: Zotero synchronisation; check.py: check of the external services
   folders.py    library folders
   profile.py    research profile, prefill, followed authors; relevance.py: relevance ranking
   annotations.py  highlights, notes, reading state

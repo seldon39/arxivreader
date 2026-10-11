@@ -1,7 +1,11 @@
 #!/bin/bash
 # Lance arXivReader : prépare l'environnement Python au besoin, démarre le serveur local
 # (127.0.0.1 uniquement) et ouvre le navigateur. Ctrl+C pour arrêter.
-#   ./arxivreader login   connecte Claude (abonnement Claude, une seule fois) pour l'onglet IA
+#   ./arxivreader login            connecte Claude (abonnement Claude, une seule fois) pour l'onglet IA
+#   ./arxivreader check            vérifie les services extérieurs (arXiv, Semantic Scholar, Zotero, IA, GitHub)
+#   ./arxivreader check --weekly   la même vérification chaque lundi à 10 h, par l'application installée
+#                                  (notification macOS en cas de problème) ; --no-weekly pour l'arrêter
+#   ./arxivreader lock             fige les versions de .venv dans requirements.lock (après une mise à jour voulue)
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -9,16 +13,67 @@ PORT=8710
 URL="http://127.0.0.1:$PORT/"
 PYTHON="${PYTHON:-python3}"
 
-# Environnement Python du projet (.venv), réinstallé si requirements.txt change.
+# Environnement Python du projet (.venv), aux versions exactes de requirements.lock (réinstallé s'il change).
+# requirements.txt : les paquets voulus ; requirements.lock : leurs versions testées, embarquées par l'application.
 if [ ! -x .venv/bin/python ]; then
   echo "Première installation de l'environnement Python…"
   "$PYTHON" -m venv .venv
 fi
-HASH=$(shasum requirements.txt | cut -d' ' -f1)
+HASH=$(shasum requirements.lock | cut -d' ' -f1)
 if [ "$(cat .venv/.requirements-hash 2>/dev/null)" != "$HASH" ]; then
   .venv/bin/pip install --quiet --upgrade pip
-  .venv/bin/pip install --quiet -r requirements.txt
+  .venv/bin/pip install --quiet -r requirements.lock
   echo "$HASH" > .venv/.requirements-hash
+fi
+
+# Versions figées : après « .venv/bin/pip install -U <paquet> » et les tests
+if [ "${1:-}" = "lock" ]; then
+  .venv/bin/pip freeze --exclude-editable > requirements.lock
+  shasum requirements.lock | cut -d' ' -f1 > .venv/.requirements-hash
+  echo "requirements.lock mis à jour ($(wc -l < requirements.lock | tr -d ' ') paquets) : à committer."
+  exit 0
+fi
+
+# Vérification des services extérieurs ; --weekly / --no-weekly : tâche hebdomadaire (launchd)
+if [ "${1:-}" = "check" ]; then
+  AGENT="$HOME/Library/LaunchAgents/org.arxivreader.check.plist"
+  INSTALLED=/Applications/arXivReader.app/Contents/Resources
+  SUPPORT="$HOME/Library/Application Support/arXivReader"
+  if [ "${2:-}" = "--no-weekly" ]; then
+    launchctl bootout "gui/$(id -u)" "$AGENT" 2>/dev/null || true
+    rm -f "$AGENT"
+    echo "Vérification hebdomadaire arrêtée."
+    exit 0
+  fi
+  if [ "${2:-}" = "--weekly" ]; then
+    [ -x "$INSTALLED/python/bin/python3" ] || { echo "Application introuvable dans /Applications."; exit 1; }
+    mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+    # code et Python de l'application installée (le dossier Documents est protégé pour les tâches de fond) ;
+    # PYTHONDONTWRITEBYTECODE : rien n'est écrit dans l'application (sa signature reste valide)
+    cat > "$AGENT" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>org.arxivreader.check</string>
+  <key>ProgramArguments</key>
+  <array><string>$INSTALLED/python/bin/python3</string><string>-m</string><string>app.check</string><string>--notify</string></array>
+  <key>WorkingDirectory</key><string>$INSTALLED/arxivreader</string>
+  <key>EnvironmentVariables</key>
+  <dict><key>ARXIVREADER_LIBRARY</key><string>$SUPPORT</string><key>PYTHONDONTWRITEBYTECODE</key><string>1</string></dict>
+  <key>StartCalendarInterval</key><dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
+  <key>StandardOutPath</key><string>$HOME/Library/Logs/arXivReader-check.log</string>
+  <key>StandardErrorPath</key><string>$HOME/Library/Logs/arXivReader-check.log</string>
+</dict>
+</plist>
+PLIST
+    launchctl bootout "gui/$(id -u)" "$AGENT" 2>/dev/null || true
+    launchctl bootstrap "gui/$(id -u)" "$AGENT"
+    echo "Vérification chaque lundi à 10 h (ou au réveil du Mac) ; journal : ~/Library/Logs/arXivReader-check.log"
+    exit 0
+  fi
+  [ -d "$SUPPORT" ] && export ARXIVREADER_LIBRARY="${ARXIVREADER_LIBRARY:-$SUPPORT}"  # réglages (clés) de l'application
+  exec .venv/bin/python -m app.check "${@:2}"
 fi
 
 # Connexion à Claude : le CLI Claude Code livré avec le SDK ouvre la page de connexion dans le navigateur.
