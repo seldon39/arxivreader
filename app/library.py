@@ -241,8 +241,9 @@ def clean_cache(days=30):
 
 
 def remove_paper(paper_id):
-    from . import ai, annotations
+    from . import ai, annotations, folders
     shutil.rmtree(paper_dir(paper_id), ignore_errors=True)
     db.delete_paper(paper_id)
+    folders.forget_paper(paper_id)
     annotations.delete_for(paper_id)
     ai.delete_for(paper_id)

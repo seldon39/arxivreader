@@ -67,6 +67,14 @@ http://127.0.0.1:8710/ ; le serveur n'écoute que sur ce Mac (pas sur le Wi-Fi).
 Les dépendances viennent des renvois (`\ref`, `\eqref`, `\cite`) dans l'énoncé et dans sa preuve :
 un argument utilisé sans renvoi explicite n'apparaît pas.
 
+## Dossiers
+
+Dans la bibliothèque, une rangée de dossiers précède la liste complète des articles (qui reste affichée).
+Un clic sur un dossier le déroule juste dessous, avec ses articles ; « Renommer », « Supprimer le dossier »
+(annulable ; ses articles restent dans la bibliothèque) et « Fermer ». Le bouton dossier de chaque article
+ouvre « Ranger dans… » : dossiers à cocher, ou création d'un dossier. Un article peut être dans plusieurs
+dossiers, affichés en fin de sa ligne ; « Filtres » permet aussi de réduire la liste à un ou plusieurs dossiers.
+
 ## Feed (étape 2)
 
 Menu **Feed** en haut, quatre onglets :

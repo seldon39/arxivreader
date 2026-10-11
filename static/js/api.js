@@ -18,6 +18,11 @@ async function request(method, url, body) {
 
 export const api = {
   papers: () => request("GET", "/api/papers"),
+  folders: () => request("GET", "/api/folders"),
+  createFolder: (name, papers = []) => request("POST", "/api/folders", { name, papers }),
+  renameFolder: (id, name) => request("PUT", `/api/folders/${id}`, { name }),
+  deleteFolder: (id) => request("DELETE", `/api/folders/${id}`),
+  setInFolder: (id, paper, member) => request(member ? "PUT" : "DELETE", `/api/folders/${id}/papers/${encodeURIComponent(paper)}`, member ? {} : undefined),
   importPaper: (query, library = true) => request("POST", "/api/papers", { query, library }),
   setInLibrary: (id, value) => request("PUT", `/api/papers/${encodeURIComponent(id)}/library`, { in_library: value }),
   paper: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}`),

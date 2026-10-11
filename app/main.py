@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Str
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import ai, alerts, annotations, citations, crossrefs, db, feed, library, profile, providers, relevance, updates
+from . import ai, alerts, annotations, citations, crossrefs, db, feed, folders, library, profile, providers, relevance, updates
 from .arxiv import ArxivError, fetch_metadata, parse_arxiv_id
 from .config import HOST, PORT, STATIC
 
@@ -246,6 +246,68 @@ def asset(paper_id: str, name: str):
     if not path.exists():
         raise HTTPException(404, "Missing asset")
     return FileResponse(path)
+
+
+# ---------- Dossiers de la bibliothèque ----------
+
+class FolderRequest(BaseModel):
+    name: str
+    papers: list[str] = []
+
+
+class RenameRequest(BaseModel):
+    name: str
+
+
+def checked_folder(folder_id):
+    folder = folders.get(folder_id)
+    if folder is None:
+        raise HTTPException(404, "Unknown folder")
+    return folder
+
+
+@app.get("/api/folders")
+def list_folders():
+    return folders.list_folders()
+
+
+@app.post("/api/folders")
+def create_folder(body: FolderRequest):
+    for paper_id in body.papers:
+        checked_paper(paper_id)
+    try:
+        return folders.create(body.name, body.papers)
+    except folders.FolderError as error:
+        raise HTTPException(409 if "déjà" in str(error) else 400, str(error))
+
+
+@app.put("/api/folders/{folder_id}")
+def rename_folder(folder_id: int, body: RenameRequest):
+    checked_folder(folder_id)
+    try:
+        return folders.rename(folder_id, body.name)
+    except folders.FolderError as error:
+        raise HTTPException(409 if "déjà" in str(error) else 400, str(error))
+
+
+@app.delete("/api/folders/{folder_id}")
+def delete_folder(folder_id: int):
+    checked_folder(folder_id)
+    return folders.delete(folder_id)
+
+
+@app.put("/api/folders/{folder_id}/papers/{paper_id}")
+def add_to_folder(folder_id: int, paper_id: str):
+    checked_folder(folder_id)
+    checked_paper(paper_id)
+    return folders.set_member(folder_id, paper_id, True)
+
+
+@app.delete("/api/folders/{folder_id}/papers/{paper_id}")
+def remove_from_folder(folder_id: int, paper_id: str):
+    checked_folder(folder_id)
+    checked_paper(paper_id)
+    return folders.set_member(folder_id, paper_id, False)
 
 
 @app.put("/api/papers/{paper_id}/library")

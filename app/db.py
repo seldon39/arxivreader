@@ -96,6 +96,18 @@ CREATE TABLE IF NOT EXISTS ai_exchanges (
     created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS ai_exchanges_paper ON ai_exchanges (paper_id);
+-- Dossiers de la bibliothèque ; un article peut être dans plusieurs dossiers (comme des étiquettes)
+CREATE TABLE IF NOT EXISTS folders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS folder_papers (
+    folder_id INTEGER NOT NULL,
+    paper_id TEXT NOT NULL,
+    added_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (folder_id, paper_id)
+);
 CREATE TABLE IF NOT EXISTS feed_status (
     key TEXT PRIMARY KEY,
     status TEXT,                     -- liked, disliked

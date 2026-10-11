@@ -6,7 +6,10 @@ import { t, tn } from "./i18n.js";
 import { debounce, formatDate, h, icons, tidyTitle, timeAgo, toast, toastError, withMath } from "./util.js";
 
 // Recherche et filtres, gardés d'une visite à l'autre (le temps de la session)
-const view = { search: "", categories: new Set(), reading: new Set(), years: new Set(), source: "any", sort: "opened" };
+const view = { search: "", categories: new Set(), reading: new Set(), years: new Set(), folders: new Set(), source: "any", sort: "opened",
+  openFolder: null };
+// Dossiers ({id, name, papers}), relus avec la liste des articles
+let folderList = [];
 const READING = ["unread", "annotated", "understood", "claude"];
 const SORTS = ["opened", "added", "published", "title"];
 
@@ -31,6 +34,7 @@ function matches(paper) {
     if (!words.every((word) => haystack.includes(word))) return false;
   }
   if (view.categories.size && !paper.categories.some((c) => view.categories.has(c))) return false;
+  if (view.folders.size && !folderList.some((f) => view.folders.has(f.id) && f.papers.includes(paper.id))) return false;
   if (view.years.size && !view.years.has((paper.published || "").slice(0, 4))) return false;
   const pdf = paper.source === "none" || paper.source === "tex"; // lu dans le PDF (énoncés tirés du TeX ou non)
   if (view.source === "html" && pdf) return false;
@@ -50,12 +54,13 @@ const SORTERS = {
 };
 
 // le tri n'est pas un filtre : il ne compte pas, et « Tout réinitialiser » le garde
-const activeCount = () => view.categories.size + view.reading.size + view.years.size + (view.source !== "any" ? 1 : 0);
+const activeCount = () => view.categories.size + view.reading.size + view.years.size + view.folders.size + (view.source !== "any" ? 1 : 0);
 
 function resetFilters() {
   view.categories.clear();
   view.reading.clear();
   view.years.clear();
+  view.folders.clear();
   view.source = "any";
 }
 
@@ -134,6 +139,8 @@ export async function renderLibrary(root) {
     const focused = menu.contains(document.activeElement) ? document.activeElement.dataset.focus || document.activeElement.dataset.role : null;
     menu.replaceChildren(
       h("div", { class: "filter-body" },
+        folderList.length > 0 && section("folders", t("library.filters.folders"), h("div", { class: "filter-chips" },
+          folderList.map((f) => chip(f.name, view.folders.has(f.id), toggleIn(view.folders, f.id), `folder:${f.id}`)))),
         section("reading", t("library.filters.reading"), h("div", { class: "filter-chips" },
           READING.map((state) => chip(t(`library.reading.${state}`), view.reading.has(state), toggleIn(view.reading, state), `reading:${state}`)))),
         categories.length > 1 && section("categories", t("library.filters.categories"), h("div", { class: "filter-chips" },
@@ -190,6 +197,8 @@ export async function renderLibrary(root) {
       ...[...view.reading].map((state) => pill(t(`library.reading.${state}`), () => view.reading.delete(state))),
       ...[...view.categories].map((c) => pill(c, () => view.categories.delete(c))),
       ...[...view.years].map((y) => pill(y, () => view.years.delete(y))),
+      ...[...view.folders].map((id) => folderList.find((f) => f.id === id))
+        .filter(Boolean).map((f) => pill(f.name, () => view.folders.delete(f.id))),
       view.source !== "any" && pill(t(`library.source.${view.source}`), () => { view.source = "any"; }),
     ].filter(Boolean);
     activeRow.replaceChildren(...pills, pills.length > 1 ? h("button", { class: "link-button small", type: "button",
@@ -200,7 +209,10 @@ export async function renderLibrary(root) {
   async function refreshList(reload = true) {
     if (reload) {
       try {
-        papers = await api.papers();
+        [papers, folderList] = await Promise.all([api.papers(), api.folders().catch(() => folderList)]);
+        // dossier ou filtre disparu (supprimé ailleurs) : oublié
+        if (!folderList.some((f) => f.id === view.openFolder)) view.openFolder = null;
+        for (const id of view.folders) if (!folderList.some((f) => f.id === id)) view.folders.delete(id);
       } catch (error) {
         const retry = h("button", { class: "button small-button", type: "button", onclick: () => refreshList() }, t("common.retry"));
         list.replaceChildren(h("p", { class: "notice" }, t("error.generic", { message: error.message }), retry));
@@ -209,6 +221,7 @@ export async function renderLibrary(root) {
       if (menu) fillMenu();
     }
     drawActive();
+    drawFolders();
     const shown = papers.filter(matches).sort(SORTERS[view.sort]);
     heading.textContent = shown.length === papers.length ? t("library.papers", { n: papers.length })
       : t("library.papersShown", { n: shown.length, total: papers.length });
@@ -220,14 +233,166 @@ export async function renderLibrary(root) {
       list.replaceChildren(h("div", { class: "empty" }, t("library.noMatch"), " ",
         h("button", { class: "link-button", type: "button", onclick: () => { resetFilters(); view.search = ""; search.value = ""; changed(); } }, t("library.showAll"))));
     } else {
-      list.replaceChildren(h("div", { class: "cards" }, shown.map((p) => card(p, refreshList))));
+      list.replaceChildren(h("div", { class: "cards" }, shown.map((p) => card(p, refreshList, cardContext))));
     }
   }
+
+  // ---- Dossiers : rangée de cartes, dossier ouvert dessous (déroulé), menu « Ranger dans… » des articles ----
+  // le dossier ouvert reste le même élément : il se déroule et s'enroule (transition), sans être recréé
+  const foldersTitle = h("h2", { id: "folders-title" });
+  const folderGrid = h("div", { class: "folder-grid" });
+  const panel = h("div", { class: "folder-panel", id: "folder-panel" }, h("div", { class: "folder-panel-inner" }));
+  const foldersBox = h("section", { class: "folders", "aria-labelledby": "folders-title" }, foldersTitle, folderGrid, panel);
+  let creating = false;
+  const inLibrary = (folder) => folder.papers.filter((id) => papers.some((p) => p.id === id));
+  // dossiers changés : liste relue (cartes, pastilles des articles, dossier ouvert)
+  const reloadFolders = async () => { folderList = await api.folders(); refreshList(false); };
+
+  function nameForm(value, onSave, onCancel, label) {
+    const field = h("input", { class: "text-input", type: "text", value, maxlength: 80, placeholder: t("library.folder.name"), "aria-label": t("library.folder.name") });
+    const save = async (event) => {
+      event.preventDefault();
+      const name = field.value.trim();
+      if (!name) return onCancel();
+      try { await onSave(name); } catch (error) { toastError(error); field.focus(); }
+    };
+    const box = h("form", { class: "folder-name-form", onsubmit: save },
+      field, h("button", { class: "button small-button", type: "submit" }, label),
+      h("button", { class: "link-button", type: "button", onclick: onCancel }, t("library.folder.cancel")));
+    field.addEventListener("keydown", (event) => { if (event.key === "Escape") { event.stopPropagation(); onCancel(); } });
+    requestAnimationFrame(() => { field.focus(); field.select(); });
+    return box;
+  }
+
+  function drawFolders() {
+    const cards = folderList.map((folder) => {
+      const count = inLibrary(folder).length;
+      return h("button", { class: "folder", type: "button", "aria-expanded": String(view.openFolder === folder.id), "aria-controls": "folder-panel",
+        onclick: () => toggleFolder(folder.id) },
+        h("span", { class: "folder-icon", html: icons.folder }),
+        h("span", { class: "folder-text" }, h("span", { class: "folder-name" }, folder.name), h("span", { class: "folder-count" }, tn("feed.count", count))));
+    });
+    const add = creating
+      ? h("div", { class: "folder folder-new editing" }, nameForm("", async (name) => {
+        const folder = await api.createFolder(name);
+        creating = false;
+        view.openFolder = folder.id;
+        await reloadFolders();
+      }, () => { creating = false; drawFolders(); }, t("library.folder.create")))
+      : h("button", { class: "folder folder-new", type: "button", onclick: () => { creating = true; drawFolders(); } },
+        h("span", { class: "folder-icon", html: icons.add }), t("library.folder.new"));
+    foldersTitle.textContent = folderList.length ? t("library.foldersCount", { n: folderList.length }) : t("library.folders");
+    folderGrid.replaceChildren(...cards, add);
+    drawPanel();
+  }
+
+  let renaming = false;
+  function drawPanel() {
+    const folder = folderList.find((f) => f.id === view.openFolder);
+    const inner = panel.firstChild;
+    if (!folder) {
+      if (panel.classList.contains("open")) {
+        panel.classList.remove("open");
+        // contenu retiré une fois le dossier refermé (fin du déroulé)
+        const clear = () => { if (!panel.classList.contains("open")) inner.replaceChildren(); };
+        panel.addEventListener("transitionend", clear, { once: true });
+        setTimeout(clear, 400);
+      }
+      return;
+    }
+    const members = papers.filter((p) => folder.papers.includes(p.id)).sort(SORTERS[view.sort]);
+    const title = renaming
+      ? nameForm(folder.name, async (name) => { await api.renameFolder(folder.id, name); renaming = false; await reloadFolders(); },
+        () => { renaming = false; drawPanel(); }, t("library.folder.save"))
+      : h("h3", {}, folder.name);
+    inner.replaceChildren(
+      h("div", { class: "folder-panel-head" },
+        h("span", { class: "folder-icon", html: icons.folder }), title,
+        h("span", { class: "muted small" }, tn("feed.count", members.length)),
+        !renaming && h("button", { class: "link-button", type: "button", onclick: () => { renaming = true; drawPanel(); } }, t("library.folder.rename")),
+        h("button", { class: "link-button", type: "button", onclick: () => removeFolder(folder) }, t("library.folder.delete")),
+        h("button", { class: "link-button", type: "button", onclick: () => toggleFolder(folder.id) }, t("library.folder.close"))),
+      members.length
+        ? h("div", { class: "cards" }, members.map((p, i) => { const c = card(p, refreshList, cardContext); c.style.setProperty("--i", i); return c; }))
+        : h("p", { class: "hint folder-empty" }, t("library.folder.empty")));
+    if (!panel.classList.contains("open")) {
+      void panel.offsetHeight; // point de départ (replié) avant le déroulé
+      panel.classList.add("open");
+    }
+  }
+
+  function toggleFolder(id) {
+    view.openFolder = view.openFolder === id ? null : id;
+    renaming = false;
+    drawFolders();
+  }
+
+  async function removeFolder(folder) {
+    try {
+      const removed = await api.deleteFolder(folder.id);
+      view.openFolder = null;
+      view.folders.delete(folder.id);
+      await reloadFolders();
+      toast(t("library.folder.deleted", { name: removed.name }), { action: { label: t("common.undo"),
+        onClick: () => api.createFolder(removed.name, removed.papers).then((again) => { view.openFolder = again.id; return reloadFolders(); }, toastError) } });
+    } catch (error) {
+      toastError(error);
+    }
+  }
+
+  // Menu « Ranger dans… » d'un article : dossiers à cocher, et création d'un dossier
+  let fileMenu = null;
+  const closeFileMenu = () => {
+    fileMenu?.remove();
+    fileMenu = null;
+    document.removeEventListener("pointerdown", onFileOutside);
+    document.removeEventListener("keydown", onFileEscape, true);
+  };
+  const onFileOutside = (event) => { if (fileMenu && !fileMenu.contains(event.target) && !event.target.closest?.(".folder-action")) closeFileMenu(); };
+  const onFileEscape = (event) => { if (event.key === "Escape" && fileMenu) { event.stopPropagation(); fileMenu.opener?.focus(); closeFileMenu(); } };
+  function openFileMenu(paper, button) {
+    if (fileMenu?.paperId === paper.id) { closeFileMenu(); return; }
+    closeFileMenu();
+    const fill = () => {
+      fileMenu.replaceChildren(
+        h("h4", {}, t("library.folder.fileTitle")),
+        ...folderList.map((folder) => h("label", { class: "check" },
+          h("input", { type: "checkbox", checked: folder.papers.includes(paper.id), onchange: async (event) => {
+            try { await api.setInFolder(folder.id, paper.id, event.target.checked); await reloadFolders(); fill(); } catch (error) { toastError(error); }
+          } }), folder.name)),
+        h("form", { class: "folder-menu-new", onsubmit: async (event) => {
+          event.preventDefault();
+          const name = event.currentTarget.elements.name.value.trim();
+          if (!name) return;
+          try { await api.createFolder(name, [paper.id]); await reloadFolders(); fill(); } catch (error) { toastError(error); }
+        } },
+          h("input", { class: "text-input", type: "text", name: "name", maxlength: 80, placeholder: t("library.folder.newName"), "aria-label": t("library.folder.newName") }),
+          h("button", { class: "button small-button", type: "submit" }, t("library.folder.create"))));
+    };
+    fileMenu = h("div", { class: "folder-menu", role: "dialog", "aria-label": t("library.folder.fileTitle") });
+    Object.assign(fileMenu, { paperId: paper.id, opener: button });
+    fill();
+    document.body.append(fileMenu);
+    // sous le bouton, aligné à droite ; au-dessus s'il n'y a pas la place
+    const rect = button.getBoundingClientRect();
+    const height = fileMenu.offsetHeight;
+    const top = rect.bottom + 6 + height > innerHeight ? rect.top - 6 - height : rect.bottom + 6;
+    Object.assign(fileMenu.style, { top: `${Math.max(8, top)}px`, left: `${Math.max(8, rect.right - fileMenu.offsetWidth)}px` });
+    document.addEventListener("pointerdown", onFileOutside);
+    document.addEventListener("keydown", onFileEscape, true);
+    // défilement voulu (molette, doigt) : le menu se ferme ; pas quand la page se recale toute seule
+    // (dossier qui s'agrandit après un rangement)
+    addEventListener("wheel", closeFileMenu, { once: true, passive: true });
+    addEventListener("touchmove", closeFileMenu, { once: true, passive: true });
+    fileMenu.querySelector("input")?.focus();
+  }
+  const cardContext = { folders: () => folderList, openFileMenu };
 
   root.replaceChildren(h("section", { class: "library" },
     // titre et import sur une ligne
     h("div", { class: "lib-head" }, h("h1", {}, t("library.title")), form),
     status,
+    foldersBox,
     tools, activeRow,
     list,
   ));
@@ -236,7 +401,7 @@ export async function renderLibrary(root) {
   await refreshList();
   // ⌘F : champ de recherche de la bibliothèque
   const unsubscribeFind = setFindHandler((command) => { if (command === "open") { search.focus(); search.select(); } });
-  return () => { closeMenu({ focus: false }); unsubscribeFind(); };
+  return () => { closeMenu({ focus: false }); closeFileMenu(); unsubscribeFind(); };
 }
 
 // « Ouvert il y a 2 jours · 3 notes · 5 énoncés compris · 2 réponses de Claude »
@@ -255,10 +420,16 @@ function readingLine(paper) {
     section && [" · ", h("a", { class: "resume-link", href: `#/paper/${encodeURIComponent(paper.id)}` }, t("library.resume", { n: section }))]);
 }
 
-function card(paper, refreshList) {
+// Dossiers d'un article, en fin de ligne de métadonnées
+function folderChip(paper, context) {
+  const names = (context?.folders() || []).filter((f) => f.papers.includes(paper.id)).map((f) => f.name);
+  return names.length ? h("span", { class: "chip folder-chip" }, h("span", { class: "folder-chip-icon", html: icons.folder }), names.join(", ")) : null;
+}
+
+function card(paper, refreshList, context = null) {
   const href = `#/paper/${encodeURIComponent(paper.id)}`;
-  const action = (icon, title, handler) => h("button", {
-    class: "icon-button", type: "button", title, "aria-label": title, html: icon,
+  const action = (icon, title, handler, className = "") => h("button", {
+    class: `icon-button ${className}`.trim(), type: "button", title, "aria-label": title, html: icon,
     onclick: (event) => handler(event.currentTarget),
   });
   const authors = paper.authors.length > 6 ? [...paper.authors.slice(0, 6), "…"] : paper.authors;
@@ -273,8 +444,10 @@ function card(paper, refreshList) {
       h("span", { class: "chip" }, formatDate(paper.published)),
       paper.source === "none" && h("span", { class: "chip" }, t("library.pdfOnly")),
       paper.source === "tex" && h("span", { class: "chip", title: t("library.pdfTexHint") }, t("library.pdfTex")),
+      folderChip(paper, context),
     ),
     h("div", { class: "card-actions" },
+      context && action(icons.folder, t("library.folder.file"), (button) => context.openFileMenu(paper, button), "folder-action"),
       h("a", { class: "icon-button", href: `https://arxiv.org/abs/${paper.arxiv_id}`, target: "_blank", rel: "noopener noreferrer",
         title: "arXiv", "aria-label": "arXiv", html: icons.external }),
       action(icons.refresh, t("library.refresh"), async (button) => {
