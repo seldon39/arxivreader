@@ -1160,6 +1160,8 @@ input.switch:focus-visible { outline: 2px solid var(--focus); outline-offset: 2p
 .folder-search-input { height: 32px; width: 100%; padding-left: 34px; font-size: 13.5px; }
 @media (max-width: 700px) { .folder-search { flex-basis: 100%; margin-left: 0; } }
 .folder-panel .cards { border-top: 0; }
+/* grande bibliothèque : suite de la liste au fil du défilement (bouton si besoin) */
+.library-more { display: flex; justify-content: center; padding: 14px 0 6px; }
 /* requête IA en cours : compteur à chiffres fixes, mot d'explication en dessous */
 .ai-elapsed { font-variant-numeric: tabular-nums; color: var(--muted); }
 .ai-wait-hint { margin: 4px 0 0; }

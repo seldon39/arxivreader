@@ -76,7 +76,15 @@ function resetFilters() {
   view.source = "any";
 }
 
-export async function renderLibrary(root) {
+// Grande bibliothèque : les cartes sont affichées par lots (les suivantes au fil du défilement), et chaque
+// carte n'est construite qu'une fois tant que l'article ne change pas (une recherche ne fait que les trier)
+const CHUNK = 150;
+
+// ce qu'une carte montre de l'article : si rien n'a changé, la même carte resert
+const cardSignature = (paper, folders) => JSON.stringify([paper.title, paper.authors, paper.version, paper.published, paper.categories,
+  paper.primary_category, paper.opened_at, paper.position, paper.reading, paper.source, paper.in_library, paper.journal_ref, folders]);
+
+export async function renderLibrary(root, { restoreTo = 0 } = {}) {
   const input = h("input", {
     class: "text-input", type: "text", name: "query", autocomplete: "off", spellcheck: "false",
     placeholder: t("library.placeholder"), "aria-label": t("library.placeholder"),
@@ -218,6 +226,55 @@ export async function renderLibrary(root) {
     activeRow.hidden = !pills.length;
   }
 
+  // cartes déjà construites : id de l'article → { signature, carte }
+  const built = new Map();
+  let moreObserver = null;
+  let onMoreScroll = null; // aussi au défilement : l'observateur ne suffit pas partout (fenêtre en arrière-plan)
+  let restoring = restoreTo; // retour sur la page : assez de cartes pour revenir à l'endroit quitté
+  function showCards(shown) {
+    moreObserver?.disconnect();
+    if (onMoreScroll) removeEventListener("scroll", onMoreScroll);
+    const names = new Map(); // dossiers de chaque article, une fois pour toutes les cartes
+    for (const folder of folderList) for (const id of folder.papers) names.set(id, [...(names.get(id) || []), folder.name]);
+    const cardFor = (paper) => {
+      const signature = cardSignature(paper, names.get(paper.id) || []);
+      const known = built.get(paper.id);
+      if (known?.signature === signature) return known.card;
+      const fresh = card(paper, refreshList, cardContext);
+      built.set(paper.id, { signature, card: fresh });
+      return fresh;
+    };
+    const box = h("div", { class: "cards" });
+    const more = h("button", { class: "button small-button", type: "button" });
+    const moreRow = h("div", { class: "library-more" }, more);
+    let count = 0;
+    const next = () => {
+      box.append(...shown.slice(count, count + CHUNK).map(cardFor));
+      count = Math.min(shown.length, count + CHUNK);
+      if (count >= shown.length) { moreRow.remove(); moreObserver?.disconnect(); removeEventListener("scroll", onMoreScroll); return; }
+      more.textContent = t("library.more", { n: shown.length - count });
+      // fin de liste encore visible (grand écran) : lot suivant aussitôt après
+      if (!restoring && moreRow.isConnected && moreRow.getBoundingClientRect().top < innerHeight + 600) setTimeout(next);
+    };
+    more.addEventListener("click", next);
+    list.replaceChildren(box, moreRow);
+    next();
+    // retour sur la page : lots ajoutés tout de suite jusqu'à l'endroit quitté (rétabli juste après l'affichage)
+    while (restoring && count < shown.length && document.documentElement.scrollHeight < restoring + innerHeight) next();
+    restoring = 0;
+    if (count < shown.length) {
+      moreObserver = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) next(); }, { rootMargin: "600px" });
+      moreObserver.observe(moreRow);
+      onMoreScroll = () => { if (moreRow.isConnected && moreRow.getBoundingClientRect().top < innerHeight + 600) next(); };
+      addEventListener("scroll", onMoreScroll, { passive: true });
+    }
+    // articles retirés de la bibliothèque : leurs cartes ne sont plus gardées
+    if (built.size > papers.length + CHUNK) {
+      const ids = new Set(papers.map((p) => p.id));
+      for (const id of built.keys()) if (!ids.has(id)) built.delete(id);
+    }
+  }
+
   async function refreshList(reload = true) {
     if (reload) {
       try {
@@ -245,7 +302,7 @@ export async function renderLibrary(root) {
       list.replaceChildren(h("div", { class: "empty" }, t("library.noMatch"), " ",
         h("button", { class: "link-button", type: "button", onclick: () => { resetFilters(); view.search = ""; search.value = ""; changed(); } }, t("library.showAll"))));
     } else {
-      list.replaceChildren(h("div", { class: "cards" }, shown.map((p) => card(p, refreshList, cardContext))));
+      showCards(shown);
     }
   }
 
@@ -505,7 +562,8 @@ export async function renderLibrary(root) {
   // retour sur l'onglet (application Mac) : liste et dossiers relus, changés peut-être dans un autre onglet
   const onRefresh = () => refreshList();
   addEventListener("arxivreader:library-refresh", onRefresh);
-  return () => { closeMenu({ focus: false }); closeFileMenu(); unsubscribeFind(); removeEventListener("arxivreader:library-refresh", onRefresh); };
+  return () => { closeMenu({ focus: false }); closeFileMenu(); unsubscribeFind(); removeEventListener("arxivreader:library-refresh", onRefresh);
+    moreObserver?.disconnect(); if (onMoreScroll) removeEventListener("scroll", onMoreScroll); };
 }
 
 // « Ouvert il y a 2 jours · 3 notes · 5 énoncés compris · 2 réponses de Claude »

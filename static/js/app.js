@@ -41,7 +41,7 @@ async function route() {
     const dispose = feedMatch ? await renderFeed(view, feedMatch[1] || "arxiv")
       : searchMatch ? await renderSearch(view)
       : match ? await renderReader(view, ...decodeURIComponent(match[1]).split("/"), () => token === routeToken)
-        : await renderLibrary(view);
+        : await renderLibrary(view, { restoreTo: scrollMemory.get(location.hash) || 0 });
     if (token !== routeToken) { dispose?.(); return; } // page déjà quittée pendant le chargement
     cleanup = dispose || null;
     // le lecteur reprend lui-même à l'endroit où l'on s'était arrêté
