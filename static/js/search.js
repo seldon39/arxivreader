@@ -116,8 +116,9 @@ export async function renderSearch(root) {
         segmented("dates", [["all", t("search.dates.all")], ["months", t("search.dates.months")], ["year", t("search.dates.year")],
           ["range", t("search.dates.range")]], dates.mode, (value) => { dates.mode = value; }),
         dates.mode === "year" && yearInput,
-        dates.mode === "range" && h("span", { class: "search-group" }, dateInput("from"), "–", dateInput("to")),
-        h("span", { class: "search-label search-sort-label" }, t("search.sort")),
+        dates.mode === "range" && h("span", { class: "search-group" }, dateInput("from"), "–", dateInput("to"))),
+      h("div", { class: "search-row", role: "group", "aria-labelledby": "search-sort-label" },
+        h("span", { class: "search-label", id: "search-sort-label" }, t("search.sort")),
         segmented("sort", [["relevance", t("search.sort.relevance")], ["profile", t("search.sort.profile")],
           ["newest", t("search.sort.newest")], ["oldest", t("search.sort.oldest")]],
           state.sort, (value) => { state.sort = value; })));
