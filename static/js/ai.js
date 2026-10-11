@@ -21,6 +21,28 @@ const KIND_WORDS = {
 const KIND_OF_WORD = Object.entries(KIND_WORDS).map(([kind, words]) => [new RegExp(`^(?:${words})$`, "i"), kind]);
 const NUMBER = "\\d+(?:\\.\\d+)*[a-z]?";
 
+
+// Requête en cours : ce que fait l'assistant et depuis combien de temps (une réponse peut prendre
+// plusieurs minutes : le compteur montre que rien n'est bloqué), avec un mot d'explication passé 20 s
+function runningLine(exchange) {
+  const label = h("span", {});
+  const clock = h("span", { class: "ai-elapsed", "aria-hidden": "true" });
+  const hint = h("p", { class: "muted small ai-wait-hint", role: "status", hidden: true }, t("ai.longWait"));
+  const line = h("div", { class: "ai-running" }, h("div", { class: "busy small" }, h("span", { class: "spinner" }), label, clock), hint);
+  const started = exchange.startedAt || Date.parse(`${String(exchange.created_at || "").replace(" ", "T")}Z`) || Date.now();
+  const tick = () => {
+    if (exchange.status !== "running" || (timer && !line.isConnected)) { clearInterval(timer); return; }
+    const seconds = Math.max(0, Math.floor((Date.now() - started) / 1000));
+    label.textContent = t(exchange.answer ? "ai.writing" : "ai.thinking");
+    clock.textContent = ` ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+    hint.hidden = Boolean(exchange.answer) || seconds < 20;
+  };
+  let timer = null;
+  tick();
+  timer = setInterval(tick, 1000);
+  return line;
+}
+
 export class Assistant {
   constructor({ paper, structure, find, navigate, annotator, onChange, equationIds }) {
     this.paper = paper;
@@ -137,7 +159,7 @@ export class Assistant {
       return;
     }
     const controller = new AbortController();
-    const local = { id: `local-${Date.now()}`, task, target, quote, question, parent_id: parent?.id ?? null, answer: "", status: "running",
+    const local = { id: `local-${Date.now()}`, startedAt: Date.now(), task, target, quote, question, parent_id: parent?.id ?? null, answer: "", status: "running",
       model: this.status?.model || currentModel(), created_at: new Date().toISOString().slice(0, 19).replace("T", " ") };
     this.exchanges.push(local);
     this.running = { exchange: local, controller };
@@ -334,7 +356,7 @@ export class Assistant {
 
     const foot = [];
     if (exchange.status === "running") {
-      foot.push(h("div", { class: "busy small" }, h("span", { class: "spinner" }), t(exchange.answer ? "ai.writing" : "ai.thinking")));
+      foot.push(runningLine(exchange));
     } else {
       if (exchange.status === "stopped") foot.push(h("span", { class: "badge warn" }, t("ai.stopped")));
       if (exchange.status === "error" || exchange.error) {
