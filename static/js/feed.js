@@ -210,7 +210,7 @@ async function renderList(body, tab) {
     }
     list.replaceChildren(...(sections.length ? sections : [h("div", { class: "empty" }, t("feed.noMatch"))]));
     markSeen(data.items.filter((i) => fresh.has(i.key) && list.querySelector(`.feed-card.fresh[data-key="${CSS.escape(i.key)}"]`)).map((i) => i.key));
-    typesetTex([list]).catch(() => {});
+    typesetTex([list]).then(() => list.querySelectorAll(".feed-abstract").forEach((a) => a.updateMore?.())).catch(() => {});
   };
 
   showStatus();
@@ -355,9 +355,22 @@ function formatDay(iso) {
 
 function feedCard(item, onChange = () => {}, { compact = false, fresh = false, showDate = false } = {}) {
   const authors = item.authors.length > 8 ? [...item.authors.slice(0, 8), t("feed.etAl")] : item.authors;
-  // Résumé coupé à trois lignes : clic, Entrée ou Espace pour le déplier
+  // Résumé coupé à deux lignes : clic, Entrée ou Espace pour le déplier, ou le lien « Afficher tout le
+  // résumé » dessous (seulement quand il est coupé)
   const abstract = h("p", { class: "feed-abstract", tabindex: 0, role: "button", "aria-expanded": "false" }, item.abstract || "");
-  const toggleAbstract = () => abstract.setAttribute("aria-expanded", String(abstract.classList.toggle("open")));
+  const more = h("button", { class: "link-button abstract-more", type: "button", hidden: true,
+    onclick: (event) => { event.stopPropagation(); toggleAbstract(); } });
+  const updateMore = () => {
+    const open = abstract.classList.contains("open");
+    more.textContent = t(open ? "feed.abstractLess" : "feed.abstractMore");
+    more.hidden = !open && abstract.scrollHeight <= abstract.clientHeight + 1;
+  };
+  abstract.updateMore = updateMore; // aussi après la mise en forme des formules (la hauteur change)
+  new ResizeObserver(updateMore).observe(abstract);
+  const toggleAbstract = () => {
+    abstract.setAttribute("aria-expanded", String(abstract.classList.toggle("open")));
+    updateMore();
+  };
   abstract.addEventListener("click", toggleAbstract);
   abstract.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggleAbstract(); } });
 
@@ -442,6 +455,7 @@ function feedCard(item, onChange = () => {}, { compact = false, fresh = false, s
     ),
     reasons.length ? h("div", { class: "reasons" }, reasons) : null,
     item.abstract && abstract,
+    item.abstract && more,
     linker?.form,
     h("div", { class: "feed-actions" },
       statusButton("liked", t("feed.like"), "up"),

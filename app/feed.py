@@ -51,33 +51,42 @@ def tex_text(text):
     return " ".join("".join(out).split())
 
 
-# Résumé abîmé par l'ancienne version de tex_text (accolades d'une équation hors $…$ retirées :
-# « \beginequation* », « \fracn(n-2)4 », « \mathrmVol ») : à relire sur arXiv
+# Résumés abîmés par l'ancienne version de tex_text : accolades retirées hors des formules $…$, donc
+# aussi dans les équations $$…$$, \[…\], \(…\) et \begin{equation}… (« \beginequation* », « \fracn(n-2)4 »,
+# indices doubles). Relus une fois sur arXiv, par requêtes groupées.
 BROKEN = re.compile(r"\\(?:begin|end|frac|mathrm|mathbb|mathcal|mathfrak|operatorname|text)(?=[A-Za-z0-9])")
+REPAIR_FLAG = "feed.abstractsRepaired"
 
 
-def repair_abstracts(limit=40):
-    """Relit sur arXiv (une requête groupée) les résumés abîmés ; nombre de résumés réparés."""
-    with db.connect() as connection:
-        rows = connection.execute("SELECT key, arxiv_id, abstract FROM feed_items WHERE arxiv_id IS NOT NULL "
-                                  "AND (abstract LIKE '%\\begin%' OR abstract LIKE '%\\frac%' OR abstract LIKE '%\\math%' "
-                                  "OR abstract LIKE '%\\text%' OR abstract LIKE '%\\operatorname%' OR abstract LIKE '%\\end%')").fetchall()
-    broken = {row["arxiv_id"]: row["key"] for row in rows if BROKEN.search(re.sub(r"\$[^$]*\$", "", row["abstract"] or ""))}
-    ids = list(broken)[:limit]
-    if not ids:
+def _maybe_broken(abstract):
+    return bool(BROKEN.search(re.sub(r"\$[^$]*\$", "", abstract))) or any(m in abstract for m in ("$$", "\\[", "\\(", "\\begin"))
+
+
+def repair_abstracts(batch=50):
+    """Relit sur arXiv les résumés possiblement abîmés (une seule fois) ; nombre de résumés relus."""
+    if db.get_settings().get(REPAIR_FLAG):
         return 0
-    with _client() as client:
-        response = with_retry(lambda: client.get("https://export.arxiv.org/api/query",
-                                                 params={"id_list": ",".join(ids), "max_results": len(ids)}))
-    response.raise_for_status()
-    repaired = 0
     with db.connect() as connection:
-        for entry in ET.fromstring(response.text).findall(f"{ATOM}entry"):
-            found = re.search(r"abs/([^v]+)(?:v\d+)?$", entry.findtext(f"{ATOM}id") or "")
-            summary = " ".join((entry.findtext(f"{ATOM}summary") or "").split())
-            if found and found.group(1) in broken and summary:
-                connection.execute("UPDATE feed_items SET abstract = ? WHERE key = ?", (tex_text(summary), broken[found.group(1)]))
-                repaired += 1
+        rows = connection.execute("SELECT key, arxiv_id, abstract FROM feed_items WHERE arxiv_id IS NOT NULL").fetchall()
+    broken = {row["arxiv_id"]: row["key"] for row in rows if row["abstract"] and _maybe_broken(row["abstract"])}
+    ids = list(broken)
+    repaired = 0
+    with _client() as client:
+        for start in range(0, len(ids), batch):
+            if start:
+                time.sleep(3)  # arXiv : une requête toutes les 3 s au plus
+            chunk = ids[start:start + batch]
+            response = with_retry(lambda: client.get("https://export.arxiv.org/api/query",
+                                                     params={"id_list": ",".join(chunk), "max_results": len(chunk)}))
+            response.raise_for_status()
+            with db.connect() as connection:
+                for entry in ET.fromstring(response.text).findall(f"{ATOM}entry"):
+                    found = re.search(r"abs/(.+?)(?:v\d+)?$", entry.findtext(f"{ATOM}id") or "")
+                    summary = " ".join((entry.findtext(f"{ATOM}summary") or "").split())
+                    if found and found.group(1) in broken and summary:
+                        connection.execute("UPDATE feed_items SET abstract = ? WHERE key = ?", (tex_text(summary), broken[found.group(1)]))
+                        repaired += 1
+    db.save_settings({REPAIR_FLAG: _now()})
     return repaired
 
 

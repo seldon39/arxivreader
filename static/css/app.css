@@ -997,6 +997,9 @@ dialog.figure-viewer::backdrop { background: rgba(20, 20, 24, .6); -webkit-backd
 .followed-section .feed-card { border-left: 0; }
 .feed-day > .feed-card:first-child { border-top: 1px solid var(--border); }
 .feed-abstract { margin-top: 6px; -webkit-line-clamp: 2; color: color-mix(in srgb, var(--text) 85%, transparent); }
+.abstract-more { display: block; margin: 2px 0 0; font: 13px var(--font-ui); color: var(--link); text-decoration: none; }
+.abstract-more:hover { text-decoration: underline; }
+.feed-card.compact .abstract-more { display: none; }
 /* nouveauté : un point rouge dans la marge au lieu de l'étiquette */
 .fresh-badge { font-size: 0; width: 7px; height: 7px; padding: 0; border-radius: 50%; margin: 0 9px 3px -16px; vertical-align: middle; }
 /* raisons : une phrase en italique */
