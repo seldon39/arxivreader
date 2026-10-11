@@ -7,7 +7,7 @@ from bs4 import NavigableString, Tag
 
 from .arxiv import extract_ids
 
-STRUCTURE_VERSION = 6  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
+STRUCTURE_VERSION = 7  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
 
 SECTION_LEVELS = {
     "ltx_part": 0, "ltx_chapter": 0, "ltx_section": 1, "ltx_appendix": 1,
@@ -145,6 +145,17 @@ def extract_structure(fragment, overrides=None):
     `overrides` : emplacements de preuve indiqués à la main ({id d'énoncé: {mode, ref | start, end}})."""
     for element in fragment.find_all(attrs={"data-proof-of": True}):
         del element["data-proof-of"]  # nouvelle analyse : rattachements refaits ci-dessous
+    # Preuve placée par LaTeXML dans son énoncé (« \\begin{proof} » avant « \\end{theorem} » dans la source) :
+    # sortie juste après l'énoncé, avec ce qui la suit, pour qu'elle soit rattachée à l'énoncé comme une
+    # preuve ordinaire (et que le repère de couleur de l'énoncé ne la couvre pas)
+    for theorem in fragment.select(".ltx_theorem"):
+        proof = theorem.find(class_="ltx_proof", recursive=False)
+        if proof is None:
+            continue
+        anchor = theorem
+        for element in [proof, *proof.find_next_siblings()]:
+            anchor.insert_after(element.extract())
+            anchor = element
     counter = iter(range(1, 10**6))
     # Index des identifiants : une recherche par fragment.find(id=…) parcourt tout l'article
     index = {}

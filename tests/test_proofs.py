@@ -161,3 +161,19 @@ class SeparatedProofs(unittest.TestCase):
     def test_outline_then_proof_section(self):
         self.assertEqual(self.nodes["Theorem 3.7"]["proofs"], ["S3.P7", "S4"])  # esquisse, puis la section de preuve
         self.assertIn("S3.Thm5", self.nodes["Theorem 3.7"]["uses"])
+
+
+class NestedProofs(unittest.TestCase):
+    """Preuve placée par LaTeXML dans son énoncé (\\begin{proof} avant \\end{theorem}) : sortie après l'énoncé."""
+
+    def test_proof_moved_out_and_attached(self):
+        nested = statement(1, "theorem", "Theorem 3.1").replace(
+            "</div></div>", f'</div>{proof("S3.Thm1.4", "Inside.")}<div id="S3.Thm1.p9" class="ltx_para"><p class="ltx_p">Tail.</p></div></div>')
+        html = f'<article><section id="S3" class="ltx_section">{nested}{statement(2, "lemma", "Lemma 3.2")}</section></article>'
+        fragment = BeautifulSoup(html, "html.parser")
+        nodes = {n["label"]: n for n in extract_structure(fragment)["nodes"]}
+        theorem_div = fragment.find(id="S3.Thm1")
+        self.assertIsNone(theorem_div.find(class_="ltx_proof"))
+        self.assertEqual([e.get("id") for e in theorem_div.find_next_siblings()][:3], ["S3.Thm1.4", "S3.Thm1.p9", "S3.Thm2"])
+        self.assertEqual(nodes["Theorem 3.1"]["proofs"], ["S3.Thm1.4"])
+        self.assertEqual(nodes["Lemma 3.2"]["proofs"], [])
