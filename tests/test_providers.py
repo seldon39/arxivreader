@@ -242,6 +242,7 @@ class Gemini(unittest.TestCase):
 
             def do_POST(self):
                 if "blocked" in self.path:
+                    self.rfile.read(int(self.headers["Content-Length"]))  # demande lue : pas de connexion coupée
                     self.send_response(200)
                     self.send_header("Content-Type", "text/event-stream")
                     self.end_headers()
