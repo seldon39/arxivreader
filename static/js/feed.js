@@ -491,13 +491,21 @@ function foldableSection(settingKey, title, cards, { extraClass = "", collapsedB
     onclick: () => { const collapsed = !section.classList.contains("collapsed"); setCollapsed(collapsed); saveSettings({ [settingKey]: collapsed }); } },
     h("span", { class: "label" }, title, h("span", { class: "count" }, tn("feed.count", cards.length))),
     h("span", { class: "chevron", html: icons.chevronRight }));
-  const setCollapsed = (collapsed) => {
+  // articles dans un conteneur qui se déroule et s'enroule (hauteur animée, comme les dossiers de la bibliothèque)
+  const inner = h("div", { class: "fold-inner" }, cards);
+  const body = h("div", { class: "fold-body" }, inner);
+  const setCollapsed = (collapsed, animate = true) => {
+    // à l'ouverture, les articles apparaissent l'un après l'autre (pas au premier affichage du feed)
+    cards.forEach((card, i) => card.style.setProperty("--i", Math.min(i, 8)));
+    section.classList.toggle("opening", animate && !collapsed);
+    if (animate && !collapsed) setTimeout(() => section.classList.remove("opening"), 900);
     section.classList.toggle("collapsed", collapsed);
+    body.inert = collapsed; // repliée : ses liens ne reçoivent plus le focus
     toggle.setAttribute("aria-expanded", String(!collapsed));
     toggle.title = t(collapsed ? "feed.expandSection" : "feed.collapseSection");
   };
-  setCollapsed(settings[settingKey] ?? collapsedByDefault);
-  section.append(h("h2", { class: "feed-date" }, toggle), ...cards);
+  setCollapsed(settings[settingKey] ?? collapsedByDefault, false);
+  section.append(h("h2", { class: "feed-date" }, toggle), body);
   return section;
 }
 

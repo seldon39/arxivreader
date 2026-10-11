@@ -1018,7 +1018,10 @@ dialog.figure-viewer::backdrop { background: rgba(20, 20, 24, .6); -webkit-backd
 .section-toggle .chevron svg { width: 18px; height: 18px; }
 .section-toggle:hover .chevron { color: var(--text); }
 .foldable.collapsed .section-toggle .chevron { transform: none; }
-.foldable.collapsed > .feed-card { display: none; }
+.fold-body { display: grid; grid-template-rows: 1fr; transition: grid-template-rows .3s cubic-bezier(.2, .8, .2, 1), opacity .22s ease; }
+.fold-inner { min-height: 0; overflow: hidden; }
+.foldable.collapsed .fold-body { grid-template-rows: 0fr; opacity: 0; }
+.foldable.opening .fold-inner > .feed-card { animation: folder-card .32s ease both; animation-delay: calc(60ms + var(--i, 0) * 45ms); }
 /* repliée : ligne grise fine ; le rouge marque la section ouverte (et l'annonce du jour) */
 .foldable.collapsed .feed-date { border-bottom: 1px solid var(--border-strong); }
 .followed-section.foldable.collapsed { margin-bottom: 14px; }
