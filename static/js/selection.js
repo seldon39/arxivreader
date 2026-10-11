@@ -124,6 +124,9 @@ async function openFolders(button) {
       } }, h("span", { class: "button-icon", html: icons.folder }), folder.name))
       : h("p", { class: "muted small" }, t("select.noFolder")));
   bar.append(menu);
+  // juste au-dessus du bouton « Ranger dans… », aligné sur lui (sans sortir de la barre à droite)
+  const left = Math.max(0, Math.min(button.offsetLeft, bar.clientWidth - menu.offsetWidth));
+  menu.style.left = `${left}px`;
   const close = (event) => {
     if (menu.contains(event.target) || event.target === button) return;
     menu.remove();

@@ -1149,7 +1149,7 @@ input.switch:focus-visible { outline: 2px solid var(--focus); outline-offset: 2p
 .selection-bar .button { flex: none; white-space: nowrap; }
 .selection-count { flex: none; font-weight: 600; white-space: nowrap; }
 .selection-hint { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.selection-menu { position: absolute; right: 14px; bottom: calc(100% + 6px); display: grid; min-width: 220px; max-height: 50vh; overflow: auto;
+.selection-menu { position: absolute; left: 0; bottom: calc(100% + 6px); display: grid; min-width: 220px; max-height: 50vh; overflow: auto;
   padding: 6px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); }
 .selection-menu-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 0; border-radius: 6px; background: none;
   color: var(--text); font: inherit; text-align: left; cursor: pointer; }
