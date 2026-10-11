@@ -80,6 +80,17 @@ results, re-ranked by your profile like the feed), in pages of 25 results. Resul
 (relevance to your profile, 👍 / 👎, add to library, ⌘-click for a new tab). Not offered, because arXiv's
 API does not support them: DOI, ORCID, MSC/ACM classes, license. At most one request every 3 s, as arXiv asks.
 
+## Related papers
+
+The "Related papers" tab (in the spirit of Connected Papers) shows the 30 papers closest to a paper, chosen by
+its arXiv link, from the library (menu, or the ⊙ button of each card), or dropped in the frame. Candidates: its
+references and the papers citing it (Semantic Scholar); closeness: shared references and papers citing them
+together. List (all, prior, derivative) and graph: the closer two papers, the nearer they are drawn; size by
+citations, colour by year, a ring for those in the library; scroll to zoom, drag the background to move. The
+chosen paper can be read, added to the library, filed in a folder (or dragged onto one), or become the start of a
+new graph. A graph is kept fifteen days ("Rebuild" to redo it). Without a Semantic Scholar API key, building may
+take a little longer (shared quota).
+
 ## Folders
 
 In the library, a row of folders comes before the full list of papers (which stays visible).
@@ -251,7 +262,7 @@ app/            Python server (FastAPI)
   texsource.py  reading the TeX source (class options, font, list labels)
   feed.py       new arXiv papers (RSS, OAI-PMH), Semantic Scholar recommendations, identifier detection
   journals.py   journal where a paper appeared (arXiv, Semantic Scholar)
-  search.py     search across arXiv (Search tab)
+  search.py     search across arXiv (Search tab); related.py: related papers (graph)
   folders.py    library folders
   profile.py    research profile, prefill, followed authors; relevance.py: relevance ranking
   annotations.py  highlights, notes, reading state

@@ -81,6 +81,18 @@ pages de 25 résultats. Les résultats se présentent comme le feed (pertinence 
 à la bibliothèque, ⌘-clic pour un nouvel onglet). Non proposés, faute de prise en charge par l'interface
 d'arXiv : DOI, ORCID, classes MSC/ACM, licence. Une requête au plus toutes les 3 s, comme arXiv le demande.
 
+## Papiers liés
+
+L'onglet « Papiers liés » (à la manière de Connected Papers) montre les 30 articles les plus proches d'un
+article, choisi par son lien arXiv, dans la bibliothèque (menu, ou bouton ⊙ de chaque carte), ou glissé dans le
+cadre. Candidats : ses références et les articles qui le citent (Semantic Scholar) ; proximité : références
+communes et articles qui les citent ensemble. Liste (tous, antérieurs, dérivés) et graphe : plus deux articles
+sont proches, plus ils sont rapprochés ; taille selon les citations, couleur selon l'année, cercle pour ceux de la
+bibliothèque ; molette pour zoomer, glisser le fond pour se déplacer. L'article choisi se lit, s'ajoute à la
+bibliothèque, se range dans un dossier (ou s'y glisse), ou devient le point de départ d'un nouveau graphe. Un
+graphe est gardé quinze jours (« Reconstruire » pour le refaire). Sans clé d'API Semantic Scholar, la
+construction peut attendre un peu (quota partagé).
+
 ## Dossiers
 
 Dans la bibliothèque, une rangée de dossiers précède la liste complète des articles (qui reste affichée).
@@ -257,7 +269,7 @@ app/            serveur Python (FastAPI)
   texsource.py  lecture de la source TeX (options de classe, police, étiquettes de listes)
   feed.py       nouveautés arXiv (RSS, OAI-PMH), recommandations Semantic Scholar, repérage d'identifiants
   journals.py   revue où un article est paru (arXiv, Semantic Scholar)
-  search.py     recherche dans tout arXiv (onglet Recherche)
+  search.py     recherche dans tout arXiv (onglet Recherche) ; related.py : papiers liés (graphe)
   folders.py    dossiers de la bibliothèque
   profile.py    profil de recherche, pré-remplissage, auteurs suivis ; relevance.py : tri par pertinence
   annotations.py  surlignages, notes, état de lecture

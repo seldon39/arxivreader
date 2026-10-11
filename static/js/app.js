@@ -4,6 +4,7 @@ import { t, tn } from "./i18n.js";
 import { renderFeed } from "./feed.js";
 import { renderLibrary } from "./library.js";
 import { renderReader } from "./reader.js";
+import { renderRelated } from "./related.js";
 import { renderSearch } from "./search.js";
 import { loadSettings, onSettingsChange, openSettingsDialog, settings } from "./settings.js";
 import { refreshUpdates } from "./updates.js";
@@ -28,10 +29,11 @@ async function route() {
   const match = location.hash.match(/^#\/paper\/(.+)$/);
   const feedMatch = location.hash.match(/^#\/feed(?:\/(recommended|import|profile))?$/);
   const searchMatch = location.hash === "#/search";
-  const section = match ? "paper" : feedMatch ? "#/feed" : searchMatch ? "#/search" : "#/";
+  const relatedMatch = location.hash.match(/^#\/related(?:\/(.+))?$/);
+  const section = match ? "paper" : feedMatch ? "#/feed" : searchMatch ? "#/search" : relatedMatch ? "#/related" : "#/";
   if (!match) navigation.listHash = location.hash || "#/";
   // titre de l'onglet (et de la fenêtre) : la page ; le lecteur y met le titre de l'article
-  document.title = match ? "arXivReader" : feedMatch ? t("feed.title") : searchMatch ? t("search.title") : t("library.title");
+  document.title = match ? "arXivReader" : feedMatch ? t("feed.title") : searchMatch ? t("search.title") : relatedMatch ? t("related.title") : t("library.title");
   document.querySelectorAll(".topnav a").forEach((a) => {
     const active = a.getAttribute("href") === section;
     a.classList.toggle("active", active);
@@ -40,6 +42,7 @@ async function route() {
   try {
     const dispose = feedMatch ? await renderFeed(view, feedMatch[1] || "arxiv")
       : searchMatch ? await renderSearch(view)
+      : relatedMatch ? await renderRelated(view, relatedMatch[1] ? decodeURIComponent(relatedMatch[1]) : null)
       : match ? await renderReader(view, ...decodeURIComponent(match[1]).split("/"), () => token === routeToken)
         : await renderLibrary(view, { restoreTo: scrollMemory.get(location.hash) || 0 });
     if (token !== routeToken) { dispose?.(); return; } // page déjà quittée pendant le chargement

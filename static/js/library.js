@@ -789,6 +789,8 @@ function card(paper, refreshList, context = null) {
     h("div", { class: "card-actions" },
       selectButton({ arxivId: paper.arxiv_id, paperId: paper.id, title: paper.title }),
       context && action(icons.folder, t("library.folder.file"), (button) => context.openFileMenu(paper, button), "folder-action"),
+      h("a", { class: "icon-button", href: `#/related/${encodeURIComponent(paper.arxiv_id)}`, title: t("related.fromCard"),
+        "aria-label": t("related.fromCard"), html: icons.graph }),
       h("a", { class: "icon-button", href: `https://arxiv.org/abs/${paper.arxiv_id}`, target: "_blank", rel: "noopener noreferrer",
         title: "arXiv", "aria-label": "arXiv", html: icons.external }),
       action(icons.refresh, t("library.refresh"), async (button) => {

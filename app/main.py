@@ -10,13 +10,14 @@ import time
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
 
+import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import ai, alerts, annotations, citations, crossrefs, db, feed, folders, journals, library, profile, providers, relevance, search, updates
+from . import ai, alerts, annotations, citations, crossrefs, db, feed, folders, journals, library, profile, providers, related, relevance, search, updates
 from .arxiv import ArxivError, fetch_metadata, parse_arxiv_id
 from .config import HOST, PORT, STATIC
 
@@ -106,6 +107,11 @@ def checked_paper(paper_id):
     if paper is None:
         raise HTTPException(404, "Unknown paper")
     return paper
+
+
+class RelatedRequest(BaseModel):
+    query: str
+    refresh: bool = False
 
 
 class ImportRequest(BaseModel):
@@ -604,6 +610,23 @@ class SearchRequest(BaseModel):
     dates: dict = {}
     sort: str = "relevance"
     page: int = 0
+
+
+@app.post("/api/related")
+async def related_papers(body: RelatedRequest):
+    """Papiers liés à un article arXiv (onglet « Papiers liés »), d'après Semantic Scholar."""
+    try:
+        arxiv_id, _ = parse_arxiv_id(body.query[:500])
+    except ArxivError as error:
+        raise HTTPException(400, str(error))
+    try:
+        data = await run_in_threadpool(related.graph, arxiv_id, db.get_settings().get("s2ApiKey") or None, body.refresh)
+    except related.RelatedError as error:
+        status = {"not-found": 404, "rate-limited": 429, "busy": 409}.get(str(error), 502)
+        return JSONResponse({"error": str(error), "code": str(error)}, status_code=status)
+    except httpx.HTTPError as error:
+        return JSONResponse({"error": f"{type(error).__name__}: {error}", "code": "network"}, status_code=502)
+    return await run_in_threadpool(related.annotate, data)
 
 
 @app.post("/api/search")

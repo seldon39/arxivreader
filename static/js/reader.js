@@ -371,7 +371,7 @@ class Reader {
       this.tocButton,
       // retour à la page d'où l'article a été ouvert (bibliothèque ou feed)
       h("a", { class: "icon-button", href: navigation.listHash, html: icons.back,
-        ...(() => { const label = t(navigation.listHash.startsWith("#/feed") ? "reader.backFeed" : navigation.listHash === "#/search" ? "reader.backSearch" : "reader.back");
+        ...(() => { const label = t(navigation.listHash.startsWith("#/feed") ? "reader.backFeed" : navigation.listHash === "#/search" ? "reader.backSearch" : navigation.listHash.startsWith("#/related") ? "reader.backRelated" : "reader.back");
           return { title: label, "aria-label": label }; })() }),
       this.toolbarTitle = h("div", { class: "title", title: paper.title }, titleTex(paper.title)),
       button(icons.minus, "reader.smaller", () => this.changeFont(-1), { class: "wide-only html-only" }),
