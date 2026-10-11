@@ -3,7 +3,7 @@
 import { setFindHandler } from "./find.js";
 import { api } from "./api.js";
 import { t, tn } from "./i18n.js";
-import { debounce, formatDate, h, icons, journalChip, tidyTitle, timeAgo, toast, toastError, withMath } from "./util.js";
+import { debounce, draggablePaper, droppedPaper, formatDate, h, icons, journalChip, mayBePaper, tidyTitle, timeAgo, toast, toastError, withMath } from "./util.js";
 
 // Recherche et filtres, gardés d'une visite à l'autre (le temps de la session)
 const view = { search: "", categories: new Set(), reading: new Set(), years: new Set(), folders: new Set(), source: "any", publication: "any", sort: "opened",
@@ -418,10 +418,11 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
   function drawFolders() {
     const cards = folderOrder(folderList).map((folder) => {
       const count = inLibrary(folder).length;
-      return h("button", { class: "folder", type: "button", "aria-expanded": String(view.openFolder === folder.id), "aria-controls": "folder-panel",
-        dataset: { folder: folder.id }, onclick: () => toggleFolder(folder.id) },
+      return dropTarget(h("button", { class: "folder", type: "button", "aria-expanded": String(view.openFolder === folder.id), "aria-controls": "folder-panel",
+        dataset: { folder: folder.id }, title: t("library.drop.hint"), onclick: () => toggleFolder(folder.id) },
         h("span", { class: "folder-icon", html: icons.folder }),
-        h("span", { class: "folder-text" }, h("span", { class: "folder-name" }, folder.name), h("span", { class: "folder-count" }, tn("feed.count", count))));
+        h("span", { class: "folder-text" }, h("span", { class: "folder-name" }, folder.name), h("span", { class: "folder-count" }, tn("feed.count", count)))),
+        () => folder.id);
     });
     if (!creating) createForm = null;
     createForm ||= creating && h("div", { class: "folder folder-new editing" }, nameForm("", async (name) => {
@@ -439,6 +440,44 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
     folderGrid.replaceChildren(...cards, add);
     keepFocus(drawPanel); // redessin au retour dans l'application, après une action : la frappe en cours continue
   }
+
+  // Article glissé sur un dossier (sa carte, ou le dossier ouvert) : rangé dedans ; venu du feed, d'une autre
+  // fenêtre ou d'un lien arXiv et pas encore dans la bibliothèque : importé d'abord
+  function dropTarget(element, folderId) {
+    element.addEventListener("dragover", (event) => {
+      if (!folderId() || !mayBePaper(event)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+      element.classList.add("drop-target");
+    });
+    element.addEventListener("dragleave", (event) => { if (!element.contains(event.relatedTarget)) element.classList.remove("drop-target"); });
+    element.addEventListener("drop", (event) => {
+      if (!folderId()) return;
+      event.preventDefault();
+      element.classList.remove("drop-target");
+      fileDropped(droppedPaper(event.dataTransfer), folderId());
+    });
+    return element;
+  }
+  async function fileDropped(dropped, folderId) {
+    const folder = folderList.find((f) => f.id === folderId);
+    if (!folder) return;
+    if (!dropped) { toast(t("library.drop.notPaper"), { error: true }); return; }
+    try {
+      let paper = papers.find((p) => p.id === dropped.paperId) || papers.find((p) => p.arxiv_id === dropped.arxivId);
+      if (!paper) {
+        toast(t("library.drop.importing"));
+        paper = await api.importPaper(dropped.arxivId);
+      }
+      if (folder.papers.includes(paper.id)) { toast(t("library.drop.already", { name: folder.name })); return; }
+      await api.setInFolder(folder.id, paper.id, true);
+      toast(t("library.drop.added", { name: folder.name, title: paper.title.length > 60 ? `${paper.title.slice(0, 58)}…` : paper.title }));
+      await refreshList();
+    } catch (error) {
+      toastError(error);
+    }
+  }
+  dropTarget(panel, () => view.openFolder);
 
   let renaming = false;
   // pertinence des articles de la bibliothèque : demandée au serveur la première fois qu'un dossier est
@@ -699,7 +738,7 @@ function card(paper, refreshList, context = null) {
   });
   const authors = paper.authors.length > 6 ? [...paper.authors.slice(0, 6), "…"] : paper.authors;
   // Le titre est un vrai lien (⌘-clic, copier le lien…) qui couvre toute la carte ; les boutons restent au-dessus
-  return h("article", { class: "card" },
+  return draggablePaper(h("article", { class: "card" },
     h("h3", { class: "card-title" }, h("a", { class: "card-link", href }, withMath(tidyTitle(paper.title)))),
     h("div", { class: "card-authors" }, authors.join(", ")),
     readingLine(paper),
@@ -735,5 +774,5 @@ function card(paper, refreshList, context = null) {
         }
       }),
     ),
-  );
+  ), { arxivId: paper.arxiv_id, paperId: paper.id, version: paper.version });
 }

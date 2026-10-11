@@ -183,6 +183,45 @@ export const navigation = { listHash: "#/" };
 
 // Titre d'article en texte simple (onglets, titre de la fenêtre) : formules réduites à leurs symboles
 const SUPERSCRIPTS = { 0: "⁰", 1: "¹", 2: "²", 3: "³", 4: "⁴", 5: "⁵", 6: "⁶", 7: "⁷", 8: "⁸", 9: "⁹", n: "ⁿ" };
+// Glisser-déposer d'un article (bibliothèque, feed, recherche) vers un dossier, aussi d'une fenêtre de
+// l'application à l'autre : son identifiant (type propre à arXivReader) et un lien arXiv ordinaire
+export const PAPER_DRAG = "application/x-arxivreader-paper";
+
+// On le saisit par son titre (un lien, glissable de lui-même) : le reste de la carte garde la sélection de
+// texte (résumé du feed). Bibliothèque : le lien du titre couvre toute la carte.
+export function draggablePaper(element, { arxivId, paperId = null, version = null }) {
+  if (!arxivId) return element;
+  element.addEventListener("dragstart", (event) => {
+    if (!event.target.closest?.("a")) return; // texte sélectionné glissé ailleurs dans la carte : rien de spécial
+    const url = `https://arxiv.org/abs/${arxivId}${version ? `v${version}` : ""}`;
+    event.dataTransfer.setData(PAPER_DRAG, JSON.stringify({ arxivId, paperId }));
+    event.dataTransfer.setData("text/uri-list", url);
+    event.dataTransfer.setData("text/plain", url);
+    event.dataTransfer.effectAllowed = "copyLink";
+    element.classList.add("dragging");
+  });
+  element.addEventListener("dragend", () => element.classList.remove("dragging"));
+  return element;
+}
+
+// Article déposé : glissé depuis arXivReader, ou lien (ou identifiant) arXiv venu d'ailleurs ; null sinon
+export function droppedPaper(dataTransfer) {
+  try {
+    const own = dataTransfer.getData(PAPER_DRAG);
+    if (own) {
+      const data = JSON.parse(own);
+      if (typeof data?.arxivId === "string") return { arxivId: data.arxivId, paperId: typeof data.paperId === "string" ? data.paperId : null };
+    }
+  } catch { /* données d'une autre application : on regarde le lien */ }
+  const text = (dataTransfer.getData("text/uri-list") || dataTransfer.getData("text/plain") || "").trim();
+  const found = text.match(/arxiv\.org\/(?:abs|pdf|html)\/((?:[a-z-]+(?:\.[A-Z]{2})?\/\d{7})|\d{4}\.\d{4,5})/i)
+    || text.match(/^(?:arXiv:)?(\d{4}\.\d{4,5})(?:v\d+)?$/i);
+  return found ? { arxivId: found[1], paperId: null } : null;
+}
+
+export const mayBePaper = (event) => [...(event.dataTransfer?.types || [])].some((type) =>
+  type === PAPER_DRAG || type === "text/uri-list" || type === "text/plain");
+
 // Revue où l'article est paru (arXiv : indiquée par les auteurs ; sinon Semantic Scholar) : étiquette courte,
 // référence complète et source au survol
 export function journalChip(publishedIn) {
