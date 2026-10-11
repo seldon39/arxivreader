@@ -94,7 +94,7 @@ Z → A, folders then being sorted by name in the same order).
 
 ## Published in a journal
 
-In the library and the feed, "Filters" → *Publication* keeps the papers published in a journal, or those not
+In the library and the feed, "Filters" → *Journal publication* keeps the papers published in a journal, or those not
 reported as such; the journal shows on the card ("Published: …"). From the reference (or DOI) given on arXiv by
 the authors, otherwise from Semantic Scholar, queried in batches and asked again after 30 days for a paper
 still not reported. Many authors never update arXiv: a paper not reported may still be published.

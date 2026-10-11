@@ -194,7 +194,7 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
         section("source", t("library.filters.source"), choice("source",
           [["any", t("library.source.any")], ["html", t("library.source.html")], ["pdf", t("library.source.pdf")]], view.source, (v) => { view.source = v; })),
         section("publication", t("journal.filter"), choice("publication",
-          [["any", t("journal.any")], ["journal", t("journal.yes")], ["none", t("journal.no")]], view.publication, (v) => { view.publication = v; })),
+          [["any", t("journal.any")], ["journal", t("journal.yesShort")], ["none", t("journal.noShort")]], view.publication, (v) => { view.publication = v; })),
         h("p", { class: "hint filter-hint" }, t("journal.filterHint"))),
       h("div", { class: "filter-foot" },
         h("button", { class: "button small-button", type: "button", disabled: !activeCount(), dataset: { role: "reset" },
