@@ -9,7 +9,8 @@ import { renderSearch } from "./search.js";
 import { loadSettings, onSettingsChange, openSettingsDialog, settings } from "./settings.js";
 import { refreshUpdates } from "./updates.js";
 import { api } from "./api.js";
-import { h, navigation, openRoute, wantsNewTab } from "./util.js";
+import { droppedPapers, h, mayBePaper, navigation, openRoute, toast, toastError, wantsNewTab } from "./util.js";
+import { addToLibrary, selectionDropped } from "./selection.js";
 
 const view = document.getElementById("view");
 let cleanup = null;
@@ -56,6 +57,34 @@ async function route() {
       h("a", { href: "#/" }, t("reader.back"))));
   }
 }
+
+// Article glissé sur « Bibliothèque » (ajouté, puis la bibliothèque dans un nouvel onglet) ou sur « Papiers liés »
+// (son graphe dans un nouvel onglet ; trois au plus pour une sélection : un graphe se construit à la fois)
+function navDrop(selector, dropped) {
+  const link = document.querySelector(selector);
+  link.addEventListener("dragover", (event) => {
+    if (!mayBePaper(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    link.classList.add("drop-target");
+  });
+  link.addEventListener("dragleave", () => link.classList.remove("drop-target"));
+  link.addEventListener("drop", async (event) => {
+    event.preventDefault();
+    link.classList.remove("drop-target");
+    const papers = droppedPapers(event.dataTransfer);
+    if (!papers.length) { toast(t("library.drop.notPaper"), { error: true }); return; }
+    selectionDropped();
+    try { await dropped(papers); } catch (error) { toastError(error); }
+  });
+}
+navDrop('.topnav a[href="#/"]', async (papers) => {
+  await addToLibrary(papers, await api.papers());
+  openRoute("#/", true, true);
+});
+navDrop('.topnav a[href="#/related"]', async (papers) => {
+  for (const paper of papers.slice(0, 3)) openRoute(`#/related/${encodeURIComponent(paper.arxivId)}`, true, paper === papers[0]);
+});
 
 // Pastille sur « Feed » : nouveaux articles d'auteurs suivis pas encore vus
 export async function refreshAlerts() {

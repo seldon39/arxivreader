@@ -109,7 +109,9 @@ ouvre « Ranger dans… » : dossiers à cocher, ou création d'un dossier. On p
 titre) sur un dossier ou dans le dossier ouvert, depuis la bibliothèque, le feed, la recherche, une autre fenêtre
 d'arXivReader, ou un lien arXiv venu d'ailleurs (Safari…) ; un article pas encore dans la bibliothèque y est
 d'abord importé. Déposé sur la liste générale (« Autres articles »), un article du feed ou de la recherche
-est ajouté à la bibliothèque, hors dossier. Le bouton ☐ de chaque carte (bibliothèque, dossiers, feed, recherche) sélectionne plusieurs
+est ajouté à la bibliothèque, hors dossier. Un article glissé qui s'attarde sur un onglet de la barre d'onglets ouvre
+cet onglet (pour le déposer dans sa page) ; déposé sur « Bibliothèque » en haut, il y est ajouté et la bibliothèque
+s'ouvre dans un nouvel onglet ; sur « Papiers liés », son graphe s'ouvre dans un nouvel onglet. Le bouton ☐ de chaque carte (bibliothèque, dossiers, feed, recherche) sélectionne plusieurs
 articles : une barre en bas propose « Ranger dans… », et glisser l'un d'eux les emporte tous. Une fois des
 articles rangés, la liste générale devient « Autres articles » (ceux d'aucun dossier) ; une recherche ou un
 filtre y porte sur toute la bibliothèque. Un article peut être dans plusieurs

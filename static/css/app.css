@@ -103,6 +103,7 @@ svg { fill: currentColor; }
 .topnav { display: flex; gap: 4px; flex: 1; }
 .topnav a { color: rgba(255, 255, 255, .85); padding: 6px 10px; border-radius: 6px; }
 .topnav a:hover, .topnav a.active { background: rgba(255, 255, 255, .14); color: #fff; text-decoration: none; }
+.topnav a.drop-target:not(.folder) { min-height: 0; outline: 2px dashed #fff; outline-offset: 1px; border-radius: 6px; background: rgba(255, 255, 255, .24); color: #fff; }
 .topbar-actions { display: flex; align-items: center; gap: 6px; }
 .topbar .icon-button { color: #fff; }
 .topbar .icon-button:hover { background: rgba(255, 255, 255, .16); }

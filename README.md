@@ -104,7 +104,9 @@ and a keyword search narrows the folder's list (title, authors, abstract, identi
 folders to tick, or a new folder. A paper can also be dragged (by its title) onto a folder or into the open
 folder, from the library, the feed, the search, another arXivReader window, or as an arXiv link from elsewhere
 (Safari…); a paper not yet in the library is imported first. Dropped on the general list ("Other papers"), a paper
-from the feed or the search is added to the library, outside folders. The ☐ button of each card (library, folders, feed,
+from the feed or the search is added to the library, outside folders. A dragged paper that lingers on a tab of the
+tab bar opens that tab (to drop it in its page); dropped on "Library" at the top, it is added and the library opens
+in a new tab; on "Related papers", its graph opens in a new tab. The ☐ button of each card (library, folders, feed,
 search) selects several papers: a bar at the bottom offers "File in…", and dragging one of them takes them all.
 Once papers are filed, the general list becomes "Other papers" (those in no folder); a search or filter there
 covers the whole library. A paper can be in several folders, shown at the end of its line;

@@ -362,11 +362,79 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 // ---------- Onglets : une fenêtre (WebKit) par onglet, regroupées par la barre d'onglets du Mac ----------
 
-/// Fenêtre d'un onglet ; le « + » de la barre d'onglets ouvre la bibliothèque dans un nouvel onglet
+/// Fenêtre d'un onglet ; le « + » de la barre d'onglets ouvre la bibliothèque dans un nouvel onglet. Un article
+/// glissé (de la page, d'une autre fenêtre) qui s'attarde sur un onglet de la barre ouvre cet onglet : on le dépose
+/// ensuite dans sa page (sur un dossier…), comme d'une fenêtre à l'autre.
 final class TabWindow: NSWindow {
     override func newWindowForTab(_ sender: Any?) {
         (NSApp.delegate as? AppDelegate)?.openTab("#/", beside: self)
     }
+
+    /// ce que WebKit met dans le presse-papiers d'un glissement (lien, texte, types propres à la page)
+    static let dragTypes: [NSPasteboard.PasteboardType] = [.URL, .string, .html, .fileURL,
+        NSPasteboard.PasteboardType("com.apple.WebKit.custom-pasteboard-data"), NSPasteboard.PasteboardType("public.url")]
+    private var springTarget: NSWindow?
+    private var springTimer: Timer?
+
+    /// onglets de la barre du Mac (vues NSTabButton, une par onglet), de gauche à droite, en coordonnées de la fenêtre
+    private func tabButtons() -> [NSRect] {
+        var found: [NSRect] = []
+        func visit(_ view: NSView) {
+            if String(describing: type(of: view)) == "NSTabButton" {
+                let box = view.convert(view.bounds, to: nil)
+                if box.width > 0 { found.append(box) }
+                return
+            }
+            view.subviews.forEach(visit)
+        }
+        if let frameView = contentView?.superview { visit(frameView) }
+        return found.sorted { $0.minX < $1.minX }
+    }
+
+    /// onglet sous le point (coordonnées de la fenêtre), s'il est dans la barre d'onglets
+    private func tab(at point: NSPoint) -> NSWindow? {
+        guard let group = tabGroup, group.isTabBarVisible, point.y > contentLayoutRect.maxY else { return nil }
+        let windows = group.windows
+        let buttons = tabButtons()
+        if buttons.count == windows.count {
+            return buttons.firstIndex { $0.contains(point) }.map { windows[$0] }
+        }
+        let width = (frame.width - 28) / CGFloat(max(1, windows.count)) // sinon : largeur partagée, moins le « + »
+        let index = Int(point.x / width)
+        return index >= 0 && index < windows.count ? windows[index] : nil
+    }
+
+    private func spring(_ sender: NSDraggingInfo) -> NSDragOperation {
+        let target = tab(at: sender.draggingLocation)
+        if target !== springTarget {
+            springTimer?.invalidate()
+            springTarget = target
+            if let target, target !== tabGroup?.selectedWindow {
+                // minuterie active pendant le glissement (boucle d'événements en mode « suivi »)
+                let timer = Timer(timeInterval: 0.6, repeats: false) { [weak self] _ in
+                    guard let self, self.springTarget === target, let group = target.tabGroup else { return }
+                    group.selectedWindow = target
+                    self.springTarget = nil
+                }
+                RunLoop.main.add(timer, forMode: .common)
+                springTimer = timer
+            }
+        }
+        return target == nil ? [] : .generic
+    }
+
+    private func stopSpring() {
+        springTimer?.invalidate()
+        springTimer = nil
+        springTarget = nil
+    }
+
+    // messages du glissement (protocole NSDraggingDestination, appelés par AppKit : @objc)
+    @objc func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { spring(sender) }
+    @objc func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation { spring(sender) }
+    @objc func draggingExited(_ sender: NSDraggingInfo?) { stopSpring() }
+    @objc func draggingEnded(_ sender: NSDraggingInfo) { stopSpring() }
+    @objc func performDragOperation(_ sender: NSDraggingInfo) -> Bool { stopSpring(); return false } // lâché sur la barre : rien
 }
 
 /// Messages de la page (⌘-clic sur un article : nouvel onglet). Intermédiaire faible : WebKit retient son destinataire
@@ -402,6 +470,7 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
         window.minSize = NSSize(width: 420, height: 480)
         window.tabbingIdentifier = "arXivReader"
         window.tabbingMode = .automatic
+        window.registerForDraggedTypes(TabWindow.dragTypes) // article glissé sur un onglet : l'ouvre (TabWindow)
         window.contentView = webView
         window.delegate = self
         // titre de l'onglet et de la fenêtre : celui de la page (article lu, « Bibliothèque », « Feed »)
