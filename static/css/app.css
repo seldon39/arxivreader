@@ -1269,13 +1269,13 @@ body.has-selection-bar #toast { bottom: 96px; }
 .related-page { max-width: 1180px; margin: 0 auto; padding: 24px 16px 60px; }
 .related-page h1 { font: 600 30px var(--font-read); margin: 0 0 6px; }
 .related-lead { color: var(--muted); font: 14px var(--font-ui); margin: 0 0 14px; max-width: 860px; }
-.related-input { position: relative; display: flex; gap: 8px; align-items: center; padding: 10px; border: 1.5px dashed var(--border-strong);
+.related-input { position: relative; display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; padding: 10px; border: 1.5px dashed var(--border-strong);
   border-radius: 10px; background: var(--surface-soft); }
 .related-input .search-icon { display: inline-flex; width: 18px; height: 18px; color: var(--muted); }
 .related-input .search-icon svg { width: 18px; height: 18px; }
 .related-input .text-input { flex: 1; min-width: 0; height: 36px; }
 .related-input.drop-target { border-color: var(--accent); background: var(--accent-soft); }
-.related-drop-hint { margin: 6px 2px 0; }
+.related-drop-hint { flex-basis: 100%; margin: 0 0 0 28px; } /* sous le champ, aligné sur lui (après la loupe) */
 .related-status { margin: 12px 0 0; }
 /* article examiné : encadré rouge aux coins arrondis, fond à peine teinté, comme l'annonce du jour du feed */
 .related-origin { --origin-tint: 5%; display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin: 20px 0 12px; padding: 10px 14px;

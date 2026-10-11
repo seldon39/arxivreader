@@ -22,13 +22,15 @@ export async function renderRelated(root, arxivFromRoute = null) {
     placeholder: t("related.placeholder"), "aria-label": t("related.placeholder") });
   const build = h("button", { class: "button primary", type: "submit" }, t("related.build"));
   const pick = h("button", { class: "button", type: "button", "aria-haspopup": "menu" }, t("related.fromLibrary"), " ▾");
-  const form = h("form", { class: "related-input" }, h("span", { class: "search-icon", html: icons.search }), input, pick, build);
+  // cadre pointillé : champ et boutons, et dessous, l'invitation à y glisser un article (le cadre reçoit le dépôt)
+  const form = h("form", { class: "related-input" }, h("span", { class: "search-icon", html: icons.search }), input, pick, build,
+    h("p", { class: "muted small related-drop-hint" }, t("related.dropHint")));
   const status = h("div", { class: "related-status" });
   const result = h("div", { class: "related-result" });
   root.replaceChildren(h("section", { class: "related-page" },
     h("h1", {}, t("related.title")),
     h("p", { class: "related-lead" }, t("related.lead")),
-    form, h("p", { class: "muted small related-drop-hint" }, t("related.dropHint")), status, result));
+    form, status, result));
 
   function load(query, refresh = false) {
     state.query = query;
