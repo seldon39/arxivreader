@@ -1055,3 +1055,51 @@ dialog.figure-viewer::backdrop { background: rgba(20, 20, 24, .6); -webkit-backd
 .node-item .badge { border: 0; background: none; color: var(--muted); padding: 0; }
 .node-item .badge.warn { color: var(--warning-text); }
 .node-item .badge + .badge::before { content: "·"; margin: 0 .4em; }
+
+/* ---------- Réglages : sections en onglets à gauche, réglages en lignes dans un cadre ---------- */
+dialog.settings { width: min(760px, calc(100vw - 32px)); }
+.settings form { gap: 20px; padding: 20px 24px 22px; }
+.settings .dialog-head h2 { font: 600 22px var(--font-read); }
+.settings-layout { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 22px; align-items: start; }
+.settings-nav { display: grid; gap: 2px; position: sticky; top: 0; }
+.settings-nav button {
+  text-align: left; border: 0; border-left: 3px solid transparent; border-radius: 6px; background: transparent;
+  padding: 8px 10px; font: 500 14px var(--font-ui); color: var(--muted); cursor: pointer;
+}
+.settings-nav button:hover { background: var(--surface-hover); color: var(--text); }
+.settings-nav button[aria-selected="true"] { color: var(--accent-strong); background: var(--accent-soft); border-left-color: var(--accent); font-weight: 600; }
+.settings-panes { min-height: 520px; }
+.settings-pane { display: grid; gap: 8px; }
+.settings-pane-title { margin: 0 2px; font: 600 15px var(--font-read); color: var(--text); }
+.settings-card { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.settings-card > * { margin: 0; padding: 11px 14px; border-bottom: 1px solid var(--border); }
+.settings-card > :last-child { border-bottom: 0; }
+/* une explication colle au réglage qu'elle précède */
+.settings-card > :has(+ .hint) { border-bottom: 0; padding-bottom: 4px; }
+.settings-card > .hint { font-size: 12.5px; color: var(--muted); padding-top: 0; }
+.settings-card > .row { display: flex; align-items: center; justify-content: space-between; gap: 8px 18px; flex-wrap: wrap; }
+.settings-card > .row > span { font: 500 14px var(--font-ui); color: var(--text); }
+.settings-card > label.row .text-input { flex: 1 1 260px; max-width: 320px; height: 34px; }
+.settings-card .range-row { flex: 0 1 300px; }
+.settings-card > .ai-settings, .settings-card > .updates-settings { display: grid; gap: 8px; margin: 0; }
+.settings-card > .ai-settings:empty { display: none; }
+.settings-card > label.check { display: flex; align-items: center; justify-content: space-between; gap: 16px; font: 500 14px var(--font-ui); cursor: pointer; }
+/* sélecteurs : piste grise, choix en pastille */
+.settings .segmented { border: 0; background: var(--surface-hover); padding: 2px; border-radius: 8px; gap: 2px; overflow: visible; flex: 0 1 auto; }
+.settings .segmented label { flex: none; border: 0; border-radius: 6px; padding: 5px 12px; font-size: 13px; white-space: nowrap; color: var(--muted); }
+.settings .segmented label:has(input:checked) { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, .14), 0 0 0 1px rgba(0, 0, 0, .04); }
+/* cases à cocher en interrupteurs */
+input.switch {
+  flex: none; appearance: none; -webkit-appearance: none; width: 36px; height: 21px; margin: 0; border-radius: 11px; cursor: pointer;
+  background: radial-gradient(circle at 10.5px 50%, #fff 7.5px, transparent 8px), var(--border-strong); transition: background .15s;
+}
+input.switch:checked { background: radial-gradient(circle at 25.5px 50%, #fff 7.5px, transparent 8px), var(--accent); }
+input.switch:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+@media (max-width: 640px) {
+  .settings form { padding: 16px 16px 18px; }
+  .settings-layout { grid-template-columns: 1fr; gap: 14px; }
+  .settings-nav { display: flex; overflow-x: auto; position: static; scrollbar-width: none; }
+  .settings-nav button { flex: none; border-left: 0; border-bottom: 2px solid transparent; border-radius: 6px 6px 0 0; }
+  .settings-nav button[aria-selected="true"] { border-bottom-color: var(--accent); }
+  .settings-panes { min-height: 0; }
+}

@@ -118,53 +118,95 @@ function segmented(name, options, current) {
   );
 }
 
+// Section ouverte (gardée quand la fenêtre est redessinée, par ex. au changement de langue)
+let currentSection = "reading";
+
 export function openSettingsDialog({ section = null } = {}) {
   const dialog = document.getElementById("settings-dialog");
+  if (section) currentSection = section;
+  const check = (name, label, checked, hint = null) => [
+    h("label", { class: "check" }, h("span", {}, label), h("input", { type: "checkbox", class: "switch", name, checked })),
+    hint && h("p", { class: "hint" }, hint),
+  ];
+  // Réglages en quatre sections, une à la fois ; chaque réglage sur une ligne d'un cadre
+  const sections = [
+    ["reading", t("settings.reading"), [
+      h("div", { class: "row" }, h("span", { id: "setting-language" }, t("settings.language")),
+        segmented("language", [["fr", "Français"], ["en", "English"]], settings.language)),
+      h("div", { class: "row" }, h("span", { id: "setting-theme" }, t("settings.theme")),
+        segmented("theme", [["auto", t("settings.theme.auto")], ["light", t("settings.theme.light")], ["dark", t("settings.theme.dark")]], settings.theme)),
+      h("div", { class: "row" }, h("span", { id: "setting-fontSize" }, t("settings.fontSize", { n: settings.fontSize })),
+        h("div", { class: "range-row" },
+          h("input", { type: "range", name: "fontSize", min: 14, max: 24, step: 1, value: settings.fontSize, "aria-labelledby": "setting-fontSize" }),
+          h("button", { class: "button small-button", type: "button", name: "resetFontSize", onclick: (event) => {
+            const range = dialog.querySelector('input[name="fontSize"]');
+            range.value = DEFAULT_FONT_SIZE;
+            range.dispatchEvent(new Event("input", { bubbles: true }));
+            event.currentTarget.blur();
+          } }, t("settings.default")))),
+      h("div", { class: "row" }, h("span", { id: "setting-readingWidth" }, t("settings.width")),
+        segmented("readingWidth", [["narrow", t("settings.width.narrow")], ["normal", t("settings.width.normal")], ["wide", t("settings.width.wide")]], settings.readingWidth)),
+      h("div", { class: "row" }, h("span", { id: "setting-paperFont" }, t("settings.paperFont")),
+        segmented("paperFont", [["auto", t("settings.paperFont.auto")], ["charter", "Charter"], ["lm", "Computer Modern"]], settings.paperFont)),
+      h("div", { class: "row" }, h("span", { id: "setting-mathRenderer" }, t("settings.math")),
+        segmented("mathRenderer", [["mathjax", t("settings.math.mathjax")], ["native", t("settings.math.native")]], settings.mathRenderer)),
+      ...check("proofsCollapsed", t("settings.proofs"), settings.proofsCollapsed),
+      ...check("marginMarks", t("settings.marginMarks"), settings.marginMarks),
+    ]],
+    ["ai", t("settings.ai"), [
+      h("div", { class: "row" }, h("span", { id: "setting-aiProvider" }, t("settings.aiProvider")),
+        segmented("aiProvider", PROVIDERS.map((p) => [p, p === "local" ? t("settings.aiProvider.local") : { claude: "Claude", codex: "Codex", gemini: "Gemini" }[p]]),
+          settings.aiProvider || "claude")),
+      h("div", { class: "ai-settings" }),
+    ]],
+    ["feed", t("settings.feed"), [
+      ...check("notifyFollowed", t("settings.notifyFollowed"), settings.notifyFollowed !== false, t("settings.notifyFollowedHint")),
+      ...check("notifyCitations", t("settings.notifyCitations"), settings.notifyCitations !== false, t("settings.notifyCitationsHint")),
+      h("label", { class: "row" }, h("span", {}, t("settings.feedCategories")),
+        h("input", { class: "text-input", type: "text", name: "feedCategories", value: (settings.feedCategories || FEED_DEFAULT).join(", "), spellcheck: "false" })),
+      h("label", { class: "row" }, h("span", {}, t("settings.s2Key")),
+        // texte masqué plutôt que « password » : Safari ne propose pas d'enregistrer un mot de passe
+        h("input", { class: "text-input secret-input", type: "text", name: "s2ApiKey", value: settings.s2ApiKey || "", autocomplete: "off",
+          spellcheck: "false", placeholder: t("settings.s2KeyPlaceholder") })),
+      h("p", { class: "hint" }, t("settings.s2KeyHint")),
+    ]],
+    ["updates", t("settings.updates"), [
+      ...check("checkUpdates", t("settings.checkUpdates"), settings.checkUpdates !== false),
+      updatesSection(),
+    ]],
+  ];
+  if (!sections.some(([key]) => key === currentSection)) currentSection = "reading";
+  const panes = sections.map(([key, title, nodes]) => h("section", { class: "settings-pane", id: `settings-${key}`, role: "tabpanel",
+    "aria-labelledby": `settings-tab-${key}`, hidden: key !== currentSection },
+    h("h3", { class: "settings-pane-title" }, title), h("div", { class: "settings-card" }, nodes.filter(Boolean))));
+  const show = (key) => {
+    currentSection = key;
+    panes.forEach((pane) => { pane.hidden = pane.id !== `settings-${key}`; });
+    nav.querySelectorAll("button").forEach((button) => {
+      const on = button.dataset.section === key;
+      button.setAttribute("aria-selected", String(on));
+      button.tabIndex = on ? 0 : -1;
+    });
+  };
+  const nav = h("nav", { class: "settings-nav", role: "tablist", "aria-orientation": "vertical" },
+    sections.map(([key, title]) => h("button", { type: "button", role: "tab", id: `settings-tab-${key}`, dataset: { section: key },
+      "aria-controls": `settings-${key}`, "aria-selected": String(key === currentSection), tabIndex: key === currentSection ? 0 : -1,
+      onclick: () => show(key) }, title)));
+  // flèches haut/bas (ou gauche/droite) entre les sections
+  nav.addEventListener("keydown", (event) => {
+    const keys = sections.map(([key]) => key);
+    const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[event.key];
+    if (!step) return;
+    event.preventDefault();
+    const next = keys[(keys.indexOf(currentSection) + step + keys.length) % keys.length];
+    show(next);
+    nav.querySelector(`[data-section="${next}"]`).focus();
+  });
   const form = h("form", { method: "dialog" },
     h("div", { class: "dialog-head" }, h("h2", {}, t("settings.title")),
       h("button", { class: "icon-button", value: "close", title: t("settings.close"), "aria-label": t("settings.close"), html: icons.close })),
-    h("div", { class: "row" }, h("span", { id: "setting-language" }, t("settings.language")),
-      segmented("language", [["fr", "Français"], ["en", "English"]], settings.language)),
-    h("div", { class: "row" }, h("span", { id: "setting-theme" }, t("settings.theme")),
-      segmented("theme", [["auto", t("settings.theme.auto")], ["light", t("settings.theme.light")], ["dark", t("settings.theme.dark")]], settings.theme)),
-    h("div", { class: "row" }, h("span", { id: "setting-fontSize" }, t("settings.fontSize", { n: settings.fontSize })),
-      h("div", { class: "range-row" },
-        h("input", { type: "range", name: "fontSize", min: 14, max: 24, step: 1, value: settings.fontSize, "aria-labelledby": "setting-fontSize" }),
-        h("button", { class: "button small-button", type: "button", name: "resetFontSize", onclick: (event) => {
-          const range = form.querySelector('input[name="fontSize"]');
-          range.value = DEFAULT_FONT_SIZE;
-          range.dispatchEvent(new Event("input", { bubbles: true }));
-          event.currentTarget.blur();
-        } }, t("settings.default")))),
-    h("div", { class: "row" }, h("span", { id: "setting-readingWidth" }, t("settings.width")),
-      segmented("readingWidth", [["narrow", t("settings.width.narrow")], ["normal", t("settings.width.normal")], ["wide", t("settings.width.wide")]], settings.readingWidth)),
-    h("div", { class: "row" }, h("span", { id: "setting-paperFont" }, t("settings.paperFont")),
-      segmented("paperFont", [["auto", t("settings.paperFont.auto")], ["charter", "Charter"], ["lm", "Computer Modern"]], settings.paperFont)),
-    h("div", { class: "row" }, h("span", { id: "setting-mathRenderer" }, t("settings.math")),
-      segmented("mathRenderer", [["mathjax", t("settings.math.mathjax")], ["native", t("settings.math.native")]], settings.mathRenderer)),
-    h("label", { class: "check" }, h("input", { type: "checkbox", name: "proofsCollapsed", checked: settings.proofsCollapsed }), t("settings.proofs")),
-    h("label", { class: "check" }, h("input", { type: "checkbox", name: "marginMarks", checked: settings.marginMarks }), t("settings.marginMarks")),
-    h("h3", { class: "settings-section" }, t("settings.ai")),
-    h("div", { class: "row" }, h("span", { id: "setting-aiProvider" }, t("settings.aiProvider")),
-      segmented("aiProvider", PROVIDERS.map((p) => [p, p === "local" ? t("settings.aiProvider.local") : { claude: "Claude", codex: "Codex", gemini: "Gemini" }[p]]),
-        settings.aiProvider || "claude")),
-    h("div", { class: "ai-settings" }),
-    h("h3", { class: "settings-section" }, t("settings.feed")),
-    h("label", { class: "check" }, h("input", { type: "checkbox", name: "notifyFollowed", checked: settings.notifyFollowed !== false }), t("settings.notifyFollowed")),
-    h("p", { class: "hint", style: "margin: -10px 0 0" }, t("settings.notifyFollowedHint")),
-    h("label", { class: "check" }, h("input", { type: "checkbox", name: "notifyCitations", checked: settings.notifyCitations !== false }), t("settings.notifyCitations")),
-    h("p", { class: "hint", style: "margin: -10px 0 0" }, t("settings.notifyCitationsHint")),
-    h("label", { class: "row" }, h("span", {}, t("settings.feedCategories")),
-      h("input", { class: "text-input", type: "text", name: "feedCategories", value: (settings.feedCategories || FEED_DEFAULT).join(", "), spellcheck: "false" })),
-    h("label", { class: "row" }, h("span", {}, t("settings.s2Key")),
-      // texte masqué plutôt que « password » : Safari ne propose pas d'enregistrer un mot de passe
-      h("input", { class: "text-input secret-input", type: "text", name: "s2ApiKey", value: settings.s2ApiKey || "", autocomplete: "off",
-        spellcheck: "false", placeholder: t("settings.s2KeyPlaceholder") })),
-    h("p", { class: "hint", style: "margin: -6px 0 0" }, t("settings.s2KeyHint")),
-    h("h3", { class: "settings-section" }, t("settings.updates")),
-    h("label", { class: "check" }, h("input", { type: "checkbox", name: "checkUpdates", checked: settings.checkUpdates !== false }), t("settings.checkUpdates")),
-    updatesSection(),
-    h("div", { class: "actions" }, h("button", { class: "button primary", value: "close" }, t("settings.close"))),
+    h("div", { class: "settings-layout" }, nav, h("div", { class: "settings-panes" }, panes)),
+    h("div", { class: "actions" }, h("button", { class: "button", value: "close" }, t("settings.close"))),
   );
   form.addEventListener("input", (event) => {
     const { name, value, checked, type } = event.target;
@@ -200,5 +242,5 @@ export function openSettingsDialog({ section = null } = {}) {
   dialog.replaceChildren(form);
   applyStatic(dialog);
   if (!dialog.open) dialog.showModal();
-  if (section) dialog.querySelector(`#settings-${section}`)?.scrollIntoView({ block: "center" });
+
 }
