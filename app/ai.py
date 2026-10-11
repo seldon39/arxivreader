@@ -315,6 +315,26 @@ EXPORT_INTRO = {
 }
 
 
+SHARE_INTRO = {
+    "fr": "Je lis cet article et j'aimerais en discuter avec toi. Voici ses références, son lien, puis son texte "
+          "(extrait de la version HTML d'arXiv, formules en LaTeX).",
+    "en": "I am reading this paper and would like to discuss it with you. Here are its reference, its link, then its "
+          "text (extracted from arXiv's HTML version, formulas in LaTeX).",
+}
+
+
+def share_text(paper, language="fr"):
+    """Tout l'article, pour une conversation dans l'application ou le site de l'assistant (bouton « Envoyer à… ») :
+    références, lien, puis le texte (sans le texte invisible), dans la limite habituelle."""
+    text = paper_text(paper["id"]) or ""
+    if len(text) > PAPER_LIMIT:
+        text = text[:PAPER_LIMIT] + "\n[…]"
+    return "\n\n".join(part for part in [
+        SHARE_INTRO.get(language, SHARE_INTRO["en"]),
+        f"**{paper['title']}** — {', '.join(paper['authors'])}\nhttps://arxiv.org/abs/{paper['arxiv_id']}v{paper['version']}",
+        text] if part)
+
+
 def export_text(exchange, paper, structure, language="fr"):
     """Message pour une nouvelle conversation dans l'application Claude : l'article (références et lien),
     l'énoncé et la preuve visés, puis les échanges, du premier au dernier. Formules en LaTeX ($…$)."""

@@ -184,6 +184,8 @@ il suffit de la fermer et d'aller dans le feed.
   (verdict, problèmes avec leur gravité, hypothèses utilisées, dépendances).
 - **Passage** : le sélectionner, puis ✦ ; on peut ajouter une question. **Article entier** : résumé
   structuré, relecture critique, ou question libre ; *Question de suite* pour poursuivre un échange.
+  *Envoyer à Claude* (ou à ChatGPT, à Gemini) ouvre une nouvelle conversation dans l'application ou le site
+  de l'assistant, avec les références de l'article, et copie son texte complet dans le presse-papiers.
 - Réponses en direct, formules rendues, renvois (« Lemma 2.3 », « (2.11) ») cliquables ; *Ajouter à mes
   notes* les copie dans la note de l'énoncé ou de la preuve (sinon dans la fiche de lecture). Modèle
   (Opus, Fable, Sonnet, Haiku… selon votre abonnement) et niveau de réflexion au choix, dans l'onglet IA ou

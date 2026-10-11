@@ -181,6 +181,8 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   (verdict, issues with their severity, hypotheses used, dependencies).
 - **Passage**: select it, then ✦; you can add a question. **Whole paper**: structured summary,
   critical review, or a free question; *Follow-up* to continue a conversation.
+  *Send to Claude* (or to ChatGPT, to Gemini) opens a new conversation in the assistant's app or website,
+  with the paper's reference, and copies its full text to the clipboard.
 - Answers stream live, formulas are rendered, references ("Lemma 2.3", "(2.11)") are clickable;
   *Add to my notes* copies them into the note of the statement or proof (otherwise into the reading sheet).
   Model (Opus, Fable, Sonnet, Haiku… depending on your subscription) and reasoning level chosen in the AI tab

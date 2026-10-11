@@ -83,6 +83,16 @@ class AI(unittest.TestCase):
         client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
         self.assertIn("Et pourquoi", client.get(f"/api/ai/{follow['id']}/export").json()["text"])
 
+    def test_share_text(self):
+        # « Envoyer à… » : références, lien, puis le texte de l'article (sans le texte invisible)
+        text = ai.share_text(self.paper, "fr")
+        self.assertIn("https://arxiv.org/abs/2601.00001v1", text)
+        self.assertLess(text.index("https://arxiv.org"), text.index("For $z\\in\\mathbb{C}$ we have"))
+        self.assertNotIn("Ignore previous instructions", text)
+        client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
+        self.assertIn("$$P(z,z)=1$$", client.get("/api/papers/p1/text").json()["text"])
+        self.assertEqual(client.get("/api/papers/unknown/text").status_code, 404)
+
     def test_stream_endpoint(self):
         async def fake(system, prompt, model):
             yield "Le lemme "

@@ -9,7 +9,16 @@ import { markdownToHtml } from "./markdown.js";
 import { typesetTex } from "./math.js";
 import { t } from "./i18n.js";
 import { DEFAULT_AI_FONT_SIZE, saveSettings, settings } from "./settings.js";
-import { h, icons, toast, toastError } from "./util.js";
+import { h, icons, plainTitle, toast, toastError } from "./util.js";
+
+// « Envoyer à… » : nouvelle conversation dans l'application (Claude) ou le site (ChatGPT, Gemini) de
+// l'assistant choisi, pré-remplie avec les références de l'article ; Gemini ne sait pas recevoir de texte par
+// son adresse : tout est à coller. Modèle local : pas d'application.
+const SHARE = {
+  claude: (message) => `claude://claude.ai/new?q=${encodeURIComponent(message)}`,
+  codex: (message) => `https://chatgpt.com/?q=${encodeURIComponent(message)}`,
+  gemini: () => "https://gemini.google.com/app",
+};
 
 // Mots qui précèdent un numéro d'énoncé dans les réponses (anglais et français)
 const KIND_WORDS = {
@@ -254,7 +263,13 @@ export class Assistant {
     const area = h("textarea", { class: "note-input ai-question", rows: 2, placeholder: t(pending.parent ? "ai.followUpPlaceholder" : "ai.placeholder"),
       "aria-label": t("ai.placeholder") });
     area.value = pending.question;
-    const grow = () => { area.style.height = "auto"; area.style.height = `${Math.min(260, area.scrollHeight + 2)}px`; };
+    const grow = () => {
+      if (!area.offsetWidth) return; // panneau fermé : hauteur calculée à son ouverture (sinon toujours la plus grande)
+      area.style.height = "auto";
+      area.style.height = `${Math.min(260, area.scrollHeight + 2)}px`;
+    };
+    let width = 0;
+    new ResizeObserver(() => { if (area.offsetWidth !== width) { width = area.offsetWidth; grow(); } }).observe(area);
     area.addEventListener("input", () => { pending.question = area.value; grow(); });
     const send = () => {
       const question = area.value.trim();
@@ -288,7 +303,8 @@ export class Assistant {
       ...chips, area,
       h("div", { class: "ai-ask-row" }, model || h("span", { class: "muted small" }, modelLabel(currentModel())), h("span", { class: "spacer" }), sendButton),
       h("p", { class: "hint ai-hint" }, t("ai.hint")),
-      h("div", { class: "ai-ask-row" }, h("span", { class: "muted small" }, t("ai.wholePaper")), paperAction("summary"), paperAction("review")));
+      h("div", { class: "ai-ask-row ai-paper-row" }, h("span", { class: "muted small" }, t("ai.wholePaper")), paperAction("summary"),
+        paperAction("review"), this.shareLink()));
     requestAnimationFrame(() => { grow(); if (focus) area.focus(); });
     typesetTex(chips).catch(() => {});
     return box;
@@ -377,6 +393,24 @@ export class Assistant {
       foot.push(actions, h("p", { class: "ai-disclaimer" }, t("ai.disclaimer", { model: modelLabel(exchange.model) })));
     }
     return h("article", { class: `ai-card status-${exchange.status}` }, head, ...context, answer, ...foot);
+  }
+
+  // Tout l'article dans l'application ou le site de l'assistant : un vrai lien (cliqué, il s'ouvre à côté),
+  // et en même temps son texte complet copié dans le presse-papiers, au cas où l'assistant ne pourrait pas
+  // ouvrir le lien d'arXiv (Gemini : à coller en entier)
+  shareLink() {
+    const provider = providerOf(currentModel());
+    if (!SHARE[provider]) return null;
+    const paper = this.paper;
+    const message = t("ai.shareMessage", { title: plainTitle(paper.title), authors: paper.authors.join(", "),
+      url: `https://arxiv.org/abs/${paper.arxiv_id}v${paper.version}` });
+    return h("a", { class: "button small-button ai-share", href: SHARE[provider](message), target: "_blank", rel: "noopener",
+      title: t(`ai.shareHint.${provider}`),
+      onclick: () => {
+        copyLater(api.paperText(paper.id).then((result) => result.text))
+          .then((copied) => toast(t(copied ? `ai.shareDone.${provider}` : "ai.shareNoCopy"), { duration: 9000 }));
+      } },
+      h("span", { class: "ai-icon", html: icons.external }), t(`ai.share.${provider}`));
   }
 
   // Nouvelle conversation dans l'application Claude, pré-remplie (non envoyée) avec l'article et l'échange.

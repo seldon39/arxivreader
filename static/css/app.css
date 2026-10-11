@@ -830,6 +830,8 @@ mark.hl:hover { filter: brightness(.95); }
 .ai-ask-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .ai-ask-row .spacer { flex: 1; }
 .ai-ask-row .button { height: 32px; padding: 0 12px; font-size: 14px; }
+/* « Envoyer à… » : un lien (il s'ouvre à côté), présenté comme les boutons voisins */
+.ai-share { display: inline-flex; align-items: center; gap: 5px; text-decoration: none; color: inherit; }
 .ai-model { height: 32px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); font: 14px var(--font-ui); padding: 0 6px; }
 /* modèle et niveau de réflexion côte à côte (l'un sous l'autre si le panneau est étroit) */
 .ai-model-picker { display: inline-flex; flex-wrap: wrap; gap: 6px; min-width: 0; }

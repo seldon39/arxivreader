@@ -234,6 +234,13 @@ def paper(paper_id: str):
     return {"paper": paper, "structure": library.load_structure(paper_id)}
 
 
+@app.get("/api/papers/{paper_id}/text")
+def paper_share_text(paper_id: str):
+    """Texte de l'article pour le bouton « Envoyer à… » de l'onglet IA (copié dans le presse-papiers)."""
+    paper = checked_paper(paper_id)
+    return {"text": ai.share_text(paper, db.get_settings().get("language", "fr"))}
+
+
 @app.get("/api/papers/{paper_id}/content")
 def content(paper_id: str):
     checked_paper(paper_id)
