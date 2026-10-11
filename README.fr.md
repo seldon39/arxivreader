@@ -85,8 +85,8 @@ d'arXiv : DOI, ORCID, classes MSC/ACM, licence. Une requête au plus toutes les 
 
 Dans la bibliothèque, une rangée de dossiers précède la liste complète des articles (qui reste affichée).
 Un clic sur un dossier le déroule juste dessous, avec ses articles ; « Renommer », « Supprimer le dossier »
-(annulable ; ses articles restent dans la bibliothèque) et « Fermer » ; son bouton « Tri » propose les mêmes ordres que
-celui de la bibliothèque, plus la pertinence pour votre profil (calculée comme pour le feed, un article n'étant
+(annulable ; ses articles restent dans la bibliothèque) et « Fermer » ; ses boutons « Tri » et « Filtres » proposent les mêmes
+choix que ceux de la bibliothèque (sans le filtre par dossier), le tri ajoutant la pertinence pour votre profil (calculée comme pour le feed, un article n'étant
 pas comparé à lui-même), et une recherche par mots réduit la liste du dossier (titre, auteurs, résumé,
 identifiant, catégories). Le bouton dossier de chaque article
 ouvre « Ranger dans… » : dossiers à cocher, ou création d'un dossier. Un article peut être dans plusieurs
