@@ -55,6 +55,7 @@ export const api = {
   onboardingSuggest: (owner, papers) => request("POST", "/api/onboarding/suggest", { owner, papers }),
   onboardingApply: (body) => request("POST", "/api/onboarding/apply", body),
   notesCount: () => request("GET", "/api/notes"),
+  figures: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/figures`),
   annotations: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/annotations`),
   addAnnotation: (id, body) => request("POST", `/api/papers/${encodeURIComponent(id)}/annotations`, body),
   updateAnnotation: (annotationId, body) => request("PUT", `/api/annotations/${annotationId}`, body),

@@ -180,6 +180,11 @@ _repairing = set()
 _repairing_guard = threading.Lock()
 
 
+def repairing(paper_id):
+    with _repairing_guard:
+        return paper_id in _repairing
+
+
 def repair_assets(paper_id):
     """Images manquantes redemandées (une fois à la fois par article) : d'après leurs adresses d'origine si l'import
     les a gardées, sinon par un nouvel import de l'article (notes, place dans la bibliothèque et dossiers gardés)."""

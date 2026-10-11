@@ -439,15 +439,20 @@ class Reader {
     } else {
       this.content.innerHTML = html; // HTML nettoyé côté serveur ; scripts bloqués par la CSP
       this.article.append(this.content);
-      // figure absente (import incomplet) : le serveur la redemande à arXiv ; nouvel essai à 5, 15, 40 et 90 s
+      // figure absente (import incomplet) : le serveur la redemande à arXiv (parfois par un nouvel import, sous
+      // d'autres noms) ; on suit la réparation et l'article est rechargé (à la même place) quand elle est finie
+      let watching = false;
       this.content.addEventListener("error", (event) => {
-        const img = event.target;
-        if (img.tagName !== "IMG" || !img.getAttribute("src")?.includes("/assets/")) return;
-        const tries = Number(img.dataset.retries || 0);
-        if (tries >= 4) return;
-        img.dataset.retries = String(tries + 1);
-        const base = img.getAttribute("src").split("?")[0];
-        setTimeout(() => { if (img.isConnected) img.src = `${base}?retry=${tries + 1}`; }, [5, 15, 40, 90][tries] * 1000);
+        if (watching || event.target.tagName !== "IMG" || !event.target.getAttribute("src")?.includes("/assets/")) return;
+        watching = true;
+        const started = Date.now();
+        const check = async () => {
+          if (!this.content.isConnected || Date.now() - started > 180000) return;
+          const state = await api.figures(this.paper.id).catch(() => null);
+          if (state && !state.repairing && state.missing === 0) { dispatchEvent(new HashChangeEvent("hashchange")); return; }
+          setTimeout(check, 4000);
+        };
+        setTimeout(check, 3000);
       }, true);
     }
 

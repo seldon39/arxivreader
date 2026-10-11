@@ -305,6 +305,13 @@ def content(paper_id: str):
     return PlainTextResponse(path.read_text(encoding="utf-8"))
 
 
+@app.get("/api/papers/{paper_id}/figures")
+def figures(paper_id: str):
+    """Figures manquantes et réparation en cours (le lecteur recharge l'article quand elle est finie)."""
+    checked_paper(paper_id)
+    return {"missing": len(library.missing_assets(paper_id)), "repairing": library.repairing(paper_id)}
+
+
 @app.get("/api/papers/{paper_id}/assets/{name}")
 def asset(paper_id: str, name: str):
     checked_paper(paper_id)

@@ -187,8 +187,9 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   `_sync` doit garder les tests de `tests/test_zotero.py` (écriture refusée, doublons fusionnés, sous-collection
   profonde, dossier supprimé pendant un ajout, corbeille, retraits massifs).
 - Figures : l'import garde l'adresse d'origine de chaque image (`assets.json`) ; à l'ouverture d'un article,
-  celles qui manquent sont redemandées (`library.repair_assets`, par ces adresses, sinon par un nouvel import), et
-  le lecteur réessaie de les afficher. Une image qui ne vient pas laisse une ligne dans `server.log`.
+  celles qui manquent sont redemandées (`library.repair_assets`, par ces adresses, sinon par un nouvel import qui
+  peut renommer les fichiers), et le lecteur suit la réparation (`/api/papers/{id}/figures`) puis recharge
+  l'article. Une image qui ne vient pas laisse une ligne dans `server.log`.
 - Les noms de personnes servent d'exemples dans l'interface : ne pas y mettre de vrais noms ni de vrais
   identifiants (« Votre nom », « arxiv.org/a/… »).
 
