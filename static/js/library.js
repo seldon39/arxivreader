@@ -4,7 +4,7 @@ import { setFindHandler } from "./find.js";
 import { api } from "./api.js";
 import { t, tn } from "./i18n.js";
 import { debounce, draggablePaper, droppedPapers, formatDate, h, icons, journalChip, mayBePaper, tidyTitle, timeAgo, toast, toastError, withMath } from "./util.js";
-import { clearSelection, dragGroup, fileInFolder, selectButton, syncSelection, useSelectionBar } from "./selection.js";
+import { dragEnded, dragGroup, fileInFolder, forgetSelected, selectButton, selectionDropped, syncSelection, useSelectionBar } from "./selection.js";
 
 // Recherche et filtres, gardés d'une visite à l'autre (le temps de la session)
 const view = { search: "", categories: new Set(), reading: new Set(), years: new Set(), folders: new Set(), source: "any", publication: "any", sort: "opened",
@@ -369,7 +369,9 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
     drawFolders();
     // une fois des articles rangés, la liste générale ne garde que les autres (« Autres articles ») ; une
     // recherche ou un filtre porte sur toute la bibliothèque
-    const filed = new Set(folderList.flatMap((f) => f.papers));
+    // article sélectionné puis retiré de la bibliothèque : plus sélectionné (sinon « Ranger dans… » le réimporterait)
+    forgetSelected((info) => !info.paperId || papers.some((p) => p.id === info.paperId));
+    const filed = new Set(folderList.flatMap((f) => f.papers).filter((id) => papers.some((p) => p.id === id)));
     const everywhere = Boolean(view.search.trim()) || activeCount() > 0;
     const others = filed.size && !everywhere ? papers.filter((p) => !filed.has(p.id)) : papers;
     const shown = others.filter(matches).sort(sorterFor(view));
@@ -473,7 +475,7 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
     if (!dropped.length) { toast(t("library.drop.notPaper"), { error: true }); return; }
     try {
       await fileInFolder(dropped, folder, papers);
-      if (dropped.length > 1) clearSelection(); // sélection glissée : rangée, comme avec « Ranger dans… »
+      selectionDropped(); // sélection de cette fenêtre glissée ici : rangée, donc effacée (d'une autre fenêtre : dragEnded)
     } catch (error) {
       toastError(error);
     }
@@ -779,5 +781,5 @@ function card(paper, refreshList, context = null) {
         }
       }),
     ),
-  ), { arxivId: paper.arxiv_id, paperId: paper.id, version: paper.version, title: paper.title }, dragGroup);
+  ), { arxivId: paper.arxiv_id, paperId: paper.id, version: paper.version, title: paper.title }, dragGroup, dragEnded);
 }

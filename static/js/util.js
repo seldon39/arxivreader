@@ -191,7 +191,7 @@ export const PAPER_DRAG = "application/x-arxivreader-paper";
 // On le saisit par son titre (un lien, glissable de lui-même) : le reste de la carte garde la sélection de
 // texte (résumé du feed). Bibliothèque : le lien du titre couvre toute la carte.
 // `group(info)` : articles emportés (la sélection, si l'article saisi en fait partie)
-export function draggablePaper(element, { arxivId, paperId = null, version = null, title = "" }, group = (info) => [info]) {
+export function draggablePaper(element, { arxivId, paperId = null, version = null, title = "" }, group = (info) => [info], onEnd = null) {
   if (!arxivId) return element;
   element.addEventListener("dragstart", (event) => {
     if (!event.target.closest?.("a")) return; // texte sélectionné glissé ailleurs dans la carte : rien de spécial
@@ -203,7 +203,7 @@ export function draggablePaper(element, { arxivId, paperId = null, version = nul
     event.dataTransfer.effectAllowed = "copyLink";
     element.classList.add("dragging");
   });
-  element.addEventListener("dragend", () => element.classList.remove("dragging"));
+  element.addEventListener("dragend", (event) => { element.classList.remove("dragging"); onEnd?.(event); });
   return element;
 }
 

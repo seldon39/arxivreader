@@ -5,7 +5,7 @@ import { getLanguage, t, tn } from "./i18n.js";
 import { typesetTex } from "./math.js";
 import { renderProfile } from "./profile.js";
 import { saveSettings, settings } from "./settings.js";
-import { dragGroup, selectButton, useSelectionBar } from "./selection.js";
+import { dragEnded, dragGroup, selectButton, useSelectionBar } from "./selection.js";
 import { debounce, draggablePaper, h, hoursSince, icons, journalChip, openRoute, tidyTitle, timeAgo, toast, toastError, toggleIcon, wantsNewTab, withMath } from "./util.js";
 
 const TABS = [["arxiv", "#/feed"], ["recommended", "#/feed/recommended"], ["profile", "#/feed/profile"], ["import", "#/feed/import"]];
@@ -510,7 +510,7 @@ export function feedCard(item, onChange = () => {}, { compact = false, fresh = f
     card.addEventListener("keydown", (event) => { if (event.target === card && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); expand(); } });
   }
   // glissé sur un dossier de la bibliothèque (même fenêtre ou une autre) : rangé dedans
-  return draggablePaper(card, { arxivId: item.arxiv_id, paperId: item.libraryId || null, version: item.version, title: item.title }, dragGroup);
+  return draggablePaper(card, { arxivId: item.arxiv_id, paperId: item.libraryId || null, version: item.version, title: item.title }, dragGroup, dragEnded);
 }
 
 // Section repliable (« Citent vos articles », « Nouveaux articles de vos auteurs suivis ») : l'intertitre

@@ -8,7 +8,10 @@ import { h, icons, toast, toastError } from "./util.js";
 const selected = new Map(); // identifiant arXiv → { arxivId, paperId, title }
 const listeners = new Set();
 let bar = null;
-let barOptions = null;
+const barStack = []; // pages qui affichent la barre (la dernière l'emporte ; une page quittée en retard ne l'éteint pas)
+let filing = false;  // rangement en cours : la barre ne relance rien
+let draggingSelection = false; // glissement en cours de toute la sélection (effacée s'il aboutit)
+const barOptions = () => barStack.at(-1) || null;
 
 const notify = () => { syncSelection(); listeners.forEach((listener) => listener()); drawBar(); };
 
@@ -27,7 +30,30 @@ export const selectionSize = () => selected.size;
 export const isSelected = (arxivId) => selected.has(arxivId);
 
 // articles emportés par un glissement : toute la sélection si l'article saisi en fait partie, sinon lui seul
-export const dragGroup = (info) => (selected.has(info.arxivId) ? [...selected.values()] : [info]);
+export const dragGroup = (info) => {
+  draggingSelection = selected.has(info.arxivId);
+  return draggingSelection ? [...selected.values()] : [info];
+};
+// fin du glissement (dans cette fenêtre ou une autre) : sélection déposée → effacée
+export function dragEnded(event) {
+  if (draggingSelection && event.dataTransfer?.dropEffect && event.dataTransfer.dropEffect !== "none") clearSelection();
+  draggingSelection = false;
+}
+
+// sélection glissée puis déposée dans cette même fenêtre : effacée sans attendre la fin du glissement (selon
+// les cas, WebKit n'y indique pas que le dépôt a réussi)
+export function selectionDropped() {
+  if (!draggingSelection) return;
+  draggingSelection = false;
+  clearSelection();
+}
+
+// articles sélectionnés qui ne sont plus disponibles (retirés de la bibliothèque) : oubliés
+export function forgetSelected(keep) {
+  let changed = false;
+  for (const [id, info] of selected) if (!keep(info)) { selected.delete(id); changed = true; }
+  if (changed) notify();
+}
 
 export function clearSelection() {
   if (!selected.size) return;
@@ -58,25 +84,36 @@ export function selectButton(info) {
 // Ranger des articles dans un dossier : ceux qui ne sont pas encore dans la bibliothèque y sont importés
 export async function fileInFolder(items, folder, libraryPapers = null) {
   const papers = libraryPapers || await api.papers();
+  items = items.filter((item, i) => items.findIndex((other) => other.arxivId === item.arxivId) === i); // sans doublons
+  const missing = items.filter((item) => !papers.some((p) => p.id === item.paperId || p.arxiv_id === item.arxivId)).length;
   let added = 0;
   let already = 0;
-  for (const item of items) {
-    let paper = papers.find((p) => p.id === item.paperId) || papers.find((p) => p.arxiv_id === item.arxivId);
-    if (!paper) {
-      if (items.length === 1) toast(t("library.drop.importing"));
-      paper = await api.importPaper(item.arxivId);
+  let imported = 0;
+  try {
+    for (const item of items) {
+      let paper = papers.find((p) => p.id === item.paperId) || papers.find((p) => p.arxiv_id === item.arxivId);
+      if (!paper) {
+        imported++;
+        toast(missing > 1 ? t("select.importing", { k: imported, n: missing }) : t("library.drop.importing"), { duration: 60000 });
+        paper = await api.importPaper(item.arxivId);
+        papers.push(paper); // connu désormais (un second rangement ne le réimporte pas)
+      }
+      if (folder.papers.includes(paper.id)) { already++; continue; }
+      await api.setInFolder(folder.id, paper.id, true);
+      folder.papers.push(paper.id);
+      added++;
+      if (items.length === 1) item.title ||= paper.title;
     }
-    if (folder.papers.includes(paper.id)) { already++; continue; }
-    await api.setInFolder(folder.id, paper.id, true);
-    folder.papers.push(paper.id);
-    added++;
-    if (items.length === 1) item.title ||= paper.title;
+  } catch (error) {
+    // rangement interrompu : dire ce qui a déjà été fait
+    if (added) error.message = `${error.message} ${t("select.partial", { n: added, total: items.length })}`;
+    throw error;
   }
   if (items.length === 1 && added) {
     const title = items[0].title || "";
     toast(t("library.drop.added", { name: folder.name, title: title.length > 60 ? `${title.slice(0, 58)}…` : title }));
   } else if (added) {
-    toast(t("select.filed", { n: added, name: folder.name }) + (already ? ` ${tn("select.already", already)}` : ""));
+    toast(tn("select.filed", added, { name: folder.name }) + (already ? ` ${tn("select.already", already)}` : ""));
   } else {
     toast(t("library.drop.already", { name: folder.name }));
   }
@@ -86,18 +123,24 @@ export async function fileInFolder(items, folder, libraryPapers = null) {
 // Barre de sélection, en bas de la fenêtre : nombre, « Ranger dans… » (liste des dossiers), « Tout désélectionner »
 // `options` : { papers() : articles de la bibliothèque déjà connus (ou null), onFiled() : après un rangement }
 export function useSelectionBar(options) {
-  barOptions = options;
+  barStack.push(options);
   drawBar();
   return () => {
-    if (barOptions === options) { barOptions = null; clearSelection(); bar?.remove(); bar = null; }
+    const index = barStack.indexOf(options);
+    if (index < 0) return;
+    const current = index === barStack.length - 1;
+    barStack.splice(index, 1);
+    if (current) clearSelection(); // la page qui l'affichait est quittée : sélection effacée
+    drawBar();
   };
 }
 
 function drawBar() {
-  if (!barOptions || !selected.size) { bar?.remove(); bar = null; return; }
+  document.body.classList.toggle("has-selection-bar", Boolean(barOptions() && selected.size));
+  if (!barOptions() || !selected.size) { bar?.remove(); bar = null; return; }
   bar ||= h("div", { class: "selection-bar", role: "region", "aria-label": t("select.bar") });
   if (!bar.isConnected) document.body.append(bar);
-  const file = h("button", { class: "button small-button", type: "button", "aria-haspopup": "menu" },
+  const file = h("button", { class: "button small-button", type: "button", "aria-haspopup": "menu", disabled: filing },
     h("span", { class: "button-icon", html: icons.folder }), t("select.file"));
   file.addEventListener("click", () => openFolders(file));
   bar.replaceChildren(
@@ -105,22 +148,35 @@ function drawBar() {
     h("span", { class: "muted small selection-hint" }, tn("select.hint", selected.size)),
     h("span", { class: "spacer" }),
     file,
-    h("button", { class: "button small-button", type: "button", onclick: clearSelection }, t("select.clear")));
+    h("button", { class: "button small-button", type: "button", disabled: filing, onclick: clearSelection }, t("select.clear")));
 }
 
+let opening = false;
 async function openFolders(button) {
-  bar.querySelector(".selection-menu")?.remove();
+  if (opening || filing) return; // double clic : un seul menu
+  bar?.querySelector(".selection-menu")?.remove();
+  opening = true;
   let folders;
-  try { folders = await api.folders(); } catch (error) { toastError(error); return; }
+  try { folders = await api.folders(); } catch (error) { toastError(error); return; } finally { opening = false; }
+  if (!bar || !button.isConnected) return; // barre disparue pendant la demande
   const menu = h("div", { class: "selection-menu", role: "menu" },
     folders.length ? folders.map((folder) => h("button", { class: "selection-menu-item", type: "button", role: "menuitem",
       onclick: async () => {
         menu.remove();
+        document.removeEventListener("pointerdown", close);
+        const options = barOptions();
+        filing = true;
+        drawBar();
         try {
-          await fileInFolder([...selected.values()], folder, barOptions?.papers?.() || null);
+          await fileInFolder([...selected.values()], folder, options?.papers?.() || null);
           clearSelection();
-          barOptions?.onFiled?.();
-        } catch (error) { toastError(error); }
+        } catch (error) {
+          toastError(error);
+        } finally {
+          filing = false;
+          drawBar();
+          options?.onFiled?.(); // même interrompu : la page montre ce qui a été rangé
+        }
       } }, h("span", { class: "button-icon", html: icons.folder }), folder.name))
       : h("p", { class: "muted small" }, t("select.noFolder")));
   bar.append(menu);
@@ -133,6 +189,15 @@ async function openFolders(button) {
     document.removeEventListener("pointerdown", close);
   };
   document.addEventListener("pointerdown", close);
-  menu.addEventListener("keydown", (event) => { if (event.key === "Escape") { menu.remove(); button.focus(); } });
+  // flèches haut/bas entre les dossiers ; les touches ne vont pas plus loin (← → changent de jour dans le feed)
+  menu.addEventListener("keydown", (event) => {
+    event.stopPropagation();
+    if (event.key === "Escape") { menu.remove(); document.removeEventListener("pointerdown", close); button.focus(); return; }
+    const items = [...menu.querySelectorAll("button")];
+    const step = { ArrowDown: 1, ArrowUp: -1 }[event.key];
+    if (!step || !items.length) return;
+    event.preventDefault();
+    items[(items.indexOf(document.activeElement) + step + items.length) % items.length].focus();
+  });
   menu.querySelector("button")?.focus();
 }
