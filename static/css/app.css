@@ -638,6 +638,7 @@ svg.graph { color: var(--border-strong); }
 /* rubriques repliables (comme les sections du feed), recherche comme dans un dossier */
 .profile-section { margin: 0 0 18px; }
 .profile-section .fold-inner > .hint { margin: 10px 0 10px; }
+.profile-add { margin: 0 0 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
 .profile-search { display: flex; margin: 0 0 10px; }
 .profile-search-input { height: 34px; width: 100%; padding-left: 34px; font-size: 14px; }
 .profile-section .fold-inner { padding: 0 2px 4px; }

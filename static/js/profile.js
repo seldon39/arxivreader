@@ -57,7 +57,7 @@ const queries = {};
 const fold = (text) => String(text || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
 // Rubrique repliable (comme les sections du feed), fermée par défaut : titre et nombre ; dépliée, son
-// explication, une recherche dans ses éléments (s'il y en a plus de trois), la liste et le champ d'ajout
+// explication, le champ d'ajout, une recherche dans ses éléments (s'il y en a plus de trois) et la liste
 function renderSection(section, data, update) {
   const items = data.items.filter((i) => section.kinds.includes(i.kind));
   const count = h("span", { class: "count" });
@@ -75,7 +75,7 @@ function renderSection(section, data, update) {
     typesetTex([rows]).catch(() => {});
   };
   const search = items.length > 3 && h("input", { class: "text-input profile-search-input", type: "search", value: queries[section.key] || "",
-    placeholder: t("profile.search"), "aria-label": t("profile.search"), autocomplete: "off", spellcheck: "false",
+    placeholder: t("profile.filter"), "aria-label": t("profile.filter"), autocomplete: "off", spellcheck: "false",
     oninput: (event) => { queries[section.key] = event.target.value; drawRows(); } });
   drawRows();
   const element = h("section", { class: "profile-section foldable" });
@@ -84,9 +84,10 @@ function renderSection(section, data, update) {
     h("span", { class: "chevron", html: icons.chevronRight }));
   const body = h("div", { class: "fold-body" }, h("div", { class: "fold-inner" },
     h("p", { class: "hint" }, t(`profile.help.${section.key}`)),
+    // ajout en tête (plus lisible), puis la recherche dans la liste, puis la liste
+    h("div", { class: "profile-add" }, section.resolver ? searchForm(section, update) : keywordForm(update)),
     search && h("span", { class: "search-field profile-search" }, h("span", { class: "search-icon", html: icons.search }), search),
-    rows,
-    section.resolver ? searchForm(section, update) : keywordForm(update)));
+    rows));
   const setOpen = (open) => {
     element.classList.toggle("collapsed", !open);
     body.inert = !open;
