@@ -161,6 +161,11 @@ table.ltx_eqn_table { width: 100%; border-collapse: collapse; margin: .55em 0; d
   box-sizing: border-box; line-height: normal; text-indent: 0; text-align: left;
 }
 .figure-card > svg.ltx_picture { display: block; max-width: 100%; height: auto; overflow: visible; }
+/* image placée dans un dessin (grille de figures d'un dessin TikZ ou pgf) : à sa place exacte, sans carte à elle
+   (c'est le dessin entier qui a la sienne) */
+.figure-card img, svg.ltx_picture img, .figure-card img.ltx_graphics {
+  background: none; border: 0; border-radius: 0; padding: 0; box-sizing: border-box; max-width: 100%;
+}
 /* dessin dans une cellule d'équation : largeur propre, au plus celle de la colonne de texte (unités de conteneur) */
 .paper-content { container-type: inline-size; }
 .figure-card.in-cell { max-width: none; }

@@ -962,7 +962,7 @@ mark.hl:hover { filter: brightness(.95); }
 
 /* Figure en grand : par-dessus l'article grisé */
 .paper-content .figure-card, .paper-content img.ltx_graphics { cursor: zoom-in; transition: box-shadow .15s, border-color .15s; }
-.paper-content .figure-card:hover, .paper-content img.ltx_graphics:hover { border-color: var(--border-strong); box-shadow: var(--shadow); }
+.paper-content .figure-card:hover, .paper-content img.ltx_graphics:not(.figure-card img):hover { border-color: var(--border-strong); box-shadow: var(--shadow); }
 .paper-content .figure-card:focus-visible, .paper-content img.ltx_graphics:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 dialog.figure-viewer {
   max-width: min(96vw, 1480px); max-height: 94vh; padding: 48px clamp(10px, 3vw, 28px) 22px; border: 0; border-radius: 14px;

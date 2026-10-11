@@ -580,7 +580,8 @@ class Reader {
     if (!this.content.querySelector("[lang]")) this.content.lang = "en"; // césure à l'anglaise
     this.figures = prepareFigures(this.content);
     // Figures cliquables (et au clavier) : affichage en grand par-dessus l'article
-    this.content.querySelectorAll(".figure-card, img.ltx_graphics").forEach((figure) => {
+    // (une image placée dans un dessin s'ouvre avec le dessin entier)
+    this.content.querySelectorAll(".figure-card, img.ltx_graphics:not(.figure-card img)").forEach((figure) => {
       figure.tabIndex = 0;
       figure.title = t("reader.figureZoom");
       if (figure.querySelector("a")) return; // étiquettes avec renvois : pas de bouton qui contienne des liens
@@ -1519,7 +1520,7 @@ class Reader {
     }), () => this.finder.close());
 
     const zoom = (event) => {
-      const figure = event.target.closest?.(".figure-card, img.ltx_graphics");
+      const figure = event.target.closest?.(".figure-card") || event.target.closest?.("img.ltx_graphics");
       if (!figure || !this.content.contains(figure) || this.picking || !getSelection().isCollapsed) return;
       if (event.type === "keydown" && event.key !== "Enter" && event.key !== " ") return;
       if (event.target.closest("a")) return; // lien dans une étiquette
