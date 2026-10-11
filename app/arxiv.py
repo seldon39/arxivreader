@@ -1,6 +1,7 @@
 """Accès à arXiv : identifiants, métadonnées et version HTML des articles."""
 
 import re
+import threading
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -87,10 +88,25 @@ def _text(node, path):
     return " ".join(found.text.split()) if found is not None and found.text else ""
 
 
+_api_lock = threading.Lock()
+_api_last = 0.0
+
+
+def _paced(send):
+    """Requête à l'API d'arXiv au moins 3 s après la précédente (fiches, titres : arXiv le demande)."""
+    global _api_last
+    with _api_lock:
+        time.sleep(max(0.0, _api_last + 3 - time.monotonic()))
+        try:
+            return send()
+        finally:
+            _api_last = time.monotonic()
+
+
 def fetch_metadata(arxiv_id):
     # arXiv demande au plus une requête toutes les 3 s : nouvelle tentative si elle répond 429/503
     with _client() as client:
-        response = with_retry(lambda: client.get("https://export.arxiv.org/api/query", params={"id_list": arxiv_id}))
+        response = _paced(lambda: with_retry(lambda: client.get("https://export.arxiv.org/api/query", params={"id_list": arxiv_id})))
     response.raise_for_status()
     entry = ET.fromstring(response.text).find(f"{ATOM}entry")
     if entry is None or not _text(entry, f"{ATOM}title"):
@@ -120,11 +136,9 @@ def fetch_titles(arxiv_ids):
     found = {}
     with _client() as client:
         for start in range(0, len(ids), 100):
-            if start:
-                time.sleep(3)  # arXiv : une requête toutes les 3 s au plus
             chunk = ids[start:start + 100]
-            response = with_retry(lambda: client.get("https://export.arxiv.org/api/query",
-                                                     params={"id_list": ",".join(chunk), "max_results": len(chunk)}))
+            response = _paced(lambda: with_retry(lambda: client.get("https://export.arxiv.org/api/query",
+                                                                    params={"id_list": ",".join(chunk), "max_results": len(chunk)})))
             response.raise_for_status()
             for entry in ET.fromstring(response.text).findall(f"{ATOM}entry"):
                 key = re.search(r"abs/(.+?)(?:v\d+)?$", _text(entry, f"{ATOM}id"))

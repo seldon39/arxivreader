@@ -91,9 +91,12 @@ export async function renderRelated(root, arxivFromRoute = null) {
   pick.addEventListener("click", () => libraryMenu(pick, form, (arxivId) => load(arxivId)));
   let mounted = true;
   let collapse = () => {}; // graphe agrandi : réduit quand on quitte la page
+  let detachKeys = () => {};
+  let refreshMarks = null; // graphe affiché : marques « dans la bibliothèque » remises à jour sans tout redessiner
 
   // ---- Résultat : en-tête, liste (onglets) et graphe, article choisi dessous ----
   function draw() {
+    detachKeys(); // graphe précédent (agrandi) : ses touches ne restent pas sur la page
     const graph = state.graph;
     if (!graph) { result.replaceChildren(); return; }
     const o = graph.origin;
@@ -113,23 +116,24 @@ export async function renderRelated(root, arxivFromRoute = null) {
         checked: state.tab === key, onchange: () => { state.tab = key; drawList(); } }), t(`related.tab.${key}`))));
     const list = h("div", { class: "related-list" });
     const graphBox = h("div", { class: "related-graph" });
-    const detail = h("div", { class: "related-detail" });
+    const detail = h("div", { class: "related-detail", "aria-live": "polite" });
     // article choisi : du graphe, ou d'une des listes (antérieurs, dérivés) ; ceux qui lui sont liés ressortent
-    const papers = () => [...graph.nodes, ...(graph.prior || []), ...(graph.derivative || [])];
-    const chosen = () => papers().find((x) => x.id === state.selected) || graph.nodes[0];
+    const byId = new Map([...graph.nodes, ...(graph.prior || []), ...(graph.derivative || [])].map((x) => [x.id, x]));
+    const chosen = () => byId.get(state.selected) || graph.nodes[0];
     const marks = () => {
       const n = chosen();
       for (const item of list.querySelectorAll(".related-item")) {
-        item.classList.toggle("on", item.dataset.id === n.id);
-        const other = papers().find((x) => x.id === item.dataset.id);
-        item.classList.toggle("linked", Boolean(other?.links?.includes(n.id)));
+        const id = item.dataset.id;
+        item.classList.toggle("on", id === n.id);
+        item.classList.toggle("linked", Boolean(byId.get(id)?.links?.includes(n.id) || n.links?.includes(id)));
       }
     };
-    const select = (id) => {
+    const select = (id, fromGraph = false) => {
       state.selected = id;
       marks();
       drawDetail();
       highlight();
+      if (fromGraph) list.querySelector(`.related-item[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "nearest" });
     };
     function drawList() {
       const shown = graph[TABS[state.tab]] || [];
@@ -167,26 +171,38 @@ export async function renderRelated(root, arxivFromRoute = null) {
     const grid = h("div", { class: "related-grid" });
     const tool = (icon, label, onclick) => h("button", { class: "icon-button", type: "button", title: label, "aria-label": label, html: icons[icon], onclick });
     const expand = tool("expand", t("related.expand"), () => setExpanded(!state.expanded));
+    // agrandi : le reste de la page (couvert) devient inerte, le Tab reste dans le graphe et l'article choisi
+    const covered = () => [document.querySelector(".topbar"), ...root.querySelectorAll(".related-page > :not(.related-result), .related-origin, .related-side")];
     const setExpanded = (on) => {
       state.expanded = on;
       grid.classList.toggle("expanded", on);
       document.body.classList.toggle("related-expanded", on);
+      for (const element of covered()) element?.toggleAttribute("inert", on);
       expand.innerHTML = icons[on ? "shrink" : "expand"];
       expand.title = t(on ? "related.shrink" : "related.expand");
       expand.setAttribute("aria-label", expand.title);
+      expand.setAttribute("aria-expanded", String(on));
       document.removeEventListener("keydown", keys);
       if (on) document.addEventListener("keydown", keys);
     };
+    const zoomKeys = { "+": () => zoomBy(1.25), "=": () => zoomBy(1.25), "-": () => zoomBy(0.8), "0": fit };
     const keys = (event) => {
       if (!grid.isConnected) { document.removeEventListener("keydown", keys); return; }
-      if (event.target.closest?.("input, textarea, [contenteditable]") || event.metaKey || event.ctrlKey || event.altKey) return;
-      const act = { Escape: () => setExpanded(false), "+": () => zoomBy(1.25), "=": () => zoomBy(1.25), "-": () => zoomBy(0.8), "0": fit }[event.key];
+      // touche déjà prise (menu des dossiers), réglages ouverts, champ de saisie : rien ici
+      if (event.defaultPrevented || document.querySelector("dialog[open]") || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.target.closest?.("input, textarea, select, [contenteditable]")) return;
+      const act = event.key === "Escape" ? () => setExpanded(false) : zoomKeys[event.key];
       if (!act) return;
       event.preventDefault();
-      event.stopPropagation();
       act();
     };
+    graphBox.addEventListener("keydown", (event) => { // non agrandi : + − 0 quand le graphe a le focus
+      if (state.expanded || event.metaKey || event.ctrlKey || event.altKey || !zoomKeys[event.key]) return;
+      event.preventDefault();
+      zoomKeys[event.key]();
+    });
     collapse = () => setExpanded(false);
+    detachKeys = () => document.removeEventListener("keydown", keys);
     graphBox.append(svg, h("div", { class: "related-graph-tools" },
       tool("zoomOut", t("related.zoomOut"), () => zoomBy(0.8)), tool("zoomIn", t("related.zoomIn"), () => zoomBy(1.25)),
       tool("fit", t("related.fit"), fit), expand), h("div", { class: "related-legend" },
@@ -197,6 +213,7 @@ export async function renderRelated(root, arxivFromRoute = null) {
     setExpanded(state.expanded);
     drawList();
     drawDetail();
+    refreshMarks = () => { drawList(); drawDetail(); highlight(); };
     typesetTex([head]).catch(() => {});
   }
 
@@ -254,11 +271,19 @@ export async function renderRelated(root, arxivFromRoute = null) {
       navigation.listHash = hash;
       // retour sur la page : « dans la bibliothèque » remis à jour (graphe gardé par le serveur : pas de nouvelle requête)
       const shown = state.graph;
-      api.related(shown.origin.arxivId).then((fresh) => {
-        if (!mounted || state.graph !== shown || state.pending) return;
-        state.graph = fresh;
-        draw();
-      }, () => {});
+      if (shown.builtAt) { // graphe non gardé (incomplet) : pas reconstruit pour si peu
+        api.related(shown.origin.arxivId).then((fresh) => {
+          if (!mounted || state.graph !== shown || state.pending) return;
+          if (fresh.builtAt !== shown.builtAt) { state.graph = fresh; draw(); return; }
+          // même graphe : seules les marques changent (zoom, défilement et menus restent)
+          const marks = new Map([fresh.origin, ...fresh.nodes, ...(fresh.prior || []), ...(fresh.derivative || [])].map((x) => [x.id, x]));
+          for (const paper of [shown.origin, ...shown.nodes, ...(shown.prior || []), ...(shown.derivative || [])]) {
+            const now = marks.get(paper.id);
+            if (now) { paper.libraryId = now.libraryId; paper.readId = now.readId; }
+          }
+          refreshMarks?.();
+        }, () => {});
+      }
     }
   }
   return () => { mounted = false; collapse(); };
@@ -296,12 +321,20 @@ function layout(graph) {
       l.a.x += dx / d * pull; l.a.y += dy / d * pull; l.b.x -= dx / d * pull; l.b.y -= dy / d * pull;
     }
   }
+  // nuage tourné pour que sa plus grande dimension soit horizontale (le cadre est plus large que haut)
+  const mx = nodes.reduce((sum, n) => sum + n.x, 0) / nodes.length, my = nodes.reduce((sum, n) => sum + n.y, 0) / nodes.length;
+  let sxx = 0, syy = 0, sxy = 0;
+  for (const n of nodes) { const dx = n.x - mx, dy = n.y - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; }
+  const angle = -0.5 * Math.atan2(2 * sxy, sxx - syy), cos = Math.cos(angle), sin = Math.sin(angle);
+  for (const n of nodes) { const dx = n.x - mx, dy = n.y - my; n.x = dx * cos - dy * sin; n.y = dx * sin + dy * cos; }
   const xs = nodes.map((n) => n.x), ys = nodes.map((n) => n.y);
   const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-  const k = Math.min((W - 110) / Math.max(1, x1 - x0), (H - 80) / Math.max(1, y1 - y0));
+  // recadré : le nuage, plutôt rond, est un peu étiré pour occuper le cadre, plus large que haut
+  const fx = (W - 110) / Math.max(1, x1 - x0), fy = (H - 80) / Math.max(1, y1 - y0);
+  const kx = Math.min(fx, 1.5 * fy), ky = Math.min(fy, 1.5 * fx);
   for (const n of nodes) {
-    n.x = 55 + (n.x - x0) * k + (W - 110 - (x1 - x0) * k) / 2;
-    n.y = 32 + (n.y - y0) * k + (H - 80 - (y1 - y0) * k) / 2;
+    n.x = 55 + (n.x - x0) * kx + (W - 110 - (x1 - x0) * kx) / 2;
+    n.y = 32 + (n.y - y0) * ky + (H - 80 - (y1 - y0) * ky) / 2;
   }
   return { nodes, links };
 }
@@ -314,26 +347,30 @@ function drawGraph(graph, selected, select) {
   svg.setAttribute("aria-label", t("related.graphLabel"));
   const el = (tag, attrs, parent) => { const e = document.createElementNS(SVG, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent?.append(e); return e; };
   const view = el("g", {}, svg);
+  let zoom = 1, panX = 0, panY = 0;
   const years = graph.nodes.map((n) => n.year).filter(Boolean);
   const y0 = years.length ? Math.min(...years) : 2000, y1 = years.length ? Math.max(...years) : 2000;
-  const shade = (n) => `color-mix(in srgb, var(--accent) ${Math.round(22 + 70 * (((n.year || y0) - y0) / Math.max(1, y1 - y0)))}%, var(--surface))`;
+  const shade = (n) => `color-mix(in srgb, var(--accent) ${Math.round(38 + 56 * (((n.year || y0) - y0) / Math.max(1, y1 - y0)))}%, var(--surface))`;
   const radius = (n) => (n.origin ? 14 : 4 + Math.min(18, Math.sqrt(n.citations || 0) * 0.36));
   // liens entre articles (ceux de l'article de départ ne sont pas dessinés : la distance les montre) ; les moins
   // forts n'apparaissent que pour l'article choisi
   const edgeLayer = el("g", {}, view);
   const lines = links.filter((l) => !l.a.origin).map((l) => ({ ...l, line: el("line", { x1: l.a.x, y1: l.a.y, x2: l.b.x, y2: l.b.y,
-    class: `related-edge${l.drawn ? "" : " extra"}`, "stroke-width": Math.min(2.4, 0.4 + l.s / 12) }, edgeLayer) }));
+    class: `related-edge${l.drawn ? "" : " extra"}`, "stroke-width": Math.min(2.4, 0.4 + l.s / 12), "vector-effect": "non-scaling-stroke" }, edgeLayer) }));
   const groups = new Map();
+  const labels = [];
   for (const n of nodes) {
-    const g = el("g", { class: `related-node${n.origin ? " origin" : ""}${n.libraryId ? " in-library" : ""}`, tabindex: n.origin ? -1 : 0 }, view);
+    const g = el("g", { class: `related-node${n.origin ? " origin" : ""}${n.libraryId ? " in-library" : ""}`, tabindex: n.origin ? -1 : 0,
+      ...(n.origin ? {} : { role: "button", "aria-label": `${plainTitle(n.title)}, ${n.year || "?"}` }) }, view);
     // couleur en style : WebKit (l'application) n'accepte pas var() dans l'attribut fill
-    el("circle", { cx: n.x, cy: n.y, r: radius(n), style: `fill: ${n.origin ? "var(--accent)" : shade(n)}` }, g);
-    const label = el("text", { x: n.x, y: n.y + radius(n) + 11, "text-anchor": "middle" }, g);
+    el("circle", { cx: n.x, cy: n.y, r: radius(n), style: `fill: ${n.origin ? "var(--accent)" : shade(n)}`, "vector-effect": "non-scaling-stroke" }, g);
+    const label = el("text", { x: n.x, "text-anchor": "middle" }, g);
     label.textContent = `${lastName(n.authors?.[0])} ${n.year || ""}`.trim();
+    labels.push({ n, label, g });
     el("title", {}, g).textContent = `${plainTitle(n.title)} (${n.year || "?"})`;
     if (!n.origin) {
-      g.addEventListener("click", () => select(n.id));
-      g.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(n.id); } });
+      g.addEventListener("click", () => select(n.id, true));
+      g.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(n.id, true); } });
     }
     groups.set(n.id, g);
   }
@@ -351,17 +388,46 @@ function drawGraph(graph, selected, select) {
     }
     for (const [id, g] of groups) {
       g.classList.toggle("selected", id === chosen.id);
+      if (id !== "__origin") g.setAttribute("aria-pressed", String(id === chosen.id));
       g.classList.toggle("neighbour", neighbours.has(id));
       g.classList.toggle("linked", Boolean(chosen.links?.includes(id === "__origin" ? "origin" : id)));
       const paper = graph.nodes.find((n) => n.id === id);
       if (paper) g.classList.toggle("in-library", Boolean(paper.libraryId));
     }
+    placeLabels();
   };
-  highlight();
+  // Noms : de taille fixe à l'écran (le zoom écarte les points, pas les lettres) ; un nom qui en chevaucherait un
+  // autre, plus important, n'apparaît qu'au survol (sauf ceux de l'article de départ et du choisi). Ordre : l'article
+  // de départ, le choisi, ses voisins, puis les plus cités.
+  let placedAt = 0;
+  function placeLabels(force = true) {
+    const scale = zoom * (svg.getScreenCTM()?.a || 1); // pixels d'écran par unité du graphe
+    if (!force && scale === placedAt) return;
+    placedAt = scale;
+    const kept = [];
+    const rank = ({ n, g }) => (n.origin ? 4 : g.classList.contains("selected") ? 3 : g.classList.contains("neighbour") || g.classList.contains("linked") ? 2 : 0)
+      * 1e6 + (n.citations || 0);
+    for (const item of [...labels].sort((a, b) => rank(b) - rank(a))) {
+      const size = (item.n.origin ? 12 : 10) / scale;
+      const y = item.n.y + radius(item.n) + size * 1.05;
+      item.label.style.fontSize = `${size}px`;
+      item.label.setAttribute("y", y);
+      const half = item.label.textContent.length * size * 0.29, box = [item.n.x - half, y - size * 0.85, item.n.x + half, y + size * 0.2];
+      const free = !kept.some((k) => box[0] < k[2] && k[0] < box[2] && box[1] < k[3] && k[1] < box[3]);
+      const always = rank(item) >= 3e6; // l'article de départ, le choisi
+      item.label.classList.toggle("minor", !free && !always);
+      if (free || always) kept.push(box);
+    }
+  }
+  highlight(); // place aussi les noms
   // zoom au pincement (ou ⌘ + molette, ou boutons) et déplacement en faisant glisser le fond ; agrandi, le
   // défilement à deux doigts déplace aussi le graphe (la page, elle, ne défile plus)
-  let zoom = 1, panX = 0, panY = 0;
-  const apply = () => view.setAttribute("transform", `translate(${panX} ${panY}) scale(${zoom})`);
+  let labelsPending = false;
+  const apply = () => {
+    view.setAttribute("transform", `translate(${panX} ${panY}) scale(${zoom})`);
+    if (!labelsPending) { labelsPending = true; requestAnimationFrame(() => { labelsPending = false; placeLabels(false); }); }
+  };
+  new ResizeObserver(() => placeLabels(false)).observe(svg); // affiché, agrandi, fenêtre redimensionnée
   // point de l'écran → coordonnées du graphe (le cadre agrandi garde les proportions, centré)
   const toView = (x, y) => { const m = svg.getScreenCTM(); return m ? new DOMPoint(x, y).matrixTransform(m.inverse()) : { x: W / 2, y: H / 2 }; };
   const unit = () => 1 / (svg.getScreenCTM()?.a || 1);
@@ -386,7 +452,7 @@ function drawGraph(graph, selected, select) {
   }, { passive: false });
   let drag = null;
   svg.addEventListener("pointerdown", (event) => {
-    if (event.target.closest(".related-node")) return;
+    if (event.button !== 0 || event.target.closest(".related-node")) return;
     drag = { x: event.clientX, y: event.clientY, panX, panY };
     svg.setPointerCapture(event.pointerId);
   });
@@ -425,25 +491,29 @@ async function libraryMenu(button, anchor, choose) {
   filter.addEventListener("input", fill);
   const menu = h("div", { class: "related-menu", role: "menu" }, filter, items);
   const close = () => { menu.remove(); document.removeEventListener("pointerdown", outside); };
-  const outside = (event) => { if (!menu.contains(event.target) && event.target !== button) close(); };
-  menu.addEventListener("keydown", (event) => { if (event.key === "Escape") { close(); button.focus(); } });
+  const outside = (event) => { if (!menu.contains(event.target) && !button.contains(event.target)) close(); };
+  menu.addEventListener("keydown", (event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); button.focus(); } });
   fill();
   anchor.append(menu);
   document.addEventListener("pointerdown", outside);
   filter.focus();
 }
 
+let closeFolderMenu = null;
 async function folderMenu(button, choose) {
-  document.querySelector(".related-folder-menu")?.remove();
+  const wasOpen = Boolean(button.parentElement.querySelector(".related-folder-menu"));
+  closeFolderMenu?.();
+  if (wasOpen) return; // second clic sur le bouton : fermé
   let folders;
   try { folders = await api.folders(); } catch (error) { toastError(error); return; }
   const menu = h("div", { class: "related-menu related-folder-menu", role: "menu" },
     folders.length ? folders.map((folder) => h("button", { class: "related-menu-item", type: "button", role: "menuitem",
       onclick: () => { close(); choose(folder); } }, h("span", {}, folder.name)))
       : h("p", { class: "muted small" }, t("select.noFolder")));
-  const close = () => { menu.remove(); document.removeEventListener("pointerdown", outside); };
-  const outside = (event) => { if (!menu.contains(event.target) && event.target !== button) close(); };
-  menu.addEventListener("keydown", (event) => { if (event.key === "Escape") { close(); button.focus(); } });
+  const close = () => { menu.remove(); document.removeEventListener("pointerdown", outside); closeFolderMenu = null; };
+  const outside = (event) => { if (!menu.contains(event.target) && !button.contains(event.target)) close(); };
+  menu.addEventListener("keydown", (event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); button.focus(); } });
+  closeFolderMenu = close;
   button.parentElement.style.position = "relative";
   button.parentElement.append(menu);
   menu.style.left = `${button.offsetLeft}px`;

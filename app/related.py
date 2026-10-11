@@ -90,12 +90,23 @@ def _paper(raw):
 
 
 def _norm(title):
+    """Titre réduit à ses lettres et chiffres, sans les commandes TeX (le titre d'arXiv d'un article se compare
+    ainsi à celui de Semantic Scholar)."""
+    title = re.sub(r"\\[a-zA-Z]+", "", title).replace("$", "")
     return re.sub(r"[^a-z0-9]", "", unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode().lower())
 
 
-# numéros de partie : chiffres romains, ou nombre en fin de titre ou après « part », « vol. »… (pas « N → 1 »)
-NUMBERS = re.compile(r"\b[IVX]+\b|(?:\b(?:[Pp]art|[Pp]artie|[Tt]eil|[Vv]ol(?:ume)?|[Nn]o)\.?\s*)\d+\b|\b\d+\s*$")
+# numéros : nombres, chiffres romains (en capitales, ou de toute casse après « part » ou en fin de titre) ;
+# « N ! 1 » est un « N → ∞ » mal lu par Semantic Scholar, pas un numéro
+NUMBERS = re.compile(r"\b\d+\b|\b[IVX]+\b|(?i:(?<=\bpart )[ivx]+\b|\b[ivx]+\s*$)")
+GARBLED = re.compile(r"(?:!|→)\s*1\b")
 PART = re.compile(r"\b(?:[IVX]+|[Pp]art|[Pp]artie|[Tt]eil)\b")
+# complément qui annonce un autre texte que l'article (« X: erratum », « X: the singular case »)
+OTHER_TEXT = re.compile(r"(?i)\b(?:errat\w*|addend\w*|corrigend\w*|correction|reply|comment\w*|appendix|supplement\w*|case|cases)\b")
+
+
+def _numbers(title):
+    return [n.lower() for n in NUMBERS.findall(GARBLED.sub("→∞", title))]
 
 
 def _surnames(paper):
@@ -104,33 +115,38 @@ def _surnames(paper):
 
 def _completed(a, b):
     """Un titre et le même suivi d'un complément (« The spectral theory of Toeplitz operators. (AM-99), Volume 99 ») :
-    même article si les auteurs se recoupent et si le complément n'annonce pas une autre partie (« : part II »)."""
+    même article si les auteurs se recoupent et si le complément n'annonce pas une autre partie (« : part II ») ou
+    un autre texte (« : erratum »)."""
     x, y = sorted((" ".join(a["title"].split()), " ".join(b["title"].split())), key=len)
     x = x.rstrip(" .")
     if len(x.split()) < 4 or not y.lower().startswith(x.lower()):
         return False
     rest = y[len(x):]
-    if not re.match(r"\s*[.(:;,\u2013\u2014-]", rest) or PART.search(rest):
+    if not re.match(r"\s*[.(:;,–—-]", rest) or PART.search(rest) or OTHER_TEXT.search(rest):
         return False
-    return bool(_surnames(a) & _surnames(b)) or not (a.get("authors") and b.get("authors"))
+    return bool(_surnames(a) & _surnames(b))
 
 
 def _same(a, b):
     """Doublons de Semantic Scholar (même article sous deux fiches, titre à peine différent : « anggl(N) » et
     « and gl(N) ») : même année et titres presque identiques, avec les mêmes numéros (« I » et « II », « part 1 »
-    et « part 2 » restent deux articles), ou un titre suivi d'un complément ; jamais deux identifiants arXiv ou
-    DOI différents."""
+    et « part 2 », « SU(2) » et « SU(3) » restent deux articles), ou un titre suivi d'un complément ; jamais deux
+    identifiants arXiv ou DOI différents, ni deux titres trop courts pour être comparés (« Preface »)."""
     if (a["year"] or 0) != (b["year"] or 0):
         return False
     for key in ("arxivId", "doi"):
         if a.get(key) and b.get(key) and a[key].lower() != b[key].lower():
             return False
+    x, y = _norm(a["title"]), _norm(b["title"])
+    if min(len(x), len(y)) < 12:
+        return False  # titre court, ou en cyrillique, en chinois… (réduit à presque rien)
     if _completed(a, b):
         return True
-    if NUMBERS.findall(a["title"]) != NUMBERS.findall(b["title"]):
+    if _numbers(a["title"]) != _numbers(b["title"]):
         return False
-    x, y = _norm(a["title"]), _norm(b["title"])
-    return x == y or (min(len(x), len(y)) > 20 and difflib.SequenceMatcher(None, x, y).ratio() >= 0.9)
+    if x == y:  # même titre : mêmes auteurs (sauf fiche sans auteurs)
+        return bool(_surnames(a) & _surnames(b)) or not (a.get("authors") and b.get("authors"))
+    return min(len(x), len(y)) > 20 and difflib.SequenceMatcher(None, x, y).ratio() >= 0.9
 
 
 def build(arxiv_id, api_key=None):
@@ -138,17 +154,25 @@ def build(arxiv_id, api_key=None):
     arXiv y prennent leur titre et leurs auteurs (Semantic Scholar en abîme parfois : « anggl(N) »), puis le
     graphe est recalculé (les doublons se reconnaissent mieux)."""
     origin, candidates, refs_of = fetch(arxiv_id, api_key)
-    first = compute(origin, candidates, refs_of)
-    shown = {p["arxivId"] for p in [*first["nodes"], *first["prior"], *first["derivative"]] if p.get("arxivId")}
-    try:
-        titles = fetch_titles(sorted(shown)) if shown else {}
-    except Exception:
-        return first  # arXiv injoignable : titres de Semantic Scholar
-    for paper in candidates.values():
-        if paper.get("arxivId") in titles:
-            title, authors = titles[paper["arxivId"]]
-            paper["title"], paper["authors"] = tex_text(title), [a for a in authors if a][:12] or paper["authors"]  # « -- » → « – »…
-    return compute(origin, candidates, refs_of)
+    data = compute(origin, candidates, refs_of)
+    asked = set()
+    for _ in range(2):  # un second tour pour les articles qu'aurait fait apparaître le premier
+        shown = {p["arxivId"] for p in [*data["nodes"], *data["prior"], *data["derivative"]] if p.get("arxivId")} - asked
+        if not shown:
+            break
+        try:
+            titles = fetch_titles(sorted(shown))
+        except Exception:
+            return {**data, "degraded": True}  # arXiv injoignable : titres de Semantic Scholar (graphe non gardé)
+        asked |= shown
+        for paper in candidates.values():
+            if paper.get("arxivId") in titles:
+                title, authors = titles[paper["arxivId"]]
+                paper["title"], paper["authors"] = tex_text(title), [a for a in authors if a][:12] or paper["authors"]  # « -- » → « – »…
+        data = compute(origin, candidates, refs_of)
+    if origin.get("unknown"):
+        data["degraded"] = True  # arXiv n'a pas décrit l'article : ses autres fiches ne sont pas reconnues
+    return data
 
 
 def _origin(arxiv_id):
@@ -157,21 +181,28 @@ def _origin(arxiv_id):
         return {"id": f"arXiv:{arxiv_id}", "arxivId": arxiv_id, "doi": meta.doi or None, "title": tex_text(meta.title),
                 "year": int(meta.published[:4]) if meta.published[:4].isdigit() else None, "citations": 0, "authors": meta.authors[:12]}
     except Exception:
-        return {"id": f"arXiv:{arxiv_id}", "arxivId": arxiv_id, "doi": None, "title": f"arXiv:{arxiv_id}", "year": None, "citations": 0, "authors": []}
+        return {"id": f"arXiv:{arxiv_id}", "arxivId": arxiv_id, "doi": None, "title": f"arXiv:{arxiv_id}", "year": None, "citations": 0, "authors": [],
+                "unknown": True}
 
 
 def _batch(client, ids, fields, api_key):
     """Fiches de Semantic Scholar pour `ids`, par lots de 500 (dans l'ordre ; None pour une fiche inconnue)."""
     found = []
     for start in range(0, len(ids), 500):
-        time.sleep(0 if api_key else 1.2)  # sans clé : au plus une requête par seconde
+        time.sleep(_pause(api_key))
         batch = ids[start:start + 500]
         answer = _answer(with_retry(lambda: client.post(f"{S2}/paper/batch", params={"fields": fields}, json={"ids": batch}),
                                     retry_on=(429, 503, 504), delays=RETRIES))
         if not isinstance(answer, list):
             raise RelatedError("bad-response")
-        found += [item if isinstance(item, dict) else None for item in answer[:len(batch)]]
+        answer = answer[:len(batch)] + [None] * (len(batch) - len(answer))  # réponse écourtée : fiches inconnues
+        found += [item if isinstance(item, dict) else None for item in answer]
     return found
+
+
+def _pause(api_key):
+    """Une requête par seconde au plus : quota partagé sans clé, et quota d'une clé nouvelle."""
+    return 1.05 if api_key else 1.2
 
 
 def _ids(item):
@@ -187,7 +218,7 @@ def fetch(arxiv_id, api_key=None):
     with httpx.Client(headers=headers, timeout=60) as client:
         pid = f"arXiv:{arxiv_id}"
         refs = _get(client, f"{S2}/paper/{pid}/references", limit=1000, fields=FIELDS).get("data") or []
-        time.sleep(0 if api_key else 1.2)
+        time.sleep(_pause(api_key))
         cites = _get(client, f"{S2}/paper/{pid}/citations", limit=1000, fields=FIELDS).get("data") or []
         candidates = {}
         for rel, rows, key in (("ref", refs, "citedPaper"), ("cite", cites, "citingPaper")):
@@ -221,6 +252,43 @@ def _share(shared, a, b, power=0.5):
     return shared / (a * b) ** power if shared and a and b else 0.0
 
 
+def _merge(origin, candidates, refs_of):
+    """Doublons regroupés avant le calcul : chaque groupe garde une fiche (de préférence celle d'arXiv, puis un
+    voisin direct, puis la plus citée), qui reçoit les références de toutes et les citations faites à chacune ;
+    les autres fiches de l'article lui-même disparaissent. Comparaisons par année (un doublon a la même)."""
+    alias = {}  # fiche → fiche gardée (None : l'article lui-même)
+    me = {**origin, "doi": None}
+    for key, paper in candidates.items():
+        if paper.get("arxivId") == origin["arxivId"] or _same({**paper, "arxivId": None, "doi": None}, me):
+            alias[key] = None
+    order = sorted((k for k in candidates if k not in alias), key=lambda k: (not candidates[k].get("arxivId"),
+                   candidates[k]["rel"] == "second", -(candidates[k]["citations"] or 0)))
+    kept, by_year = {}, {}
+    for key in order:
+        paper = candidates[key]
+        bucket = by_year.setdefault(paper["year"] or 0, [])
+        twin = next((k for k in bucket if _same(paper, kept[k])), None)
+        if twin is None:
+            kept[key] = {**paper}
+            bucket.append(key)
+            continue
+        alias[key] = twin
+        main = kept[twin]
+        main["citations"] = max(main["citations"] or 0, paper["citations"] or 0)
+        if main["rel"] == "second" and paper["rel"] != "second":
+            main["rel"] = paper["rel"]  # lien direct avec l'article
+        for field in ("arxivId", "doi"):
+            main[field] = main.get(field) or paper.get(field)
+    to = lambda k: alias.get(k, k)
+    refs = {}
+    for key, found in refs_of.items():
+        target = to(key)
+        if target is not None:
+            refs.setdefault(target, set()).update(r for r in map(to, found) if r is not None and r != target)
+    origin_refs = {r for r in map(to, origin["refs"]) if r is not None}
+    return kept, refs, origin_refs
+
+
 def compute(origin, candidates, refs_of):
     """Proximité de chaque candidat avec l'article, rapportée à la taille des listes (un classique cité partout
     n'écrase pas un travail proche) : références communes rapportées aux deux listes de références (indice de
@@ -228,8 +296,7 @@ def compute(origin, candidates, refs_of):
     un peu plus pour un lien direct ; poids réglés pour retrouver au mieux les graphes de Connected Papers.
     Les plus proches forment le graphe ; à côté, les travaux antérieurs (les plus cités par le graphe) et
     dérivés (ceux qui citent le plus d'articles du graphe)."""
-    refs_of = {key: set(found) for key, found in refs_of.items()}
-    origin_refs = set(origin["refs"])
+    candidates, refs_of, origin_refs = _merge(origin, candidates, refs_of)
     citers = [c for c in candidates if candidates[c]["rel"] == "cite"]
     for key, paper in candidates.items():
         own = refs_of.get(key, set())
@@ -242,10 +309,6 @@ def compute(origin, candidates, refs_of):
     ranked = sorted(candidates.values(), key=lambda p: (-p["score"], -p["citations"]))
     nodes, others = [], []
     for paper in ranked:
-        if paper.get("arxivId") == origin["arxivId"] or _same({**paper, "arxivId": None, "doi": None}, {**origin, "doi": None}):
-            continue  # une autre fiche de l'article lui-même (version publiée, doublon)
-        if any(_same(paper, kept) for kept in nodes) or any(_same(paper, kept) for kept in others):
-            continue  # doublon d'une fiche déjà retenue (la plus proche)
         (nodes if len(nodes) < NODES and paper["score"] > 0 else others).append(paper)
     # liens : tous, mais seuls les plus forts de chaque article (références communes rapportées aux deux listes,
     # ou l'un cite l'autre) sont dessinés d'emblée, pour que le graphe reste lisible ; les autres apparaissent quand
@@ -307,6 +370,8 @@ def graph(arxiv_id, api_key=None, refresh=False):
         if found := _cached(arxiv_id, since=None if not refresh else asked):
             return found  # construit par une autre demande pendant l'attente
         data = build(arxiv_id, api_key)
+        if data.get("degraded") or not data["nodes"]:
+            return {**data, "builtAt": None}  # incomplet (arXiv injoignable) ou vide (article trop récent) : pas gardé
         with db.connect() as connection:
             connection.execute("INSERT INTO related_graphs (arxiv_id, data, built_at) VALUES (?, ?, datetime('now')) "
                                "ON CONFLICT(arxiv_id) DO UPDATE SET data = excluded.data, built_at = excluded.built_at",
@@ -323,7 +388,7 @@ def annotate(data):
         papers = connection.execute("SELECT id, arxiv_id, in_library FROM papers").fetchall()
     library = {r["arxiv_id"]: r["id"] for r in papers if r["in_library"]}
     read = {r["arxiv_id"]: r["id"] for r in papers}
-    for paper in [data["origin"], *data["nodes"]]:
+    for paper in [data["origin"], *data["nodes"], *data.get("prior", []), *data.get("derivative", [])]:
         arxiv = paper.get("arxivId")
         paper["libraryId"] = library.get(arxiv) if arxiv else None
         paper["readId"] = read.get(arxiv) if arxiv else None

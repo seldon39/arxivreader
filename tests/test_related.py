@@ -113,10 +113,32 @@ class Related(unittest.TestCase):
         r1 = next(n for n in data["nodes"] if n["id"] == "R1")
         self.assertEqual((r1["title"], r1["authors"][0]), ("Toeplitz quantization of Kähler manifolds and $gl(N)$, $N\\to\\infty$ limits", "Martin Bordemann"))
         self.assertEqual(next(n for n in data["nodes"] if n["id"] == "C1")["title"], "Berezin–Toeplitz quantization")
+        self.assertNotIn("R1bis", [n["id"] for n in data["nodes"]])  # toujours reconnu comme doublon (titre TeX d'arXiv)
 
     def test_titles_arxiv_unreachable(self):
-        data = self.run_build(OSError("hors ligne"))  # titres de Semantic Scholar
+        data = self.run_build(OSError("hors ligne"))  # titres de Semantic Scholar, graphe non gardé
         self.assertEqual(next(n for n in data["nodes"] if n["id"] == "R1")["title"], "Toeplitz quantization of Kahler manifolds and gl(N)")
+        self.assertIsNone(data["builtAt"])
+        self.assertIsNone(related._cached("0806.2370"))
+
+    def test_short_batch_answer(self):
+        # Semantic Scholar rend moins de fiches que demandé, ou une fiche nulle : candidats sans références, pas d'erreur
+        saved = self.fake
+        def fake(send):
+            answer = saved(send)
+            if "/batch" in self.client.last[0]:
+                full = answer.json()
+                return mock.Mock(status_code=200, json=lambda: [None, *full[1:3]], raise_for_status=lambda: None)
+            return answer
+        self.fake = fake
+        data = self.run_build()
+        self.assertTrue(data["nodes"])
+
+    def test_library_marks_on_side_lists(self):
+        with db.connect() as connection:
+            connection.execute("INSERT INTO papers (id, arxiv_id, title, in_library) VALUES ('p1', '1003.2523', 'X', 1)")
+        data = related.annotate({"origin": {"arxivId": "0806.2370"}, "nodes": [], "prior": [{"arxivId": "1003.2523"}], "derivative": [{"arxivId": None}]})
+        self.assertEqual((data["prior"][0]["libraryId"], data["derivative"][0]["libraryId"]), ("p1", None))
 
     def test_old_format_rebuilt(self):
         related._ensure()
@@ -167,6 +189,24 @@ class SideLists(unittest.TestCase):
         self.assertTrue(any(not drawn for *_, drawn in data["edges"]))  # gardé mais pas dessiné d'emblée
 
 
+class Merge(unittest.TestCase):
+    """Doublons regroupés : les citations faites à une fiche écartée comptent pour celle gardée."""
+
+    def test_citations_of_a_duplicate_count(self):
+        def p(i, rel, title, arxiv=None):
+            return {"id": i, "arxivId": arxiv, "doi": None, "title": title, "year": 1993, "citations": 10, "authors": ["M. Bordemann"], "rel": rel}
+        origin = {"id": "arXiv:1", "arxivId": "1", "doi": None, "title": "Origin paper about something", "year": 2008, "citations": 2,
+                  "authors": [], "refs": ["B", "Bdup"]}
+        candidates = {"B": p("B", "ref", "Toeplitz quantization of Kahler manifolds and gl(N)", "hep-th/9309134"),
+                      "Bdup": p("Bdup", "second", "Toeplitz quantization of Kahler manifolds anggl(N)"),
+                      "C": p("C", "cite", "A paper citing the origin and the duplicate"), "D": p("D", "cite", "Another paper citing the origin")}
+        refs = {"B": [], "Bdup": [], "C": ["Bdup"], "D": ["B", "Bdup"]}
+        data = related.compute(origin, candidates, refs)
+        b = next(n for n in data["nodes"] if n["id"] == "B")
+        self.assertEqual((b["cocited"], b["rel"]), (2, "ref"))  # C cite la fiche écartée, D les deux : comptés une fois chacun
+        self.assertNotIn("Bdup", [n["id"] for n in data["nodes"]])
+
+
 class Duplicates(unittest.TestCase):
     """Deux fiches du même article sont fusionnées, mais pas les parties I et II d'un article."""
 
@@ -183,10 +223,40 @@ class Duplicates(unittest.TestCase):
         book = {**a, "authors": ["L. Boutet de Monvel", "V. Guillemin"], "year": 1981}
         self.assertTrue(related._same({**book, "title": "The Spectral Theory of Toeplitz Operators."},
                                       {**book, "title": "The Spectral Theory of Toeplitz Operators. (AM-99), Volume 99"}))
+        # pas des doublons : autre dimension ou autre groupe, parties en minuscules, erratum, titres courts ou réduits à rien,
+        # même titre d'autres auteurs
+        for x, y in (("The 2-dimensional Ising model and its phases", "The 3-dimensional Ising model and its phases"),
+                     ("Gauge theories with gauge group SU(2) on the lattice", "Gauge theories with gauge group SU(3) on the lattice"),
+                     ("Bergman kernels on singular spaces, part ii", "Bergman kernels on singular spaces, part iii"),
+                     ("Bergman kernels on singular spaces: erratum", "Bergman kernels on singular spaces"),
+                     ("Preface", "Preface"), ("Формула следа для магнитного лапласиана", "Квантование по Березину")):
+            self.assertFalse(related._same({**a, "title": x}, {**a, "title": y}), (x, y))
+        self.assertFalse(related._same({**a, "title": "Introduction to Berezin-Toeplitz quantization", "authors": ["X. Ma"]},
+                                       {**a, "title": "Introduction to Berezin-Toeplitz quantization", "authors": ["Other Person"]}))
+        self.assertTrue(related._same({**a, "title": "Toeplitz quantization of Kähler manifolds and $gl(N)$, $N\\to\\infty$ limits"},
+                                      {**a, "title": "Toeplitz quantization of Kähler manifolds anggl(N), N→∞ limits"}))
         self.assertTrue(related._same({**a, "title": "Toeplitz quantization of Kähler manifolds anggl(N), N→∞ limits"},
                                       {**a, "title": "Toeplitz Quantization of K Ahler Manifolds and Gl(n), N ! 1 Limits"}))
         self.assertEqual(related.normalize("math.DG/0404494"), "math/0404494")
         self.assertEqual(related.normalize("0806.2370"), "0806.2370")
+
+
+class ArxivTitles(unittest.TestCase):
+    """Titres d'arXiv : identifiants anciens et nouveaux, version retirée, entrées d'erreur ignorées."""
+
+    def test_parse(self):
+        from app import arxiv
+        feed = """<feed xmlns="http://www.w3.org/2005/Atom">
+          <entry><id>http://arxiv.org/abs/hep-th/9309134v1</id><title>Toeplitz quantization
+            of K\u00e4hler manifolds</title><author><name>Martin Bordemann</name></author></entry>
+          <entry><id>http://arxiv.org/abs/1003.2523v3</id><title>A review</title><author><name>M. S.</name></author></entry>
+          <entry><id>http://arxiv.org/api/errors#incorrect_id_format_for_x</id><title>Error</title></entry>
+        </feed>""".replace("\\u00e4", "ä")
+        client = mock.MagicMock()
+        client.__enter__.return_value.get.return_value = mock.Mock(status_code=200, text=feed, raise_for_status=lambda: None)
+        with mock.patch.object(arxiv, "_client", return_value=client), mock.patch.object(arxiv.time, "sleep"):
+            found = arxiv.fetch_titles(["hep-th/9309134", "1003.2523", "x"])
+        self.assertEqual(found, {"hep-th/9309134": ("Toeplitz quantization of Kähler manifolds", ["Martin Bordemann"]), "1003.2523": ("A review", ["M. S."])})
 
 
 if __name__ == "__main__":
