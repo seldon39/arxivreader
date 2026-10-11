@@ -103,10 +103,10 @@ async function renderAISettings(holder, keepFocus = null) {
   ];
   // modèle et niveau de réflexion (assistant prêt ; modèle local : son choix ci-dessus)
   const [modelChoice, effortChoice] = provider === "local" ? [null, null]
-    : modelControls({ ...status, provider }, () => renderAISettings(holder, document.activeElement?.name));
+    : modelControls({ ...status, provider }, null); // le niveau suit le modèle sur place
   const choices = [
     modelChoice && h("label", { class: "row" }, h("span", {}, t("ai.model")), modelChoice),
-    effortChoice && h("label", { class: "row" }, h("span", {}, t("ai.effort")), effortChoice),
+    effortChoice && h("label", { class: "row", hidden: effortChoice.hidden }, h("span", {}, t("ai.effort")), effortChoice),
     effortChoice && h("p", { class: "hint" }, t("settings.effortHint")),
   ];
   line.replaceWith(...fields.filter(Boolean), ...choices.filter(Boolean),
@@ -227,7 +227,7 @@ export function openSettingsDialog({ section = null } = {}) {
   );
   form.addEventListener("input", (event) => {
     const { name, value, checked, type } = event.target;
-    if (!name) return;
+    if (!name || event.target.classList.contains("ai-model")) return; // modèle et niveau : enregistrés par leurs menus
     if (name === "feedCategories" || name === "s2ApiKey" || name === "aiLocalUrl" || name === "geminiApiKey") return; // enregistrés à la sortie du champ
     const parsed = type === "checkbox" ? checked : name === "fontSize" ? Number(value) : value;
     if (name === "fontSize") form.querySelector("#setting-fontSize").textContent = t("settings.fontSize", { n: value });
@@ -247,14 +247,17 @@ export function openSettingsDialog({ section = null } = {}) {
     } else if (name === "s2ApiKey") {
       saveSettings({ s2ApiKey: value.trim() });
     } else if (name === "geminiApiKey") {
-      saveSettings({ geminiApiKey: value.trim() }).then(() => renderAISettings(form.querySelector(".ai-settings"), "geminiApiKey"));
+      // focus rendu au champ seulement s'il l'a encore (sortie par Tab ou clic : il va ailleurs, et la clé resterait affichée)
+      const keep = document.activeElement === event.target ? "geminiApiKey" : null;
+      saveSettings({ geminiApiKey: value.trim() }).then(() => renderAISettings(form.querySelector(".ai-settings"), keep));
     } else if (name === "aiLocalUrl") {
       const url = value.trim().replace(/\/+$/, "");
       if (url && !localUrl(url)) {
         toast(t("settings.aiLocalUrlBad"), { error: true });
         return;
       }
-      saveSettings({ aiLocalUrl: url }).then(() => renderAISettings(form.querySelector(".ai-settings"), "aiLocalUrl"));
+      const keep = document.activeElement === event.target ? "aiLocalUrl" : null;
+      saveSettings({ aiLocalUrl: url }).then(() => renderAISettings(form.querySelector(".ai-settings"), keep));
     }
   });
   renderAISettings(form.querySelector(".ai-settings"));

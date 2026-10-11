@@ -12,6 +12,7 @@ import json
 import os
 import shutil
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -391,12 +392,20 @@ def _environment():
 # démarrer. Par défaut, ou si la liste ne peut être lue : Opus et Sonnet.
 CLAUDE_FALLBACK = [{"value": "opus", "label": "Opus", "levels": ["low", "medium", "high", "xhigh", "max"]},
                    {"value": "sonnet", "label": "Sonnet", "levels": ["low", "medium", "high", "xhigh", "max"]}]
-_claude_models = {"at": 0.0, "models": None}
+_claude_models = {"at": 0.0, "models": None, "failed": 0.0}
+_claude_lock = threading.Lock()
 
 
 def claude_models():
+    with _claude_lock:  # une seule lecture à la fois (le CLI met plusieurs secondes à démarrer)
+        return _read_claude_models()
+
+
+def _read_claude_models():
     if _claude_models["models"] is not None and time.monotonic() - _claude_models["at"] < 6 * 3600:
         return _claude_models["models"]
+    if time.monotonic() - _claude_models["failed"] < 300:  # échec récent : pas de nouvel essai tout de suite
+        return _claude_models["models"] or CLAUDE_FALLBACK
     models = None
     try:
         from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
@@ -425,6 +434,7 @@ def claude_models():
     if models:
         _claude_models.update(at=time.monotonic(), models=models)
         return models
+    _claude_models["failed"] = time.monotonic()
     return _claude_models["models"] or CLAUDE_FALLBACK
 
 
@@ -477,18 +487,19 @@ async def stream_answer(system, prompt, model):
     """Morceaux de texte de la réponse, au fil de l'eau."""
     provider = providers.provider_of(model)
     settings = db.get_settings()
-    effort = lambda key: settings.get(key) if providers.valid_effort(settings.get(key) or "") else ""  # noqa: E731
+    # modèle et niveau : ceux que la page affiche (un niveau que le modèle ne propose pas : celui par défaut)
     if provider == "claude":
-        stream = _stream_claude(system, prompt, model, effort("aiClaudeEffort"))
+        effort = providers._effort(settings, "aiClaudeEffort", await asyncio.to_thread(claude_models), model)
+        stream = _stream_claude(system, prompt, model, effort)
     elif provider == "codex":
-        codex_model = settings.get("aiCodexModel")
-        stream = providers.stream_codex(system, prompt, codex_model if providers.valid_model_name(codex_model) else None,
-                                        effort("aiCodexEffort"))
+        _, codex_model, effort = await asyncio.to_thread(providers.codex_choice, settings)
+        stream = providers.stream_codex(system, prompt, codex_model or None, effort)
     elif provider == "gemini":
         key = settings.get("geminiApiKey") or ""
         model_name = settings.get("aiGeminiModel") if providers.valid_gemini_model(settings.get("aiGeminiModel")) \
             else providers.GEMINI_DEFAULT[0]
-        stream = providers.stream_gemini(system, prompt, model_name, key, effort("aiGeminiEffort"))
+        effort = settings.get("aiGeminiEffort") if settings.get("aiGeminiEffort") in providers.GEMINI_EFFORTS else ""
+        stream = providers.stream_gemini(system, prompt, model_name, key, effort)
     else:
         url = settings.get("aiLocalUrl") or providers.LOCAL_URL
         stream = providers.stream_local(system, prompt, model.split(":", 1)[1], url)

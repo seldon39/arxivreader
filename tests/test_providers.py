@@ -94,6 +94,16 @@ class Providers(unittest.TestCase):
         with mock.patch.object(providers.Path, "home", return_value=home):
             models = providers.codex_models()
         self.assertEqual([(m["value"], m["levels"]) for m in models], [("gpt-new", ["medium"]), ("gpt-old", ["low", "ultra"])])
+        for broken in ("[]", "null", json.dumps({"models": [{"slug": "x", "visibility": "list", "supported_reasoning_levels": 5}]})):
+            (home / ".codex" / "models_cache.json").write_text(broken)  # cache mal formé : pas d'erreur 500
+            with mock.patch.object(providers.Path, "home", return_value=home):
+                self.assertIsInstance(providers.codex_models(), list)
+        # niveau enregistré que le modèle choisi ne propose pas : celui de Codex par défaut
+        (home / ".codex" / "models_cache.json").write_text(json.dumps({"models": [
+            {"slug": "gpt-new", "visibility": "list", "priority": 1, "supported_reasoning_levels": [{"effort": "medium"}]}]}))
+        with mock.patch.object(providers.Path, "home", return_value=home):
+            self.assertEqual(providers.codex_choice({"aiCodexEffort": "xhigh"}), (mock.ANY, "gpt-new", ""))
+            self.assertEqual(providers.codex_choice({"aiCodexEffort": "medium"})[1:], ("gpt-new", "medium"))
 
     def test_codex_errors(self):
         self.events({"type": "error", "message": "Not logged in"}, exit=1)
@@ -231,6 +241,12 @@ class Gemini(unittest.TestCase):
                     {"name": "models/text-embedding-004", "supportedGenerationMethods": ["embedContent"]}]})
 
             def do_POST(self):
+                if "blocked" in self.path:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/event-stream")
+                    self.end_headers()
+                    self.wfile.write(b'data: {"promptFeedback": {"blockReason": "SAFETY"}}\r\n\r\n')
+                    return
                 Handler.path_seen, Handler.key = self.path, self.headers.get("x-goog-api-key")
                 Handler.body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 Handler.bodies = getattr(Handler, "bodies", []) + [Handler.body]
@@ -265,6 +281,11 @@ class Gemini(unittest.TestCase):
         self.assertIn("/models/gemini-flash-latest:streamGenerateContent", self.handler.path_seen)
         self.assertEqual(self.handler.body["systemInstruction"]["parts"][0]["text"], "SYSTEM")
         self.assertNotIn("tools", self.handler.body)       # aucun outil
+
+    def test_blocked_answer(self):
+        with self.assertRaises(providers.ProviderError) as caught:  # pas une réponse vide enregistrée comme terminée
+            asyncio.run(collect(providers.stream_gemini("S", "P", "gemini-blocked", "good")))
+        self.assertIn("SAFETY", str(caught.exception))
 
     def test_thinking_level(self):
         asyncio.run(collect(providers.stream_gemini("S", "P", "gemini-flash-latest", "good", "high")))

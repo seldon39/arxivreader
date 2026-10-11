@@ -111,8 +111,10 @@ def _recent_node():
                   *sorted(glob.glob(str(home / ".nvm/versions/node/*/bin")), key=_version_key, reverse=True),
                   str(home / ".volta/bin"), str(home / ".local/share/mise/shims"), str(home / ".asdf/shims"),
                   "/opt/homebrew/bin", "/usr/local/bin", *os.environ.get("PATH", "").split(os.pathsep)]
-    _node_folder = next((d for d in dict.fromkeys(candidates) if d and (Path(d) / "node").exists() and _node_major(d) >= NODE_MIN), "")
-    return _node_folder
+    found = next((d for d in dict.fromkeys(candidates) if d and (Path(d) / "node").exists() and _node_major(d) >= NODE_MIN), "")
+    if found:  # pas trouvé : recherché de nouveau la prochaine fois (Node installé entre-temps)
+        _node_folder = found
+    return found
 
 
 def _search_path():
@@ -217,11 +219,8 @@ def status(provider, settings):
             logged = result.returncode == 0 and "not logged in" not in output
         except (OSError, subprocess.TimeoutExpired):
             logged = False
-        choices = codex_models()
-        chosen = settings.get("aiCodexModel") if any(c["value"] == settings.get("aiCodexModel") for c in choices) \
-            else (choices[0]["value"] if choices else "")
-        return {"available": True, "loggedIn": logged, "choices": choices, "chosen": chosen,
-                "effort": _effort(settings, "aiCodexEffort", choices, chosen)}
+        choices, chosen, effort = codex_choice(settings)
+        return {"available": True, "loggedIn": logged, "choices": choices, "chosen": chosen, "effort": effort}
     if provider == "gemini":
         key = settings.get("geminiApiKey") or ""
         if not key:
@@ -309,17 +308,28 @@ def codex_models():
         cache = json.loads((Path.home() / ".codex" / "models_cache.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return []
+    listed = cache.get("models") if isinstance(cache, dict) else None
     models = []
-    for model in sorted((m for m in cache.get("models") or [] if isinstance(m, dict) and m.get("visibility") == "list"),
+    for model in sorted((m for m in (listed if isinstance(listed, list) else []) if isinstance(m, dict) and m.get("visibility") == "list"),
                         key=lambda m: m.get("priority") if isinstance(m.get("priority"), (int, float)) else 999):
         slug = model.get("slug")
         if not valid_model_name(slug):
             continue
-        levels = [r.get("effort") if isinstance(r, dict) else r for r in model.get("supported_reasoning_levels") or []]
+        raw = model.get("supported_reasoning_levels")
+        levels = [r.get("effort") if isinstance(r, dict) else r for r in (raw if isinstance(raw, list) else [])]
         models.append({"value": slug, "label": str(model.get("display_name") or slug)[:60],
                        "description": str(model.get("description") or "")[:200],
                        "levels": [level for level in levels if level in EFFORTS]})
     return models
+
+
+def codex_choice(settings):
+    """Modèles proposés, modèle choisi (sinon le plus recommandé) et niveau permis pour lui : ce que la page
+    affiche et ce que reçoit Codex, calculés de la même façon."""
+    choices = codex_models()
+    chosen = settings.get("aiCodexModel") if any(c["value"] == settings.get("aiCodexModel") for c in choices) \
+        else (choices[0]["value"] if choices else "")
+    return choices, chosen, _effort(settings, "aiCodexEffort", choices, chosen)
 
 
 def _codex_events(event, state):
@@ -352,7 +362,8 @@ async def stream_codex(system, prompt, model=None, effort=""):
             *(["-m", model] if valid_model_name(model) else []),
             *(["-c", f"model_reasoning_effort={json.dumps(effort)}"] if effort in EFFORTS else []),
             "-"]
-    async for text in _run(argv, prompt, workdir, _codex_events):
+    env = await asyncio.to_thread(_environment)  # recherche de Node (programmes lancés) hors de la boucle
+    async for text in _run(argv, prompt, workdir, _codex_events, env=env):
         yield text
 
 
@@ -392,8 +403,12 @@ def gemini_models(key):
         response = client.get(f"{GEMINI_API}/models", params={"pageSize": 1000}, headers={"x-goog-api-key": key})
     if response.status_code != 200:
         raise _gemini_error(response.status_code, response.text)
+    data = response.json()
+    listed = data.get("models") if isinstance(data, dict) else None
     models = []
-    for model in response.json().get("models") or []:
+    for model in (listed if isinstance(listed, list) else []):
+        if not isinstance(model, dict):
+            continue
         name = str(model.get("name") or "").removeprefix("models/")
         if name.startswith("gemini") and "generateContent" in (model.get("supportedGenerationMethods") or []) \
                 and valid_gemini_model(name):
@@ -420,12 +435,14 @@ async def stream_gemini(system, prompt, model, key, effort=""):
             "contents": [{"role": "user", "parts": [{"text": prompt}]}]}
     if effort in GEMINI_EFFORTS:
         body["generationConfig"] = {"thinkingConfig": {"thinkingLevel": effort}}
+    received = False
     try:
         async for text in _gemini_request(model, key, body):
+            received = True
             yield text
     except ProviderError as error:
         # modèle qui n'accepte pas ce niveau (anciens modèles, niveau propre à Flash) : redemandé sans
-        if "generationConfig" not in body or "thinking" not in str(error).lower():
+        if received or "generationConfig" not in body or "thinking" not in str(error).lower():
             raise
         del body["generationConfig"]
         async for text in _gemini_request(model, key, body):
@@ -433,6 +450,7 @@ async def stream_gemini(system, prompt, model, key, effort=""):
 
 
 async def _gemini_request(model, key, body):
+    produced, blocked = False, None
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(900, connect=10)) as client:
             async with client.stream("POST", f"{GEMINI_API}/models/{model}:streamGenerateContent", params={"alt": "sse"},
@@ -450,10 +468,23 @@ async def _gemini_request(model, key, body):
                         continue
                     if chunk.get("error"):
                         raise _gemini_error(200, json.dumps(chunk))
-                    for candidate in (chunk.get("candidates") or [])[:1]:
-                        for part in ((candidate.get("content") or {}).get("parts") or []):
+                    feedback = chunk.get("promptFeedback")
+                    if isinstance(feedback, dict) and feedback.get("blockReason"):
+                        blocked = str(feedback["blockReason"])
+                    candidates = chunk.get("candidates")
+                    for candidate in (candidates if isinstance(candidates, list) else [])[:1]:
+                        if not isinstance(candidate, dict):
+                            continue
+                        if candidate.get("finishReason") in ("SAFETY", "RECITATION", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII"):
+                            blocked = str(candidate["finishReason"])
+                        content = candidate.get("content")
+                        parts = content.get("parts") if isinstance(content, dict) else None
+                        for part in (parts if isinstance(parts, list) else []):
                             if isinstance(part, dict) and isinstance(part.get("text"), str) and not part.get("thought"):
+                                produced = True
                                 yield part["text"]
+                if not produced:
+                    raise ProviderError(f"Gemini did not answer ({blocked})" if blocked else "Gemini gave an empty answer")
     except httpx.ConnectError:
         raise ProviderError("Google's Gemini API cannot be reached (network?)", "offline")
     except (httpx.HTTPError, httpx.InvalidURL) as error:

@@ -402,7 +402,8 @@ export class Assistant {
     const provider = providerOf(currentModel());
     if (!SHARE[provider]) return null;
     const paper = this.paper;
-    const message = t("ai.shareMessage", { title: plainTitle(paper.title), authors: paper.authors.join(", "),
+    const authors = paper.authors.length > 8 ? `${paper.authors.slice(0, 8).join(", ")} et al.` : paper.authors.join(", ");
+    const message = t("ai.shareMessage", { title: plainTitle(paper.title).slice(0, 400), authors: authors.slice(0, 600),
       url: `https://arxiv.org/abs/${paper.arxiv_id}v${paper.version}` });
     return h("a", { class: "button small-button ai-share", href: SHARE[provider](message), target: "_blank", rel: "noopener",
       title: t(`ai.shareHint.${provider}`),

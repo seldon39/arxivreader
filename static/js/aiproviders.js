@@ -39,27 +39,43 @@ export function modelControls(status, onSaved) {
   if (!status?.loggedIn || !MODEL_SETTING[provider]) return [null, null];
   const choices = status.choices || (status.models || []).map((name) => ({ value: name, label: name, levels: [] }));
   if (!choices.length) return [null, null];
-  const chosen = status.chosen || appSettings[MODEL_SETTING[provider]] || choices[0].value;
+  const modelKey = MODEL_SETTING[provider];
+  const effortKey = EFFORT_SETTING[provider];
+  let chosen = status.chosen || appSettings[modelKey];
+  if (!choices.some((c) => c.value === chosen)) {
+    // modèle enregistré qui n'est plus proposé : le premier de la liste, enregistré (sinon affiché ≠ utilisé)
+    chosen = choices[0].value;
+    status.chosen = chosen;
+    saveSettings({ [modelKey]: chosen });
+  }
   const levelsOf = (value) => choices.find((c) => c.value === value)?.levels || [];
-  const model = h("select", { class: "ai-model", name: MODEL_SETTING[provider], "aria-label": t("ai.model"), title: t("ai.model") },
+  // niveau : celui enregistré s'il est proposé pour ce modèle, sinon celui de l'assistant (comme le serveur)
+  const effortFor = (value) => (levelsOf(value).includes(appSettings[effortKey]) ? appSettings[effortKey] : "");
+  const model = h("select", { class: "ai-model", name: modelKey, "aria-label": t("ai.model"), title: t("ai.model") },
     choices.map((c) => h("option", { value: c.value, selected: c.value === chosen, title: c.description || null }, c.label)));
-  const levels = levelsOf(chosen);
-  const effort = EFFORT_SETTING[provider] && levels.length ? h("select", { class: "ai-model ai-effort", name: EFFORT_SETTING[provider],
-    "aria-label": t("ai.effort"), title: t("ai.effort") },
-    ["", ...levels].map((level) => h("option", { value: level, selected: level === (status.effort || "") },
-      level ? t(`ai.effort.${level}`) : t("ai.effort.default")))) : null;
-  model.addEventListener("change", async () => {
-    const values = { [MODEL_SETTING[provider]]: model.value };
-    // niveau que le nouveau modèle ne propose pas : celui de l'assistant par défaut
-    if (EFFORT_SETTING[provider] && status.effort && !levelsOf(model.value).includes(status.effort)) values[EFFORT_SETTING[provider]] = "";
-    await saveSettings(values);
-    Object.assign(status, { chosen: model.value, effort: values[EFFORT_SETTING[provider]] ?? status.effort });
-    onSaved?.();
+  const effort = effortKey ? h("select", { class: "ai-model ai-effort", name: effortKey, "aria-label": t("ai.effort"), title: t("ai.effort") }) : null;
+  // options du niveau d'après le modèle (redessinées sur place quand il change : pas de nouvel affichage)
+  const fillEffort = (value) => {
+    if (!effort) return;
+    const levels = levelsOf(value);
+    effort.hidden = !levels.length;
+    const row = effort.closest(".row"); // réglages : la ligne entière
+    if (row) row.hidden = !levels.length;
+    effort.replaceChildren(...["", ...levels].map((level) => h("option", { value: level, selected: level === effortFor(value) },
+      level ? t(`ai.effort.${level}`) : t("ai.effort.default"))));
+  };
+  fillEffort(chosen);
+  model.addEventListener("change", () => {
+    const values = { [modelKey]: model.value };
+    if (effortKey && appSettings[effortKey] && !levelsOf(model.value).includes(appSettings[effortKey])) values[effortKey] = "";
+    // état mis à jour avant l'enregistrement : un affichage déclenché entre-temps montre déjà le nouveau choix
+    Object.assign(status, { chosen: model.value, effort: values[effortKey] ?? effortFor(model.value) });
+    fillEffort(model.value);
+    saveSettings(values).then(() => onSaved?.());
   });
-  effort?.addEventListener("change", async () => {
-    await saveSettings({ [EFFORT_SETTING[provider]]: effort.value });
+  effort?.addEventListener("change", () => {
     status.effort = effort.value;
-    onSaved?.();
+    saveSettings({ [effortKey]: effort.value }).then(() => onSaved?.());
   });
   return [model, effort];
 }
