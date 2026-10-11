@@ -22,7 +22,7 @@ from .structure import STRUCTURE_VERSION, extract_structure
 from .texsource import analyze_source
 
 ALLOWED_ASSET_TYPES = ("image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml")
-ASSET_WORKERS = 4  # images téléchargées en même temps (un article peut en avoir des centaines)
+ASSET_WORKERS = 6  # images téléchargées en même temps (un article peut en avoir des centaines ; au-delà, pas plus vite)
 ASSET_REF = re.compile(r'src="assets/([^"/]+)"')
 log = logging.getLogger("arxivreader.library")
 
@@ -56,40 +56,48 @@ def write_atomic(path, text):
 
 def import_paper(query, add_to_library=True):
     arxiv_id, _ = parse_arxiv_id(query)
-    meta = fetch_metadata(arxiv_id)
-    paper_id = paper_key(arxiv_id)
-    with paper_lock(paper_id):
-        source = _download(paper_id, arxiv_id, meta)  # arxiv-html, ar5iv ou none
-        previous = db.get_paper(paper_id)
-        db.save_paper({
-            "id": paper_id,
-            "arxiv_id": arxiv_id,
-            "version": meta.version,
-            "title": meta.title,
-            "authors": meta.authors,
-            "abstract": meta.abstract,
-            "categories": meta.categories,
-            "primary_category": meta.primary_category,
-            "published": meta.published,
-            "updated": meta.updated,
-            "doi": meta.doi,
-            "journal_ref": meta.journal_ref,
-            "comment": meta.comment,
-            "source": source,
-            "position": previous["position"] if previous else None,
-            # déjà dans la bibliothèque : on l'y laisse ; sinon selon la demande (« Lire » = cache seulement)
-            "in_library": 1 if add_to_library or (previous and previous.get("in_library")) else 0,
-        })
-        return db.get_paper(paper_id)
+    # source TeX (souvent plusieurs Mo, l'étape la plus longue) demandée tout de suite, sans attendre la fiche
+    # d'arXiv ni la page et ses figures, qui se font pendant ce temps : le résultat est le même, en moins de temps
+    with ThreadPoolExecutor(1) as background:
+        pending_source = background.submit(_source, arxiv_id, None)
+        meta = fetch_metadata(arxiv_id)
+        paper_id = paper_key(arxiv_id)
+        with paper_lock(paper_id):
+            return _import(paper_id, arxiv_id, meta, add_to_library, pending_source)
 
 
-def _download(paper_id, arxiv_id, meta):
+def _import(paper_id, arxiv_id, meta, add_to_library, pending_source):
+    source = _download(paper_id, arxiv_id, meta, pending_source)  # arxiv-html, ar5iv ou none
+    previous = db.get_paper(paper_id)
+    db.save_paper({
+        "id": paper_id,
+        "arxiv_id": arxiv_id,
+        "version": meta.version,
+        "title": meta.title,
+        "authors": meta.authors,
+        "abstract": meta.abstract,
+        "categories": meta.categories,
+        "primary_category": meta.primary_category,
+        "published": meta.published,
+        "updated": meta.updated,
+        "doi": meta.doi,
+        "journal_ref": meta.journal_ref,
+        "comment": meta.comment,
+        "source": source,
+        "position": previous["position"] if previous else None,
+        # déjà dans la bibliothèque : on l'y laisse ; sinon selon la demande (« Lire » = cache seulement)
+        "in_library": 1 if add_to_library or (previous and previous.get("in_library")) else 0,
+    })
+    return db.get_paper(paper_id)
+
+
+def _download(paper_id, arxiv_id, meta, pending_source):
     folder = paper_dir(paper_id)
     PAPERS.mkdir(parents=True, exist_ok=True)
     # dossier de préparation propre à cet import, effacé en cas d'échec
     staging = Path(tempfile.mkdtemp(dir=PAPERS, prefix=f".{paper_id}."))
     try:
-        source = _fill(staging, paper_id, arxiv_id, meta)
+        source = _fill(staging, paper_id, arxiv_id, meta, pending_source)
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
@@ -103,9 +111,15 @@ def _download(paper_id, arxiv_id, meta):
     return source
 
 
-def _fill(staging, paper_id, arxiv_id, meta):
-    (staging / "assets").mkdir()
+def _source(arxiv_id, version):
+    try:
+        return fetch_source(arxiv_id, version)
+    except Exception:
+        return None
 
+
+def _fill(staging, paper_id, arxiv_id, meta, pending_source):
+    (staging / "assets").mkdir()
     source = "none"
     structure = {"toc": [], "nodes": [], "equations": {}, "bibliography": [], "hiddenText": 0}
     fetched = fetch_html(arxiv_id, meta.version)
@@ -118,10 +132,7 @@ def _fill(staging, paper_id, arxiv_id, meta):
         (staging / "assets.json").write_text(json.dumps(dict(assets)), encoding="utf-8")
         _fetch_assets(staging / "assets", assets)
     # Source TeX : options que la version HTML perd (numéros d'équation, police, étiquettes de listes)
-    try:
-        data = fetch_source(arxiv_id, meta.version)
-    except Exception:
-        data = None
+    data = pending_source.result()
     try:
         tex_options = analyze_source(data) if data else None
     except Exception:

@@ -170,9 +170,10 @@ MAX_SOURCE_BYTES = 60_000_000
 
 
 def fetch_source(arxiv_id, version):
-    """Source déposée sur arXiv (archive tar.gz ou .tex compressé), ou None si trop grosse."""
+    """Source déposée sur arXiv (archive tar.gz ou .tex compressé), ou None si trop grosse ; version None : la
+    dernière (demandée avant de connaître la version, pendant la lecture de la fiche)."""
     with _client() as client:
-        with client.stream("GET", f"https://arxiv.org/e-print/{arxiv_id}v{version}") as response:
+        with client.stream("GET", f"https://arxiv.org/e-print/{arxiv_id}" + (f"v{version}" if version else "")) as response:
             if response.status_code != 200:
                 return None
             chunks, size = [], 0
