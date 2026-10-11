@@ -1,255 +1,254 @@
 # arXivReader
 
-Lecteur d'articles arXiv pour Mac, pensé pour les mathématiques : mise en page « papier AMS », énoncés et
-preuves navigables, graphe des dépendances, notes et surlignages, feed des nouveautés trié selon votre profil,
-et un assistant IA (Claude, Codex, Gemini ou un modèle local) qui ne voit que le texte de l'article.
-Tout reste sur votre Mac : le serveur n'écoute que sur 127.0.0.1.
+**English** · [Français](README.fr.md)
 
-*A Mac reader for arXiv papers, built for mathematics: AMS-style layout, navigable statements and proofs,
-dependency graph, notes and highlights, a personalised feed, and an optional AI assistant. French and English
-interface. Download the app from the [Releases](https://github.com/seldon39/arxivreader/releases) page.*
+A Mac reader for arXiv papers, built for mathematics: AMS-style "paper" layout, navigable statements and
+proofs, dependency graph, notes and highlights, a feed of new papers sorted by your profile, and an AI
+assistant (Claude, Codex, Gemini or a local model) that only sees the text of the paper.
+Everything stays on your Mac: the server only listens on 127.0.0.1. French and English interface.
 
-## Installer
+## Install
 
-Télécharger `arXivReader.dmg` depuis la page [Releases](https://github.com/seldon39/arxivreader/releases)
-(Mac Apple Silicon, macOS 13 ou plus), l'ouvrir et glisser arXivReader dans Applications. L'application est
-autonome (Python et ses paquets sont inclus) ; rien d'autre à installer.
+Download `arXivReader.dmg` from the [Releases](https://github.com/seldon39/arxivreader/releases) page
+(Apple Silicon Mac, macOS 13 or later), open it and drag arXivReader to Applications. The app is
+self-contained (Python and its packages are included); there is nothing else to install.
 
-- **Premier lancement** : l'application n'est pas signée par un compte développeur Apple, macOS la bloque.
-  Réglages Système → Confidentialité et sécurité → *Ouvrir quand même* (une seule fois).
-- **Mises à jour** : l'application vérifie une fois par jour s'il existe une nouvelle version sur GitHub
-  (réglable dans Réglages → Mises à jour) ; une pastille « Mise à jour » apparaît alors en haut à droite.
-  Remplacer l'application dans Applications ; la bibliothèque est conservée.
+- **First launch**: the app is not signed with an Apple developer account, so macOS blocks it.
+  System Settings → Privacy & Security → *Open Anyway* (only once).
+- **Updates**: the app checks once a day whether a new version is available on GitHub
+  (Settings → Updates); an "Update" pill then appears at the top right.
+  Replace the app in Applications; your library is kept.
 
-## Application Mac : construction
+## Mac app: building
 
-`macos/build.sh` construit `dist/arXivReader.dmg` (~200 Mo) : une application avec sa fenêtre (WebKit, comme
-Safari), qui embarque Python et ses paquets. `macos/release.sh` la publie comme nouvelle version (après avoir
-augmenté `VERSION` dans `app/version.py`) : étiquette Git, envoi sur GitHub, image disque jointe.
+`macos/build.sh` builds `dist/arXivReader.dmg` (~200 MB): an app with its own window (WebKit, like Safari)
+that bundles Python and its packages. `macos/release.sh` publishes it as a new version (after bumping
+`VERSION` in `app/version.py`): Git tag, push to GitHub, disk image attached.
 
-- Quitter (⌘Q) arrête aussi le serveur.
-- Onglets : la barre d'onglets du Mac est toujours affichée, son « + » (ou ⌘T) ouvre la bibliothèque dans
-  un nouvel onglet ; ⌘-clic (ou clic du milieu) sur un article, dans la bibliothèque, le feed ou un renvoi,
-  l'ouvre dans un nouvel onglet en arrière-plan (⇧⌘-clic : au premier plan). Un onglet glissé hors de la
-  barre devient une fenêtre (deux articles côte à côte) ; ⌘N ouvre une nouvelle fenêtre.
-- **Bibliothèque** : `~/Library/Application Support/arXivReader` (menu arXivReader → Afficher la bibliothèque
-  dans le Finder). À la première ouverture, l'application propose de recopier une bibliothèque existante (le
-  dossier `library/` de ce projet) : quitter d'abord l'ancienne version. Ensuite, l'ancienne et la nouvelle ne
-  partagent plus rien.
-- **Connexion des assistants IA** : bouton *Se connecter…* / *Lancer dans le Terminal* dans l'onglet IA.
-- Construire : outils en ligne de commande Xcode (`swiftc`), miniforge (`conda`, Python pris dans son cache) et
-  `.venv` à jour (ses paquets sont recopiés). Construction dans `~/Library/Caches/arXivReader-build` (hors d'iCloud).
+- Quitting (⌘Q) also stops the server.
+- Tabs: the Mac tab bar is always shown; its "+" (or ⌘T) opens the library in a new tab.
+  ⌘-click (or middle-click) on a paper, in the library, the feed or a cross-reference, opens it in a new
+  background tab (⇧⌘-click: in front). A tab dragged out of the bar becomes a window (two papers side by
+  side); ⌘N opens a new window.
+- **Library**: `~/Library/Application Support/arXivReader` (arXivReader menu → Show the library in Finder).
+  On first launch, the app offers to copy an existing library (the `library/` folder of this project):
+  quit the old version first. After that, the old and new versions share nothing.
+- **Connecting the AI assistants**: *Sign in…* / *Run in Terminal* button in the AI tab.
+- Building requires the Xcode command-line tools (`swiftc`), miniforge (`conda`, Python taken from its cache)
+  and an up-to-date `.venv` (its packages are copied). The build runs in `~/Library/Caches/arXivReader-build`
+  (outside iCloud).
 
-## Lancer depuis le code source
+## Running from source
 
-- **Double-clic** sur `ArXivReader.command` dans le Finder : une fenêtre Terminal s'ouvre, puis le navigateur.
-  Fermer la fenêtre Terminal (ou Ctrl+C) arrête l'application.
-- **Terminal** : `./arxivreader` depuis ce dossier.
+- **Double-click** `ArXivReader.command` in the Finder: a Terminal window opens, then the browser.
+  Closing the Terminal window (or Ctrl+C) stops the app.
+- **Terminal**: `./arxivreader` from this folder.
 
-La première fois, le script crée l'environnement Python (`.venv/`, ~1 min). L'adresse est
-http://127.0.0.1:8710/ ; le serveur n'écoute que sur ce Mac (pas sur le Wi-Fi).
+The first time, the script creates the Python environment (`.venv/`, ~1 min). The address is
+http://127.0.0.1:8710/; the server only listens on this Mac (not on Wi-Fi).
 
-## Ce que fait la version actuelle (étape 1 : lecteur structuré)
+## The reader
 
-- Import par identifiant ou lien arXiv (`2608.24719`, `arXiv:2607.17203v1`, `https://arxiv.org/abs/…`).
-- L'article est lu dans sa **version HTML officielle** (arxiv.org/html, sinon ar5iv), produite par LaTeXML
-  à partir du TeX : formules en MathML, énoncés, preuves et renvois balisés.
-  Sans version HTML, seuls le résumé et le lien PDF sont proposés.
-- **Mise en page « papier AMS »** (classe amsart) : texte en Charter ou Computer Modern, formules
-  rendues par **MathJax** (règles de TeX, polices Computer Modern, même rendu dans Safari, Firefox et
-  Chrome) ; le MathML du navigateur reste disponible dans les réglages.
-- **Aperçu au survol** de tout renvoi (théorème, équation, référence, note) ; clic = aller à l'endroit,
-  avec un bouton « Retour ».
-- **Preuves repliables** ; les preuves écrites à la main (« *Proof.* … □ ») sont repérées automatiquement.
-- **Panneau Structure** : liste des énoncés (filtres par type), dépendances d'un énoncé
-  (utilise / utilisé par / cite, chaîne complète), **graphe** des dépendances (plein écran possible).
-- Signalement du **texte invisible** (blanc, minuscule, masqué) éventuellement présent dans l'article.
-- Reprise de la lecture à l'endroit quitté ; réglages : langue FR/EN, thème clair/sombre/système,
-  taille du texte, largeur de lecture, preuves repliées par défaut.
-- Mise en page adaptée à la largeur : 3 colonnes (≥ 1280 px), 2 (≥ 900 px), 1 colonne avec tiroirs.
+- Import by arXiv identifier or link (`2608.24719`, `arXiv:2607.17203v1`, `https://arxiv.org/abs/…`).
+- The paper is read in its **official HTML version** (arxiv.org/html, otherwise ar5iv), produced by
+  LaTeXML from the TeX source: formulas in MathML, statements, proofs and cross-references tagged.
+  Papers without an HTML version are read in their PDF (see below).
+- **AMS "paper" layout** (amsart class): text in Charter or Computer Modern, formulas rendered by
+  **MathJax** (TeX rules, Computer Modern fonts, same rendering in Safari, Firefox and Chrome);
+  the browser's own MathML is still available in the settings.
+- **Hover preview** of any cross-reference (theorem, equation, citation, footnote); click to go there,
+  with a "Back" button.
+- **Collapsible proofs**; handwritten proofs ("*Proof.* … □") are detected automatically.
+- **Structure panel**: list of statements (filtered by type), dependencies of a statement
+  (uses / used by / cites, full chain), dependency **graph** (can be shown full screen).
+- Flags any **invisible text** (white, tiny, hidden) the paper may contain.
+- Resumes reading where you left off; settings: French/English, light/dark/system theme,
+  text size, reading width, proofs collapsed by default.
+- Layout adapted to the window width: 3 columns (≥ 1280 px), 2 (≥ 900 px), 1 column with drawers.
 
-Les dépendances viennent des renvois (`\ref`, `\eqref`, `\cite`) dans l'énoncé et dans sa preuve :
-un argument utilisé sans renvoi explicite n'apparaît pas.
+Dependencies come from the cross-references (`\ref`, `\eqref`, `\cite`) in a statement and in its proof:
+an argument used without an explicit reference does not show up.
 
-## Recherche
+## Search
 
-L'onglet « Recherche » interroge tout arXiv (interface publique export.arxiv.org/api), avec les options de
-sa recherche avancée : critères par champ (tous les champs, titre, auteur, résumé, commentaires, référence de
-journal, catégorie, numéro de rapport, identifiant) reliés par ET / OU / SAUF, « expression exacte » entre
-guillemets, catégories (vos catégories du feed proposées, d'autres ajoutées), articles croisés compris ou
-non, période de soumission (12 derniers mois, une année, une période), tri par pertinence, par date, ou
-« Pour vous » (les 200 résultats les plus pertinents pour arXiv, reclassés selon votre profil comme le feed),
-pages de 25 résultats. Les résultats se présentent comme le feed (pertinence pour votre profil, avis, ajout
-à la bibliothèque, ⌘-clic pour un nouvel onglet). Non proposés, faute de prise en charge par l'interface
-d'arXiv : DOI, ORCID, classes MSC/ACM, licence. Une requête au plus toutes les 3 s, comme arXiv le demande.
+The "Search" tab queries all of arXiv (public API at export.arxiv.org/api) with the options of its advanced
+search: criteria by field (all fields, title, author, abstract, comments, journal reference, category,
+report number, identifier) combined with AND / OR / NOT, "exact phrase" in quotes, categories (your feed
+categories are offered, others can be added), cross-lists included or not, submission period (past
+12 months, a year, a date range), sorted by relevance, by date, or "For you" (arXiv's 200 most relevant
+results, re-ranked by your profile like the feed), in pages of 25 results. Results look like the feed
+(relevance to your profile, 👍 / 👎, add to library, ⌘-click for a new tab). Not offered, because arXiv's
+API does not support them: DOI, ORCID, MSC/ACM classes, license. At most one request every 3 s, as arXiv asks.
 
-## Dossiers
+## Folders
 
-Dans la bibliothèque, une rangée de dossiers précède la liste complète des articles (qui reste affichée).
-Un clic sur un dossier le déroule juste dessous, avec ses articles ; « Renommer », « Supprimer le dossier »
-(annulable ; ses articles restent dans la bibliothèque) et « Fermer ». Le bouton dossier de chaque article
-ouvre « Ranger dans… » : dossiers à cocher, ou création d'un dossier. Un article peut être dans plusieurs
-dossiers, affichés en fin de sa ligne ; « Filtres » permet aussi de réduire la liste à un ou plusieurs dossiers.
+In the library, a row of folders comes before the full list of papers (which stays visible).
+Clicking a folder unfolds it just below, with its papers; "Rename", "Delete folder" (can be undone; its
+papers stay in the library) and "Close". The folder button of each paper opens "File in a folder":
+folders to tick, or a new folder. A paper can be in several folders, shown at the end of its line;
+"Filters" can also narrow the list to one or more folders.
 
-## Feed (étape 2)
+## Feed
 
-Menu **Feed** en haut, quatre onglets :
-- **Nouveautés arXiv** : annonces quotidiennes des catégories suivies (math.DG, math.CV, math.SP,
-  math-ph par défaut, modifiables dans les réglages), **triées par pertinence pour votre profil**,
-  avec la raison affichée (« auteur suivi », « proche de … », mot-clé) ; les articles peu pertinents
-  sont réduits à une ligne (clic pour déplier). Un clic sur le titre ouvre l'article sans l'ajouter à la
-  bibliothèque (cache vidé après 30 jours sans lecture) ; le **signet** l'ajoute ou l'en retire
-  (aussi dans la barre du lecteur). En tête : les nouveaux articles des **auteurs suivis**,
-  même hors de vos catégories. Tri « Ordre arXiv » possible. 👍 / 👎 affinent le tri.
-- **Recommandations** : Semantic Scholar (API publique, sans compte), à partir du profil et des 👍.
-- **Profil** : vos articles, articles et livres de référence, auteurs suivis, mots-clés.
-  « Pré-remplir » le construit à partir de la bibliothèque et des bibliographies de vos articles
-  (auteurs cités au moins deux fois, prénom complet retrouvé sur arXiv ; livres cités ; mots-clés).
-  Les références de vos articles servent aussi, en arrière-plan.
-- **Importer** : coller un e-mail de Scholar Inbox ou de Semantic Scholar, une liste de liens ou un
-  export BibTeX ; les identifiants arXiv sont repérés puis importés en lot.
+**Feed** menu at the top, four tabs:
+- **New on arXiv**: daily announcements of the categories you follow (math.DG, math.CV, math.SP,
+  math-ph by default, editable in the settings), **sorted by relevance to your profile**, with the reason
+  shown ("followed author", "close to …", keyword); papers of low relevance are reduced to one line (click
+  to unfold). Clicking the title opens the paper without adding it to the library (cache cleared after
+  30 days without reading); the **bookmark** adds it to or removes it from the library (also in the reader's
+  toolbar). At the top: new papers by your **followed authors**, even outside your categories.
+  "arXiv order" sorting is available. 👍 / 👎 refine the ranking. The arrows next to the announcement date
+  go back to earlier days; days older than a week come from arXiv's search API, which gives new and
+  cross-listed papers but not replacements.
+- **Recommendations**: Semantic Scholar (public API, no account needed), based on your profile and your 👍.
+- **Profile**: your papers, reference papers and books, followed authors, keywords.
+  "Prefill from the library" builds it from the library and from the bibliographies of your papers
+  (authors cited at least twice, full first name looked up on arXiv; cited books; keywords).
+  The references of your papers are also used, in the background.
+- **Import**: paste an e-mail from Scholar Inbox or Semantic Scholar, a list of links or a BibTeX
+  export; arXiv identifiers are found and imported in one go.
 
-Calcul de la pertinence (app/relevance.py) : proximité de vocabulaire (TF-IDF des titres et résumés)
-et proximité de sens (vecteurs SPECTER de Semantic Scholar, comparés au lot du jour), meilleure
-référence du profil ; + auteurs suivis, mots-clés ; − proximité avec les articles 👎.
-Une clé d'API Semantic Scholar (gratuite, facultative) évite les limitations de requêtes.
+How relevance is computed (app/relevance.py): closeness in vocabulary (TF-IDF of titles and abstracts)
+and in meaning (Semantic Scholar SPECTER vectors, compared within the day's batch), best match in the
+profile; + followed authors, keywords; − closeness to 👎 papers.
+A Semantic Scholar API key (free, optional) avoids request limits.
 
-## Où sont les preuves
+## Where the proofs are
 
-Une preuve est rattachée à son énoncé quand elle le suit (environnement *proof* ou « *Proof.* … □ »),
-quand son titre y renvoie (« Proof of Lemma 4.4 »), ou quand une section entière lui est consacrée
-(« 4.2. Proof of Theorem 1.3 » ; l'énoncé affiche alors « → Preuve au § 4.2 »). Un énoncé dont le titre
-cite une référence (« Theorem 3.2 ([12, Theorem 4.3]) ») est marqué *cité* ; un énoncé justifié par la
-phrase qui le précède (« The following corollary is a consequence of (2.6) ») ou qui le suit
-(« This follows from Lemma 2.1 ») est marqué *justifié dans le texte*. Sinon : *preuve non repérée*.
-Si la détection se trompe ou ne trouve rien : onglet Dépendances, **Indiquer la preuve** — une section
-de l'article, un passage choisi dans le texte (cliquer le premier puis le dernier paragraphe), *immédiat*
-ou *admis* ; *Détection automatique* annule ce choix. Le choix est gardé avec les notes de l'article et
-compte pour les dépendances et pour Claude.
-Les articles déjà importés sont ré-analysés automatiquement quand cette analyse change.
+A proof is attached to its statement when it follows it (*proof* environment or "*Proof.* … □"),
+when its title refers to it ("Proof of Lemma 4.4"), or when a whole section is devoted to it
+("4.2. Proof of Theorem 1.3"; the statement then shows "→ Proof in § 4.2"). A statement whose title
+cites a reference ("Theorem 3.2 ([12, Theorem 4.3])") is marked *cited*; a statement justified by the
+sentence before it ("The following corollary is a consequence of (2.6)") or after it ("This follows from
+Lemma 2.1") is marked *justified in the text*. Otherwise: *proof not found*.
+If the detection is wrong or finds nothing: Dependencies tab, **Locate the proof** — a section of the
+paper, a passage chosen in the text (click the first then the last paragraph), *immediate* or
+*admitted*; *Automatic detection* undoes the choice. The choice is saved with the paper's notes and is
+used for the dependencies and by the AI assistant.
+Papers already imported are re-analysed automatically when this analysis changes.
 
-## D'un article à l'autre
+## From one paper to another
 
-Quand une référence de la bibliographie est un article lu ici (même identifiant arXiv, même DOI, ou titre
-retrouvé dans la référence), « [12, Theorem 4.3] » affiche au survol le Theorem 4.3 de cet article, avec un
-bouton pour l'ouvrir à cet endroit ; dans la bibliographie, une pastille « Ouvrir l'article ».
+When a bibliography entry is a paper read here (same arXiv identifier, same DOI, or title found in the
+entry), hovering "[12, Theorem 4.3]" shows Theorem 4.3 of that paper, with a button to open it at that
+place; in the bibliography, an "Open the paper" pill.
 
-## Articles sans version HTML
+## Papers without an HTML version
 
-Quand arXiv ne propose pas de version HTML, l'article se lit dans son PDF, affiché dans le lecteur.
-Le PDF est affiché par pdf.js (Mozilla), intégré à l'application : il indique la page lue, si bien que
-le passage du PDF au HTML (sélecteur « HTML | PDF ») revient au même endroit, et que la position de
-lecture est gardée aussi en lisant le PDF. Les scripts contenus dans les PDF ne sont jamais exécutés.
-Énoncés, preuves, dépendances, graphe et bibliographie sont tirés de la source TeX (environnements
-`\newtheorem`, numérotation simulée, `\ref`/`\eqref`/`\cref`) ; un énoncé choisi mène à sa page du PDF
-(ancres de hyperref, sinon recherche du texte). Comparé à la version HTML sur 42 articles : 99 % des
-énoncés et 97 % des liens retrouvés. Un article importé avant cette version : bouton « Mettre à jour
-depuis arXiv » de sa carte dans la bibliothèque.
+When arXiv has no HTML version, the paper is read in its PDF, shown inside the reader.
+The PDF is displayed by pdf.js (Mozilla), bundled with the app: it knows which page is being read, so
+switching between PDF and HTML ("HTML | PDF" selector) lands at the same place, and the reading position
+is kept while reading the PDF too. Scripts contained in PDFs are never run.
+Statements, proofs, dependencies, graph and bibliography are taken from the TeX source (`\newtheorem`
+environments, simulated numbering, `\ref`/`\eqref`/`\cref`); choosing a statement goes to its page in the
+PDF (hyperref anchors, otherwise a text search). Compared with the HTML version on 42 papers: 99 % of the
+statements and 97 % of the links are found. For a paper imported before this feature: "Update from arXiv"
+button on its card in the library.
 
-## Citations de vos articles
+## Citations of your papers
 
-Une fois par jour, Semantic Scholar donne les articles qui citent ceux du profil (« Mes articles ») ; les
-nouveaux apparaissent dans « Citent vos articles » sur le feed, comptent dans la pastille et, si le réglage
-le permet, déclenchent une notification macOS.
+Once a day, Semantic Scholar gives the papers citing those of your profile ("My papers"); new ones appear
+under "Citing your papers" in the feed, count in the badge and, if the setting allows, trigger a macOS
+notification.
 
-## Auteurs suivis : alertes
+## Followed authors: alerts
 
-Tant qu'arXivReader est lancé, il vérifie toutes les 3 heures (et une minute après le lancement) les
-nouveaux articles des auteurs suivis du profil : notification macOS pour chacun (réglage « Me notifier
-quand un auteur suivi publie »), pastille sur « Feed », et mention « Non vu » sur la carte jusqu'à ce
-qu'elle ait été affichée. Un clic sur la notification macOS ouvre l'Éditeur de script (limite d'osascript) :
-il suffit de la fermer et d'aller dans le feed.
+While arXivReader is running, it checks every 3 hours (and one minute after launch) for new papers by the
+followed authors of your profile: a macOS notification for each one (setting "Notify me when a followed
+author posts"), a badge on "Feed", and an "Unseen" label on the card until it has been shown. Clicking the
+macOS notification opens Script Editor (a limitation of osascript): just close it and go to the feed.
 
-## Notes et annotations (étape 3)
+## Notes and annotations
 
-- **Surligner** : sélectionner un passage (formules comprises) ; une barre propose 4 couleurs et
-  « ajouter une note ». Un clic sur un surlignage permet de changer sa couleur, sa note, ou de le supprimer.
-- **Énoncés et preuves** : l'icône de note en marge (au survol) ouvre une note et, pour un énoncé,
-  l'état de lecture *compris / à revoir / vérifié* (affiché dans le titre et la liste des énoncés).
-- **Onglet Notes** du panneau : progression de lecture, fiche de lecture de l'article, toutes les
-  annotations dans l'ordre de l'article (un clic y ramène).
-- Notes en Markdown (**gras**, *italique*, listes, citations) avec formules `$…$`, `$$…$$`,
-  enregistrées automatiquement. Un article annoté n'est jamais effacé du cache.
+- **Highlight**: select a passage (formulas included); a bar offers 4 colours and "add a note".
+  Clicking a highlight lets you change its colour or its note, or delete it.
+- **Statements and proofs**: the note icon in the margin (on hover) opens a note and, for a statement,
+  the reading state *understood / to review / checked* (shown in the title and in the list of statements).
+- **Notes tab** of the panel: reading progress, the paper's reading sheet, all annotations in the order of
+  the paper (a click takes you there).
+- Notes in Markdown (**bold**, *italics*, lists, quotes) with formulas `$…$`, `$$…$$`, saved automatically.
+  An annotated paper is never removed from the cache.
 
-## Claude sur l'article (étape 4)
+## Claude on the paper
 
-- **Connexion, une seule fois** : double-clic sur `Connecter Claude.command` (ou `./arxivreader login`).
-  La page de connexion Claude s'ouvre dans le navigateur ; c'est votre abonnement Claude qui est utilisé,
-  sans clé d'API (l'usage compte dans ses limites).
-- **Énoncé** (onglet Dépendances, ou note en marge) : *Expliquer*. **Preuve** : *Détailler la preuve*
-  (étapes numérotées, arguments ajoutés marqués **[added]**, points douteux **⚠**) et *Auditer la preuve*
-  (verdict, problèmes avec leur gravité, hypothèses utilisées, dépendances).
-- **Passage** : le sélectionner, puis ✦ ; on peut ajouter une question. **Article entier** : résumé
-  structuré, relecture critique, ou question libre ; *Question de suite* pour poursuivre un échange.
-- Réponses en direct, formules rendues, renvois (« Lemma 2.3 », « (2.11) ») cliquables ; *Ajouter à mes
-  notes* les copie dans la note de l'énoncé ou de la preuve (sinon dans la fiche de lecture). Modèle
-  Opus ou Sonnet au choix dans l'onglet IA. Les réponses sont conservées avec l'article.
-- **Annotations proposées par Claude** : bouton *Annoter* sur un énoncé, ou toute demande du type « surligne… /
-  annote… ». Claude joint une liste d'annotations (passages cités mot pour mot, couleur, note ; notes sur un
-  énoncé ou une preuve) : chaque passage est retrouvé dans l'article, vous cochez ce que vous gardez,
-  *Appliquer* les crée (marquées « Claude ») et *Annuler* les retire. Claude n'écrit jamais lui-même.
-- Claude ne reçoit que le texte de l'article (le texte invisible est retiré) et la demande : aucun outil,
-  ni fichiers, ni réseau, ni commandes, ni réglages Claude Code personnels ; rien n'est gardé côté Claude Code.
+- **Sign in, once**: double-click `Connecter Claude.command` (or `./arxivreader login`).
+  The Claude sign-in page opens in the browser; your Claude subscription is used, with no API key
+  (usage counts towards its limits).
+- **Statement** (Dependencies tab, or margin note): *Explain*. **Proof**: *Detail the proof*
+  (numbered steps, added arguments marked **[added]**, doubtful points **⚠**) and *Audit the proof*
+  (verdict, issues with their severity, hypotheses used, dependencies).
+- **Passage**: select it, then ✦; you can add a question. **Whole paper**: structured summary,
+  critical review, or a free question; *Follow-up* to continue a conversation.
+- Answers stream live, formulas are rendered, references ("Lemma 2.3", "(2.11)") are clickable;
+  *Add to my notes* copies them into the note of the statement or proof (otherwise into the reading sheet).
+  Opus or Sonnet model, chosen in the AI tab. Answers are kept with the paper.
+- **Annotations suggested by Claude**: *Annotate* button on a statement, or any request such as
+  "highlight… / annotate…". Claude attaches a list of annotations (passages quoted word for word, colour,
+  note; notes on a statement or a proof): each passage is located in the paper, you tick what you keep,
+  *Apply* creates them (marked "Claude") and *Cancel* removes them. Claude never writes anything itself.
+- Claude only receives the text of the paper (invisible text removed) and the request: no tools, no files,
+  no network, no commands, no personal Claude Code settings; nothing is kept on the Claude Code side.
 
-### Autres assistants (Réglages → Assistant IA)
+### Other assistants (Settings → AI assistant)
 
-Pour un collègue sans abonnement Claude, l'onglet IA fonctionne aussi avec :
+For a colleague without a Claude subscription, the AI tab also works with:
 
-- **Codex** (OpenAI, compte ChatGPT) : `npm install -g @openai/codex`, puis `codex login`. Appelé par
-  `codex exec` sans commandes ni recherche web, sans réglages personnels ni session enregistrée, dans un
-  dossier vide, bac à sable en lecture seule.
-- **Gemini** (Google, compte Google) : `npm install -g @google/gemini-cli`, puis lancer `gemini` une fois pour
-  se connecter. Appelé avec ses outils, extensions et serveurs MCP désactivés, consignes d'arXivReader à la
-  place des siennes.
-- **Modèle local** (Ollama, LM Studio, llama.cpp… : tout serveur compatible OpenAI sur `127.0.0.1`) : rien ne
-  quitte l'ordinateur. Prévoir un contexte d'au moins 32 000 jetons (`OLLAMA_CONTEXT_LENGTH=32768 ollama serve`) ;
-  seul le début des longs articles (~120 000 caractères) est transmis. Les petits modèles sont nettement moins
-  fiables en mathématiques.
+- **Codex** (OpenAI, ChatGPT account): `npm install -g @openai/codex`, then `codex login`. Called through
+  `codex exec` without commands or web search, without personal settings or saved session, in an empty
+  folder, read-only sandbox.
+- **Gemini** (Google, Google account): `npm install -g @google/gemini-cli`, then run `gemini` once to sign in.
+  Called with its tools, extensions and MCP servers disabled, with arXivReader's instructions instead of its own.
+- **Local model** (Ollama, LM Studio, llama.cpp…: any OpenAI-compatible server on `127.0.0.1`): nothing
+  leaves the computer. Allow a context of at least 32,000 tokens (`OLLAMA_CONTEXT_LENGTH=32768 ollama serve`);
+  only the beginning of long papers (~120,000 characters) is sent. Small models are much less reliable
+  in mathematics.
 
-Codex et Gemini sont des agents : leurs outils sont coupés par leurs propres réglages, une garantie moins
-forte que pour Claude (appelé sans aucun outil). Leur intégration suit leur documentation (versions
-d'octobre 2026) mais n'a pas été essayée avec un vrai compte.
+Codex and Gemini are agents: their tools are switched off through their own settings, a weaker guarantee
+than for Claude (called with no tools at all). Their integration follows their documentation (October 2026
+versions) but has not been tried with a real account.
 
-## Sécurité
+## Security
 
-- Serveur sur `127.0.0.1` seulement ; noms d'hôte étrangers et requêtes d'autres sites refusés.
-- HTML des articles nettoyé (scripts, formulaires, liens `javascript:` retirés) et politique CSP qui
-  interdit tout script venant de l'article.
-- Données (base SQLite + un dossier par article) dans `~/Library/Application Support/arXivReader` pour
-  l'application, dans `library/` depuis le code source ; jamais ailleurs.
-- Connexions sortantes : arXiv (articles, nouveautés), Semantic Scholar (recommandations), GitHub (une fois par
-  jour, numéro de la dernière version ; désactivable), et l'assistant IA choisi.
+- Server on `127.0.0.1` only; foreign host names and requests from other sites are refused.
+- Paper HTML is cleaned (scripts, forms, `javascript:` links removed) and a CSP policy forbids any script
+  coming from the paper.
+- Data (SQLite database + one folder per paper) in `~/Library/Application Support/arXivReader` for the app,
+  in `library/` when run from source; never anywhere else.
+- Outgoing connections: arXiv (papers, new papers), Semantic Scholar (recommendations), GitHub (once a day,
+  number of the latest version; can be turned off), and the chosen AI assistant.
 
-## Organisation du code
+## Code layout
 
 ```
-app/            serveur Python (FastAPI)
-  arxiv.py      identifiants, métadonnées (API arXiv), téléchargement du HTML
-  sanitize.py   nettoyage du HTML
-  structure.py  sommaire, énoncés, preuves, dépendances, bibliographie
-  texsource.py  lecture de la source TeX (options de classe, police, étiquettes de listes)
-  feed.py       nouveautés arXiv (RSS), recommandations Semantic Scholar, repérage d'identifiants
-  profile.py    profil de recherche, pré-remplissage, auteurs suivis ; relevance.py : tri par pertinence
-  annotations.py  surlignages, notes, état de lecture
-  ai.py         texte de l'article et consignes pour Claude, appel sans outils (SDK Claude Agent)
-  crossrefs.py  références qui sont des articles lus ici ; citations.py : articles qui citent les vôtres
-  texstructure.py  structure tirée de la source TeX et pages du PDF (articles sans version HTML)
-  providers.py  autres assistants : Codex, Gemini (en ligne de commande), modèle local (Ollama, LM Studio)
-  library.py    import d'un article ; db.py : base SQLite ; main.py : routes web
-macos/          application Mac : main.swift (fenêtre, serveur), icon.swift, build.sh
-static/         interface (HTML, CSS, JavaScript sans compilation) ;
+app/            Python server (FastAPI)
+  arxiv.py      identifiers, metadata (arXiv API), HTML download
+  sanitize.py   HTML cleaning
+  structure.py  table of contents, statements, proofs, dependencies, bibliography
+  texsource.py  reading the TeX source (class options, font, list labels)
+  feed.py       new arXiv papers (RSS, OAI-PMH), Semantic Scholar recommendations, identifier detection
+  search.py     search across arXiv (Search tab)
+  folders.py    library folders
+  profile.py    research profile, prefill, followed authors; relevance.py: relevance ranking
+  annotations.py  highlights, notes, reading state
+  ai.py         paper text and instructions for Claude, called without tools (Claude Agent SDK)
+  crossrefs.py  references that are papers read here; citations.py: papers citing yours
+  texstructure.py  structure from the TeX source and PDF pages (papers without an HTML version)
+  providers.py  other assistants: Codex, Gemini (command line), local model (Ollama, LM Studio)
+  library.py    importing a paper; db.py: SQLite database; main.py: web routes
+macos/          Mac app: main.swift (window, tabs, server), icon.swift, build.sh, release.sh
+static/         interface (HTML, CSS, JavaScript with no build step);
                 vendor/mathjax (MathJax 3.2.2), vendor/pdfjs (pdf.js 6.3.289, Apache 2.0)
-                et fonts/ (Latin Modern) copiés localement
-tests/          tests hors ligne : .venv/bin/python -m unittest discover tests
+                and fonts/ (Latin Modern) copied locally
+tests/          offline tests: .venv/bin/python -m unittest discover tests
 ```
 
 ## Inspiration
 
-arXivReader s'inspire en partie d'[arXivpecker](https://github.com/MingchenXia/arXivpecker) de Mingchen Xia,
-un lecteur d'articles de mathématiques local et assisté par IA. Les deux projets ne partagent pas de code :
-arXivReader a été écrit indépendamment (Python, HTML LaTeXML d'arXiv et MathJax), avec ses propres choix —
-rendu de l'HTML officiel, feed quotidien trié selon votre profil, assistant IA sans outils ni réseau,
-application Mac installable.
+arXivReader was partly inspired by Mingchen Xia's [arXivpecker](https://github.com/MingchenXia/arXivpecker),
+a local, AI-assisted reader for mathematics papers. The two projects share no code: arXivReader was written
+independently (Python, arXiv's LaTeXML HTML and MathJax), with its own choices — rendering the official
+HTML, a daily feed sorted by your profile, an AI assistant with no tools or network, an installable Mac app.
 
-*arXivReader was partly inspired by Mingchen Xia's [arXivpecker](https://github.com/MingchenXia/arXivpecker),
-a local AI-assisted reader for mathematics papers. The two projects share no code.*
+## License
+
+MIT.
