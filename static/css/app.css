@@ -762,6 +762,11 @@ mark.hl:hover { filter: brightness(.95); }
 mark.hl.hl-display { display: inline-block; padding: 2px 6px; border-radius: 4px; vertical-align: middle; }
 mark.hl.hl-display > mjx-container[display="true"] { margin: .2em 0 !important; }
 
+/* menu du clic droit dans l'article */
+.context-menu { position: fixed; z-index: 60; display: grid; min-width: 200px; padding: 5px; background: var(--surface);
+  border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: var(--shadow); }
+.context-menu-item { padding: 7px 12px; border: 0; border-radius: 6px; background: none; color: var(--text); font: 13.5px var(--font-ui); text-align: left; cursor: pointer; }
+.context-menu-item:hover, .context-menu-item:focus-visible { background: var(--surface-hover); outline: none; }
 .hl-toolbar {
   position: fixed; z-index: 55; display: flex; align-items: center; gap: 6px; padding: 6px 8px;
   background: var(--surface); border: 1px solid var(--border-strong); border-radius: 999px; box-shadow: var(--shadow);

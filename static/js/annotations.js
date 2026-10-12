@@ -521,6 +521,9 @@ export class Annotator {
       }, 350);
       document.addEventListener("selectionchange", this.onSelection);
     }
+    this.content.addEventListener("contextmenu", (event) => this.contextMenu(event));
+    this.onScrollClose = () => this.hideContextMenu();
+    addEventListener("scroll", this.onScrollClose, true);
     // ⌘C d'un passage avec des formules : formules en LaTeX dans le texte copié (au lieu des symboles de MathJax)
     this.content.addEventListener("copy", (event) => {
       const selection = getSelection();
@@ -547,6 +550,7 @@ export class Annotator {
     });
     this.onDocumentDown = (event) => {
       if (this.toolbar && !this.toolbar.contains(event.target)) this.hideToolbar();
+      if (this.contextMenuElement && !this.contextMenuElement.contains(event.target)) this.hideContextMenu();
       if (this.popover && !this.popover.contains(event.target) && !event.target.closest(".block-note, mark.hl")) this.closePopover();
     };
     this.onKey = (event) => { if (event.key === "Escape") { this.hideToolbar(); this.closePopover(); } };
@@ -560,20 +564,7 @@ export class Annotator {
     const range = selection.getRangeAt(0);
     if (!this.content.contains(range.commonAncestorContainer) || !range.toString().trim() && !range.cloneContents().querySelector("mjx-container, math")) return;
     this.hideToolbar();
-    const create = async (color, withNote) => {
-      const saved = range.cloneRange();
-      selection.removeAllRanges();
-      this.hideToolbar();
-      try {
-        const annotation = await this.highlightRange(saved, { color });
-        if (withNote) {
-          const mark = this.content.querySelector(`mark.hl[data-annotation="${annotation.id}"]`);
-          if (mark) this.openHighlight(annotation.id, mark, true);
-        }
-      } catch (error) {
-        toast(t("error.generic", { message: error.message }), { error: true });
-      }
-    };
+    const create = (color, withNote) => this.createFrom(range, color, withNote);
     const rect = range.getBoundingClientRect();
     this.toolbar = h("div", { class: "hl-toolbar", role: "toolbar", "aria-label": t("notes.highlight") },
       ...COLORS.map((color) => h("button", { type: "button", class: `hl-dot hl-${color}`, title: t(`notes.color.${color}`), "aria-label": t(`notes.color.${color}`),
@@ -593,6 +584,63 @@ export class Annotator {
   }
 
   hideToolbar() { this.toolbar?.remove(); this.toolbar = null; }
+
+  // Surlignage du passage `range` (et sa note, ouverte aussitôt, si `withNote`)
+  async createFrom(range, color, withNote) {
+    const saved = range.cloneRange();
+    getSelection().removeAllRanges();
+    this.hideToolbar();
+    this.hideContextMenu();
+    try {
+      const annotation = await this.highlightRange(saved, { color });
+      if (withNote) {
+        const mark = this.content.querySelector(`mark.hl[data-annotation="${annotation.id}"]`);
+        if (mark) this.openHighlight(annotation.id, mark, true);
+      }
+    } catch (error) {
+      toast(t("error.generic", { message: error.message }), { error: true });
+    }
+  }
+
+  // Clic droit sur une sélection ou une formule de l'article : surligner, noter, copier en LaTeX, demander à
+  // l'assistant. Ailleurs (lien, image, texte non sélectionné) : le menu du système
+  contextMenu(event) {
+    const selection = getSelection();
+    let range = selection.rangeCount && !selection.isCollapsed ? selection.getRangeAt(0) : null;
+    if (range && !this.content.contains(range.commonAncestorContainer)) range = null;
+    const math = mathOf(event.target.closest?.(MATH));
+    if (range && math && !range.intersectsNode(math)) range = null; // clic sur une formule hors de la sélection
+    const single = !range && math; // une formule seule (pas de sélection) : son TeX nu, comme le ⌥-clic
+    if (single) { range = document.createRange(); range.selectNode(math); }
+    if (!range || event.target.closest("a[href], img, .figure-card")) return;
+    event.preventDefault();
+    this.hideToolbar();
+    this.hideContextMenu();
+    const item = (label, action) => h("button", { type: "button", class: "context-menu-item", role: "menuitem",
+      onclick: () => { this.hideContextMenu(); action(); } }, label);
+    const tex = hasMath(range);
+    const menu = this.contextMenuElement = h("div", { class: "context-menu", role: "menu" },
+      item(t("notes.highlight"), () => this.createFrom(range, "yellow", false)),
+      item(t("notes.addNote"), () => this.createFrom(range, "yellow", true)),
+      tex && item(t("notes.copyTexShort"), async () => { await copyText(single ? texOf(math).trim() : rangeTex(range)); toast(t("notes.texCopied")); }),
+      item(t("notes.copyText"), async () => { await copyText(range.toString()); toast(t("notes.textCopied")); }),
+      this.onAskAI && item(t("ai.askPassage"), () => { const quote = quoteOf(range, 12000); getSelection().removeAllRanges(); this.onAskAI(quote); }));
+    document.body.append(menu);
+    // à l'endroit du clic, dans la fenêtre
+    menu.style.left = `${Math.max(8, Math.min(event.clientX, innerWidth - menu.offsetWidth - 8))}px`;
+    menu.style.top = `${Math.max(8, Math.min(event.clientY, innerHeight - menu.offsetHeight - 8))}px`;
+    menu.querySelector("button")?.focus({ preventScroll: true });
+    menu.addEventListener("keydown", (key) => {
+      if (key.key === "Escape") { key.preventDefault(); this.hideContextMenu(); }
+      if (key.key === "ArrowDown" || key.key === "ArrowUp") {
+        key.preventDefault();
+        const items = [...menu.querySelectorAll("button")];
+        items[(items.indexOf(document.activeElement) + (key.key === "ArrowDown" ? 1 : items.length - 1)) % items.length]?.focus();
+      }
+    });
+  }
+
+  hideContextMenu() { this.contextMenuElement?.remove(); this.contextMenuElement = null; }
 
   // Passage surligné à partir d'une plage du texte (sélection, ou extrait proposé par Claude)
   async highlightRange(range, { color = "yellow", note = null, author = null } = {}) {
@@ -740,6 +788,8 @@ export class Annotator {
 
   destroy() {
     this.hideToolbar();
+    this.hideContextMenu();
+    if (this.onScrollClose) removeEventListener("scroll", this.onScrollClose, true);
     this.closePopover();
     if (this.onDocumentDown) document.removeEventListener("mousedown", this.onDocumentDown);
     if (this.onKey) document.removeEventListener("keydown", this.onKey);

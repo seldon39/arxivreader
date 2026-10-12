@@ -66,6 +66,8 @@ http://127.0.0.1:8710/; the server only listens on this Mac (not on Wi-Fi).
 - **Copy formulas as LaTeX**: ⌘C on a selection copies its formulas as `$…$` (inline) and `\[…\]` (displayed)
   instead of MathJax's symbols; a "TeX" button does the same in the selection bar; ⌥-click a formula to copy
   its TeX alone.
+- **Right-click** on a selection or a formula: highlight, highlight and add a note, copy as LaTeX, copy the
+  text, or ask the AI assistant (elsewhere, the system menu stays).
 - **Hover preview** of any cross-reference (theorem, equation, citation, footnote); click to go there,
   with a "Back" button.
 - **Collapsible proofs**; handwritten proofs ("*Proof.* … □") are detected automatically.
