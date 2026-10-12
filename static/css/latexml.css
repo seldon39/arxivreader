@@ -88,6 +88,9 @@
 .ltx_title_classification::after { content: "."; }
 .ltx_classification { margin-bottom: 0; }
 .ltx_titlenote + .ltx_titlenote { margin-top: .2em; }
+.ltx_affiliation a { color: inherit; }
+.ltx_affiliation .ltx_font_smallcaps { font-variant: normal; } /* adresses en petites capitales dans la source : lisibles ici */
+.ltx_affiliations > summary { cursor: pointer; }
 .front-last { margin-bottom: 2.2em !important; }
 
 /* ---- Titres (amsart) : sections centrées en petites capitales, sous-sections en gras en ligne ---- */

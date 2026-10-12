@@ -1,6 +1,7 @@
 // Corrections pour rapprocher la version HTML d'arXiv du PDF compilé (classe amsart) :
 // numéros d'équation, étiquettes des listes, bibliographie amsplain, énoncés en italique.
 
+import { t } from "./i18n.js";
 import { h } from "./util.js";
 
 // Numéros d'équation du côté voulu par \documentclass (reqno / leqno), que LaTeXML ignore parfois.
@@ -207,6 +208,99 @@ function inScript(element) {
   return false;
 }
 
+// Affiliations et adresses des auteurs (notes d'auteur de LaTeXML, cachées, et \thanks d'un auteur, affichés en
+// ligne avec « thanks: ») : une ligne par auteur, son nom (et sa marque) en tête (« Nom† — Université · adresse@… »).
+// Un bloc regroupant plusieurs auteurs (« A, B et C ») : les notes d'une même sorte (adresse, courriel…) aussi
+// nombreuses que les noms vont aux auteurs dans l'ordre (comme les \address qui suivent chaque \author), les autres
+// sont communes et sans nom. LaTeXML rattache parfois les \address et \email de plusieurs auteurs au dernier : si ces
+// notes se coupent en autant de groupes « adresse…, courriel » que d'auteurs, chacun reçoit le sien. Plus de huit
+// lignes : repliées.
+const MANY_AFFILIATIONS = 8;
+const INITIAL = /^\p{Lu}\.(-?\p{Lu}\.)*$/u;
+
+// Notes à la suite (\address, \email d'amsart) : un groupe par auteur, fini par son courriel ; null si elles ne se
+// coupent pas ainsi en `count` groupes qui ont chacun une adresse
+function emailGroups(notes, count) {
+  const groups = [[]];
+  notes.forEach((note, i) => { groups.at(-1).push(note); if (note.role === "email" && i < notes.length - 1) groups.push([]); });
+  const complete = groups.every((group) => group.at(-1).role === "email" && group.some((note) => note.role !== "email"));
+  return groups.length === count && complete ? groups : null;
+}
+
+// Texte d'une note sans son étiquette (« Address: », « thanks: ») ni la marque de l'auteur
+function noteCopy(note, marks) {
+  const copy = note.cloneNode(true);
+  copy.querySelectorAll(".ltx_contact_name, .ltx_note_type, .ltx_note_mark").forEach((element) => element.remove());
+  copy.querySelectorAll("sup").forEach((sup) => { if (marks.includes(sup.textContent.trim())) sup.remove(); });
+  // « M.˜Nom » : LaTeXML rend parfois l'espace insécable ~ d'un \thanks par un tilde
+  const walker = document.createTreeWalker(copy, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) node.data = node.data.replace(/(\S)˜(?=\S)/g, "$1\u00a0");
+  return copy;
+}
+
+// Note qui commence par le nom de l'auteur (« Nom: Université… », « Nom, Université… », « Nom ↵ Université… », « N. Nom: … ») :
+// ce nom est retiré, il est déjà en tête de ligne
+function dropLeadingName(copy, name) {
+  const words = name.split(/\s+/);
+  const first = [...copy.childNodes].find((node) => node.textContent.trim());
+  if (first?.nodeType !== Node.TEXT_NODE) return;
+  const [, lead, rest] = first.data.match(/^\s*([^:,\n]{1,60}?)\s*(?::|,|\n|$)([\s\S]*)$/) || [];
+  const tokens = (lead || "").split(/\s+/);
+  if (tokens.at(-1) !== words.at(-1) || !tokens.slice(0, -1).every((token) => words.includes(token) || INITIAL.test(token))) return;
+  first.data = rest;
+  while (copy.firstChild && (copy.firstChild.localName === "br" || (copy.firstChild.nodeType === Node.TEXT_NODE && !copy.firstChild.data.trim()))) copy.firstChild.remove();
+}
+
+function authorLines(content) {
+  const lines = [];
+  const line = (lead, parts) => {
+    const element = h("div", { class: "ltx_titlenote ltx_affiliation" });
+    if (lead) element.append(lead);
+    parts.forEach((part, i) => { if (i) element.append(" · "); element.append(...part.childNodes); });
+    lines.push(element);
+  };
+  const named = (name, notes, marks = "") => {
+    notes.forEach((note) => dropLeadingName(note.copy, name));
+    line(`${name}${marks} — `, notes.map((note) => note.copy));
+  };
+  let waiting = []; // auteurs sans notes juste avant
+  for (const creator of content.querySelectorAll(".ltx_authors .ltx_creator")) {
+    const person = creator.querySelector(".ltx_personname");
+    const marks = person ? [...person.querySelectorAll("sup")].map((sup) => sup.textContent.trim()).filter(Boolean) : [];
+    const plain = person?.cloneNode(true);
+    plain?.querySelectorAll("sup").forEach((sup) => sup.remove());
+    const name = (plain?.textContent || "").replace(/\s+/g, " ").replace(/\s+,/g, ",").trim();
+    const names = name.split(/\s*,\s*|\s+and\s+|\s+et\s+(?!al\.)/).map((part) => part.trim()).filter(Boolean);
+    const contacts = [...creator.querySelectorAll(".ltx_author_notes .ltx_contact")];
+    const thanks = [...creator.querySelectorAll(".ltx_thanks_note .ltx_note_content")];
+    const notes = [...contacts.map((contact) => ({ role: contact.className.match(/ltx_role_(\w+)/)?.[1], copy: noteCopy(contact, marks) })),
+      ...thanks.map((note) => ({ role: "thanks", copy: noteCopy(note, marks) }))].filter((note) => note.copy.textContent.trim());
+    creator.querySelectorAll(".ltx_author_notes, .ltx_thanks_note").forEach((element) => element.remove());
+    if (!notes.length) { waiting.push(...names); continue; }
+    const everyone = [...waiting, ...names];
+    waiting = [];
+    const groups = everyone.length > 1 ? emailGroups(notes, everyone.length) : null;
+    if (groups) { groups.forEach((group, i) => named(everyone[i], group)); continue; }
+    if (names.length <= 1) {
+      if (name) named(name, notes, marks.join(""));
+      else line("", notes.map((note) => note.copy));
+      continue;
+    }
+    const shared = [];
+    const own = names.map(() => []);
+    for (const role of new Set(notes.map((note) => note.role))) {
+      const group = notes.filter((note) => note.role === role);
+      if (group.length !== names.length) shared.push(...group);
+      else group.forEach((note, i) => own[i].push(note));
+    }
+    shared.forEach((note) => line(marks.length === 1 ? `${marks[0]} ` : "", [note.copy]));
+    own.forEach((parts, i) => { if (parts.length) named(names[i], parts); });
+  }
+  lines.forEach((element) => element.normalize());
+  if (lines.length <= MANY_AFFILIATIONS) return lines;
+  return [h("details", { class: "ltx_titlenote ltx_affiliations" }, h("summary", {}, t("reader.affiliations", { n: lines.length })), ...lines)];
+}
+
 // \thanks d'amsart : LaTeXML les met dans le titre ; ils rejoignent les notes de première page
 // (mots-clés, classification), sous le résumé. De même pour les notes sans appel du début de l'article
 // (\footnotetext : financements, adresses), que LaTeXML numérote « 0 » et place avant le titre.
@@ -225,10 +319,12 @@ export function moveTitleNotes(content) {
     pubnote.dataset.frontNote = "1";
   }
   const notes = [...content.querySelectorAll(".ltx_title_document .ltx_pubnote, .ltx_pubnote[data-front-note]")];
-  if (!notes.length) return;
+  const affiliations = authorLines(content);
+  if (!notes.length && !affiliations.length) return;
   const after = [...content.querySelectorAll(".ltx_abstract, .ltx_keywords, .ltx_classification, .ltx_dates, .ltx_authors")].at(-1);
   const holder = document.createElement("div");
   holder.className = "ltx_titlenotes";
+  holder.append(...affiliations);
   for (const note of notes) {
     note.querySelector(".ltx_note_name")?.remove();
     const line = document.createElement("div");

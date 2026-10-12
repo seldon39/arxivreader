@@ -56,6 +56,8 @@ http://127.0.0.1:8710/; the server only listens on this Mac (not on Wi-Fi).
 - **AMS "paper" layout** (amsart class): text in Charter or Computer Modern, formulas rendered by
   **MathJax** (TeX rules, Computer Modern fonts, same rendering in Safari, Firefox and Chrome);
   the browser's own MathML is still available in the settings.
+- **Authors' affiliations** under the abstract, one line per author (name, address, email), with the
+  first-page notes (funding, keywords, classification).
 - **Hover preview** of any cross-reference (theorem, equation, citation, footnote); click to go there,
   with a "Back" button.
 - **Collapsible proofs**; handwritten proofs ("*Proof.* … □") are detected automatically.
