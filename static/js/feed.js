@@ -42,7 +42,8 @@ function ago(stamp) {
 }
 
 function errorText(message) {
-  const known = { "rate-limited": "feed.error.rateLimited", "no-seed": "feed.error.noSeed", "bad-key": "feed.error.badKey" };
+  const known = { "rate-limited": "feed.error.rateLimited", "no-seed": "feed.error.noSeed", "bad-key": "feed.error.badKey",
+    "arxiv-timeout": "feed.error.timeout" };
   return known[message] ? t(known[message]) : t("error.generic", { message });
 }
 
@@ -111,7 +112,7 @@ async function renderList(body, tab) {
       }
       remember();
     } catch (error) {
-      toastError(error);
+      toast(errorText(error.message), { error: true, duration: 6000 });
     } finally {
       loadingDay = false;
       draw();

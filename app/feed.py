@@ -168,7 +168,21 @@ def _store(connection, item, followed=False, keep_announce=False):
     )
 
 
+_enriching = threading.Lock()  # complément d'une mise à jour (auteurs suivis, revues), un à la fois
+EMBEDDING_WAIT = 4  # secondes d'attente des vecteurs de sens avant de rendre le feed (tri par pertinence)
+
+
+def _quietly(function, *args):
+    try:
+        function(*args)
+    except Exception:
+        pass
+
+
 def refresh_arxiv(categories=None, api_key=None):
+    """Annonces du jour (flux RSS d'arXiv, rapide), enregistrées et rendues tout de suite, avec leurs vecteurs de
+    sens (tri par pertinence) ; les articles des auteurs suivis (API de recherche, une requête toutes les 3 s par
+    auteur) et les revues viennent ensuite en arrière-plan : une API lente ne fait plus attendre le feed."""
     categories = categories or FEED_CATEGORIES
     with _client() as client:
         response = client.get(RSS_URL.format(categories="+".join(categories)))
@@ -177,33 +191,45 @@ def refresh_arxiv(categories=None, api_key=None):
     with db.connect() as connection:
         for item in items:
             _store(connection, item)
-    # Articles récents des auteurs suivis, hors des catégories comprises
-    followed = []
-    try:
-        followed = profile.followed_author_papers(categories)
-        with db.connect() as connection:
-            for item in followed:
-                item["title"], item["abstract"] = tex_text(item["title"]), tex_text(item["abstract"])
-                _store(connection, item, followed=True)
-    except Exception:
-        pass
     # Vecteurs de sens (Semantic Scholar) pour les nouveaux articles et le profil
+    # au plus EMBEDDING_WAIT secondes (quota partagé de Semantic Scholar sans clé) ; la suite en arrière-plan
     positives, negatives, _, _ = relevance.profile_documents()
-    keys = [relevance.s2_key(i["arxiv_id"]) for i in items + followed] + [d["s2"] for d in positives + negatives]
-    try:
-        relevance.fetch_embeddings(keys, api_key)
-    except Exception:
-        pass
-    try:  # revue des articles annoncés (surtout utile pour les nouvelles versions)
-        journals.fetch([relevance.s2_key(i["arxiv_id"]) for i in items + followed], api_key)
-    except Exception:
-        pass
-    try:
-        repair_abstracts()
-    except Exception:
-        pass
+    keys = [relevance.s2_key(i["arxiv_id"]) for i in items] + [d["s2"] for d in positives + negatives]
+    vectors = threading.Thread(target=_quietly, args=(relevance.fetch_embeddings, keys, api_key), daemon=True)
+    vectors.start()
+    vectors.join(EMBEDDING_WAIT)
     db.save_settings({"feed.arxivRefreshed": _now()})
+    threading.Thread(target=_complete_refresh, args=(items, categories, api_key), daemon=True).start()
     return len(items)
+
+
+def _complete_refresh(items, categories, api_key):
+    """Suite d'une mise à jour : articles récents des auteurs suivis (hors des catégories comprises), revues des
+    articles annoncés, résumés abîmés relus ; chaque étape en panne n'empêche pas les autres."""
+    if not _enriching.acquire(blocking=False):
+        return  # déjà en cours (mise à jour précédente)
+    try:
+        followed = []
+        try:
+            followed = profile.followed_author_papers(categories)
+            with db.connect() as connection:
+                for item in followed:
+                    item["title"], item["abstract"] = tex_text(item["title"]), tex_text(item["abstract"])
+                    _store(connection, item, followed=True)
+            relevance.fetch_embeddings([relevance.s2_key(i["arxiv_id"]) for i in followed], api_key)
+        except Exception:
+            pass
+        try:  # revue des articles annoncés (surtout utile pour les nouvelles versions)
+            journals.fetch([relevance.s2_key(i["arxiv_id"]) for i in items + followed], api_key)
+        except Exception:
+            pass
+        try:
+            repair_abstracts()
+        except Exception:
+            pass
+        db.save_settings({"feed.followedRefreshed": _now()})
+    finally:
+        _enriching.release()
 
 
 # ---------- Jours précédents : interface OAI-PMH d'arXiv ----------

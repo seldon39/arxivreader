@@ -180,3 +180,38 @@ class PastDayGuards(unittest.TestCase):
         with mock.patch.object(search, "_fetch", return_value=(page, 1)):
             items = feed._fetch_day_api("2020-10-01", ["math.MP"])
         self.assertEqual(items[0]["announce_type"], "new")
+
+
+class RefreshDoesNotWait(unittest.TestCase):
+    """Mise à jour : les annonces du jour tout de suite ; auteurs suivis et revues ensuite, en arrière-plan."""
+
+    def test_followed_authors_in_background(self):
+        import pathlib
+        import tempfile
+        import threading
+        import time
+        from unittest import mock
+        from app import db, feed
+        saved = (db.DB_PATH, db.LIBRARY)
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        db.DB_PATH, db.LIBRARY = tmp / "test.db", tmp
+        db.init()
+        started, release = threading.Event(), threading.Event()
+
+        def slow_followed(categories):
+            started.set()
+            release.wait(5)  # API de recherche d'arXiv très lente
+            return []
+        client = mock.MagicMock()
+        client.__enter__.return_value.get.return_value = mock.Mock(text=RSS, raise_for_status=lambda: None)
+        try:
+            with mock.patch.object(feed, "_client", return_value=client), mock.patch.object(feed.profile, "followed_author_papers", side_effect=slow_followed), \
+                 mock.patch.object(feed.relevance, "fetch_embeddings"), mock.patch.object(feed.journals, "fetch"), mock.patch.object(feed, "repair_abstracts"):
+                begin = time.time()
+                self.assertEqual(feed.refresh_arxiv(["math.DG"]), 1)
+                self.assertLess(time.time() - begin, 1)  # pas d'attente des auteurs suivis
+                self.assertTrue(started.wait(2))         # mais ils sont bien cherchés
+                release.set()
+                time.sleep(0.2)
+        finally:
+            db.DB_PATH, db.LIBRARY = saved

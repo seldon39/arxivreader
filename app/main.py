@@ -647,10 +647,19 @@ async def feed_items(view: str = "arxiv", day: str | None = None):
             raise HTTPException(400, "Bad day")
         # jour pas encore chargé, ou chargé sans les nouvelles versions alors que l'OAI-PMH peut les donner
         stale = day in (settings.get("feed.partialDays") or []) and feed.oai_available(day)
+        if day not in days and day > max(days, default="") and day <= _now()[:10]:
+            # jour plus récent que tout ce qui est en base : sans doute celui du flux RSS (rapide), d'abord
+            try:
+                await run_in_threadpool(feed.refresh_arxiv, settings.get("feedCategories") or None, settings.get("s2ApiKey") or None)
+                days = feed.known_days()
+            except Exception:
+                pass  # flux indisponible : par l'OAI-PMH ou l'API ci-dessous
         if (day not in days or stale) and day <= _now()[:10]:
             try:
                 await run_in_threadpool(feed.fetch_day, day, settings.get("feedCategories") or None,
                                         settings.get("s2ApiKey") or None)
+            except httpx.TimeoutException:
+                return JSONResponse({"error": "arxiv-timeout"}, status_code=504)
             except Exception as error:
                 return JSONResponse({"error": f"{type(error).__name__}: {error}"}, status_code=502)
             days = feed.known_days()
@@ -678,15 +687,22 @@ async def feed_refresh(body: RefreshRequest):
         else:
             count = await run_in_threadpool(feed.refresh_arxiv, settings.get("feedCategories") or None,
                                             settings.get("s2ApiKey") or None)
-            try:  # citations de vos articles (une fois par jour au plus)
-                await run_in_threadpool(citations.check, settings.get("s2ApiKey") or None)
-            except Exception:
-                pass
+            # citations de vos articles (une fois par jour au plus), en arrière-plan : le feed n'attend pas
+            threading.Thread(target=_quietly, args=(citations.check, settings.get("s2ApiKey") or None), daemon=True).start()
     except feed.FeedError as error:
         return JSONResponse({"error": str(error)}, status_code=400)
+    except httpx.TimeoutException:
+        return JSONResponse({"error": "arxiv-timeout"}, status_code=504)
     except Exception as error:  # réseau
         return JSONResponse({"error": f"{type(error).__name__}: {error}"}, status_code=502)
     return {"count": count}
+
+
+def _quietly(function, *args):
+    try:
+        function(*args)
+    except Exception:
+        pass  # tâche de fond : un échec se rattrape au prochain passage
 
 
 class SearchTerm(BaseModel):

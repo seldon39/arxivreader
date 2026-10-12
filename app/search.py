@@ -194,7 +194,11 @@ def _fetch(expression, ids, sort, start, count):
         params["id_list"] = ",".join(ids[:50])
     _wait_turn()
     with httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=60, follow_redirects=True) as client:
-        response = with_retry(lambda: client.get(API, params=params))
+        try:
+            response = with_retry(lambda: client.get(API, params=params))
+        except httpx.TimeoutException:  # API d'arXiv parfois très lente (lundi matin…) : un second essai, plus patient
+            time.sleep(3)
+            response = with_retry(lambda: client.get(API, params=params, timeout=120))
     if response.status_code == 400:  # requête refusée par arXiv (syntaxe) : erreur de l'utilisateur, pas du réseau
         raise SearchError("Recherche refusée par arXiv : vérifiez les mots et les champs")
     response.raise_for_status()
