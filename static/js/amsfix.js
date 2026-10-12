@@ -367,6 +367,8 @@ function attachScripts(math) {
   for (const script of [...math.querySelectorAll("msub, msup, msubsup")]) {
     const base = script.firstElementChild;
     if (!base || base.localName !== "mrow" || base.childElementCount || base.textContent.trim()) continue;
+    // F^{{}^{\prime}} : base vide dans l'exposant même ; son voisin est la base F, à laisser en place
+    if (SCRIPTS.has(script.parentElement?.localName)) continue;
     const previous = script.previousElementSibling;
     if (!previous || previous.localName === "mspace") continue;
     const merged = previous.getAttribute("data-attached");
