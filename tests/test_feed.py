@@ -2,6 +2,7 @@
 
 import unittest
 
+from app import feed
 from app.feed import parse_rss, tex_text
 
 RSS = """<?xml version='1.0' encoding='UTF-8'?>
@@ -22,6 +23,17 @@ Abstract: We prove $p&gt; n/2$ estimates.</description>
 
 
 class Feed(unittest.TestCase):
+    def test_time_zone_falls_back_to_macos(self):
+        # Python de l'application sur un autre Mac : chemin des fuseaux de l'ordinateur de construction, introuvable
+        import zoneinfo
+        saved = zoneinfo.TZPATH
+        try:
+            zoneinfo.reset_tzpath(["/introuvable"])
+            zoneinfo.ZoneInfo.clear_cache()
+            self.assertEqual(str(feed._zone("America/New_York")), "America/New_York")
+        finally:
+            zoneinfo.reset_tzpath(saved)
+
     def test_parse_rss(self):
         (item,) = parse_rss(RSS)
         self.assertEqual((item["arxiv_id"], item["version"], item["announce_type"]), ("2610.10575", 2, "replace"))

@@ -10,7 +10,8 @@ import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta, timezone
 from datetime import time as clock
 from email.utils import parsedate_to_datetime
-from zoneinfo import ZoneInfo
+import zoneinfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 
@@ -310,7 +311,20 @@ def oai_available(day):
     """Jour assez récent pour l'OAI-PMH, et pas d'échec de celui-ci dans l'heure."""
     recent = date.fromisoformat(day) >= datetime.now(timezone.utc).date() - timedelta(days=OAI_DAYS)
     return recent and (_oai_failed is None or time.monotonic() - _oai_failed > OAI_PAUSE)
-NEW_YORK = ZoneInfo("America/New_York")
+SYSTEM_ZONES = "/usr/share/zoneinfo"  # fuseaux de macOS (présents sur tout Mac)
+
+
+def _zone(name):
+    """Fuseau horaire ; introuvable aux chemins connus de ce Python (celui de l'application garde en dur le chemin de
+    l'ordinateur où il a été construit) : ceux de macOS, plutôt qu'un serveur qui ne démarre pas."""
+    try:
+        return ZoneInfo(name)
+    except ZoneInfoNotFoundError:
+        zoneinfo.reset_tzpath([*zoneinfo.TZPATH, SYSTEM_ZONES])
+        return ZoneInfo(name)
+
+
+NEW_YORK = _zone("America/New_York")
 
 
 def _fetch_day_oai(day, categories):

@@ -171,6 +171,11 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
 
 ## 9. Pièges connus
 
+- Le Python embarqué garde en dur des chemins de l'ordinateur où l'application a été construite (fuseaux horaires,
+  certificats SSL) : sur un autre Mac, ils n'existent pas. Le lanceur (`macos/main.swift`) donne donc
+  `PYTHONTZPATH=/usr/share/zoneinfo` et `SSL_CERT_FILE` (certificats de l'application), et `feed._zone` se rabat sur
+  les fuseaux de macOS. Pour simuler un autre Mac : `PYTHONTZPATH=/introuvable` avec le Python de l'application.
+
 - Le dossier Documents est synchronisé par iCloud : construire l'application ailleurs
   (`~/Library/Caches/arXivReader-build`), sinon la signature casse. Une tâche de fond (launchd) ne peut pas lire
   Documents : elle utilise le code de l'application installée, sans écrire de bytecode (`PYTHONDONTWRITEBYTECODE`).

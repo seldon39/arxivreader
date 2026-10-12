@@ -67,6 +67,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         env["ARXIVREADER_WATCH_PARENT"] = "1"  // s'arrête seul si l'application disparaît sans l'arrêter
         env["PYTHONNOUSERSITE"] = "1"
         env["PYTHONDONTWRITEBYTECODE"] = "1"
+        // fuseaux horaires : ceux de macOS (le Python embarqué garde en dur le chemin de l'ordinateur où il a été
+        // construit : sur un autre Mac, « No time zone found with key America/New_York » au démarrage)
+        env["PYTHONTZPATH"] = "/usr/share/zoneinfo"
         // certificats HTTPS fournis avec Python (son chemin d'origine n'existe plus une fois l'application déplacée)
         let certificates = resources.appendingPathComponent("python/ssl/cacert.pem")
         if FileManager.default.fileExists(atPath: certificates.path) { env["SSL_CERT_FILE"] = certificates.path }
