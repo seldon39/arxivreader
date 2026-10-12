@@ -28,7 +28,8 @@ const DEFAULTS = {
 };
 const LOCAL_URL = "http://127.0.0.1:11434/v1";
 export const FEED_DEFAULT = ["math.DG", "math.CV", "math.SP", "math-ph"];
-const WIDTHS = { narrow: "42rem", normal: "56rem", wide: "72rem" };
+const WIDTHS = { narrow: "42rem", normal: "56rem", wide: "72rem", xwide: "90rem", full: "none" }; // pleine : toute la fenêtre (grands écrans)
+export const READING_WIDTHS = Object.keys(WIDTHS); // de la plus étroite à la plus large (boutons du lecteur)
 
 export const settings = { ...DEFAULTS };
 const listeners = new Set();
@@ -168,7 +169,7 @@ export function openSettingsDialog({ section = null } = {}) {
             event.currentTarget.blur();
           } }, t("settings.default")))),
       h("div", { class: "row" }, h("span", { id: "setting-readingWidth" }, t("settings.width")),
-        segmented("readingWidth", [["narrow", t("settings.width.narrow")], ["normal", t("settings.width.normal")], ["wide", t("settings.width.wide")]], settings.readingWidth)),
+        segmented("readingWidth", [["narrow", t("settings.width.narrow")], ["normal", t("settings.width.normal")], ["wide", t("settings.width.wide")], ["xwide", t("settings.width.xwide")], ["full", t("settings.width.full")]], settings.readingWidth)),
       h("div", { class: "row" }, h("span", { id: "setting-paperFont" }, t("settings.paperFont")),
         segmented("paperFont", [["auto", t("settings.paperFont.auto")], ["charter", "Charter"], ["lm", "Computer Modern"]], settings.paperFont)),
       h("div", { class: "row" }, h("span", { id: "setting-mathRenderer" }, t("settings.math")),

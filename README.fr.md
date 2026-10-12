@@ -67,7 +67,8 @@ http://127.0.0.1:8710/ ; le serveur n'écoute que sur ce Mac (pas sur le Wi-Fi).
   (utilise / utilisé par / cite, chaîne complète), **graphe** des dépendances (plein écran possible).
 - Signalement du **texte invisible** (blanc, minuscule, masqué) éventuellement présent dans l'article.
 - Reprise de la lecture à l'endroit quitté ; réglages : langue FR/EN, thème clair/sombre/système,
-  taille du texte, largeur de lecture, preuves repliées par défaut.
+  taille du texte, largeur de lecture (de « Étroite » à « Pleine » pour les grands écrans), preuves repliées par
+  défaut ; taille et largeur du texte aussi dans la barre du lecteur (A−/A+ et deux boutons de largeur).
 - Mise en page adaptée à la largeur : 3 colonnes (≥ 1280 px), 2 (≥ 900 px), 1 colonne avec tiroirs.
 
 Les dépendances viennent des renvois (`\ref`, `\eqref`, `\cite`) dans l'énoncé et dans sa preuve :

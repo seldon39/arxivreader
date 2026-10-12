@@ -15,7 +15,7 @@ import { typesetFragment, typesetMath, typesetTex } from "./math.js";
 
 const typesetTexSafe = (element) => typesetTex([element]).catch(() => {});
 import { t } from "./i18n.js";
-import { DEFAULT_FONT_SIZE, onSettingsChange, saveSettings, settings } from "./settings.js";
+import { DEFAULT_FONT_SIZE, READING_WIDTHS, onSettingsChange, saveSettings, settings } from "./settings.js";
 import { debounce, formatDate, h, icons, navigation, openRoute, plainTitle, titleTex, toast, toggleIcon, wantsNewTab, withMath } from "./util.js";
 
 const NEEDS_PROOF = new Set(["theorem", "proposition", "lemma", "corollary", "claim"]);
@@ -383,6 +383,8 @@ class Reader {
       button(icons.minus, "reader.smaller", () => this.changeFont(-1), { class: "wide-only html-only" }),
       this.zoomButton = h("button", { class: "zoom-reset wide-only html-only", type: "button", onclick: () => { if (settings.fontSize !== DEFAULT_FONT_SIZE) saveSettings({ fontSize: DEFAULT_FONT_SIZE }); } }),
       button(icons.plus, "reader.larger", () => this.changeFont(1), { class: "wide-only html-only" }),
+      this.narrowerButton = button(icons.narrower, "reader.narrower", () => this.changeWidth(-1), { class: "wide-only html-only" }),
+      this.widerButton = button(icons.wider, "reader.wider", () => this.changeWidth(1), { class: "wide-only html-only" }),
       this.foldButton,
       // choix HTML / PDF après les réglages du texte HTML (masqués dans le PDF) : il ne bouge pas quand on change
       this.viewSwitch = paper.source !== "tex" && paper.source !== "none" && h("div", { class: "view-switch", role: "group", "aria-label": t("reader.view") },
@@ -924,6 +926,24 @@ class Reader {
     const label = atDefault ? t("reader.zoomDefault") : t("reader.zoomReset", { n: percent });
     this.zoomButton.title = label;
     this.zoomButton.setAttribute("aria-label", label);
+  }
+
+  // Largeur du texte, d'un cran (mêmes choix que dans les réglages) ; boutons inactifs aux deux bouts
+  changeWidth(delta) {
+    const at = Math.max(0, READING_WIDTHS.indexOf(settings.readingWidth));
+    const next = READING_WIDTHS[Math.min(READING_WIDTHS.length - 1, Math.max(0, at + delta))];
+    if (next !== settings.readingWidth) saveSettings({ readingWidth: next });
+  }
+
+  updateWidthButtons() {
+    const at = Math.max(0, READING_WIDTHS.indexOf(settings.readingWidth));
+    const current = t(`settings.width.${READING_WIDTHS[at]}`);
+    for (const [button, key, end] of [[this.narrowerButton, "reader.narrower", at === 0], [this.widerButton, "reader.wider", at === READING_WIDTHS.length - 1]]) {
+      const label = `${t(key)} (${current})`;
+      button.title = label;
+      button.setAttribute("aria-label", label);
+      button.setAttribute("aria-disabled", String(end));
+    }
   }
 
   changeFont(delta) {
@@ -1675,12 +1695,14 @@ class Reader {
     let look = `${settings.fontSize}/${settings.readingWidth}/${settings.paperFont}`;
     let assistant = currentModel(settings);
     this.updateZoomButton();
+    this.updateWidthButtons();
     const unsubscribe = onSettingsChange(() => {
       if (currentModel(settings) !== assistant) { // assistant IA changé dans les réglages : onglet IA à jour
         assistant = currentModel(settings);
         if (this.tab === "ai") this.renderPanel();
       }
       this.updateZoomButton();
+      this.updateWidthButtons();
       this.article.dataset.marks = settings.marginMarks ? "on" : "off";
       const now = `${settings.fontSize}/${settings.readingWidth}/${settings.paperFont}`;
       if (now !== look) { look = now; this.keepReadingPosition(); } else this.anchors = null;

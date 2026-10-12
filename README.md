@@ -67,7 +67,8 @@ http://127.0.0.1:8710/; the server only listens on this Mac (not on Wi-Fi).
   (uses / used by / cites, full chain), dependency **graph** (can be shown full screen).
 - Flags any **invisible text** (white, tiny, hidden) the paper may contain.
 - Resumes reading where you left off; settings: French/English, light/dark/system theme,
-  text size, reading width, proofs collapsed by default.
+  text size, reading width (from "Narrow" to "Full" for large screens), proofs collapsed by default; text
+  size and width also in the reader's toolbar (A−/A+ and two width buttons).
 - Layout adapted to the window width: 3 columns (≥ 1280 px), 2 (≥ 900 px), 1 column with drawers.
 
 Dependencies come from the cross-references (`\ref`, `\eqref`, `\cite`) in a statement and in its proof:

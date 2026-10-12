@@ -32,6 +32,9 @@ export const icons = {
   panel: path("M4 4h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm10 2v12h5V6h-5ZM5 6v12h7V6H5Z"),
   minus: '<svg viewBox="0 0 24 24" aria-hidden="true"><text x="3" y="17" font-size="13" font-family="Georgia,serif">A</text><path d="M15 12h7v2h-7z"/></svg>',
   plus: '<svg viewBox="0 0 24 24" aria-hidden="true"><text x="1" y="19" font-size="18" font-family="Georgia,serif">A</text><path d="M18 9h2v3h3v2h-3v3h-2v-3h-3v-2h3z"/></svg>',
+  // largeur du texte : flèches vers les bords (élargir) ou vers le milieu (rétrécir)
+  wider: path("M2 5h2v14H2zM20 5h2v14h-2zM6 12l3.5-3.5V11h5V8.5L18 12l-3.5 3.5V13h-5v2.5z"),
+  narrower: path("M11 4h2v16h-2zM2 11h4.5V8.5L10 12l-3.5 3.5V13H2zM22 13h-4.5v2.5L14 12l3.5-3.5V11H22z"),
   fold: path("M7 9l5-5 5 5-1.4 1.4L12 6.8l-3.6 3.6zm0 6 1.4-1.4 3.6 3.6 3.6-3.6L17 15l-5 5z"),
   external: path("M14 3h7v7h-2V6.4l-9.3 9.3-1.4-1.4L17.6 5H14zM5 5h6v2H5v12h12v-6h2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"),
   pdf: path("M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm8 1.5V8h4.5M8 13h2.5a1.5 1.5 0 0 1 0 3H9v2H8zm1 1v1h1.5a.5.5 0 0 0 0-1zm4-1h2a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2h-2zm1 1v3h1a1 1 0 0 0 1-1v-1a1 1 0 0 0-1-1z"),
