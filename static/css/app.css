@@ -150,7 +150,8 @@ a.button.primary { text-decoration: none; }
 .import-box .text-input { flex: 1 1 320px; }
 .library-tools { position: relative; display: flex; gap: 10px 16px; align-items: center; justify-content: space-between; margin: 26px 0 12px; flex-wrap: wrap; }
 .library-tools h2 { font-size: 17px; margin: 0; }
-.library-search-row { display: flex; gap: 8px; flex: 0 1 520px; min-width: min(100%, 320px); }
+.library-search-bar { position: relative; margin: 14px 0 0; }
+.library-search-row { display: flex; gap: 8px; }
 .search-field { position: relative; flex: 1; display: flex; }
 .search-field .search-icon { position: absolute; left: 10px; top: 50%; translate: 0 -50%; width: 18px; height: 18px; color: var(--muted); pointer-events: none; }
 .search-field .search-icon svg { width: 18px; height: 18px; }

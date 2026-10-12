@@ -129,10 +129,14 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
   const sortButton = h("button", { class: "button filter-button", type: "button", "aria-haspopup": "dialog", "aria-expanded": "false",
     "aria-controls": "library-filters" });
   const activeRow = h("div", { class: "active-filters" });
-  const tools = h("div", { class: "library-tools" }, heading,
+  // recherche, tri et filtres : sous le titre, au-dessus des dossiers (la recherche et les filtres portent sur
+  // toute la bibliothèque) ; les menus Tri et Filtres s'ouvrent sous cette ligne
+  const tools = h("div", { class: "library-search-bar" },
     h("div", { class: "library-search-row" },
       h("span", { class: "search-field" }, h("span", { class: "search-icon", html: icons.search }), search),
       sortButton, filterButton));
+  // titre de la liste (« Autres articles », ou les résultats d'une recherche)
+  const listHead = h("div", { class: "library-tools" }, heading);
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -375,6 +379,10 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
     const everywhere = Boolean(view.search.trim()) || activeCount() > 0;
     const others = filed.size && !everywhere ? papers.filter((p) => !filed.has(p.id)) : papers;
     const shown = others.filter(matches).sort(sorterFor(view));
+    // recherche ou filtre : les résultats juste sous le champ, au-dessus des dossiers ; sinon les dossiers d'abord
+    if (everywhere ? list.nextElementSibling !== foldersBox : listHead.previousElementSibling !== foldersBox) {
+      if (everywhere) list.after(foldersBox); else listHead.before(foldersBox);
+    }
     heading.textContent = everywhere ? t("library.papersShown", { n: shown.length, total: papers.length })
       : others !== papers ? t("library.others", { n: others.length }) : t("library.papers", { n: papers.length });
     if (!papers.length) {
@@ -515,7 +523,7 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
     });
   }
   libraryDropTarget(list);
-  libraryDropTarget(tools);
+  libraryDropTarget(listHead);
 
   let renaming = false;
   // pertinence des articles de la bibliothèque : demandée au serveur la première fois qu'un dossier est
@@ -730,8 +738,9 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
     // titre et import sur une ligne
     h("div", { class: "lib-head" }, h("h1", {}, t("library.title")), form),
     status,
-    foldersBox,
     tools, activeRow,
+    foldersBox,
+    listHead,
     list,
   ));
   if (matchMedia("(hover: hover)").matches) input.focus(); // pas sur téléphone : le clavier s'ouvrirait à chaque visite

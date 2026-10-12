@@ -126,6 +126,9 @@ const TEX_SYMBOLS = {
 };
 const BLACKBOARD = { C: "ℂ", R: "ℝ", Z: "ℤ", Q: "ℚ", N: "ℕ", P: "ℙ", H: "ℍ" };
 
+// Ponctuation de TeX hors formules : tirets (« -- », « --- ») et espaces (« \ », « \, », « ~ »)
+const texText = (text) => text.replace(/---/g, "—").replace(/--/g, "–").replace(/\\,/g, "\u2009").replace(/\\[ ;:]/g, " ").replace(/~/g, " ");
+
 function texToText(tex) {
   return tex
     .replace(/\\mathbb\{?([A-Z])\}?/g, (_, c) => BLACKBOARD[c] || c)
@@ -152,7 +155,7 @@ function scripted(tex) {
 // Texte avec formules $…$ → nœuds (formules en italique mathématique).
 export function withMath(text) {
   return String(text).split(/(\$[^$]+\$)/).filter(Boolean).map((part) =>
-    part.startsWith("$") && part.endsWith("$") ? h("span", { class: "tex", title: part }, scripted(texToText(part.slice(1, -1)))) : part);
+    part.startsWith("$") && part.endsWith("$") ? h("span", { class: "tex", title: part }, scripted(texToText(part.slice(1, -1)))) : texText(part));
 }
 
 // Titre écrit tout en majuscules (certaines sources, Semantic Scholar…) : remis en casse de titre
@@ -182,11 +185,10 @@ export function tidyTitle(title) {
   }).join("");
 }
 
-// Titre d'article pour MathJax : formules $…$ ou \(…\) gardées, hors formules les tirets et espaces
-// de TeX (« -- », « --- », « \ », « ~ ») remplacés par les caractères correspondants
+// Titre d'article pour MathJax : formules $…$ ou \(…\) gardées, hors formules les tirets et espaces de TeX
+// remplacés par les caractères correspondants (comme dans les listes, withMath)
 export function titleTex(title) {
-  return tidyTitle(title).split(/(\$[^$]*\$|\\\(.*?\\\))/).map((part, i) => (i % 2 ? part
-    : part.replace(/---/g, "—").replace(/--/g, "–").replace(/\\ /g, " ").replace(/~/g, " "))).join("");
+  return tidyTitle(title).split(/(\$[^$]*\$|\\\(.*?\\\))/).map((part, i) => (i % 2 ? part : texText(part))).join("");
 }
 
 // Dernière page de liste visitée (bibliothèque ou onglet du feed) : où revient la flèche du lecteur

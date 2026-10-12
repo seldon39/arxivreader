@@ -113,8 +113,8 @@ from the feed or the search is added to the library, outside folders. A dragged 
 tab bar opens that tab (to drop it in its page); dropped on "Library" at the top, it is added and the library opens
 in a new tab; on "Related papers", its graph opens in a new tab. The ☐ button of each card (library, folders, feed,
 search) selects several papers: a bar at the bottom offers "File in…", and dragging one of them takes them all.
-Once papers are filed, the general list becomes "Other papers" (those in no folder); a search or filter there
-covers the whole library. A paper can be in several folders, shown at the end of its line;
+Once papers are filed, the general list becomes "Other papers" (those in no folder); the search field and "Filters",
+above the folders, cover the whole library, and their results come first, above the folders. A paper can be in several folders, shown at the end of its line;
 "Filters" can also narrow the list to one or more folders.
 "Sort" orders papers by last read, added, published, or alphabetically (title or first author, A → Z or
 Z → A, folders then being sorted by name in the same order).

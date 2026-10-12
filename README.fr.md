@@ -118,8 +118,8 @@ est ajouté à la bibliothèque, hors dossier. Un article glissé qui s'attarde 
 cet onglet (pour le déposer dans sa page) ; déposé sur « Bibliothèque » en haut, il y est ajouté et la bibliothèque
 s'ouvre dans un nouvel onglet ; sur « Papiers liés », son graphe s'ouvre dans un nouvel onglet. Le bouton ☐ de chaque carte (bibliothèque, dossiers, feed, recherche) sélectionne plusieurs
 articles : une barre en bas propose « Ranger dans… », et glisser l'un d'eux les emporte tous. Une fois des
-articles rangés, la liste générale devient « Autres articles » (ceux d'aucun dossier) ; une recherche ou un
-filtre y porte sur toute la bibliothèque. Un article peut être dans plusieurs
+articles rangés, la liste générale devient « Autres articles » (ceux d'aucun dossier) ; le champ de recherche et
+« Filtres », au-dessus des dossiers, portent sur toute la bibliothèque, et leurs résultats passent avant les dossiers. Un article peut être dans plusieurs
 dossiers, affichés en fin de sa ligne ; « Filtres » permet aussi de réduire la liste à un ou plusieurs dossiers.
 « Tri » ordonne les articles par dernière lecture, ajout, publication, ou par ordre alphabétique (titre ou
 premier auteur, A → Z ou Z → A, les dossiers étant alors rangés par nom dans le même sens).
