@@ -72,15 +72,16 @@ def _client():
 open_client = _client  # un seul client (connexion réutilisée) pour toutes les images d'un article
 
 
-def with_retry(send, retry_on=(429, 503), delays=(3, 6, 9)):
+def with_retry(send, retry_on=(429, 503), delays=(3, 6, 9), sleep=None):
     """Requête répétée tant que le serveur répond « trop de requêtes » ou « indisponible ».
-    Pas d'attente après la dernière tentative ; Retry-After respecté s'il donne des secondes (au plus 60)."""
+    Pas d'attente après la dernière tentative ; Retry-After respecté s'il donne des secondes (au plus 60).
+    `sleep` : attente entre deux essais (une construction annulable l'interrompt)."""
     for delay in (*delays, None):
         response = send()
         if response.status_code not in retry_on or delay is None:
             return response
         wait = response.headers.get("Retry-After", "").strip()
-        time.sleep(min(60, max(delay, int(wait) + 1)) if wait.isdigit() else delay)
+        (sleep or time.sleep)(min(60, max(delay, int(wait) + 1)) if wait.isdigit() else delay)
 
 
 API = "https://export.arxiv.org/api/query"

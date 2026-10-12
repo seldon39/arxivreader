@@ -32,11 +32,29 @@ export async function renderRelated(root, arxivFromRoute = null) {
     h("p", { class: "related-lead" }, t("related.lead")),
     form, status, result));
 
+  // Construction en arrière-plan sur le serveur : suivie chaque seconde (étape, lot), annulable
+  const failure = (code) => Object.assign(new Error(code), { code });
+  async function construct(pending, refresh) {
+    let view = await api.related(pending.query, refresh);
+    pending.id = view.id;
+    while (view.state === "building") {
+      if (pending.cancelled) { api.relatedCancel(view.id).catch(() => {}); throw failure("cancelled"); }
+      pending.view = view;
+      pending.onProgress?.(view);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (pending.cancelled) throw failure("cancelled");
+      view = await api.relatedStatus(view.id);
+    }
+    if (view.state === "done") return view.graph;
+    throw failure(view.state === "error" ? view.code : view.state === "cancelled" ? "cancelled" : "interrupted");
+  }
+
   function load(query, refresh = false) {
     state.query = query;
     input.value = query;
     // la demande vit hors de la page : quittée puis rouverte, celle-ci retrouve la construction en cours
-    const pending = { query, promise: api.related(query, refresh) };
+    const pending = { query, cancelled: false };
+    pending.promise = construct(pending, refresh);
     state.pending = pending;
     pending.promise.then((graph) => {
       if (state.pending !== pending) return;
@@ -53,10 +71,28 @@ export async function renderRelated(root, arxivFromRoute = null) {
   // affichage d'une construction (lancée ici ou avant de quitter la page)
   async function follow(pending) {
     build.disabled = true;
-    status.replaceChildren(h("span", { class: "busy" }, h("span", { class: "spinner" }), t("related.building")));
+    const step = h("span", { class: "muted small related-step" });
+    const cancel = h("button", { class: "button small-button", type: "button" }, t("related.cancel"));
+    cancel.addEventListener("click", () => {
+      pending.cancelled = true;
+      if (pending.id) api.relatedCancel(pending.id).catch(() => {});
+      cancel.disabled = true;
+    });
+    const showStep = (view) => {
+      const key = `related.step.${view.step}`;
+      step.textContent = t(key) !== key ? t(key, { done: view.done, total: view.total }) : "";
+    };
+    pending.onProgress = showStep;
+    if (pending.view) showStep(pending.view);
+    status.replaceChildren(h("div", { class: "related-building" },
+      h("span", { class: "busy" }, h("span", { class: "spinner" }), t("related.building")), step, cancel));
     try { await pending.promise; } catch { /* erreur montrée ci-dessous */ }
     if (!root.isConnected || (state.pending && state.pending !== pending)) return;
     build.disabled = false;
+    if (pending.error?.code === "cancelled") {
+      status.replaceChildren(h("p", { class: "muted" }, t("related.cancelled")));
+      return;
+    }
     if (pending.error) {
       const code = pending.error.code || pending.error.message;
       const key = `related.error.${code}`;
@@ -295,8 +331,8 @@ export async function renderRelated(root, arxivFromRoute = null) {
       // retour sur la page : « dans la bibliothèque » remis à jour (graphe gardé par le serveur : pas de nouvelle requête)
       const shown = state.graph;
       if (shown.builtAt) { // graphe non gardé (incomplet) : pas reconstruit pour si peu
-        api.related(shown.origin.arxivId).then((fresh) => {
-          if (!mounted || state.graph !== shown || state.pending) return;
+        api.related(shown.origin.arxivId).then(({ graph: fresh }) => {
+          if (!fresh || !mounted || state.graph !== shown || state.pending) return; // plus gardé : reconstruit en arrière-plan
           if (fresh.builtAt !== shown.builtAt) { state.graph = fresh; draw(); return; }
           // même graphe : seules les marques changent (zoom, défilement et menus restent)
           const marks = new Map([fresh.origin, ...fresh.nodes, ...(fresh.prior || []), ...(fresh.derivative || [])].map((x) => [x.id, x]));

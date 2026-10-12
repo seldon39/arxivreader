@@ -97,7 +97,7 @@ choosing one highlights the papers in the graph linked to it. Graph: the closer 
 citations, colour by year, a ring for those in the library; pinch (or ⌘ + scroll, or the − + buttons) to zoom, drag the background to move; the graph can be enlarged to the whole window (Esc to return, keys + − 0). The
 chosen paper can be read, added to the library, filed in a folder (or dragged onto one), or become the start of a
 new graph. A graph is kept fifteen days ("Rebuild" to redo it). Without a Semantic Scholar API key, building may
-take a little longer (shared quota).
+take a little longer (shared quota); it runs in the background, shows its current step, and "Cancel" stops it.
 
 ## Folders
 

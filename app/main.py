@@ -742,21 +742,38 @@ class SearchRequest(BaseModel):
     page: int = 0
 
 
+def _related_view(view):
+    """État d'une construction pour la page ; graphe fini : marqué (articles de la bibliothèque)."""
+    if view.get("graph"):
+        view = {**view, "graph": related.annotate(view["graph"])}
+    return view
+
+
 @app.post("/api/related")
 async def related_papers(body: RelatedRequest):
-    """Papiers liés à un article arXiv (onglet « Papiers liés »), d'après Semantic Scholar."""
+    """Papiers liés à un article arXiv (onglet « Papiers liés »), d'après Semantic Scholar : le graphe gardé, ou une
+    construction lancée en arrière-plan, que la page suit (/api/related/status) et peut annuler (/api/related/cancel).
+    Aucune requête n'attend la construction (elle peut durer plusieurs minutes sans clé d'API)."""
     try:
         arxiv_id, _ = parse_arxiv_id(body.query[:500])
     except ArxivError:
         return JSONResponse({"error": "bad-id", "code": "bad-id"}, status_code=400)
-    try:
-        data = await run_in_threadpool(related.graph, arxiv_id, db.get_settings().get("s2ApiKey") or None, body.refresh)
-    except related.RelatedError as error:
-        status = {"not-found": 404, "rate-limited": 429, "busy": 409, "unavailable": 503}.get(str(error), 502)
-        return JSONResponse({"error": str(error), "code": str(error)}, status_code=status)
-    except httpx.HTTPError as error:
-        return JSONResponse({"error": f"{type(error).__name__}: {error}", "code": "network"}, status_code=502)
-    return await run_in_threadpool(related.annotate, data)
+    view = await run_in_threadpool(related.start, arxiv_id, db.get_settings().get("s2ApiKey") or None, body.refresh)
+    return await run_in_threadpool(_related_view, view)
+
+
+@app.get("/api/related/status")
+async def related_status(id: str):
+    return await run_in_threadpool(_related_view, related.status(id[:100]))
+
+
+class RelatedCancel(BaseModel):
+    id: str
+
+
+@app.post("/api/related/cancel")
+def related_cancel(body: RelatedCancel):
+    return related.cancel(body.id[:100])
 
 
 @app.post("/api/search")

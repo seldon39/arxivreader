@@ -43,6 +43,8 @@ export const api = {
   importing: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/importing`),
   search: (query) => request("POST", "/api/search", query),
   related: (query, refresh = false) => request("POST", "/api/related", { query, refresh }),
+  relatedStatus: (id) => request("GET", `/api/related/status?id=${encodeURIComponent(id)}`),
+  relatedCancel: (id) => request("POST", "/api/related/cancel", { id }),
   feed: (view, day) => request("GET", `/api/feed?view=${encodeURIComponent(view)}${day ? `&day=${day}` : ""}`),
   refreshFeed: (view) => request("POST", "/api/feed/refresh", { view }),
   linkArxiv: (key, query) => request("POST", "/api/feed/arxiv", { key, query }),

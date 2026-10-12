@@ -2,6 +2,8 @@
 
 import pathlib
 import tempfile
+import threading
+import time
 import unittest
 from unittest import mock
 
@@ -146,12 +148,50 @@ class Related(unittest.TestCase):
             connection.execute("INSERT INTO related_graphs (arxiv_id, data) VALUES (?, ?)", ("0806.2370", '{"origin": {}, "nodes": [], "edges": []}'))
         self.assertEqual(self.run_build()["format"], related.FORMAT)
 
+    def follow(self, client, view):
+        """Construction suivie comme le fait la page, jusqu'à sa fin."""
+        for _ in range(200):
+            if view["state"] != "building":
+                return view
+            time.sleep(0.02)
+            view = client.get("/api/related/status", params={"id": view["id"]}).json()
+        self.fail("construction sans fin")
+
     def test_route(self):
+        # la requête n'attend pas la construction : elle la lance, la page la suit
         client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
         self.assertEqual(client.post("/api/related", json={"query": "pas un identifiant"}).status_code, 400)
         with mock.patch.object(related, "graph", side_effect=related.RelatedError("rate-limited")):
-            response = client.post("/api/related", json={"query": "arXiv:0806.2370"})
-        self.assertEqual((response.status_code, response.json()["code"]), (429, "rate-limited"))
+            view = client.post("/api/related", json={"query": "arXiv:0806.2370"}).json()
+            self.assertEqual(view["id"], "0806.2370")
+            view = self.follow(client, view)
+        self.assertEqual((view["state"], view["code"]), ("error", "rate-limited"))
+        with mock.patch.object(related, "graph", return_value={"origin": {"arxivId": "0806.2370"}, "nodes": [], "builtAt": None}):
+            view = self.follow(client, client.post("/api/related", json={"query": "0806.2370", "refresh": True}).json())
+        self.assertEqual(view["state"], "done")
+        self.assertIsNone(view["graph"]["origin"]["libraryId"])  # marqué pour la page
+
+    def test_cancel(self):
+        # annulée : aussitôt pour la page ; le fil s'arrête à son prochain point de contrôle, rien n'est gardé
+        reached, stopped = threading.Event(), threading.Event()
+        def slow(*args):
+            reached.set()
+            try:
+                for _ in range(500):
+                    related._wait(0.01)
+                    related._step("neighbours", 1, 3)
+            except related.Cancelled:
+                stopped.set()
+                raise
+            return {"origin": {}, "nodes": []}
+        client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
+        with mock.patch.object(related, "graph", side_effect=slow):
+            view = client.post("/api/related", json={"query": "0806.2370", "refresh": True}).json()
+            self.assertTrue(reached.wait(2))
+            self.assertEqual(client.post("/api/related/cancel", json={"id": "0806.2370"}).json()["state"], "cancelled")
+            self.assertTrue(stopped.wait(2))
+        self.assertEqual(client.get("/api/related/status", params={"id": view["id"]}).json()["state"], "cancelled")
+        self.assertIsNone(related._cached("0806.2370"))
 
 
 class SideLists(unittest.TestCase):

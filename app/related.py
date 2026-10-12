@@ -10,6 +10,10 @@ citent le plus d'articles du graphe). Le graphe est gardé quinze jours.
 Requêtes : ses références, ses citations, les références des candidats par lots de 500, puis les fiches du
 second niveau (l'article lui-même est décrit d'après arXiv : une requête de moins à Semantic Scholar, dont le
 quota sans clé est partagé).
+
+La page ne l'attend pas dans une seule requête : start() lance la construction en arrière-plan, status() dit où
+elle en est (étape, lot), cancel() l'arrête (aussitôt pour la page ; pour le serveur, au prochain point de contrôle,
+entre deux requêtes ou pendant une attente — rien n'est gardé).
 """
 
 import difflib
@@ -50,6 +54,50 @@ class RelatedError(Exception):
     pass
 
 
+class Cancelled(Exception):
+    """Construction annulée depuis la page."""
+
+
+class Job:
+    """Construction d'un graphe en arrière-plan : état et étape lus par la page, annulation."""
+
+    def __init__(self, arxiv_id):
+        self.arxiv_id = arxiv_id
+        self.state = "building"  # building, done, error, cancelled
+        self.step, self.done, self.total = "waiting", 0, 0
+        self.result = None
+        self.error = None
+        self.cancel = threading.Event()
+
+    def view(self):
+        return {"id": self.arxiv_id, "state": self.state, "step": self.step, "done": self.done, "total": self.total,
+                "code": self.error, "graph": self.result if self.state == "done" else None}
+
+
+_jobs = {}                      # identifiant arXiv → dernière construction
+_jobs_lock = threading.Lock()
+_current = threading.local()    # construction menée par ce fil (aucune : appel direct, tests)
+
+
+def _step(name, done=0, total=0):
+    """Étape de la construction en cours, vue par la page ; point de contrôle de l'annulation."""
+    job = getattr(_current, "job", None)
+    if job is None:
+        return
+    if job.cancel.is_set():
+        raise Cancelled()
+    job.step, job.done, job.total = name, done, total
+
+
+def _wait(seconds):
+    """Attente entre deux requêtes (quota de Semantic Scholar) ; une annulation l'interrompt aussitôt."""
+    job = getattr(_current, "job", None)
+    if job is None:
+        time.sleep(seconds)
+    elif job.cancel.wait(seconds):
+        raise Cancelled()
+
+
 def _ensure():
     with db.connect() as connection:
         connection.execute(SCHEMA)
@@ -74,7 +122,7 @@ def _answer(response):
 
 
 def _get(client, url, **params):
-    data = _answer(with_retry(lambda: client.get(url, params=params), retry_on=(429, 503, 504), delays=RETRIES))
+    data = _answer(with_retry(lambda: client.get(url, params=params), retry_on=(429, 503, 504), delays=RETRIES, sleep=_wait))
     if not isinstance(data, dict):
         raise RelatedError("bad-response")
     return data
@@ -154,12 +202,14 @@ def build(arxiv_id, api_key=None):
     arXiv y prennent leur titre et leurs auteurs (Semantic Scholar en abîme parfois : « anggl(N) »), puis le
     graphe est recalculé (les doublons se reconnaissent mieux)."""
     origin, candidates, refs_of = fetch(arxiv_id, api_key)
+    _step("compute")
     data = compute(origin, candidates, refs_of)
     asked = set()
     for _ in range(2):  # un second tour pour les articles qu'aurait fait apparaître le premier
         shown = {p["arxivId"] for p in [*data["nodes"], *data["prior"], *data["derivative"]] if p.get("arxivId")} - asked
         if not shown:
             break
+        _step("titles")
         try:
             titles = fetch_titles(sorted(shown))
         except Exception:
@@ -169,6 +219,7 @@ def build(arxiv_id, api_key=None):
             if paper.get("arxivId") in titles:
                 title, authors = titles[paper["arxivId"]]
                 paper["title"], paper["authors"] = tex_text(title), [a for a in authors if a][:12] or paper["authors"]  # « -- » → « – »…
+        _step("compute")
         data = compute(origin, candidates, refs_of)
     if origin.get("unknown"):
         data["degraded"] = True  # arXiv n'a pas décrit l'article : ses autres fiches ne sont pas reconnues
@@ -185,14 +236,16 @@ def _origin(arxiv_id):
                 "unknown": True}
 
 
-def _batch(client, ids, fields, api_key):
+def _batch(client, ids, fields, api_key, step):
     """Fiches de Semantic Scholar pour `ids`, par lots de 500 (dans l'ordre ; None pour une fiche inconnue)."""
     found = []
+    lots = (len(ids) + 499) // 500
     for start in range(0, len(ids), 500):
-        time.sleep(_pause(api_key))
+        _step(step, start // 500 + 1, lots)
+        _wait(_pause(api_key))
         batch = ids[start:start + 500]
         answer = _answer(with_retry(lambda: client.post(f"{S2}/paper/batch", params={"fields": fields}, json={"ids": batch}),
-                                    retry_on=(429, 503, 504), delays=RETRIES))
+                                    retry_on=(429, 503, 504), delays=RETRIES, sleep=_wait))
         if not isinstance(answer, list):
             raise RelatedError("bad-response")
         answer = answer[:len(batch)] + [None] * (len(batch) - len(answer))  # réponse écourtée : fiches inconnues
@@ -213,12 +266,15 @@ def _ids(item):
 def fetch(arxiv_id, api_key=None):
     """Données de Semantic Scholar : l'article, ses voisins directs (ses références, les articles qui le citent)
     et les articles souvent cités par ces voisins (voisins de second niveau), avec les références de chacun."""
+    _step("origin")
     origin = _origin(arxiv_id)
     headers = {"User-Agent": USER_AGENT, **({"x-api-key": api_key} if api_key else {})}
     with httpx.Client(headers=headers, timeout=60) as client:
         pid = f"arXiv:{arxiv_id}"
+        _step("references")
         refs = _get(client, f"{S2}/paper/{pid}/references", limit=1000, fields=FIELDS).get("data") or []
-        time.sleep(_pause(api_key))
+        _wait(_pause(api_key))
+        _step("citations")
         cites = _get(client, f"{S2}/paper/{pid}/citations", limit=1000, fields=FIELDS).get("data") or []
         candidates = {}
         for rel, rows, key in (("ref", refs, "citedPaper"), ("cite", cites, "citingPaper")):
@@ -232,7 +288,7 @@ def fetch(arxiv_id, api_key=None):
         origin["citations"] = sum(1 for c in candidates.values() if c["rel"] == "cite")
         origin["citationsCapped"] = len(cites) >= 1000  # Semantic Scholar n'en rend que 1000 d'un coup
         ids = list(candidates)
-        refs_of = {key: _ids(item) for key, item in zip(ids, _batch(client, ids, "paperId,references.paperId", api_key))}
+        refs_of = {key: _ids(item) for key, item in zip(ids, _batch(client, ids, "paperId,references.paperId", api_key, "neighbours"))}
         # second niveau : cités par au moins trois voisins directs (les plus cités d'entre eux)
         counts = {}
         for key in ids:
@@ -240,7 +296,7 @@ def fetch(arxiv_id, api_key=None):
                 if ref not in candidates:
                     counts[ref] = counts.get(ref, 0) + 1
         second = sorted((r for r, n in counts.items() if n >= 3), key=lambda r: -counts[r])[:SECOND]
-        for key, item in zip(second, _batch(client, second, f"{FIELDS},references.paperId", api_key)):
+        for key, item in zip(second, _batch(client, second, f"{FIELDS},references.paperId", api_key, "second")):
             if item and item.get("paperId"):
                 candidates[key] = {**_paper({**item, "paperId": key}), "rel": "second"}
                 refs_of[key] = _ids(item)
@@ -364,12 +420,17 @@ def graph(arxiv_id, api_key=None, refresh=False):
     if not refresh and (found := _cached(arxiv_id)):
         return found
     asked = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
-    if not _lock.acquire(timeout=90):
-        raise RelatedError("busy")
+    if getattr(_current, "job", None) is None:
+        if not _lock.acquire(timeout=90):
+            raise RelatedError("busy")
+    else:  # en arrière-plan : attente d'un autre graphe en construction, annulable
+        while not _lock.acquire(timeout=0.5):
+            _step("waiting")
     try:
         if found := _cached(arxiv_id, since=None if not refresh else asked):
             return found  # construit par une autre demande pendant l'attente
         data = build(arxiv_id, api_key)
+        _step("compute")  # annulée entre-temps : rien n'est gardé
         if data.get("degraded") or not data["nodes"]:
             return {**data, "builtAt": None}  # incomplet (arXiv injoignable) ou vide (article trop récent) : pas gardé
         with db.connect() as connection:
@@ -380,6 +441,54 @@ def graph(arxiv_id, api_key=None, refresh=False):
         return {**data, "builtAt": built}
     finally:
         _lock.release()
+
+
+def start(arxiv_id, api_key=None, refresh=False):
+    """Graphe gardé : rendu tout de suite ; sinon construit en arrière-plan (la page suit status()). Une demande
+    pour un article déjà en construction suit celle-ci."""
+    _ensure()
+    arxiv_id = normalize(arxiv_id)
+    if not refresh and (found := _cached(arxiv_id)):
+        return {"id": arxiv_id, "state": "done", "graph": found}
+    with _jobs_lock:
+        job = _jobs.get(arxiv_id)
+        if job and job.state == "building":
+            return job.view()
+        job = _jobs[arxiv_id] = Job(arxiv_id)
+    threading.Thread(target=_run, args=(job, api_key, refresh), daemon=True, name=f"related {arxiv_id}").start()
+    return job.view()
+
+
+def _run(job, api_key, refresh):
+    _current.job = job
+    try:
+        result = graph(job.arxiv_id, api_key, refresh)
+        if not job.cancel.is_set():
+            job.result, job.state = result, "done"
+    except Cancelled:
+        pass
+    except Exception as error:
+        if not job.cancel.is_set():  # annulée : l'erreur arrivée ensuite n'est plus montrée
+            # imprévu : dit à la page plutôt qu'une construction sans fin
+            job.error = str(error) if isinstance(error, RelatedError) else "network" if isinstance(error, httpx.HTTPError) \
+                else f"{type(error).__name__}: {error}"[:300]
+            job.state = "error"
+    finally:
+        _current.job = None
+
+
+def status(arxiv_id):
+    job = _jobs.get(normalize(arxiv_id))
+    return job.view() if job else {"id": normalize(arxiv_id), "state": "none"}
+
+
+def cancel(arxiv_id):
+    """Annulée tout de suite pour la page ; le fil s'arrête au prochain point de contrôle, sans rien garder."""
+    job = _jobs.get(normalize(arxiv_id))
+    if job and job.state == "building":
+        job.cancel.set()
+        job.state = "cancelled"
+    return job.view() if job else {"id": normalize(arxiv_id), "state": "none"}
 
 
 def annotate(data):

@@ -100,7 +100,8 @@ sont proches, plus ils sont rapprochés ; seuls les liens les plus forts de chaq
 bibliothèque ; pincement du trackpad (ou ⌘ + molette, ou boutons − +) pour zoomer, glisser le fond pour se déplacer ; le graphe s'agrandit à toute la fenêtre (Échap pour revenir, touches + − 0). L'article choisi se lit, s'ajoute à la
 bibliothèque, se range dans un dossier (ou s'y glisse), ou devient le point de départ d'un nouveau graphe. Un
 graphe est gardé quinze jours (« Reconstruire » pour le refaire). Sans clé d'API Semantic Scholar, la
-construction peut attendre un peu (quota partagé).
+construction peut attendre un peu (quota partagé) ; elle se fait en arrière-plan, son étape s'affiche, et
+« Annuler » l'arrête.
 
 ## Dossiers
 
