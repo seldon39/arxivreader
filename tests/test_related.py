@@ -171,6 +171,22 @@ class Related(unittest.TestCase):
         self.assertEqual(view["state"], "done")
         self.assertIsNone(view["graph"]["origin"]["libraryId"])  # marqué pour la page
 
+    def test_kept_only_and_busy(self):
+        client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
+        # retour sur la page : marques remises à jour, aucune construction lancée pour un graphe plus gardé
+        with mock.patch.object(related, "graph") as graph:
+            view = client.post("/api/related", json={"query": "0806.2370", "kept": True}).json()
+        self.assertEqual(view["state"], "none")
+        graph.assert_not_called()
+        # trop de constructions en cours : la page dit « un autre graphe… » au lieu d'empiler des fils
+        gate = threading.Event()
+        with mock.patch.object(related, "graph", side_effect=lambda *a: gate.wait(2) and {"origin": {}, "nodes": []}):
+            states = [client.post("/api/related", json={"query": q, "refresh": True}).json()
+                      for q in ("1001.0001", "1001.0002", "1001.0003", "1001.0004")]
+            gate.set()
+        self.assertEqual([s["state"] for s in states], ["building"] * 3 + ["error"])
+        self.assertEqual(states[3]["code"], "busy")
+
     def test_cancel(self):
         # annulée : aussitôt pour la page ; le fil s'arrête à son prochain point de contrôle, rien n'est gardé
         reached, stopped = threading.Event(), threading.Event()

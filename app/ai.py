@@ -46,8 +46,8 @@ def _render(element, out):
     if not isinstance(element, Tag):
         return
     classes = element.get("class") or []
-    if element.name in SKIP or "arx-hidden-text" in classes or "ltx_note_mark" in classes or "ltx_pubnotes" in classes:
-        return  # texte invisible : jamais transmis (il pourrait contenir des consignes cachées)
+    if element.name in SKIP or "arx-hidden-text" in classes or "arx-macro-debris" in classes or "ltx_note_mark" in classes or "ltx_pubnotes" in classes:
+        return  # texte invisible ou non montré : jamais transmis (il pourrait contenir des consignes cachées)
     if element.name == "math":
         tex = " ".join(element.get("alttext", "").split())
         out.append(f"\n$${tex}$$\n" if element.get("display") == "block" else f"${tex}$")

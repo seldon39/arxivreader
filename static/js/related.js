@@ -25,7 +25,7 @@ export async function renderRelated(root, arxivFromRoute = null) {
   // cadre pointillé : champ et boutons, et dessous, l'invitation à y glisser un article (le cadre reçoit le dépôt)
   const form = h("form", { class: "related-input" }, h("span", { class: "search-icon", html: icons.search }), input, pick, build,
     h("p", { class: "muted small related-drop-hint" }, t("related.dropHint")));
-  const status = h("div", { class: "related-status" });
+  const status = h("div", { class: "related-status", role: "status", "aria-live": "polite" });
   const result = h("div", { class: "related-result" });
   root.replaceChildren(h("section", { class: "related-page" },
     h("h1", {}, t("related.title")),
@@ -52,6 +52,11 @@ export async function renderRelated(root, arxivFromRoute = null) {
   function load(query, refresh = false) {
     state.query = query;
     input.value = query;
+    // une autre construction encore en cours (autre article) : annulée, elle n'occuperait plus que le quota
+    if (state.pending) {
+      state.pending.cancelled = true;
+      if (state.pending.id) api.relatedCancel(state.pending.id).catch(() => {});
+    }
     // la demande vit hors de la page : quittée puis rouverte, celle-ci retrouve la construction en cours
     const pending = { query, cancelled: false };
     pending.promise = construct(pending, refresh);
@@ -87,10 +92,12 @@ export async function renderRelated(root, arxivFromRoute = null) {
     status.replaceChildren(h("div", { class: "related-building" },
       h("span", { class: "busy" }, h("span", { class: "spinner" }), t("related.building")), step, cancel));
     try { await pending.promise; } catch { /* erreur montrée ci-dessous */ }
-    if (!root.isConnected || (state.pending && state.pending !== pending)) return;
+    if (!mounted || (state.pending && state.pending !== pending)) return; // page quittée : l'adresse de la page ouverte ne change pas
     build.disabled = false;
     if (pending.error?.code === "cancelled") {
+      const focused = status.contains(document.activeElement);
       status.replaceChildren(h("p", { class: "muted" }, t("related.cancelled")));
+      if (focused) build.focus(); // le bouton « Annuler » disparu : le focus ne retombe pas sur la page
       return;
     }
     if (pending.error) {
@@ -305,7 +312,7 @@ export async function renderRelated(root, arxivFromRoute = null) {
         refresh();
       } catch (error) { toastError(error); add.disabled = false; }
     });
-    const file = h("button", { class: "button small-button", type: "button", "aria-haspopup": "menu" }, h("span", { class: "button-icon", html: icons.folder }), t("select.file"));
+    const file = h("button", { class: "button small-button", type: "button", "aria-haspopup": "menu", "aria-expanded": "false" }, h("span", { class: "button-icon", html: icons.folder }), t("select.file"));
     file.addEventListener("click", () => folderMenu(file, async (folder) => {
       file.disabled = true;
       try {
@@ -331,8 +338,8 @@ export async function renderRelated(root, arxivFromRoute = null) {
       // retour sur la page : « dans la bibliothèque » remis à jour (graphe gardé par le serveur : pas de nouvelle requête)
       const shown = state.graph;
       if (shown.builtAt) { // graphe non gardé (incomplet) : pas reconstruit pour si peu
-        api.related(shown.origin.arxivId).then(({ graph: fresh }) => {
-          if (!fresh || !mounted || state.graph !== shown || state.pending) return; // plus gardé : reconstruit en arrière-plan
+        api.related(shown.origin.arxivId, false, true).then(({ graph: fresh }) => {
+          if (!fresh || !mounted || state.graph !== shown || state.pending) return; // plus gardé : rien (pas de reconstruction cachée)
           if (fresh.builtAt !== shown.builtAt) { state.graph = fresh; draw(); return; }
           // même graphe : seules les marques changent (zoom, défilement et menus restent)
           const marks = new Map([fresh.origin, ...fresh.nodes, ...(fresh.prior || []), ...(fresh.derivative || [])].map((x) => [x.id, x]));
@@ -594,18 +601,22 @@ async function folderMenu(button, choose) {
   };
   const close = () => {
     menu.remove();
+    button.setAttribute("aria-expanded", "false");
     document.removeEventListener("pointerdown", outside);
     removeEventListener("scroll", place, true);
     removeEventListener("resize", place);
     closeFolderMenu = null;
   };
   const outside = (event) => { if (!menu.contains(event.target) && !button.contains(event.target)) close(); };
+  menu.tabIndex = -1; // sans dossier (un simple message) : le menu prend le focus, Échap le ferme quand même
   menu.addEventListener("keydown", (event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); button.focus(); } });
+  menu.addEventListener("focusout", (event) => { if (event.relatedTarget && !menu.contains(event.relatedTarget) && event.relatedTarget !== button) close(); });
   closeFolderMenu = close;
   button.parentElement.append(menu); // à côté du bouton : dans le graphe agrandi aussi (fenêtre de premier plan)
   place();
   addEventListener("scroll", place, true);
   addEventListener("resize", place);
   document.addEventListener("pointerdown", outside);
-  menu.querySelector("button")?.focus();
+  button.setAttribute("aria-expanded", "true");
+  (menu.querySelector("button") || menu).focus();
 }

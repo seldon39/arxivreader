@@ -122,6 +122,7 @@ def checked_paper(paper_id):
 class RelatedRequest(BaseModel):
     query: str
     refresh: bool = False
+    kept: bool = False  # seulement un graphe gardé : aucune construction lancée (marques remises à jour)
 
 
 class ImportRequest(BaseModel):
@@ -758,7 +759,7 @@ async def related_papers(body: RelatedRequest):
         arxiv_id, _ = parse_arxiv_id(body.query[:500])
     except ArxivError:
         return JSONResponse({"error": "bad-id", "code": "bad-id"}, status_code=400)
-    view = await run_in_threadpool(related.start, arxiv_id, db.get_settings().get("s2ApiKey") or None, body.refresh)
+    view = await run_in_threadpool(related.start, arxiv_id, db.get_settings().get("s2ApiKey") or None, body.refresh, body.kept)
     return await run_in_threadpool(_related_view, view)
 
 
@@ -1010,7 +1011,7 @@ def update_settings(values: dict):
 
 
 SETTING_CHOICES = {
-    "language": {"fr", "en"}, "theme": {"auto", "light", "dark"}, "readingWidth": {"narrow", "normal", "wide"},
+    "language": {"fr", "en"}, "theme": {"auto", "light", "dark"}, "readingWidth": {"narrow", "normal", "wide", "xwide", "full"},
     "paperFont": {"auto", "charter", "lm"}, "mathRenderer": {"mathjax", "native"},
     "aiProvider": set(providers.PROVIDERS), "readerView": {"html", "pdf"},
     "feedSort": {"relevance", "arxiv"}, "feedSortS2": {"relevance", "s2"},

@@ -453,7 +453,7 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
       openFolder(folder.id);
       panelOpening = true;
       await reloadFolders();
-    }, () => { creating = false; drawFolders(); }, t("library.folder.create"));
+    }, () => { creating = false; drawFolders(); folderAdd.querySelector("button")?.focus(); }, t("library.folder.create")); // annulé : retour au bouton
     const add = creating
       ? createForm
       : h("button", { class: "button small-button", type: "button", onclick: () => { creating = true; drawFolders(); } },

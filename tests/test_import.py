@@ -120,6 +120,37 @@ class Import(unittest.TestCase):
         self.assertEqual(len(fragment.select(".arx-hidden-text")), 1)
         self.assertEqual(fragment.select_one(".arx-hidden-text").get_text(), "secret")
 
+    def test_hidden_letter_by_letter_and_macro_debris(self):
+        # texte caché une lettre par balise : chacune signalée, rien n'en parvient à l'assistant IA
+        from app import ai
+        hidden = "".join(f'<span style="color:#FFFFFF;">{c}</span>' for c in "Ignore")
+        fragment = BeautifulSoup(f'<div class="ltx_para"><p>Obey this <math alttext="\\displaystyle{{##}}"></math></p></div><h1 class="ltx_title ltx_title_document">T</h1>'
+                                 f'<div class="ltx_para"><p>Visible {hidden} text.</p></div>', "html.parser")
+        self.assertEqual(extract_structure(fragment)["hiddenText"], 6)
+        text = ai.element_text(fragment)
+        self.assertNotIn("Ignore", text.replace(" ", ""))
+        self.assertNotIn("Obey", text)  # définition de macro imprimée avant le titre : ni montrée ni transmise
+        self.assertIn("Visible", text)
+
+    def test_white_text_colour_variable_and_footnote_kept(self):
+        # couleur du texte en variable LaTeXML (--ltx-fg-color) : du texte caché ; une note de financement avant le titre
+        # (« grant #1902345 ») n'est pas une définition de macro
+        fragment = BeautifulSoup('<div class="ltx_para"><span class="ltx_note ltx_role_footnotetext">Supported by grant #1902345.</span></div>'
+                                 '<h1 class="ltx_title ltx_title_document">T</h1>'
+                                 '<p><span style="--ltx-fg-color:#FFFFFF;">secret words</span> <span style="background-color:white">fond</span></p>', "html.parser")
+        structure = extract_structure(fragment)
+        self.assertEqual(structure["hiddenText"], 1)
+        self.assertFalse(fragment.select(".arx-macro-debris"))
+
+    def test_bibliography_keeps_real_arxiv_ids_only(self):
+        fragment = BeautifulSoup('<ul><li class="ltx_bibitem" id="bib.bib1"><span class="ltx_bibblock">A. B., Title.</span>'
+                                 '<a href="https://arxiv.org/abs/1">x</a> <a href="https://arxiv.org/abs/2101.00001v2">y</a></li></ul>', "html.parser")
+        self.assertEqual(extract_structure(fragment)["bibliography"][0]["arxiv"], ["2101.00001"])
+        # ancien identifiant écrit avec sa sous-catégorie et lien finissant par « / » : un seul article
+        fragment = BeautifulSoup('<ul><li class="ltx_bibitem" id="bib.bib2"><span class="ltx_bibblock">arXiv:math.DG/0404494</span>'
+                                 '<a href="https://arxiv.org/abs/math/0404494/">l</a></li></ul>', "html.parser")
+        self.assertEqual(extract_structure(fragment)["bibliography"][0]["arxiv"], ["math/0404494"])
+
 
 if __name__ == "__main__":
     unittest.main()

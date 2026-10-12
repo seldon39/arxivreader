@@ -5,9 +5,9 @@ import re
 
 from bs4 import NavigableString, Tag
 
-from .arxiv import extract_ids
+from .arxiv import ID_RE, extract_ids
 
-STRUCTURE_VERSION = 8  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
+STRUCTURE_VERSION = 9  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
 
 SECTION_LEVELS = {
     "ltx_part": 0, "ltx_chapter": 0, "ltx_section": 1, "ltx_appendix": 1,
@@ -53,10 +53,12 @@ JUSTIFIES_PREVIOUS = re.compile(
 QED_END = re.compile(r"(□|∎|■|\$\\(Box|square|blacksquare|qed|qedsymbol|QED)\$)\s*$")
 
 HIDDEN_STYLE = re.compile(
-    # propriétés elles-mêmes, pas « --ltx-fill-color », « fill-opacity »… (fond blanc d'un encadré TikZ)
-    r"(?<![\w-])(?:color\s*:\s*(#fff(fff)?\b|white|rgba?\([^)]*,\s*0\))"
+    # couleur du texte (aussi « --ltx-fg-color », celle que LaTeXML donne au texte), pas celle d'un fond ou d'un trait
+    # (« --ltx-fill-color », « background-color », « fill-opacity »… : fond blanc d'un encadré TikZ)
+    r"(?<![\w])(?<!fill-)(?<!stroke-)(?<!background-)(?<!border-)(?<!outline-)(?<!flood-)(?<!stop-)(?<!lighting-)"
+    r"(?:color\s*:\s*(#fff(fff)?\b|white|rgba?\([^)]*,\s*0\))"
     r"|font-size\s*:\s*(0*\.\d+|[0-3](\.\d+)?)\s*(px|pt)|font-size\s*:\s*(\d|1\d)(\.\d+)?\s*%"
-    r"|display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0(\.0+)?\s*(;|$))",
+    r"|display\s*:\s*none|visibility\s*:\s*hidden|(?<!fill-)(?<!stroke-)(?<!stop-)(?<!flood-)opacity\s*:\s*0(\.0+)?\s*(;|$))",
     re.I,
 )
 
@@ -566,27 +568,39 @@ def extract_structure(fragment, overrides=None):
         # DOI et identifiants arXiv : dans le texte, ou dans les liens (« Document », « Link »)
         links = " ".join(a.get("href", "") for a in item.select("a[href]"))
         doi = re.search(r"\b10\.\d{4,9}/[^\s\"<>]+", f"{text} {links}")
-        arxiv_links = [m.group(1) for m in re.finditer(r"arxiv\.org/(?:abs|pdf)/([^\s\"?#]+?)(?:v\d+)?(?:\.pdf)?(?=[\s\"?#]|$)", links)]
+        arxiv_links = [m.group(1) for m in re.finditer(r"arxiv\.org/(?:abs|pdf)/([^\s\"?#]+?)(?:v\d+)?(?:\.pdf)?/?(?=[\s\"?#]|$)", links)
+                       if ID_RE.fullmatch(m.group(1))]  # vrais identifiants seulement (lien de forme imprévue : écarté)
         title = item.select_one(".ltx_bib_title")
         bibliography.append({
             "id": ensure_id(item, "bib"),
             "label": squash(plain(tag)).strip("[]") if tag else "",
             "text": text,
             "title": squash(plain(title)) if title else "",
-            "arxiv": list(dict.fromkeys(extract_ids(text) + arxiv_links)),
+            # sans la sous-catégorie des anciens identifiants (math.DG/0404494 et math/0404494 : un seul article)
+            "arxiv": list(dict.fromkeys(re.sub(r"^([a-z-]+)\.[A-Z]{2}/", r"\1/", i) for i in extract_ids(text) + arxiv_links)),
             "doi": doi.group(0).rstrip(".,;") if doi else "",
         })
 
-    # Texte invisible (couleur blanche, police minuscule…) : signalé, et révélable dans le lecteur. Sans aucun mot
-    # (\phantom{0} qui aligne les chiffres d'un tableau), il n'est pas signalé
+    # Texte invisible (couleur blanche, police minuscule…) : signalé, et révélable dans le lecteur. Sans aucune
+    # lettre (\phantom{0} qui aligne les chiffres d'un tableau), il n'est pas signalé ; une seule lettre suffit (texte
+    # caché lettre par lettre, une balise par lettre : il protège l'assistant IA de consignes cachées)
     hidden = 0
     for element in fragment.select(".arx-hidden-text"):  # nouvelle analyse : marques refaites ci-dessous
         element["class"] = [c for c in element["class"] if c != "arx-hidden-text"]
     for element in fragment.find_all(style=True):
-        if HIDDEN_STYLE.search(element["style"]) and re.search(r"[^\W\d_]{2}", element.get_text()):
+        if HIDDEN_STYLE.search(element["style"]) and re.search(r"[^\W\d_]", element.get_text()):
             if "arx-hidden-text" not in (element.get("class") or []):
                 element["class"] = (element.get("class") or []) + ["arx-hidden-text"]
             hidden += 1
+
+    # Définition de macro que LaTeXML n'a pas comprise, imprimée avant le titre (« crcases ## ##{. ») : le lecteur ne
+    # la montre pas, l'assistant IA ne la reçoit pas non plus (rien de caché à l'un qui soit lu par l'autre)
+    title = fragment.find(class_="ltx_title_document")
+    for para in title.find_all_previous(class_="ltx_para") if title else []:
+        tex = " ".join(math.get("alttext", "") for math in para.find_all("math"))
+        classes = para.get("class") or []
+        if re.search(r"#[#\d]", tex) and not para.find(class_="ltx_note") and "arx-macro-debris" not in classes:
+            para["class"] = classes + ["arx-macro-debris"]
 
     return {
         "version": STRUCTURE_VERSION,

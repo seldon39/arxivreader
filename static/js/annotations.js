@@ -15,7 +15,7 @@ import { debounce, h, icons, toast, toastError } from "./util.js";
 
 export const COLORS = ["yellow", "green", "blue", "pink"];
 export const STATES = ["understood", "review", "verified"];
-const UI = ".proof-toggle, .block-note, .state-pill, .proof-pointer";
+const UI = ".proof-toggle, .block-note, .state-pill, .proof-pointer, .picture-missing"; // ajouts de l'application (pas du texte)
 
 // ---------- Texte logique ----------
 

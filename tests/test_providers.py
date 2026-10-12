@@ -333,6 +333,9 @@ class Settings(unittest.TestCase):
         put = lambda values: self.client.put("/api/settings", json=values).status_code  # noqa: E731
         self.assertEqual(put({"aiProvider": "codex"}), 200)
         self.assertEqual(put({"aiProvider": "skynet"}), 400)
+        for width in ("narrow", "normal", "wide", "xwide", "full"):  # les cinq largeurs du lecteur (settings.js)
+            self.assertEqual(put({"readingWidth": width}), 200, width)
+        self.assertEqual(put({"readingWidth": "huge"}), 400)
         self.assertEqual(put({"aiLocalUrl": "http://localhost:1234/v1", "aiLocalModel": "qwen3:32b"}), 200)
         self.assertEqual(put({"aiLocalUrl": "http://192.168.1.5:11434/v1"}), 400)  # sur cet ordinateur seulement
         self.assertEqual(put({"aiLocalUrl": "https://api.openai.com/v1"}), 400)

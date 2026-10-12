@@ -100,7 +100,7 @@ export async function pdfWords(app) {
 
 // ---------- Texte du HTML ----------
 
-const SKIP = "mjx-container, math, .ltx_note_outer, .ltx_tag_equation, .eq-number, .proof-toggle, .block-note, .tex-statements, .tex-macros";
+const SKIP = "mjx-container, math, .ltx_note_outer, .ltx_tag_equation, .eq-number, .proof-toggle, .block-note, .tex-statements, .tex-macros, .picture-missing";
 
 // Suite des mots de prose de l'article, chacun avec son nœud de texte ; « segment » change à chaque formule
 export function htmlWords(root) {

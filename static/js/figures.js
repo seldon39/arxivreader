@@ -82,13 +82,16 @@ function layoutFigure(card) {
 // images du dessin). Le dessin vide de taille nulle que LaTeXML met juste avant est compté avec lui.
 const DRAWING = "path, line, rect, circle, ellipse, polygon, polyline, image, use, img";
 export function emptyPictures(root) {
-  return [...root.querySelectorAll(".ltx_picture")].filter((picture) => {
-    const svg = picture.matches("svg") ? picture : picture.querySelector("svg");
+  // span.ltx_picture : environnement picture ou PSTricks ; les dessins TikZ (svg.ltx_picture), faits parfois de
+  // seuls nœuds (texte sans trait), ne sont pas concernés
+  return [...root.querySelectorAll(".ltx_picture:not(svg)")].filter((picture) => {
+    const svg = picture.querySelector("svg");
     if (!svg || picture.querySelector(DRAWING)) return false;
     return Number(svg.getAttribute("width")) > 20 && Number(svg.getAttribute("height")) > 20;
   }).map((picture) => {
     const before = picture.previousElementSibling;
-    const twin = before?.matches(".ltx_picture") && !before.querySelector(DRAWING) && !Number(before.querySelector("svg")?.getAttribute("width"));
+    const beforeSvg = before?.matches("svg") ? before : before?.querySelector("svg");
+    const twin = before?.matches(".ltx_picture") && beforeSvg && !before.querySelector(DRAWING) && !Number(beforeSvg.getAttribute("width"));
     return twin ? [before, picture] : [picture];
   });
 }

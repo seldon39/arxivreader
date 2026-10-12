@@ -64,10 +64,11 @@ class Job:
     def __init__(self, arxiv_id):
         self.arxiv_id = arxiv_id
         self.state = "building"  # building, done, error, cancelled
-        self.step, self.done, self.total = "waiting", 0, 0
+        self.step, self.done, self.total = "start", 0, 0  # « waiting » seulement derrière une autre construction
         self.result = None
         self.error = None
         self.cancel = threading.Event()
+        self.ended = None  # fin (time.monotonic) : la construction est oubliée un peu après
 
     def view(self):
         return {"id": self.arxiv_id, "state": self.state, "step": self.step, "done": self.done, "total": self.total,
@@ -75,6 +76,8 @@ class Job:
 
 
 _jobs = {}                      # identifiant arXiv → dernière construction
+MAX_BUILDING = 3                # constructions en cours au plus (une à la fois avance, les autres attendent)
+FORGET = 600                    # secondes après lesquelles une construction finie est oubliée (son graphe est gardé en base)
 _jobs_lock = threading.Lock()
 _current = threading.local()    # construction menée par ce fil (aucune : appel direct, tests)
 
@@ -443,17 +446,24 @@ def graph(arxiv_id, api_key=None, refresh=False):
         _lock.release()
 
 
-def start(arxiv_id, api_key=None, refresh=False):
+def start(arxiv_id, api_key=None, refresh=False, kept=False):
     """Graphe gardé : rendu tout de suite ; sinon construit en arrière-plan (la page suit status()). Une demande
-    pour un article déjà en construction suit celle-ci."""
+    pour un article déjà en construction suit celle-ci. `kept` : rien n'est lancé s'il n'y a pas de graphe gardé."""
     _ensure()
     arxiv_id = normalize(arxiv_id)
     if not refresh and (found := _cached(arxiv_id)):
         return {"id": arxiv_id, "state": "done", "graph": found}
+    if kept:
+        return {"id": arxiv_id, "state": "none"}
     with _jobs_lock:
+        now = time.monotonic()
+        for key in [k for k, j in _jobs.items() if j.ended and now - j.ended > FORGET]:
+            del _jobs[key]
         job = _jobs.get(arxiv_id)
         if job and job.state == "building":
             return job.view()
+        if sum(1 for j in _jobs.values() if j.state == "building") >= MAX_BUILDING:
+            return {"id": arxiv_id, "state": "error", "code": "busy"}  # la page le dit (« un autre graphe… »)
         job = _jobs[arxiv_id] = Job(arxiv_id)
     threading.Thread(target=_run, args=(job, api_key, refresh), daemon=True, name=f"related {arxiv_id}").start()
     return job.view()
@@ -474,6 +484,7 @@ def _run(job, api_key, refresh):
                 else f"{type(error).__name__}: {error}"[:300]
             job.state = "error"
     finally:
+        job.ended = time.monotonic()
         _current.job = None
 
 

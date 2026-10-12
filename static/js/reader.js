@@ -1205,7 +1205,9 @@ class Reader {
         link.dataset.arxiv = id;
         link.title = t("reader.readArxiv");
       }
-      const pattern = new RegExp(`(?:arXiv:\\s*)?(?<![\\w.])(${ids.map(escape).join("|")})(?:v\\d+)?(?![\\w])`, "g");
+      // ancien identifiant : écrit aussi avec sa sous-catégorie dans le texte (math.DG/0404494 pour math/0404494)
+      const written = (id) => escape(id).replace(/^([a-z-]+)\\\//, "$1(?:\\.[A-Z]{2})?\\/");
+      const pattern = new RegExp(`(?:arXiv:\\s*)?(?<![\\w.])(${ids.map(written).join("|")})(?:v\\d+)?(?![\\w])`, "g");
       const walker = document.createTreeWalker(item, NodeFilter.SHOW_TEXT,
         { acceptNode: (node) => (node.parentElement.closest("a, math") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
       const texts = [];
@@ -1216,14 +1218,15 @@ class Reader {
         const parts = [];
         let last = 0;
         for (const match of matches) {
-          parts.push(text.data.slice(last, match.index), h("a", { href: `https://arxiv.org/abs/${match[1]}`, title: t("reader.readArxiv"), dataset: { arxiv: match[1] } }, match[0]));
+          const id = match[1].replace(/^([a-z-]+)\.[A-Z]{2}\//, "$1/");
+          parts.push(text.data.slice(last, match.index), h("a", { href: `https://arxiv.org/abs/${id}`, title: t("reader.readArxiv"), dataset: { arxiv: id } }, match[0]));
           last = match.index + match[0].length;
         }
         text.replaceWith(...parts, text.data.slice(last));
       }
       // identifiant pas affiché (mise en page AMS, qui ne reprend pas les « External Links » de LaTeXML ; lien
       // seulement sur le titre) : « , arXiv:… » en fin de référence
-      const shown = [...item.querySelectorAll("a[data-arxiv]")].filter((link) => link.textContent.includes(link.dataset.arxiv)).map((link) => link.dataset.arxiv);
+      const shown = [...item.querySelectorAll("a[data-arxiv]")].filter((link) => link.textContent.replace(/^(.*?[a-z-]+)\.[A-Z]{2}\//, "$1/").includes(link.dataset.arxiv)).map((link) => link.dataset.arxiv);
       const block = item.querySelector(".ams-bib") || [...item.querySelectorAll(".ltx_bibblock:not(.ltx_bib_cited)")].at(-1);
       for (const id of ids.filter((arxivId) => !shown.includes(arxivId))) {
         if (!block) break;
@@ -1238,7 +1241,9 @@ class Reader {
   // Dessin absent de la version HTML : avertissement, et le PDF à cet endroit
   pictureNotice() {
     const open = h("button", { type: "button" }, t("reader.pictureInPdf"));
-    const notice = h("div", { class: "notice picture-missing" }, h("span", { class: "reason-icon", html: icons.warning }), t("reader.pictureMissing"), open);
+    // ajout de l'application dans l'article : ni surligné ni compté dans les surlignages, et dans la langue de l'interface
+    const notice = h("div", { class: "notice picture-missing", lang: document.documentElement.lang || null },
+      h("span", { class: "reason-icon", html: icons.warning }), t("reader.pictureMissing"), open);
     open.addEventListener("click", () => {
       notice.scrollIntoView({ block: "start", behavior: "instant" }); // la bascule ouvre le PDF à l'endroit lu
       this.setView("pdf");
@@ -1254,7 +1259,8 @@ class Reader {
     link.dataset.loading = "1";
     try {
       const paper = await api.importPaper(link.dataset.arxiv, false);
-      openRoute(`#/paper/${encodeURIComponent(paper.id)}`, true, front);
+      const app = Boolean(window.webkit?.messageHandlers?.arxivreader); // navigateur : pas de fenêtre ouverte après un await
+      openRoute(`#/paper/${encodeURIComponent(paper.id)}`, app, front);
     } catch (error) {
       toast(error.message, { error: true });
     } finally {

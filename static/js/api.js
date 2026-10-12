@@ -42,7 +42,8 @@ export const api = {
   refresh: (id) => request("POST", `/api/papers/${encodeURIComponent(id)}/refresh`, {}),
   importing: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/importing`),
   search: (query) => request("POST", "/api/search", query),
-  related: (query, refresh = false) => request("POST", "/api/related", { query, refresh }),
+  // `kept` : seulement un graphe déjà gardé (aucune construction lancée)
+  related: (query, refresh = false, kept = false) => request("POST", "/api/related", { query, refresh, kept }),
   relatedStatus: (id) => request("GET", `/api/related/status?id=${encodeURIComponent(id)}`),
   relatedCancel: (id) => request("POST", "/api/related/cancel", { id }),
   feed: (view, day) => request("GET", `/api/feed?view=${encodeURIComponent(view)}${day ? `&day=${day}` : ""}`),

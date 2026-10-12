@@ -96,8 +96,8 @@ the seminal works) and derivative works (those citing the most papers in the gra
 choosing one highlights the papers in the graph linked to it. Graph: the closer two papers, the nearer they are drawn; only each paper's strongest links are drawn, all those of the chosen paper appear; size by
 citations, colour by year, a ring for those in the library; pinch (or ⌘ + scroll, or the − + buttons) to zoom, drag the background to move; the graph can be enlarged to the whole window (Esc to return, keys + − 0). The
 chosen paper can be read, added to the library, filed in a folder (or dragged onto one), or become the start of a
-new graph. A graph is kept fifteen days ("Rebuild" to redo it). Without a Semantic Scholar API key, building may
-take a little longer (shared quota); it runs in the background, shows its current step, and "Cancel" stops it.
+new graph. A graph is kept fifteen days ("Rebuild" to redo it). Building takes from a few seconds to several
+minutes without a Semantic Scholar API key (shared quota); it runs in the background, shows its current step, and "Cancel" stops it.
 
 ## Folders
 
@@ -105,7 +105,7 @@ In the library, a row of folders comes before the full list of papers (which sta
 Clicking a folder unfolds it just below, with its papers; "Rename", "Delete folder" (can be undone; its
 papers stay in the library) and "Close"; its "Sort" and "Filters" buttons offer the same
 choices as the library's (without the folder filter), sorting adding relevance to your profile (computed as for the feed, a paper not being compared with itself),
-and a keyword search narrows the folder's list (title, authors, abstract, identifier, categories). The folder button of each paper opens "File in a folder":
+and a keyword search narrows the folder's list (title, authors, abstract, identifier, categories). The folder button of each paper opens "File in…":
 folders to tick, or a new folder. A paper can also be dragged (by its title) onto a folder or into the open
 folder, from the library, the feed, the search, another arXivReader window, or as an arXiv link from elsewhere
 (Safari…); a paper not yet in the library is imported first. Dropped on the general list ("Other papers"), a paper

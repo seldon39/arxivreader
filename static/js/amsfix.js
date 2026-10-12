@@ -302,14 +302,15 @@ function authorLines(content) {
 }
 
 // Définition de macro que LaTeXML n'a pas comprise, imprimée avant le titre (« crcases ## ##{. ») : les
-// paramètres « ## », « #1 » la trahissent (un vrai texte d'en-tête n'en a pas)
+// paramètres « ## », « #1 » dans ses formules la trahissent (un vrai texte d'en-tête n'en a pas)
 export function dropMacroDebris(content) {
   const title = content.querySelector(".ltx_title_document");
   if (!title) return;
   for (const para of content.querySelectorAll(".ltx_para")) {
     if (!(para.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING)) break;
     const tex = [...para.querySelectorAll("math")].map((math) => math.getAttribute("alttext") || "").join(" ");
-    if (/#[#\d]/.test(`${tex} ${para.textContent}`)) para.remove();
+    // paramètres dans une formule (pas « grant #1902345 » en texte) ; jamais une note (\footnotetext du début)
+    if (para.classList.contains("arx-macro-debris") || (/#[#\d]/.test(tex) && !para.querySelector(".ltx_note"))) para.remove();
   }
 }
 
