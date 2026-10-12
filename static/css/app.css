@@ -751,12 +751,16 @@ svg.graph { color: var(--border-strong); }
 }
 :root[data-theme="dark"] { --hl-yellow: rgba(250, 214, 60, .32); --hl-green: rgba(80, 200, 120, .3); --hl-blue: rgba(100, 155, 255, .32); --hl-pink: rgba(255, 110, 170, .3); }
 
-mark.hl { color: inherit; border-radius: 2px; padding: 0 1px; cursor: pointer; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+/* morceaux voisins (texte, formules) : ni débord ni coins arrondis, sinon leurs fonds translucides se superposent en
+   bandes plus foncées aux jonctions */
+mark.hl { color: inherit; border-radius: 0; padding: 0; cursor: pointer; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 mark.hl-yellow, .hl-dot.hl-yellow { background: var(--hl-yellow); }
 mark.hl-green, .hl-dot.hl-green { background: var(--hl-green); }
 mark.hl-blue, .hl-dot.hl-blue { background: var(--hl-blue); }
 mark.hl-pink, .hl-dot.hl-pink { background: var(--hl-pink); }
 mark.hl:hover { filter: brightness(.95); }
+mark.hl.hl-display { display: inline-block; padding: 2px 6px; border-radius: 4px; vertical-align: middle; }
+mark.hl.hl-display > mjx-container[display="true"] { margin: .2em 0 !important; }
 
 .hl-toolbar {
   position: fixed; z-index: 55; display: flex; align-items: center; gap: 6px; padding: 6px 8px;

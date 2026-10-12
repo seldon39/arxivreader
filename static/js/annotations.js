@@ -220,11 +220,18 @@ function paint(root, annotation) {
     }
     if (unit === to.unit) break;
   }
+  // blancs au début ou à la fin du passage (l'espace avant le premier mot) : pas marqués
+  const blank = ({ unit, a, b }) => unit.nodeType === 3 && !unit.data.slice(a, b).trim();
+  while (segments.length && blank(segments[0])) segments.shift();
+  while (segments.length && blank(segments.at(-1))) segments.pop();
   if (!segments.length) return false;
   const mark = () => h("mark", { class: `hl hl-${annotation.color || "yellow"}`, dataset: { annotation: annotation.id } });
   for (const { unit, a, b } of segments) {
     if (unit.nodeType === 3) {
-      if (!unit.data.slice(a, b).trim() && /^(TABLE|TBODY|TR|THEAD)$/.test(unit.parentElement.tagName)) continue;
+      // blanc de mise en page (entre deux blocs, autour d'une équation hors texte) : pas de marque (elle s'afficherait
+      // en barre verticale de la hauteur d'une ligne) ; une espace entre deux mots ou formules reste marquée
+      const text = unit.data.slice(a, b);
+      if (!text.trim() && (text.includes("\n") || /^(TABLE|TBODY|TR|THEAD|TD|DIV)$/.test(unit.parentElement.tagName))) continue;
       let piece = unit;
       if (b < unit.data.length) unit.splitText(b);
       if (a > 0) piece = unit.splitText(a);
@@ -233,6 +240,8 @@ function paint(root, annotation) {
       wrapper.append(piece);
     } else {
       const wrapper = mark();
+      // formule hors texte (un bloc) : la marque l'épouse (une marque en ligne ne colorerait pas son fond)
+      if (unit.matches("mjx-container[display='true'], math[display='block']") || unit.querySelector?.("mjx-container[display='true']")) wrapper.classList.add("hl-display");
       unit.replaceWith(wrapper);
       wrapper.append(unit);
     }
