@@ -51,7 +51,7 @@
 .ltx_font_medium { font-weight: 400; }
 .ltx_font_serif { font-family: var(--paper-font); }
 .ltx_font_italic { font-style: italic; }
-.ltx_font_upright { font-style: normal; }
+.ltx_font_upright { font-style: normal; font-variant: normal; } /* \upshape annule aussi les petites capitales */
 .ltx_font_smallcaps { font-variant: small-caps; }
 .ltx_font_typewriter { font-family: var(--font-mono); font-size: .9em; }
 .ltx_font_sansserif { font-family: var(--font-ui); }

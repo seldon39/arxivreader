@@ -301,6 +301,18 @@ function authorLines(content) {
   return [h("details", { class: "ltx_titlenote ltx_affiliations" }, h("summary", {}, t("reader.affiliations", { n: lines.length })), ...lines)];
 }
 
+// Définition de macro que LaTeXML n'a pas comprise, imprimée avant le titre (« crcases ## ##{. ») : les
+// paramètres « ## », « #1 » la trahissent (un vrai texte d'en-tête n'en a pas)
+export function dropMacroDebris(content) {
+  const title = content.querySelector(".ltx_title_document");
+  if (!title) return;
+  for (const para of content.querySelectorAll(".ltx_para")) {
+    if (!(para.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING)) break;
+    const tex = [...para.querySelectorAll("math")].map((math) => math.getAttribute("alttext") || "").join(" ");
+    if (/#[#\d]/.test(`${tex} ${para.textContent}`)) para.remove();
+  }
+}
+
 // \thanks d'amsart : LaTeXML les met dans le titre ; ils rejoignent les notes de première page
 // (mots-clés, classification), sous le résumé. De même pour les notes sans appel du début de l'article
 // (\footnotetext : financements, adresses), que LaTeXML numérote « 0 » et place avant le titre.

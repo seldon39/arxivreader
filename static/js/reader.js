@@ -4,7 +4,7 @@ import { api } from "./api.js";
 import { closure, renderGraph } from "./graph.js";
 import { Annotator, findAll, noteEditor } from "./annotations.js";
 import { Assistant } from "./ai.js";
-import { alignNumberColumns, amsBibliography, fixMathML, splitLongInlineMath, markItalicStatements, moveTitleNotes, normalizeFontScale, placeEquationNumbers, relabelLists } from "./amsfix.js";
+import { alignNumberColumns, amsBibliography, dropMacroDebris, fixMathML, splitLongInlineMath, markItalicStatements, moveTitleNotes, normalizeFontScale, placeEquationNumbers, relabelLists } from "./amsfix.js";
 import { currentModel } from "./aiproviders.js";
 import { layoutFigures, openFigure, prepareFigures } from "./figures.js";
 import { findBar, setFindHandler } from "./find.js";
@@ -625,6 +625,7 @@ class Reader {
     const dates = this.content.querySelector(".ltx_dates");
     const frontNotes = this.content.querySelectorAll(".ltx_keywords, .ltx_classification");
     if (dates && frontNotes.length) frontNotes[frontNotes.length - 1].after(dates);
+    dropMacroDebris(this.content);
     moveTitleNotes(this.content);
     const front = this.content.querySelectorAll(".ltx_abstract, .ltx_keywords, .ltx_classification, .ltx_dates, .ltx_titlenotes");
     if (front.length) [...front].sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1)).at(-1).classList.add("front-last");
