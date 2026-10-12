@@ -393,10 +393,14 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
 
   // ---- Dossiers : rangée de cartes, dossier ouvert dessous (déroulé), menu « Ranger dans… » des articles ----
   // le dossier ouvert reste le même élément : il se déroule et s'enroule (transition), sans être recréé
+  // en-tête : titre, et au bout de la ligne « Nouveau dossier » (hors de la grille : le dossier ouvert se déroule
+  // juste sous les dossiers, sans ce bouton entre les deux)
   const foldersTitle = h("h2", { id: "folders-title" });
+  const folderAdd = h("div", { class: "folders-add" });
   const folderGrid = h("div", { class: "folder-grid" });
   const panel = h("div", { class: "folder-panel", id: "folder-panel" }, h("div", { class: "folder-panel-inner" }));
-  const foldersBox = h("section", { class: "folders", "aria-labelledby": "folders-title" }, foldersTitle, folderGrid, panel);
+  const foldersBox = h("section", { class: "folders", "aria-labelledby": "folders-title" },
+    h("div", { class: "folders-head" }, foldersTitle, folderAdd), folderGrid, panel);
   let creating = false;
   const inLibrary = (folder) => folder.papers.filter((id) => papers.some((p) => p.id === id));
   // dossiers changés : liste relue (cartes, pastilles des articles, dossier ouvert)
@@ -435,19 +439,20 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
         () => folder.id);
     });
     if (!creating) createForm = null;
-    createForm ||= creating && h("div", { class: "folder folder-new editing" }, nameForm("", async (name) => {
+    createForm ||= creating && nameForm("", async (name) => {
       const folder = await api.createFolder(name);
       creating = false;
       openFolder(folder.id);
       panelOpening = true;
       await reloadFolders();
-    }, () => { creating = false; drawFolders(); }, t("library.folder.create")));
+    }, () => { creating = false; drawFolders(); }, t("library.folder.create"));
     const add = creating
       ? createForm
-      : h("button", { class: "folder folder-new", type: "button", onclick: () => { creating = true; drawFolders(); } },
-        h("span", { class: "folder-icon", html: icons.add }), t("library.folder.new"));
+      : h("button", { class: "button small-button", type: "button", onclick: () => { creating = true; drawFolders(); } },
+        h("span", { class: "button-icon", html: icons.folderAdd }), t("library.folder.new"));
     foldersTitle.textContent = folderList.length ? t("library.foldersCount", { n: folderList.length }) : t("library.folders");
-    folderGrid.replaceChildren(...cards, add);
+    if (folderAdd.firstChild !== add) folderAdd.replaceChildren(add); // formulaire gardé : la saisie continue
+    folderGrid.replaceChildren(...cards);
     keepFocus(drawPanel); // redessin au retour dans l'application, après une action : la frappe en cours continue
   }
 
