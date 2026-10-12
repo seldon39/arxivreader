@@ -81,6 +81,9 @@
 [hidden] { display: none !important; }
 .tex { font-family: var(--font-math); font-style: italic; }
 html, body { margin: 0; }
+/* place de la barre de défilement toujours réservée (barres visibles avec une souris) : une liste qui s'allonge
+   (dossiers déroulés) ne décale plus la page vers la gauche */
+html { scrollbar-gutter: stable; }
 body { min-height: 100vh; }
 body { background: var(--bg); color: var(--text); font: 15px/1.5 var(--font-ui); -webkit-font-smoothing: antialiased; }
 body.reading { background: var(--surface); } /* lecteur : zones pas encore dessinées au défilement de la couleur de l'article */
