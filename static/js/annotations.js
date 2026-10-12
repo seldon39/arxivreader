@@ -265,6 +265,49 @@ function quoteOf(range, limit = 1500) {
   return parts.join("").replace(/\s+/g, " ").trim().slice(0, limit);
 }
 
+// Sélection en texte, formules en LaTeX (« $…$ » en ligne, « \[ … \] » hors texte, sur sa ligne), paragraphes
+// séparés par une ligne vide : pour la copier (⌘C, bouton « TeX ») au lieu des symboles de MathJax
+function rangeTex(range) {
+  const start = mathOf(range.startContainer.nodeType === 3 ? range.startContainer.parentElement : range.startContainer);
+  const end = mathOf(range.endContainer.nodeType === 3 ? range.endContainer.parentElement : range.endContainer);
+  if (start && start === end) return texOf(start).trim(); // sélection dans une seule formule
+  const box = range.commonAncestorContainer.nodeType === 3 ? range.commonAncestorContainer.parentElement : range.commonAncestorContainer;
+  let out = "";
+  let block = null;
+  for (const unit of units(box)) {
+    if (!range.intersectsNode(unit)) continue;
+    const element = unit.nodeType === 3 ? unit.parentElement : unit;
+    const paragraph = element.closest(".ltx_para, p, li, .ltx_equation, .ltx_equationgroup, tr, h1, h2, h3, h4, h5, h6");
+    if (block && paragraph !== block && out.trim()) out = `${out.trimEnd()}\n\n`;
+    block = paragraph;
+    if (unit.nodeType === 3) {
+      const a = unit === range.startContainer ? range.startOffset : 0;
+      const b = unit === range.endContainer ? range.endOffset : unit.data.length;
+      out += unit.data.slice(a, b).replace(/\s+/g, " ");
+    } else {
+      const tex = texOf(unit).trim();
+      const display = unit.matches("mjx-container[display='true'], math[display='block']") || unit.querySelector?.("mjx-container[display='true']");
+      out += display ? `\n\\[ ${tex} \\]\n` : `$${tex}$`;
+    }
+  }
+  return out.replace(/[ \t]+\n/g, "\n").replace(/\n[ \t]+/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch { // presse-papiers refusé (hors geste de l'utilisateur…) : ancienne méthode
+    const area = h("textarea", { style: "position: fixed; opacity: 0" }, text);
+    document.body.append(area);
+    area.select();
+    document.execCommand("copy");
+    area.remove();
+  }
+}
+
+const hasMath = (range) => Boolean(range.cloneContents().querySelector(MATH)
+  || mathOf(range.startContainer.nodeType === 3 ? range.startContainer.parentElement : range.startContainer));
+
 // Annotation proposée par l'IA (et acceptée) : signalée comme telle, avec le nom de l'assistant
 function authorBadge(annotation) {
   return annotation.author
@@ -453,6 +496,24 @@ export class Annotator {
       }, 350);
       document.addEventListener("selectionchange", this.onSelection);
     }
+    // ⌘C d'un passage avec des formules : formules en LaTeX dans le texte copié (au lieu des symboles de MathJax)
+    this.content.addEventListener("copy", (event) => {
+      const selection = getSelection();
+      if (!selection.rangeCount || selection.isCollapsed || !hasMath(selection.getRangeAt(0))) return;
+      event.clipboardData.setData("text/plain", rangeTex(selection.getRangeAt(0)));
+      event.preventDefault();
+    });
+    // ⌥-clic sur une formule : son TeX copié
+    this.content.addEventListener("click", async (event) => {
+      if (!event.altKey || !getSelection().isCollapsed) return;
+      const math = mathOf(event.target.closest?.(MATH));
+      const tex = math && texOf(math).trim();
+      if (!tex) return;
+      event.preventDefault();
+      event.stopPropagation();
+      await copyText(tex);
+      toast(t("notes.texCopied"));
+    }, true);
     this.content.addEventListener("click", (event) => {
       const mark = event.target.closest("mark.hl");
       if (!mark || !getSelection().isCollapsed) return;
@@ -496,7 +557,10 @@ export class Annotator {
       h("button", { type: "button", class: "hl-note-button", title: t("notes.addNote"), "aria-label": t("notes.addNote"), html: icons.note,
         onclick: () => create("yellow", true) }),
       this.onAskAI && h("button", { type: "button", class: "hl-note-button", title: t("ai.askPassage"), "aria-label": t("ai.askPassage"), html: icons.sparkle,
-        onclick: () => { const quote = quoteOf(range, 12000); selection.removeAllRanges(); this.hideToolbar(); this.onAskAI(quote); } }));
+        onclick: () => { const quote = quoteOf(range, 12000); selection.removeAllRanges(); this.hideToolbar(); this.onAskAI(quote); } }),
+      // passage avec des formules : copié en LaTeX
+      hasMath(range) && h("button", { type: "button", class: "hl-note-button hl-tex-button", title: t("notes.copyTex"), "aria-label": t("notes.copyTex"),
+        onclick: async () => { await copyText(rangeTex(range)); this.hideToolbar(); toast(t("notes.texCopied")); } }, "TeX"));
     document.body.append(this.toolbar);
     const width = this.toolbar.offsetWidth;
     this.toolbar.style.left = `${Math.max(8, Math.min(innerWidth - width - 8, rect.left + rect.width / 2 - width / 2))}px`;

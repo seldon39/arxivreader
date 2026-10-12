@@ -62,6 +62,9 @@ http://127.0.0.1:8710/ ; le serveur n'écoute que sur ce Mac (pas sur le Wi-Fi).
   à sa place, avec un bouton « Voir dans le PDF ».
 - **Affiliations des auteurs** sous le résumé, une ligne par auteur (nom, adresse, courriel), avec les notes de
   première page (financements, mots-clés, classification).
+- **Formules copiées en LaTeX** : ⌘C sur une sélection copie ses formules en `$…$` (en ligne) et `\[…\]` (hors
+  texte) au lieu des symboles de MathJax ; un bouton « TeX » fait de même dans la barre de sélection ; ⌥-clic sur
+  une formule : son TeX seul.
 - **Aperçu au survol** de tout renvoi (théorème, équation, référence, note) ; clic = aller à l'endroit,
   avec un bouton « Retour ».
 - **Preuves repliables** ; les preuves écrites à la main (« *Proof.* … □ ») sont repérées automatiquement.
