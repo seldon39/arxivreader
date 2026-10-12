@@ -7,6 +7,8 @@ preuves navigables, graphe des dépendances, notes et surlignages, feed des nouv
 et un assistant IA (Claude, Codex, Gemini ou un modèle local) qui ne voit que le texte de l'article.
 Tout reste sur votre Mac : le serveur n'écoute que sur 127.0.0.1. Interface en français et en anglais.
 
+**Tout retour est le bienvenu** : un bug, un article qui s'affiche mal, une fonction qui manque… [Ouvrez une issue](https://github.com/seldon39/arxivreader/issues), ou écrivez-moi depuis [mon site](https://razvan-apredoaei.netlify.app/fr/contact/).
+
 ## Installer
 
 Télécharger `arXivReader.dmg` depuis la page [Releases](https://github.com/seldon39/arxivreader/releases)

@@ -7,6 +7,8 @@ proofs, dependency graph, notes and highlights, a feed of new papers sorted by y
 assistant (Claude, Codex, Gemini or a local model) that only sees the text of the paper.
 Everything stays on your Mac: the server only listens on 127.0.0.1. French and English interface.
 
+**Any feedback is welcome**: a bug, a paper that displays badly, a missing feature… [Open an issue](https://github.com/seldon39/arxivreader/issues), or write to me through [my website](https://razvan-apredoaei.netlify.app/contact/).
+
 ## Install
 
 Download `arXivReader.dmg` from the [Releases](https://github.com/seldon39/arxivreader/releases) page
