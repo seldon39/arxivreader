@@ -200,8 +200,8 @@ Les articles déjà importés sont ré-analysés automatiquement quand cette ana
 Quand une référence de la bibliographie est un article lu ici (même identifiant arXiv, même DOI, ou titre
 retrouvé dans la référence), « [12, Theorem 4.3] » affiche au survol le Theorem 4.3 de cet article, avec un
 bouton pour l'ouvrir à cet endroit ; dans la bibliographie, une pastille « Ouvrir l'article ».
-Les identifiants arXiv de la bibliographie (« arXiv:2101.00001 ») ouvrent l'article cité dans l'application
-(⌘-clic : nouvel onglet), qu'il soit dans la bibliothèque ou non.
+Les identifiants arXiv de la bibliographie (« arXiv:2101.00001 ») ouvrent l'article cité dans un nouvel onglet
+(⌘-clic : en arrière-plan), qu'il soit dans la bibliothèque ou non ; l'article lu reste dans le sien.
 
 ## Articles sans version HTML
 

@@ -192,8 +192,8 @@ Papers already imported are re-analysed automatically when this analysis changes
 When a bibliography entry is a paper read here (same arXiv identifier, same DOI, or title found in the
 entry), hovering "[12, Theorem 4.3]" shows Theorem 4.3 of that paper, with a button to open it at that
 place; in the bibliography, an "Open the paper" pill.
-arXiv identifiers in the bibliography ("arXiv:2101.00001") open the cited paper in the app (⌘-click: new
-tab), whether it is in the library or not.
+arXiv identifiers in the bibliography ("arXiv:2101.00001") open the cited paper in a new tab (⌘-click: in
+the background), whether it is in the library or not; the paper you were reading stays in its own tab.
 
 ## Papers without an HTML version
 

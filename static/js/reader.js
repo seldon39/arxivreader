@@ -1246,15 +1246,15 @@ class Reader {
     return notice;
   }
 
-  // Article cité ouvert dans l'application (⌘-clic : nouvel onglet), comme « Lire » dans le flux
+  // Article cité ouvert dans l'application, dans un nouvel onglet (l'article lu reste à sa place dans le sien) :
+  // au premier plan ; ⌘-clic, en arrière-plan (⇧ : au premier plan quand même)
   async readArxiv(link, event) {
-    const newTab = wantsNewTab(event);
-    const front = event.shiftKey;
+    const front = !wantsNewTab(event) || event.shiftKey;
     if (link.dataset.loading) return;
     link.dataset.loading = "1";
     try {
       const paper = await api.importPaper(link.dataset.arxiv, false);
-      openRoute(`#/paper/${encodeURIComponent(paper.id)}`, newTab, front);
+      openRoute(`#/paper/${encodeURIComponent(paper.id)}`, true, front);
     } catch (error) {
       toast(error.message, { error: true });
     } finally {
