@@ -40,8 +40,12 @@ function* units(root) {
 const size = (unit) => (unit.nodeType === 3 ? unit.data.length : 1);
 const texOf = (math) => math.dataset?.tex || math.getAttribute?.("alttext") || "";
 
+// Bloc repère d'une extrémité : l'élément à identifiant le plus proche, jamais une formule ni l'intérieur d'une
+// formule (rien n'y est compté : une sélection finie dans une équation n'aurait rien eu à surligner)
 function container(node, root) {
-  const element = (node.nodeType === 3 ? node.parentElement : node).closest("[id]");
+  let element = (node.nodeType === 3 ? node.parentElement : node).closest("[id]");
+  const math = mathOf(element);
+  if (math) element = math.parentElement?.closest("[id]");
   return element && root.contains(element) ? element : root;
 }
 
@@ -200,11 +204,23 @@ export function rangeForQuote(root, quote, scopes = []) {
 function paint(root, annotation) {
   textVersion++;
   const { start, end } = annotation.target || {};
-  const startBox = start && (start.id ? root.querySelector(`[id="${CSS.escape(start.id)}"]`) : root);
-  const endBox = end && (end.id ? root.querySelector(`[id="${CSS.escape(end.id)}"]`) : root);
+  let startBox = start && (start.id ? root.querySelector(`[id="${CSS.escape(start.id)}"]`) : root);
+  let endBox = end && (end.id ? root.querySelector(`[id="${CSS.escape(end.id)}"]`) : root);
   if (!startBox || !endBox) return false;
-  const from = locate(startBox, start.offset, true);
-  const to = locate(endBox, end.offset, false);
+  let startOffset = start.offset;
+  let endOffset = end.offset;
+  // repère enregistré sur une formule (versions précédentes, sélection finie dans une équation) : le bloc qui la
+  // contient, et la formule entière
+  const outside = (box, isEnd) => {
+    const math = mathOf(box);
+    if (!math) return null;
+    const outer = container(math, root);
+    return [outer, offsetOf(outer, math, 0, isEnd)];
+  };
+  [startBox, startOffset] = outside(startBox, false) || [startBox, startOffset];
+  [endBox, endOffset] = outside(endBox, true) || [endBox, endOffset];
+  const from = locate(startBox, startOffset, true);
+  const to = locate(endBox, endOffset, false);
   if (!from || !to) return false;
   const segments = [];
   let inside = false;
