@@ -28,7 +28,8 @@ export const api = {
   renameFolder: (id, name) => request("PUT", `/api/folders/${id}`, { name }),
   deleteFolder: (id) => request("DELETE", `/api/folders/${id}`),
   setInFolder: (id, paper, member) => request(member ? "PUT" : "DELETE", `/api/folders/${id}/papers/${encodeURIComponent(paper)}`, member ? {} : undefined),
-  importPaper: (query, library = true) => request("POST", "/api/papers", { query, library }),
+  // `known` : ce que la page sait de l'article (titre, auteurs…) : inscrit tout de suite, importé en arrière-plan
+  importPaper: (query, library = true, known = {}) => request("POST", "/api/papers", { query, library, ...known }),
   // ajout immédiat à la bibliothèque (import en arrière-plan), d'après ce que la page sait déjà de l'article
   quickAdd: (query, known = {}) => request("POST", "/api/papers/quick", { query, ...known }),
   setInLibrary: (id, value) => request("PUT", `/api/papers/${encodeURIComponent(id)}/library`, { in_library: value }),
@@ -39,6 +40,7 @@ export const api = {
   statement: (id, node) => request("GET", `/api/papers/${encodeURIComponent(id)}/statements/${encodeURIComponent(node)}`),
   savePosition: (id, anchor) => request("PUT", `/api/papers/${encodeURIComponent(id)}/position`, { anchor }),
   refresh: (id) => request("POST", `/api/papers/${encodeURIComponent(id)}/refresh`, {}),
+  importing: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/importing`),
   search: (query) => request("POST", "/api/search", query),
   related: (query, refresh = false) => request("POST", "/api/related", { query, refresh }),
   feed: (view, day) => request("GET", `/api/feed?view=${encodeURIComponent(view)}${day ? `&day=${day}` : ""}`),

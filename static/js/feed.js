@@ -41,6 +41,10 @@ function ago(stamp) {
   return stamp ? timeAgo(stamp) : t("feed.never");
 }
 
+// ce que le feed sait d'un article : il est inscrit tout de suite, sans attendre l'API d'arXiv
+const knownOf = (item) => ({ title: item.title, authors: item.authors || [], abstract: item.abstract || "", categories: item.categories || [],
+  primary_category: item.primary_category || null, published: item.announced || null, doi: item.doi || null, journal_ref: item.journal_ref || null });
+
 function errorText(message) {
   const known = { "rate-limited": "feed.error.rateLimited", "no-seed": "feed.error.noSeed", "bad-key": "feed.error.badKey",
     "arxiv-timeout": "feed.error.timeout" };
@@ -447,7 +451,7 @@ export function feedCard(item, onChange = () => {}, { compact = false, fresh = f
       const spinner = h("span", { class: "spinner title-spinner", "aria-label": t("feed.importing") });
       title.after(spinner);
       try {
-        const paper = await api.importPaper(item.arxiv_id, false);
+        const paper = await api.importPaper(item.arxiv_id, false, knownOf(item));
         item.readId = paper.id;
         openRoute(`#/paper/${encodeURIComponent(paper.id)}`, newTab, front);
       } catch (error) {
@@ -602,9 +606,7 @@ function libraryButton(item) {
         await api.setInLibrary(item.readId, true);
         item.libraryId = item.readId;
       } else {
-        const paper = await api.quickAdd(item.arxiv_id, { title: item.title, authors: item.authors || [], abstract: item.abstract || "",
-          categories: item.categories || [], primary_category: item.primary_category || null, published: item.announced || null,
-          doi: item.doi || null, journal_ref: item.journal_ref || null });
+        const paper = await api.quickAdd(item.arxiv_id, knownOf(item));
         item.libraryId = item.readId = paper.id;
       }
       toast(t(item.libraryId ? "feed.added" : "feed.removed"));

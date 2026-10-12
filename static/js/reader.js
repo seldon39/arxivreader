@@ -29,7 +29,13 @@ const MEDIUM = 900;
 export async function renderReader(view, paperId, at, isCurrent = () => true) {
   if (typeof at === "function") [at, isCurrent] = [undefined, at];
   view.replaceChildren(h("div", { class: "library" }, h("div", { class: "busy" }, h("span", { class: "spinner" }))));
-  const { paper, structure } = await api.paper(paperId);
+  // article ajouté d'un clic dont l'import n'est pas fini : chaque demande attend au plus 45 s côté serveur
+  // (une requête restée longtemps sans réponse risquerait d'être abandonnée par WebKit) ; on redemande
+  let { paper, structure } = await api.paper(paperId);
+  for (let tries = 0; paper.source === "pending" && tries < 12 && isCurrent(); tries++) {
+    view.replaceChildren(h("div", { class: "library" }, h("div", { class: "busy" }, h("span", { class: "spinner" }), t("reader.preparing"))));
+    ({ paper, structure } = await api.paper(paperId));
+  }
   const html = paper.source === "none" || paper.source === "tex" ? "" : await api.content(paperId);
   if (!isCurrent()) return () => {}; // page déjà quittée pendant le chargement : rien n'est affiché
   document.title = plainTitle(paper.title); // titre de l'onglet

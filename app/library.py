@@ -167,12 +167,13 @@ _imports = {}  # article → événement de fin de son import en arrière-plan
 _imports_guard = threading.Lock()
 
 
-def quick_add(arxiv_id, known=None):
-    """Article ajouté à la bibliothèque sans attendre son import ; renvoie sa fiche."""
+def quick_add(arxiv_id, known=None, in_library=True):
+    """Article ajouté sans attendre son import (à la bibliothèque, ou seulement pour être lu : `in_library` faux) ;
+    renvoie sa fiche. Déjà connu : rien n'est retéléchargé."""
     arxiv_id, _ = parse_arxiv_id(arxiv_id)
     paper_id = paper_key(arxiv_id)
     if db.get_paper(paper_id):
-        return set_in_library(paper_id, True)
+        return set_in_library(paper_id, True) if in_library else db.get_paper(paper_id)
     known = known or {}
     if not known.get("title"):
         meta = fetch_metadata(arxiv_id)  # rien de connu : la fiche d'arXiv (une requête, pas tout l'import)
@@ -182,7 +183,7 @@ def quick_add(arxiv_id, known=None):
                    "abstract": known.get("abstract") or "", "categories": known.get("categories") or [],
                    "primary_category": known.get("primary_category") or "", "published": known.get("published") or "",
                    "updated": "", "doi": known.get("doi"), "journal_ref": known.get("journal_ref"), "comment": None,
-                   "source": PENDING, "position": None, "in_library": 1})
+                   "source": PENDING, "position": None, "in_library": 1 if in_library else 0})
     _start_import(arxiv_id, paper_id)
     return db.get_paper(paper_id)
 
@@ -205,17 +206,31 @@ def _start_import(arxiv_id, paper_id):
     threading.Thread(target=run, daemon=True).start()
 
 
+def update_in_background(paper_id):
+    """Nouvel import d'un article (dernière version), en arrière-plan ; importing() dit s'il tourne encore."""
+    paper = db.get_paper(paper_id)
+    if paper:
+        _start_import(paper["arxiv_id"], paper_id)
+
+
+def importing(paper_id):
+    with _imports_guard:
+        return paper_id in _imports
+
+
 def ensure_ready(paper_id, timeout=180):
     """Article ajouté d'un clic dont l'import n'est pas fini : on l'attend (ou on le fait, s'il avait échoué)."""
     paper = db.get_paper(paper_id)
     if not paper or paper.get("source") != PENDING:
         return paper
     with _imports_guard:
+        running = paper_id in _imports
+    if not running:  # import de fond échoué (réseau) ou interrompu (application quittée) : relancé
+        _start_import(paper["arxiv_id"], paper_id)
+    with _imports_guard:
         done = _imports.get(paper_id)
     if done:
-        done.wait(timeout)
-    else:
-        import_paper(paper["arxiv_id"], add_to_library=False)
+        done.wait(timeout)  # borné : la page redemande tant que l'import n'est pas fini
     return db.get_paper(paper_id)
 
 

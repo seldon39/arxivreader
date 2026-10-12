@@ -186,6 +186,11 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
 - La synchronisation Zotero fusionne trois états (ici, Zotero, la fois précédente) : toute modification de
   `_sync` doit garder les tests de `tests/test_zotero.py` (écriture refusée, doublons fusionnés, sous-collection
   profonde, dossier supprimé pendant un ajout, corbeille, retraits massifs).
+- **Aucune requête de la page ne doit attendre longtemps** (WebKit peut abandonner une requête restée environ
+  une minute sans réponse) : un import passe toujours en arrière-plan (`POST /api/papers`, mise à jour
+  `POST /api/papers/{id}/refresh` suivie par `…/importing`), une attente côté serveur est bornée à 45 s
+  (`ensure_ready`) et la page redemande ; l'API d'arXiv a un second essai patient (`arxiv.patient_get`,
+  `search._fetch`) ; le feed du jour vient du RSS, le reste (auteurs suivis, revues, citations) en arrière-plan.
 - Ajout d'un clic (signet du feed, de la recherche, « Ajouter », dépôt sur un dossier) : `library.quick_add` inscrit
   l'article tout de suite (`source = "pending"`, d'après ce que la page en sait) et l'importe en arrière-plan ;
   `library.ensure_ready` fait attendre son ouverture (ou refait l'import s'il avait échoué). L'import de fond garde

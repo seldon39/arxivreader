@@ -173,3 +173,39 @@ class QuickAdd(unittest.TestCase):
             threading.Timer(0.2, release.set).start()
             ready = library.ensure_ready("2609.40232")  # ouvert : attend l'import
         self.assertEqual((ready["source"], ready["in_library"]), ("arxiv-html", 0))
+
+
+class NoLongRequests(unittest.TestCase):
+    """Pas de délai dépassé : second essai patient ; import relancé et attendu par tranches bornées."""
+
+    def test_patient_get(self):
+        import httpx
+        from unittest import mock
+        from app import arxiv
+        client = mock.Mock()
+        client.get.side_effect = [httpx.ReadTimeout("slow"), mock.Mock(status_code=200)]
+        with mock.patch.object(arxiv.time, "sleep"):
+            self.assertEqual(arxiv.patient_get(client, "https://export.arxiv.org/api/query").status_code, 200)
+        self.assertEqual(client.get.call_args.kwargs["timeout"], 120)
+
+    def test_failed_background_import_is_restarted(self):
+        import pathlib
+        import tempfile
+        from unittest import mock
+        from app import db, library
+        saved = (db.DB_PATH, db.LIBRARY, library.PAPERS)
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        db.DB_PATH, db.LIBRARY, library.PAPERS = tmp / "test.db", tmp, tmp / "papers"
+        db.init()
+        try:
+            def done(arxiv_id, add_to_library=True):
+                db.update_paper(arxiv_id, source="arxiv-html")
+            with mock.patch.object(library, "import_paper", side_effect=OSError("network")):
+                library.quick_add("2609.40232", {"title": "Spectra"}, in_library=False)
+                library.ensure_ready("2609.40232", timeout=2)  # premier import en échec
+            self.assertEqual(db.get_paper("2609.40232")["source"], "pending")
+            with mock.patch.object(library, "import_paper", side_effect=done):
+                self.assertEqual(library.ensure_ready("2609.40232", timeout=2)["source"], "arxiv-html")  # relancé
+            self.assertEqual(db.get_paper("2609.40232")["in_library"], 0)  # « Lire » seulement
+        finally:
+            db.DB_PATH, db.LIBRARY, library.PAPERS = saved

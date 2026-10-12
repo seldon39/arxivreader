@@ -127,6 +127,15 @@ class RelatedRequest(BaseModel):
 class ImportRequest(BaseModel):
     query: str
     library: bool = True  # False : « Lire » depuis le feed, sans ajouter à la bibliothèque
+    # ce que la page sait déjà de l'article (feed, recherche) : inscrit tout de suite, sans attendre arXiv
+    title: str | None = None
+    authors: list[str] = []
+    abstract: str | None = None
+    categories: list[str] = []
+    primary_category: str | None = None
+    published: str | None = None
+    doi: str | None = None
+    journal_ref: str | None = None
 
 
 class LibraryRequest(BaseModel):
@@ -263,9 +272,14 @@ async def papers_relevance():
     """Pertinence de chaque article de la bibliothèque pour le profil (tri des dossiers)."""
     return await run_in_threadpool(relevance.library_relevance, db.get_settings().get("s2ApiKey") or None)
 
-async def _import(query, add_to_library):
+async def _import(body):
+    """Article inscrit tout de suite, importé en arrière-plan (jamais une longue requête : WebKit pourrait
+    l'abandonner) ; le lecteur attend la fin de l'import par demandes successives."""
+    known = {"title": (body.title or "").strip()[:1000], "authors": [a[:200] for a in body.authors[:500]], "abstract": (body.abstract or "")[:20000],
+             "categories": body.categories[:20], "primary_category": body.primary_category, "published": (body.published or "")[:40],
+             "doi": body.doi, "journal_ref": body.journal_ref}
     try:
-        return await run_in_threadpool(library.import_paper, query, add_to_library)
+        return await run_in_threadpool(library.quick_add, body.query, known, body.library)
     except ArxivError as error:
         return JSONResponse({"error": str(error)}, status_code=400)
     except Exception as error:  # réseau, page inattendue…
@@ -274,7 +288,7 @@ async def _import(query, add_to_library):
 
 @app.post("/api/papers")
 async def add_paper(body: ImportRequest):
-    answer = await _import(body.query, body.library)
+    answer = await _import(body)
     if body.library:
         zotero.touch()  # ajouté à la bibliothèque : Zotero sous peu (« Lire » seul : rien)
     return answer
@@ -312,7 +326,7 @@ async def quick_add(body: QuickAddRequest):
 def paper(paper_id: str):
     checked_paper(paper_id)
     try:
-        paper = library.ensure_ready(paper_id)  # ajouté d'un clic, import pas fini : attendu
+        paper = library.ensure_ready(paper_id, timeout=45)  # ajouté d'un clic, import pas fini : attendu (45 s au plus par demande)
     except Exception as error:
         raise HTTPException(502, f"Import impossible : {error}")
     db.update_paper(paper_id, opened_at=_now())
@@ -331,7 +345,7 @@ def paper_share_text(paper_id: str):
 @app.get("/api/papers/{paper_id}/content")
 def content(paper_id: str):
     checked_paper(paper_id)
-    library.ensure_ready(paper_id)
+    library.ensure_ready(paper_id, timeout=45)
     path = library.paper_dir(paper_id) / "content.html"
     if not path.exists():
         raise HTTPException(404, "No HTML version")
@@ -621,9 +635,17 @@ def save_position(paper_id: str, body: PositionRequest):
 
 
 @app.post("/api/papers/{paper_id}/refresh")
-async def refresh(paper_id: str):
-    paper = checked_paper(paper_id)
-    return await _import(paper["arxiv_id"], bool(paper["in_library"]))  # un article seulement lu le reste
+def refresh(paper_id: str):
+    """Mise à jour (dernière version d'arXiv) en arrière-plan ; la page suit GET …/importing jusqu'à la fin."""
+    checked_paper(paper_id)
+    library.update_in_background(paper_id)  # un article seulement lu le reste (place gardée)
+    return {"started": True}
+
+
+@app.get("/api/papers/{paper_id}/importing")
+def paper_importing(paper_id: str):
+    checked_paper(paper_id)
+    return {"running": library.importing(paper_id)}
 
 
 @app.delete("/api/papers/{paper_id}")

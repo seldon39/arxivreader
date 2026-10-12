@@ -796,7 +796,12 @@ function card(paper, refreshList, context = null) {
       action(icons.refresh, t("library.refresh"), async (button) => {
         button.disabled = true;
         button.classList.add("spinning");
-        try { await api.refresh(paper.id); toast(t("library.updated")); refreshList(); }
+        try {
+          await api.refresh(paper.id); // en arrière-plan : on suit l'import (aucune longue requête)
+          for (let i = 0; i < 200 && (await api.importing(paper.id)).running; i++) await new Promise((r) => setTimeout(r, 1500));
+          toast(t("library.updated"));
+          refreshList();
+        }
         catch (error) { toastError(error); }
         finally { button.disabled = false; button.classList.remove("spinning"); }
       }),

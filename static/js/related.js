@@ -253,7 +253,7 @@ export async function renderRelated(root, arxivFromRoute = null) {
       if (id) { openRoute(`#/paper/${encodeURIComponent(id)}`, newTab, event.shiftKey); return; }
       read.disabled = true;
       try {
-        const paper = await api.importPaper(n.arxivId, false);
+        const paper = await api.importPaper(n.arxivId, false, { title: n.title, authors: n.authors || [] });
         n.readId = paper.id;
         openRoute(`#/paper/${encodeURIComponent(paper.id)}`, newTab, event.shiftKey);
       } catch (error) { toastError(error); } finally { read.disabled = false; }

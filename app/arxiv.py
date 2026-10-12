@@ -83,6 +83,19 @@ def with_retry(send, retry_on=(429, 503), delays=(3, 6, 9)):
         time.sleep(min(60, max(delay, int(wait) + 1)) if wait.isdigit() else delay)
 
 
+API = "https://export.arxiv.org/api/query"
+
+
+def patient_get(client, url, **kwargs):
+    """GET avec un second essai, plus patient (2 min), si le premier dépasse le délai : l'API d'arXiv est parfois
+    très lente (le lundi matin…) sans être en panne."""
+    try:
+        return with_retry(lambda: client.get(url, **kwargs))
+    except httpx.TimeoutException:
+        time.sleep(3)
+        return with_retry(lambda: client.get(url, **kwargs, timeout=120))
+
+
 def _text(node, path):
     found = node.find(path)
     return " ".join(found.text.split()) if found is not None and found.text else ""
@@ -106,7 +119,7 @@ def _paced(send):
 def fetch_metadata(arxiv_id):
     # arXiv demande au plus une requête toutes les 3 s : nouvelle tentative si elle répond 429/503
     with _client() as client:
-        response = _paced(lambda: with_retry(lambda: client.get("https://export.arxiv.org/api/query", params={"id_list": arxiv_id})))
+        response = _paced(lambda: patient_get(client, API, params={"id_list": arxiv_id}))
     response.raise_for_status()
     entry = ET.fromstring(response.text).find(f"{ATOM}entry")
     if entry is None or not _text(entry, f"{ATOM}title"):
@@ -137,8 +150,7 @@ def fetch_titles(arxiv_ids):
     with _client() as client:
         for start in range(0, len(ids), 100):
             chunk = ids[start:start + 100]
-            response = _paced(lambda: with_retry(lambda: client.get("https://export.arxiv.org/api/query",
-                                                                    params={"id_list": ",".join(chunk), "max_results": len(chunk)})))
+            response = _paced(lambda: patient_get(client, API, params={"id_list": ",".join(chunk), "max_results": len(chunk)}))
             response.raise_for_status()
             for entry in ET.fromstring(response.text).findall(f"{ATOM}entry"):
                 key = re.search(r"abs/(.+?)(?:v\d+)?$", _text(entry, f"{ATOM}id"))
@@ -159,7 +171,7 @@ def fetch_html(arxiv_id, version):
     ]
     with _client() as client:
         for url, source in candidates:
-            response = client.get(url)
+            response = patient_get(client, url)
             if response.status_code == 200 and "ltx_document" in response.text:
                 base = str(response.url)
                 return response.text, base if base.endswith("/") else base + "/", source
