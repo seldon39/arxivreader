@@ -16,7 +16,7 @@ import { typesetFragment, typesetMath, typesetTex } from "./math.js";
 const typesetTexSafe = (element) => typesetTex([element]).catch(() => {});
 import { t } from "./i18n.js";
 import { DEFAULT_FONT_SIZE, onSettingsChange, saveSettings, settings } from "./settings.js";
-import { debounce, formatDate, h, icons, navigation, plainTitle, titleTex, toast, toggleIcon, withMath } from "./util.js";
+import { debounce, formatDate, h, icons, navigation, openRoute, plainTitle, titleTex, toast, toggleIcon, wantsNewTab, withMath } from "./util.js";
 
 const NEEDS_PROOF = new Set(["theorem", "proposition", "lemma", "corollary", "claim"]);
 const WIDE = 1280;
@@ -609,6 +609,7 @@ class Reader {
     alignNumberColumns(this.content); // après le placement des numéros (source TeX ou non)
     markItalicStatements(this.content);
     amsBibliography(this.content);
+    this.linkArxivReferences();
 
     // Ponctuation collée à la formule qui la précède (pas de « , » seule en début de ligne)
     this.content.querySelectorAll("math:not(.math-group math), .math-group").forEach((math) => {
@@ -1167,8 +1168,73 @@ class Reader {
     }, `${t("reader.import")} arXiv:${arxivId}`)));
   }
 
+  // Identifiants arXiv des références (repérés par l'analyse) : liens qui ouvrent l'article dans l'application
+  linkArxivReferences() {
+    const escape = (text) => text.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+    for (const item of this.content.querySelectorAll(".ltx_bibitem[id]")) {
+      const ids = this.bib.get(item.id)?.arxiv || [];
+      if (!ids.length) continue;
+      for (const link of item.querySelectorAll('a[href*="arxiv.org/"]')) {
+        const id = ids.find((arxivId) => link.href.includes(arxivId));
+        if (!id) continue;
+        link.dataset.arxiv = id;
+        link.title = t("reader.readArxiv");
+      }
+      const pattern = new RegExp(`(?:arXiv:\\s*)?(?<![\\w.])(${ids.map(escape).join("|")})(?:v\\d+)?(?![\\w])`, "g");
+      const walker = document.createTreeWalker(item, NodeFilter.SHOW_TEXT,
+        { acceptNode: (node) => (node.parentElement.closest("a, math") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
+      const texts = [];
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) texts.push(node);
+      for (const text of texts) {
+        const matches = [...text.data.matchAll(pattern)];
+        if (!matches.length) continue;
+        const parts = [];
+        let last = 0;
+        for (const match of matches) {
+          parts.push(text.data.slice(last, match.index), h("a", { href: `https://arxiv.org/abs/${match[1]}`, title: t("reader.readArxiv"), dataset: { arxiv: match[1] } }, match[0]));
+          last = match.index + match[0].length;
+        }
+        text.replaceWith(...parts, text.data.slice(last));
+      }
+      // identifiant pas affiché (mise en page AMS, qui ne reprend pas les « External Links » de LaTeXML ; lien
+      // seulement sur le titre) : « , arXiv:… » en fin de référence
+      const shown = [...item.querySelectorAll("a[data-arxiv]")].filter((link) => link.textContent.includes(link.dataset.arxiv)).map((link) => link.dataset.arxiv);
+      const block = item.querySelector(".ams-bib") || [...item.querySelectorAll(".ltx_bibblock:not(.ltx_bib_cited)")].at(-1);
+      for (const id of ids.filter((arxivId) => !shown.includes(arxivId))) {
+        if (!block) break;
+        const end = block.lastChild?.nodeType === Node.TEXT_NODE ? block.lastChild : null;
+        const stop = end && /\.\s*$/.test(end.data) ? "." : "";
+        if (stop) end.data = end.data.replace(/\.\s*$/, "");
+        block.append(", ", h("a", { href: `https://arxiv.org/abs/${id}`, title: t("reader.readArxiv"), dataset: { arxiv: id } }, `arXiv:${id}`), stop);
+      }
+    }
+  }
+
+  // Article cité ouvert dans l'application (⌘-clic : nouvel onglet), comme « Lire » dans le flux
+  async readArxiv(link, event) {
+    const newTab = wantsNewTab(event);
+    const front = event.shiftKey;
+    if (link.dataset.loading) return;
+    link.dataset.loading = "1";
+    try {
+      const paper = await api.importPaper(link.dataset.arxiv, false);
+      openRoute(`#/paper/${encodeURIComponent(paper.id)}`, newTab, front);
+    } catch (error) {
+      toast(error.message, { error: true });
+    } finally {
+      delete link.dataset.loading;
+    }
+  }
+
   // Lien « #… » cliqué hors de l'article lui-même (énoncé recopié, aperçu) : navigation interne
   interceptLinks = (event) => {
+    const arxiv = event.target.closest("a[data-arxiv]");
+    if (arxiv && !event.defaultPrevented) {
+      event.preventDefault();
+      this.hidePreview();
+      this.readArxiv(arxiv, event);
+      return;
+    }
     const link = event.target.closest('a[href^="#"]');
     if (!link || event.defaultPrevented || link.matches(".ai-ref") || link.closest(".tabs")) return;
     if (link.getAttribute("href").startsWith("#/")) { this.hidePreview(); return; } // autre page de l'application (autre article)
