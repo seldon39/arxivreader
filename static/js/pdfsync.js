@@ -142,7 +142,7 @@ export function htmlToPdf(html, pdf, from, expected = null) {
   });
   if (at < 0) return null;
   const entry = pdf.sequence[at];
-  return { page: entry.page, top: entry.top + 4 };
+  return { page: entry.page, top: entry.top + 4, index: at };
 }
 
 // PDF → HTML : à partir de l'endroit lu { page, top } ; mot du HTML, ou null.

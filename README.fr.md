@@ -56,6 +56,8 @@ http://127.0.0.1:8710/ ; le serveur n'écoute que sur ce Mac (pas sur le Wi-Fi).
 - **Mise en page « papier AMS »** (classe amsart) : texte en Charter ou Computer Modern, formules
   rendues par **MathJax** (règles de TeX, polices Computer Modern, même rendu dans Safari, Firefox et
   Chrome) ; le MathML du navigateur reste disponible dans les réglages.
+- **Dessins non convertis** par LaTeXML (PSTricks… : étiquettes sans traits) repris du PDF à leur place ; à
+  défaut, un avertissement et un bouton « Voir dans le PDF ».
 - **Affiliations des auteurs** sous le résumé, une ligne par auteur (nom, adresse, courriel), avec les notes de
   première page (financements, mots-clés, classification).
 - **Aperçu au survol** de tout renvoi (théorème, équation, référence, note) ; clic = aller à l'endroit,

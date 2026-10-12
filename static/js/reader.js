@@ -9,6 +9,7 @@ import { currentModel } from "./aiproviders.js";
 import { layoutFigures, openFigure, prepareFigures } from "./figures.js";
 import { findBar, setFindHandler } from "./find.js";
 import { PdfView } from "./pdfview.js";
+import { emptyPictures, replaceEmptyPictures } from "./pdfpictures.js";
 import { htmlToPdf, htmlWords, pdfToHtml, wordTop } from "./pdfsync.js";
 import { defineMacros, statementElement, statementsContainer } from "./texview.js";
 import { typesetFragment, typesetMath, typesetTex } from "./math.js";
@@ -585,6 +586,11 @@ class Reader {
 
     if (!this.content.querySelector("[lang]")) this.content.lang = "en"; // césure à l'anglaise
     this.figures = prepareFigures(this.content);
+    // dessins que LaTeXML n'a pas su convertir (étiquettes sans traits) : repris du PDF, en arrière-plan
+    if (emptyPictures(this.content).length) {
+      replaceEmptyPictures(this.content, `/api/papers/${encodeURIComponent(this.paper.id)}/pdf`,
+        { label: t("reader.pdfPicture"), notice: () => this.pictureNotice(), cancelled: () => this.destroyed }).catch(() => {});
+    }
     // Figures cliquables (et au clavier) : affichage en grand par-dessus l'article
     // (une image placée dans un dessin s'ouvre avec le dessin entier)
     this.content.querySelectorAll(".figure-card, img.ltx_graphics:not(.figure-card img)").forEach((figure) => {
@@ -1208,6 +1214,17 @@ class Reader {
         block.append(", ", h("a", { href: `https://arxiv.org/abs/${id}`, title: t("reader.readArxiv"), dataset: { arxiv: id } }, `arXiv:${id}`), stop);
       }
     }
+  }
+
+  // Dessin que ni la version HTML ni la reprise depuis le PDF n'ont pu montrer : avertissement, et le PDF à cet endroit
+  pictureNotice() {
+    const open = h("button", { type: "button" }, t("reader.pictureInPdf"));
+    const notice = h("div", { class: "notice picture-missing" }, h("span", { class: "reason-icon", html: icons.warning }), t("reader.pictureMissing"), open);
+    open.addEventListener("click", () => {
+      notice.scrollIntoView({ block: "start", behavior: "instant" }); // la bascule ouvre le PDF à l'endroit lu
+      this.setView("pdf");
+    });
+    return notice;
   }
 
   // Article cité ouvert dans l'application (⌘-clic : nouvel onglet), comme « Lire » dans le flux
