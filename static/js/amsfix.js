@@ -313,6 +313,16 @@ export function dropMacroDebris(content) {
   }
 }
 
+// Guillemets ouvrants de TeX (``, `) que LaTeXML a pris pour une formule (dans un \thanks, souvent) : « `` » en
+// italique mathématique ; remplacés par le guillemet typographique. Pas '' ni ' : ce peut être un prime
+const TEX_QUOTES = { "``": "“", "`": "‘" };
+export function texQuotes(content) {
+  for (const math of content.querySelectorAll("math[alttext]")) {
+    const quote = TEX_QUOTES[math.getAttribute("alttext").trim()];
+    if (quote) math.replaceWith(quote);
+  }
+}
+
 // \thanks d'amsart : LaTeXML les met dans le titre ; ils rejoignent les notes de première page
 // (mots-clés, classification), sous le résumé. De même pour les notes sans appel du début de l'article
 // (\footnotetext : financements, adresses), que LaTeXML numérote « 0 » et place avant le titre.
