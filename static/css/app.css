@@ -539,6 +539,8 @@ dialog.settings::backdrop { background: rgba(0, 0, 0, .3); }
 /* assistant de premier lancement */
 dialog.settings.onboarding { width: min(640px, calc(100vw - 32px)); }
 .onboarding-body { display: grid; gap: 10px; }
+.onboarding-language-row { display: flex; justify-content: flex-end; }
+.onboarding-language-row .segmented { flex: none; }
 .onboarding-body p { margin: 0; }
 .onboarding-body h3 { margin: 6px 0 0; font: 600 15px var(--font-ui); }
 .onboarding-actions { gap: 8px; }

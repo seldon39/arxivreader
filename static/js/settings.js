@@ -34,9 +34,21 @@ export const READING_WIDTHS = Object.keys(WIDTHS); // de la plus étroite à la 
 export const settings = { ...DEFAULTS };
 const listeners = new Set();
 
+// Langue du système (macOS, navigateur) : français s'il vient en premier parmi les deux, sinon anglais
+export function systemLanguage() {
+  const first = (navigator.languages || [navigator.language || ""]).find((tag) => /^(fr|en)\b/i.test(tag)) || "";
+  return /^fr/i.test(first) ? "fr" : "en";
+}
+
 export async function loadSettings() {
   try {
-    Object.assign(settings, await api.settings());
+    const saved = await api.settings();
+    Object.assign(settings, saved);
+    // installation neuve (aucune langue choisie) : celle du système, gardée pour le serveur (IA, export des notes)
+    if (!saved.language) {
+      settings.language = systemLanguage();
+      api.saveSettings({ language: settings.language }).catch(() => {});
+    }
   } catch {
     // le serveur répondra aux prochains enregistrements ; on garde les valeurs par défaut
   }

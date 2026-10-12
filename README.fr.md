@@ -149,6 +149,8 @@ signalé n'est pas forcément inédit.
 
 ## Premier lancement
 
+L'interface démarre dans la langue de macOS (le français s'il vient en premier, sinon l'anglais) ; l'assistant
+ci-dessous permet de passer aussitôt du français à l'anglais, comme les réglages ensuite.
 Quand la bibliothèque et le profil sont vides (installation neuve), un assistant retrouve vos articles sur arXiv
 (identifiant d'auteur arXiv ou ORCID, le plus sûr ; ou nom : les homonymes au prénom différent ou d'un autre
 domaine sont décochés d'office, à vous de décocher les autres), propose les catégories du feed

@@ -141,6 +141,8 @@ still not reported. Many authors never update arXiv: a paper not reported may st
 
 ## First launch
 
+The interface starts in the language of macOS (French if it comes first, otherwise English); the assistant
+below lets you switch between French and English at once, and so do the settings later.
 When the library and profile are empty (fresh installation), an assistant finds your papers on arXiv (arXiv
 author identifier or ORCID, the safest; or name: namesakes with another first name or in another field are
 unticked, untick the others yourself), suggests the feed categories (from your papers) and

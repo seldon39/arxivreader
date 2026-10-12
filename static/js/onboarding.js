@@ -73,7 +73,20 @@ export function openOnboarding({ onDone = null } = {}) {
       }
     };
     go.addEventListener("click", run);
+    // langue : l'assistant (et la page derrière) se redessinent aussitôt, ce qui est déjà tapé reste
+    const languages = h("div", { class: "segmented onboarding-language", role: "radiogroup", "aria-label": "Langue / Language" },
+      [["fr", "Français"], ["en", "English"]].map(([value, label]) => h("label", {},
+        h("input", { type: "radio", name: "onboarding-language", value, checked: settings.language === value,
+          onchange: async () => {
+            state.name = name.value.trim();
+            state.identifier = ident.value.trim();
+            await saveSettings({ language: value });
+            if (stale()) return;
+            stepWho();
+            dlg.querySelector(`input[name="onboarding-language"][value="${value}"]`)?.focus();
+          } }), label)));
     frame(t("onboarding.welcome"), [
+      h("div", { class: "onboarding-language-row" }, languages),
       h("p", {}, t("onboarding.lead")),
       h("label", { class: "row" }, h("span", {}, t("onboarding.name")), name),
       h("label", { class: "row" }, h("span", {}, t("onboarding.identifier")), ident),
