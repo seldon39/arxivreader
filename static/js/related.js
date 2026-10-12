@@ -579,13 +579,33 @@ async function folderMenu(button, choose) {
     folders.length ? folders.map((folder) => h("button", { class: "related-menu-item", type: "button", role: "menuitem",
       onclick: () => { close(); choose(folder); } }, h("span", {}, folder.name)))
       : h("p", { class: "muted small" }, t("select.noFolder")));
-  const close = () => { menu.remove(); document.removeEventListener("pointerdown", outside); closeFolderMenu = null; };
+  // au-dessus du bouton (en dessous s'il n'y a pas la place : fiche en haut du graphe agrandi), dans la fenêtre
+  // (ni coupé en bas de la page, ni au bord droit) ; replacé si la page défile ou si la fenêtre change
+  const place = () => {
+    const gap = 6;
+    const margin = 8;
+    const rect = button.getBoundingClientRect();
+    const above = rect.top - gap - margin;
+    const below = innerHeight - rect.bottom - gap - margin;
+    const up = menu.scrollHeight <= above || above >= below;
+    menu.style.maxHeight = `${Math.max(120, Math.min(360, up ? above : below))}px`;
+    menu.style.top = `${up ? rect.top - gap - menu.offsetHeight : rect.bottom + gap}px`;
+    menu.style.left = `${Math.max(margin, Math.min(rect.left, innerWidth - menu.offsetWidth - margin))}px`;
+  };
+  const close = () => {
+    menu.remove();
+    document.removeEventListener("pointerdown", outside);
+    removeEventListener("scroll", place, true);
+    removeEventListener("resize", place);
+    closeFolderMenu = null;
+  };
   const outside = (event) => { if (!menu.contains(event.target) && !button.contains(event.target)) close(); };
   menu.addEventListener("keydown", (event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); button.focus(); } });
   closeFolderMenu = close;
-  button.parentElement.style.position = "relative";
-  button.parentElement.append(menu);
-  menu.style.left = `${button.offsetLeft}px`;
+  button.parentElement.append(menu); // à côté du bouton : dans le graphe agrandi aussi (fenêtre de premier plan)
+  place();
+  addEventListener("scroll", place, true);
+  addEventListener("resize", place);
   document.addEventListener("pointerdown", outside);
   menu.querySelector("button")?.focus();
 }
