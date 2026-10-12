@@ -5,6 +5,8 @@ Lancer depuis le dossier du projet :  .venv/bin/python -m unittest discover test
 
 import unittest
 
+from bs4 import BeautifulSoup
+
 from app.arxiv import ArxivError, extract_ids, parse_arxiv_id
 from app.sanitize import sanitize_document
 from app.structure import extract_structure
@@ -107,6 +109,16 @@ class Import(unittest.TestCase):
         self.assertEqual(self.structure["bibliography"][0]["arxiv"], ["2101.00001"])
         self.assertEqual(self.structure["hiddenText"], 1)
         self.assertEqual([s["title"] for s in self.structure["toc"]], ["1 Basics", "References"])
+
+    def test_tikz_white_fill_is_not_hidden_text(self):
+        # encadré TikZ à fond blanc (« --ltx-fill-color:#FFFFFF », pas une couleur de texte) et \phantom{0} : pas
+        # signalés ; marque d'une analyse précédente retirée
+        fragment = BeautifulSoup('<p>Text <span style="color:white">secret</span> <span style="visibility:hidden">0</span></p>'
+                                 '<svg><g class="arx-hidden-text" '
+                                 'style="--ltx-fill-color:#FFFFFF;" fill-opacity="0.85"><text>Legend</text></g></svg>', "html.parser")
+        self.assertEqual(extract_structure(fragment)["hiddenText"], 1)
+        self.assertEqual(len(fragment.select(".arx-hidden-text")), 1)
+        self.assertEqual(fragment.select_one(".arx-hidden-text").get_text(), "secret")
 
 
 if __name__ == "__main__":

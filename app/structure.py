@@ -7,7 +7,7 @@ from bs4 import NavigableString, Tag
 
 from .arxiv import extract_ids
 
-STRUCTURE_VERSION = 7  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
+STRUCTURE_VERSION = 8  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
 
 SECTION_LEVELS = {
     "ltx_part": 0, "ltx_chapter": 0, "ltx_section": 1, "ltx_appendix": 1,
@@ -53,9 +53,10 @@ JUSTIFIES_PREVIOUS = re.compile(
 QED_END = re.compile(r"(□|∎|■|\$\\(Box|square|blacksquare|qed|qedsymbol|QED)\$)\s*$")
 
 HIDDEN_STYLE = re.compile(
-    r"color\s*:\s*(#fff(fff)?\b|white|rgba?\([^)]*,\s*0\))"
+    # propriétés elles-mêmes, pas « --ltx-fill-color », « fill-opacity »… (fond blanc d'un encadré TikZ)
+    r"(?<![\w-])(?:color\s*:\s*(#fff(fff)?\b|white|rgba?\([^)]*,\s*0\))"
     r"|font-size\s*:\s*(0*\.\d+|[0-3](\.\d+)?)\s*(px|pt)|font-size\s*:\s*(\d|1\d)(\.\d+)?\s*%"
-    r"|display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0(\.0+)?\s*(;|$)",
+    r"|display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0(\.0+)?\s*(;|$))",
     re.I,
 )
 
@@ -576,10 +577,13 @@ def extract_structure(fragment, overrides=None):
             "doi": doi.group(0).rstrip(".,;") if doi else "",
         })
 
-    # Texte invisible (couleur blanche, police minuscule…) : signalé, et révélable dans le lecteur
+    # Texte invisible (couleur blanche, police minuscule…) : signalé, et révélable dans le lecteur. Sans aucun mot
+    # (\phantom{0} qui aligne les chiffres d'un tableau), il n'est pas signalé
     hidden = 0
+    for element in fragment.select(".arx-hidden-text"):  # nouvelle analyse : marques refaites ci-dessous
+        element["class"] = [c for c in element["class"] if c != "arx-hidden-text"]
     for element in fragment.find_all(style=True):
-        if HIDDEN_STYLE.search(element["style"]) and squash(element.get_text()):
+        if HIDDEN_STYLE.search(element["style"]) and re.search(r"[^\W\d_]{2}", element.get_text()):
             if "arx-hidden-text" not in (element.get("class") or []):
                 element["class"] = (element.get("class") or []) + ["arx-hidden-text"]
             hidden += 1
