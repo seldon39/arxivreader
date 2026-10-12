@@ -39,7 +39,7 @@ anglais.
 
 | Domaine | Serveur (`app/`) | Page (`static/js/`) |
 |---|---|---|
-| Import, HTML nettoyé, PDF | `library.py`, `arxiv.py`, `sanitize.py` | `reader.js`, `pdfview.js`, `pdfsync.js`, `pdfpictures.js` (dessins non convertis repris du PDF) |
+| Import, HTML nettoyé, PDF | `library.py`, `arxiv.py`, `sanitize.py` | `reader.js`, `pdfview.js`, `pdfsync.js` |
 | Structure (énoncés, preuves, dépendances) | `structure.py` (HTML LaTeXML), `texstructure.py`, `texsource.py` (source TeX) | `reader.js`, `graph.js`, `texview.js` |
 | Notes, surlignages, état de lecture, export | `annotations.py`, `export.py` | `annotations.js`, `markdown.js` |
 | Bibliothèque, dossiers, sélection | `library.py`, `folders.py` | `library.js`, `selection.js` |

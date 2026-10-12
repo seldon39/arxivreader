@@ -6,10 +6,9 @@ import { Annotator, findAll, noteEditor } from "./annotations.js";
 import { Assistant } from "./ai.js";
 import { alignNumberColumns, amsBibliography, dropMacroDebris, fixMathML, texQuotes, splitLongInlineMath, markItalicStatements, moveTitleNotes, normalizeFontScale, placeEquationNumbers, relabelLists } from "./amsfix.js";
 import { currentModel } from "./aiproviders.js";
-import { layoutFigures, openFigure, prepareFigures } from "./figures.js";
+import { emptyPictures, layoutFigures, openFigure, prepareFigures } from "./figures.js";
 import { findBar, setFindHandler } from "./find.js";
 import { PdfView } from "./pdfview.js";
-import { emptyPictures, replaceEmptyPictures } from "./pdfpictures.js";
 import { htmlToPdf, htmlWords, pdfToHtml, wordTop } from "./pdfsync.js";
 import { defineMacros, statementElement, statementsContainer } from "./texview.js";
 import { typesetFragment, typesetMath, typesetTex } from "./math.js";
@@ -585,12 +584,12 @@ class Reader {
     });
 
     if (!this.content.querySelector("[lang]")) this.content.lang = "en"; // césure à l'anglaise
-    this.figures = prepareFigures(this.content);
-    // dessins que LaTeXML n'a pas su convertir (étiquettes sans traits) : repris du PDF, en arrière-plan
-    if (emptyPictures(this.content).length) {
-      replaceEmptyPictures(this.content, `/api/papers/${encodeURIComponent(this.paper.id)}/pdf`,
-        { label: t("reader.pdfPicture"), notice: () => this.pictureNotice(), cancelled: () => this.destroyed }).catch(() => {});
+    // dessins absents de la version HTML (LaTeXML n'a gardé que les étiquettes) : avertissement qui renvoie au PDF
+    for (const [first, ...rest] of emptyPictures(this.content)) {
+      rest.forEach((picture) => picture.remove());
+      first.replaceWith(this.pictureNotice());
     }
+    this.figures = prepareFigures(this.content);
     // Figures cliquables (et au clavier) : affichage en grand par-dessus l'article
     // (une image placée dans un dessin s'ouvre avec le dessin entier)
     this.content.querySelectorAll(".figure-card, img.ltx_graphics:not(.figure-card img)").forEach((figure) => {
@@ -1216,7 +1215,7 @@ class Reader {
     }
   }
 
-  // Dessin que ni la version HTML ni la reprise depuis le PDF n'ont pu montrer : avertissement, et le PDF à cet endroit
+  // Dessin absent de la version HTML : avertissement, et le PDF à cet endroit
   pictureNotice() {
     const open = h("button", { type: "button" }, t("reader.pictureInPdf"));
     const notice = h("div", { class: "notice picture-missing" }, h("span", { class: "reason-icon", html: icons.warning }), t("reader.pictureMissing"), open);

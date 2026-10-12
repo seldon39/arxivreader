@@ -77,6 +77,22 @@ function layoutFigure(card) {
   card.style.setProperty("--shift-y", `${PADDING + Math.max(0, Math.ceil(extra.top))}px`);
 }
 
+// Dessins que LaTeXML n'a pas su convertir (PSTricks… : une vraie taille, des étiquettes peut-être, mais rien de
+// dessiné : ni trait ni image). À appeler sur le HTML d'origine, avant prepareFigures (qui sort étiquettes et
+// images du dessin). Le dessin vide de taille nulle que LaTeXML met juste avant est compté avec lui.
+const DRAWING = "path, line, rect, circle, ellipse, polygon, polyline, image, use, img";
+export function emptyPictures(root) {
+  return [...root.querySelectorAll(".ltx_picture")].filter((picture) => {
+    const svg = picture.matches("svg") ? picture : picture.querySelector("svg");
+    if (!svg || picture.querySelector(DRAWING)) return false;
+    return Number(svg.getAttribute("width")) > 20 && Number(svg.getAttribute("height")) > 20;
+  }).map((picture) => {
+    const before = picture.previousElementSibling;
+    const twin = before?.matches(".ltx_picture") && !before.querySelector(DRAWING) && !Number(before.querySelector("svg")?.getAttribute("width"));
+    return twin ? [before, picture] : [picture];
+  });
+}
+
 export function prepareFigures(root) {
   const cards = [];
   for (const svg of root.querySelectorAll("svg.ltx_picture")) {
