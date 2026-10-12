@@ -31,9 +31,9 @@ augmenté `VERSION` dans `app/version.py`) : étiquette Git, envoi sur GitHub, i
   l'ouvre dans un nouvel onglet en arrière-plan (⇧⌘-clic : au premier plan). Un onglet glissé hors de la
   barre devient une fenêtre (deux articles côte à côte) ; ⌘N ouvre une nouvelle fenêtre.
 - **Bibliothèque** : `~/Library/Application Support/arXivReader` (menu arXivReader → Afficher la bibliothèque
-  dans le Finder). À la première ouverture, l'application propose de recopier une bibliothèque existante (le
-  dossier `library/` de ce projet) : quitter d'abord l'ancienne version. Ensuite, l'ancienne et la nouvelle ne
-  partagent plus rien.
+  dans le Finder). Menu Fichier → Recopier une bibliothèque… : une bibliothèque existante (le dossier `library/`
+  de ce projet, celle d'un autre Mac) remplace l'actuelle, mise de côté dans un dossier voisin ; quitter d'abord
+  l'autre version. Ensuite, les deux ne partagent plus rien.
 - **Connexion des assistants IA** : bouton *Se connecter…* / *Lancer dans le Terminal* dans l'onglet IA.
 - Construire : outils en ligne de commande Xcode (`swiftc`), miniforge (`conda`, Python pris dans son cache) et
   `.venv` à jour (ses paquets sont recopiés). Construction dans `~/Library/Caches/arXivReader-build` (hors d'iCloud).

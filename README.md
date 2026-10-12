@@ -31,8 +31,9 @@ that bundles Python and its packages. `macos/release.sh` publishes it as a new v
   background tab (⇧⌘-click: in front). A tab dragged out of the bar becomes a window (two papers side by
   side); ⌘N opens a new window.
 - **Library**: `~/Library/Application Support/arXivReader` (arXivReader menu → Show the library in Finder).
-  On first launch, the app offers to copy an existing library (the `library/` folder of this project):
-  quit the old version first. After that, the old and new versions share nothing.
+  File menu → Copy a Library…: an existing library (the `library/` folder of this project, or another Mac's)
+  replaces the current one, which is set aside in a folder next to it; quit the other version first. After
+  that, the two share nothing.
 - **Connecting the AI assistants**: *Sign in…* / *Run in Terminal* button in the AI tab.
 - Building requires the Xcode command-line tools (`swiftc`), miniforge (`conda`, Python taken from its cache)
   and an up-to-date `.venv` (its packages are copied). The build runs in `~/Library/Caches/arXivReader-build`

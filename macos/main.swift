@@ -33,7 +33,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let first = openTab(routes.first ?? "", beside: nil)
         for route in routes.dropFirst() { openTab(route, beside: first.window, front: false) }
         NSApp.activate(ignoringOtherApps: true)
-        offerImport()
         port = freePort(preferred: 8720)
         startServer()
     }
@@ -174,46 +173,70 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return bind(preferred) ?? bind(0) ?? preferred
     }
 
-    // ---------- Première ouverture : reprendre une bibliothèque existante ----------
+    // ---------- Reprendre une bibliothèque existante (menu Fichier) ----------
 
-    func offerImport() {
-        let database = support.appendingPathComponent("arxivreader.db")
-        guard !FileManager.default.fileExists(atPath: database.path) else { return }
-        let alert = NSAlert()
-        alert.messageText = tr("Bienvenue dans arXivReader", "Welcome to arXivReader")
-        alert.informativeText = tr(
-            "Vous avez déjà une bibliothèque arXivReader (dossier « library » de la version en ligne de commande) ? Elle peut être recopiée ici. Quittez d'abord l'ancienne version si elle est lancée.",
-            "Do you already have an arXivReader library (the “library” folder of the command-line version)? It can be copied here. Quit the old version first if it is running.")
-        alert.addButton(withTitle: tr("Choisir le dossier…", "Choose the folder…"))
-        alert.addButton(withTitle: tr("Commencer avec une bibliothèque vide", "Start with an empty library"))
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.message = tr("Dossier « library » qui contient arxivreader.db", "“library” folder containing arxivreader.db")
-        panel.prompt = tr("Recopier", "Copy")
-        guard panel.runModal() == .OK, let source = panel.url else { return }
+    // Une autre bibliothèque arXivReader (dossier « library » de la version en ligne de commande, copie d'un autre
+    // Mac) remplace celle-ci. Rien n'est effacé : la bibliothèque actuelle est mise de côté dans un dossier voisin.
+    // Le serveur, qui tient la base ouverte, est arrêté pendant la copie puis relancé.
+    @objc func copyLibrary() {
+        let confirm = NSAlert()
+        confirm.messageText = tr("Recopier une bibliothèque", "Copy a library")
+        confirm.informativeText = tr(
+            "Choisissez un dossier de bibliothèque arXivReader (il contient arxivreader.db) : il remplacera la bibliothèque actuelle, mise de côté dans un dossier voisin. Quittez d'abord l'autre version si elle est lancée.",
+            "Choose an arXivReader library folder (it holds arxivreader.db): it will replace the current library, which is set aside in a folder next to it. Quit the other version first if it is running.")
+        confirm.addButton(withTitle: tr("Choisir le dossier…", "Choose the folder…"))
+        confirm.addButton(withTitle: tr("Annuler", "Cancel"))
+        guard confirm.runModal() == .alertFirstButtonReturn else { return }
         let fm = FileManager.default
-        guard fm.fileExists(atPath: source.appendingPathComponent("arxivreader.db").path) else {
+        var source: URL?
+        while source == nil {
+            let panel = NSOpenPanel()
+            panel.canChooseDirectories = true
+            panel.canChooseFiles = false
+            panel.message = tr("Dossier de bibliothèque qui contient arxivreader.db", "Library folder containing arxivreader.db")
+            panel.prompt = tr("Recopier", "Copy")
+            guard panel.runModal() == .OK, let chosen = panel.url else { return }
+            if chosen.standardizedFileURL == support.standardizedFileURL { return } // la bibliothèque actuelle elle-même
+            if fm.fileExists(atPath: chosen.appendingPathComponent("arxivreader.db").path) { source = chosen; break }
             let missing = NSAlert()
             missing.messageText = tr("Ce dossier ne contient pas de bibliothèque arXivReader (arxivreader.db).",
                                      "This folder holds no arXivReader library (arxivreader.db).")
             missing.runModal()
-            return offerImport()
         }
+        guard let source else { return }
+        // serveur arrêté (sans la fenêtre « le serveur s'est arrêté »), le temps de remplacer la base
+        server?.terminationHandler = nil
+        server?.terminate()
+        server?.waitUntilExit()
+        serverReady = false
+        let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        let aside = support.deletingLastPathComponent()
+            .appendingPathComponent("\(support.lastPathComponent) \(tr("avant la recopie", "before the copy")) \(stamp)")
+        var problem: Error?
         do {
+            try fm.createDirectory(at: aside, withIntermediateDirectories: true)
+            for item in try fm.contentsOfDirectory(at: support, includingPropertiesForKeys: nil) {
+                try fm.moveItem(at: item, to: aside.appendingPathComponent(item.lastPathComponent))
+            }
             for item in try fm.contentsOfDirectory(at: source, includingPropertiesForKeys: nil)
-            where !["ai", "server.log", ".DS_Store"].contains(item.lastPathComponent) {
-                let target = support.appendingPathComponent(item.lastPathComponent)
-                if fm.fileExists(atPath: target.path) { try fm.removeItem(at: target) }
-                try fm.copyItem(at: item, to: target)
+            where !["ai", "server.log", "server.log.1", ".DS_Store"].contains(item.lastPathComponent) {
+                try fm.copyItem(at: item, to: support.appendingPathComponent(item.lastPathComponent))
             }
         } catch {
-            let failed = NSAlert()
-            failed.messageText = tr("La copie a échoué.", "Copying failed.")
-            failed.informativeText = "\(error)"
-            failed.runModal()
+            problem = error
         }
+        port = freePort(preferred: port)
+        startServer() // les onglets se reconnectent une fois le serveur prêt
+        let done = NSAlert()
+        if let problem {
+            done.alertStyle = .warning
+            done.messageText = tr("La copie a échoué.", "Copying failed.")
+            done.informativeText = tr("L'ancienne bibliothèque est dans : ", "The previous library is in: ") + aside.path + "\n\n\(problem)"
+        } else {
+            done.messageText = tr("Bibliothèque recopiée.", "Library copied.")
+            done.informativeText = tr("L'ancienne bibliothèque est mise de côté dans : ", "The previous library is set aside in: ") + aside.path
+        }
+        done.runModal()
     }
 
     // ---------- Onglets et fenêtres ----------
@@ -325,6 +348,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             entry(tr("Fermer la fenêtre", "Close Window"), #selector(closeWindow), "w", [.command, .shift], target: self),
             .separator(),
             entry(tr("Afficher tous les onglets", "Show All Tabs"), #selector(NSWindow.toggleTabOverview(_:)), "|"),
+            .separator(),
+            entry(tr("Recopier une bibliothèque…", "Copy a Library…"), #selector(copyLibrary), "", target: self),
         ])
         submenu(tr("Édition", "Edit"), [
             entry(tr("Annuler", "Undo"), Selector(("undo:")), "z"),
