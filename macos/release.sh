@@ -16,5 +16,9 @@ ARXIVREADER_NO_ALERTS=1 ARXIVREADER_PORT=8711 .venv/bin/python -m unittest disco
 macos/build.sh
 git tag -a "$TAG" -m "arXivReader $VERSION"
 git push origin HEAD "$TAG"
-if [ -n "${1:-}" ]; then NOTES=(--notes-file "$1"); else NOTES=(--generate-notes); fi
+# notes de la version, puis les indications d'installation (macOS refuse une application non notarisée)
+BODY=$(mktemp)
+if [ -n "${1:-}" ]; then cat "$1" macos/release-footer.md > "$BODY"; NOTES=(--notes-file "$BODY")
+else cp macos/release-footer.md "$BODY"; NOTES=(--notes-file "$BODY" --generate-notes); fi
 gh release create "$TAG" dist/arXivReader.dmg --title "arXivReader $VERSION" "${NOTES[@]}"
+rm -f "$BODY"

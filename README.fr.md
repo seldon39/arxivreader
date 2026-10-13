@@ -16,11 +16,37 @@ Télécharger `arXivReader.dmg` depuis la page [Releases](https://github.com/sel
 (Mac Apple Silicon, macOS 13 ou plus), l'ouvrir et glisser arXivReader dans Applications. L'application est
 autonome (Python et ses paquets sont inclus) ; rien d'autre à installer.
 
-- **Première ouverture** : l'application n'est pas signée par un compte développeur Apple, macOS la bloque.
-  Réglages Système → Confidentialité et sécurité → *Ouvrir quand même* (une seule fois).
+- **Première ouverture** : voir ci-dessous ; macOS la bloque une fois.
 - **Mises à jour** : l'application vérifie une fois par jour s'il existe une nouvelle version sur GitHub
   (réglable dans Réglages → Mises à jour) ; une pastille « Mise à jour » apparaît alors en haut à droite.
   Remplacer l'application dans Applications ; la bibliothèque est conservée.
+
+### Si macOS refuse d'ouvrir l'application
+
+L'application est libre, mais elle n'est pas signée par un compte développeur Apple (payant) ni « notarisée »
+par Apple. Sur un autre Mac que celui qui l'a construite, la première ouverture affiche un message du type
+*« arXivReader » n'a pas été ouvert — Apple n'a pas pu confirmer que « arXivReader » ne contenait pas de logiciel
+malveillant…*. C'est le message habituel de macOS pour toute application non notarisée ; pour l'ouvrir quand
+même :
+
+1. Double-cliquer sur arXivReader dans Applications ; au message, cliquer sur **Terminé** (pas sur *Placer dans
+   la corbeille*).
+2. Ouvrir **Réglages Système → Confidentialité et sécurité** et descendre jusqu'à la section **Sécurité**.
+3. À côté de *« arXivReader » a été bloqué pour protéger votre Mac*, cliquer sur **Ouvrir quand même**, confirmer
+   avec le mot de passe ou Touch ID, puis **Ouvrir**.
+
+macOS s'en souvient ; après une mise à jour (nouvelle copie téléchargée), il peut le redemander une fois. Sous
+macOS 14 ou avant, clic droit (ou Contrôle-clic) sur l'application dans Applications → **Ouvrir** → **Ouvrir**
+suffit aussi.
+
+Ou, dans le Terminal, retirer la marque « téléchargé depuis Internet » de l'application (seulement pour une
+application téléchargée depuis cette page) :
+
+```bash
+xattr -dr com.apple.quarantine /Applications/arXivReader.app
+```
+
+Rendre cette étape inutile est dans la [feuille de route](https://github.com/seldon39/arxivreader/issues/1).
 
 ## Application Mac : construction
 

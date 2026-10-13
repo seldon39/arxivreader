@@ -16,11 +16,34 @@ Download `arXivReader.dmg` from the [Releases](https://github.com/seldon39/arxiv
 (Apple Silicon Mac, macOS 13 or later), open it and drag arXivReader to Applications. The app is
 self-contained (Python and its packages are included); there is nothing else to install.
 
-- **Opening it the first time**: the app is not signed with an Apple developer account, so macOS blocks it.
-  System Settings → Privacy & Security → *Open Anyway* (only once).
+- **Opening it the first time**: see below; macOS blocks it once.
 - **Updates**: the app checks once a day whether a new version is available on GitHub
   (Settings → Updates); an "Update" pill then appears at the top right.
   Replace the app in Applications; your library is kept.
+
+### If macOS refuses to open the app
+
+The app is open source but not signed with a (paid) Apple developer account, nor notarized by Apple. On a Mac
+other than the one that built it, the first opening shows a message such as *"arXivReader" Not Opened — Apple
+could not verify "arXivReader" is free of malware…*. This is macOS's usual message for any app that is not
+notarized; to open it anyway:
+
+1. Double-click arXivReader in Applications; when the message appears, click **Done** (not *Move to Trash*).
+2. Open **System Settings → Privacy & Security** and scroll down to the **Security** section.
+3. Next to *"arXivReader" was blocked to protect your Mac*, click **Open Anyway**, then confirm with your
+   password or Touch ID, and **Open**.
+
+macOS remembers it; after an update (a new copy downloaded), it may ask once more. On macOS 14 or earlier,
+right-click (or Control-click) the app in Applications → **Open** → **Open** also works.
+
+Alternatively, in Terminal, remove the "downloaded from the Internet" mark from the app (only for an app you
+downloaded from this page):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/arXivReader.app
+```
+
+Making this unnecessary is on the [roadmap](https://github.com/seldon39/arxivreader/issues/1).
 
 ## Mac app: building
 
