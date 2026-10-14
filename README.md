@@ -9,7 +9,7 @@ Everything stays on your Mac: the server only listens on 127.0.0.1. French and E
 
 ![arXivReader demo: feed sorted by relevance, library, reader with statement previews, highlights and LaTeX copy, AI assistant, dependency graph, related papers](docs/demo.gif)
 
-** To contribute **: [CONTRIBUTING.md](CONTRIBUTING.md) and the [roadmap](ROADMAP.md).
+**To contribute**: [CONTRIBUTING.md](CONTRIBUTING.md) and the [roadmap](ROADMAP.md).
 
 ## Install
 
