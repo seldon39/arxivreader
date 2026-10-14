@@ -9,8 +9,7 @@ Tout reste sur votre Mac : le serveur n'écoute que sur 127.0.0.1. Interface en 
 
 ![Démo d'arXivReader : feed trié par pertinence, bibliothèque, lecteur avec aperçu des énoncés, surlignage et copie LaTeX, assistant IA, graphe des dépendances, articles liés](docs/demo.gif)
 
-**Tout retour est le bienvenu** : un bug, un article qui s'affiche mal, une fonction qui manque… [Ouvrez une issue](https://github.com/seldon39/arxivreader/issues), ou écrivez-moi depuis [mon site](https://razvan-apredoaei.netlify.app/fr/contact/). Pour contribuer : [CONTRIBUTING.md](CONTRIBUTING.md) et
-la [feuille de route](ROADMAP.md) (en anglais).
+**Pour contribuer :** : [CONTRIBUTING.md](CONTRIBUTING.md) et la [feuille de route](ROADMAP.md) (en anglais).
 
 ## Installer
 
