@@ -5,12 +5,26 @@
 const BASE = "/static/vendor/mathjax";
 let loading = null;
 
+// Macros courantes que les auteurs laissent dans leurs titres et résumés (arXiv ne les développe pas) ;
+// les \newcommand d'un article (defineMacros) les remplacent pour ses propres énoncés
+const op = (name) => `\\operatorname{${name}}`;
+const MACROS = {
+  R: "\\mathbb{R}", N: "\\mathbb{N}", Z: "\\mathbb{Z}", Q: "\\mathbb{Q}", C: "\\mathbb{C}",
+  RR: "\\mathbb{R}", NN: "\\mathbb{N}", ZZ: "\\mathbb{Z}", QQ: "\\mathbb{Q}", CC: "\\mathbb{C}",
+  eps: "\\varepsilon", veps: "\\varepsilon",
+  abs: ["\\left\\lvert #1 \\right\\rvert", 1], norm: ["\\left\\lVert #1 \\right\\rVert", 1],
+  supp: op("supp"), Hom: op("Hom"), End: op("End"), Aut: op("Aut"), Tr: op("Tr"), tr: op("tr"),
+  id: op("id"), Id: op("Id"), rank: op("rank"), diag: op("diag"), dist: op("dist"), vol: op("vol"),
+  sgn: op("sgn"), Spec: op("Spec"),
+};
+
 function loadMathJax() {
   loading ||= new Promise((resolve, reject) => {
     window.MathJax = {
       loader: { load: [], paths: { mathjax: BASE } },
       // TeX des titres et résumés du feed ($L^2$, \(\mathbb{C}^n\)…)
       tex: { inlineMath: [["$", "$"], ["\\(", "\\)"]], displayMath: [["$$", "$$"], ["\\[", "\\]"]], processEscapes: true,
+        macros: MACROS,
         noundefined: { color: "" },  // macro propre à l'auteur (\db…) : affichée telle quelle, sans rouge
         // \href, \style, \class, \cssId désactivés : un résumé ou un titre (texte venu d'arXiv) pourrait y
         // cacher un lien vers n'importe quelle adresse, invisible et étendu à toute la fenêtre
