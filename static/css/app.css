@@ -1340,13 +1340,17 @@ body.has-selection-bar #toast { bottom: 96px; }
 .related-graph { position: relative; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; }
 .related-graph svg { display: block; width: 100%; height: auto; aspect-ratio: var(--ratio, 800 / 460); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
 .related-graph svg:active { cursor: grabbing; }
-.related-edge { stroke: var(--border-strong); stroke-opacity: .55; }
+.related-edge { stroke: var(--border-strong); stroke-opacity: .22; }
 .related-edge.extra { display: none; }
 .related-edge.focus { display: inline; stroke: var(--accent); stroke-opacity: .75; }
 .related-node.neighbour text { fill: var(--text); }
 .related-node { cursor: pointer; }
 .related-node circle { stroke: var(--surface); stroke-width: 1; transition: stroke-width .12s; }
-.related-node.in-library circle { stroke: var(--accent-strong); stroke-width: 2.5; }
+/* dans la bibliothèque : pastille cochée (couleur du texte : sombre en clair, claire en sombre) */
+.related-node .library-badge { display: none; pointer-events: none; }
+.related-node.in-library .library-badge { display: inline; }
+.related-graph .related-node .library-badge circle { fill: var(--text); stroke: var(--surface); stroke-width: 1.2; }
+.related-graph .related-node .library-badge path { fill: none; stroke: var(--surface); stroke-linecap: round; stroke-linejoin: round; }
 .related-node.origin circle { stroke: var(--accent-strong); stroke-width: 2; }
 .related-node.selected circle { stroke: var(--text); stroke-width: 2.5; }
 .related-node.linked circle { stroke: var(--accent-strong); stroke-width: 2.5; }
@@ -1383,7 +1387,12 @@ body.related-expanded { overflow: hidden; }
 .related-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
 .related-legend .legend-old { background: color-mix(in srgb, var(--accent) 22%, var(--surface)); }
 .related-legend .legend-new { background: var(--accent); }
-.related-legend .legend-library { background: var(--surface); border: 2px solid var(--accent-strong); width: 8px; height: 8px; }
+.related-legend .legend-library { position: relative; background: var(--text); }
+.related-legend .legend-library::after { content: ""; position: absolute; left: 3px; top: 1.5px; width: 2.5px; height: 4.5px; border: solid var(--surface); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
+.related-legend .legend-years { display: inline-flex; align-items: center; gap: 6px; }
+.related-legend .legend-years b { font-weight: 600; }
+.related-legend i.legend-bar { width: 110px; height: 8px; border-radius: 4px; margin: 0;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 38%, var(--surface)), color-mix(in srgb, var(--accent) 94%, var(--surface))); }
 .related-detail { grid-column: 2; padding: 12px 14px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface); }
 .related-detail h3 { font: 600 16px var(--font-read); margin: 0 0 4px; }
 .related-detail p { margin: 0; }

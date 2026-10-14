@@ -252,7 +252,14 @@ export async function renderRelated(root, arxivFromRoute = null) {
     graphBox.append(h("div", { class: "related-graph-tools" },
       tool("zoomOut", t("related.zoomOut"), () => zoomBy(0.8)), tool("zoomIn", t("related.zoomIn"), () => zoomBy(1.25)),
       tool("fit", t("related.fit"), () => fit()), expand), h("div", { class: "related-legend" },
-      h("span", {}, h("i", { class: "legend-old" }), t("related.legend.old")), h("span", {}, h("i", { class: "legend-new" }), t("related.legend.new")),
+      // couleur selon l'année : barre du plus ancien au plus récent du graphe (comme shade, dans renderGraph)
+      ...(() => {
+        const years = graph.nodes.map((n) => n.year).filter(Boolean);
+        if (years.length < 2 || Math.min(...years) === Math.max(...years)) {
+          return [h("span", {}, h("i", { class: "legend-old" }), t("related.legend.old")), h("span", {}, h("i", { class: "legend-new" }), t("related.legend.new"))];
+        }
+        return [h("span", { class: "legend-years" }, h("b", {}, String(Math.min(...years))), h("i", { class: "legend-bar" }), h("b", {}, String(Math.max(...years))))];
+      })(),
       h("span", {}, t("related.legend.size")), h("span", {}, h("i", { class: "legend-library" }), t("related.inLibrary"))));
     grid.append(h("div", { class: "related-side" }, tabs, list), graphBox, detail);
     result.replaceChildren(head, grid);
@@ -427,7 +434,7 @@ function drawGraph(graph, selected, select, H) {
   const years = graph.nodes.map((n) => n.year).filter(Boolean);
   const y0 = years.length ? Math.min(...years) : 2000, y1 = years.length ? Math.max(...years) : 2000;
   const shade = (n) => `color-mix(in srgb, var(--accent) ${Math.round(38 + 56 * (((n.year || y0) - y0) / Math.max(1, y1 - y0)))}%, var(--surface))`;
-  const radius = (n) => (n.origin ? 14 : 4 + Math.min(18, Math.sqrt(n.citations || 0) * 0.36));
+  const radius = (n) => (n.origin ? 14 : 5 + Math.min(28, Math.sqrt(n.citations || 0) * 0.58));
   // liens entre articles (ceux de l'article de départ ne sont pas dessinés : la distance les montre) ; les moins
   // forts n'apparaissent que pour l'article choisi
   const edgeLayer = el("g", {}, view);
@@ -440,6 +447,12 @@ function drawGraph(graph, selected, select, H) {
       ...(n.origin ? {} : { role: "button", "aria-label": `${plainTitle(n.title)}, ${n.year || "?"}` }) }, view);
     // couleur en style : WebKit (l'application) n'accepte pas var() dans l'attribut fill
     el("circle", { cx: n.x, cy: n.y, r: radius(n), style: `fill: ${n.origin ? "var(--accent)" : shade(n)}`, "vector-effect": "non-scaling-stroke" }, g);
+    if (!n.origin) { // pastille cochée en haut à droite : discrète, sans se confondre avec le contour de l'article choisi
+      const r = radius(n), bx = n.x + r * 0.75, by = n.y - r * 0.75, br = Math.max(3.6, r * 0.42);
+      const badge = el("g", { class: "library-badge" }, g);
+      el("circle", { cx: bx, cy: by, r: br, "vector-effect": "non-scaling-stroke" }, badge);
+      el("path", { d: `M ${bx - br * 0.45} ${by} l ${br * 0.32} ${br * 0.35} l ${br * 0.6} ${-br * 0.7}`, style: `stroke-width: ${br * 0.32}` }, badge);
+    }
     const label = el("text", { x: n.x, "text-anchor": "middle" }, g);
     label.textContent = `${lastName(n.authors?.[0])} ${n.year || ""}`.trim();
     labels.push({ n, label, g });
@@ -483,16 +496,30 @@ function drawGraph(graph, selected, select, H) {
     const kept = [];
     const rank = ({ n, g }) => (n.origin ? 4 : g.classList.contains("selected") ? 3 : g.classList.contains("neighbour") || g.classList.contains("linked") ? 2 : 0)
       * 1e6 + (n.citations || 0);
+    const overlaps = (box) => kept.some((k) => box[0] < k[2] && k[0] < box[2] && box[1] < k[3] && k[1] < box[3]);
     for (const item of [...labels].sort((a, b) => rank(b) - rank(a))) {
-      const size = (item.n.origin ? 12 : 10) / scale;
-      const y = item.n.y + radius(item.n) + size * 1.05;
-      item.label.style.fontSize = `${size}px`;
-      item.label.setAttribute("y", y);
-      const half = item.label.textContent.length * size * 0.29, box = [item.n.x - half, y - size * 0.85, item.n.x + half, y + size * 0.2];
-      const free = !kept.some((k) => box[0] < k[2] && k[0] < box[2] && box[1] < k[3] && k[1] < box[3]);
+      const { n, label } = item;
+      const size = (n.origin ? 12 : 10) / scale;
+      const r = radius(n), width = label.textContent.length * size * 0.58;
+      label.style.fontSize = `${size}px`;
+      // places essayées : dessous (l'habituelle), dessus, à droite, à gauche ; [x, ligne de base, ancrage, boîte]
+      const places = [
+        [n.x, n.y + r + size * 1.05, "middle"],
+        [n.x, n.y - r - size * 0.35, "middle"],
+        [n.x + r + size * 0.3, n.y + size * 0.35, "start"],
+        [n.x - r - size * 0.3, n.y + size * 0.35, "end"],
+      ].map(([x, y, anchor]) => {
+        const left = anchor === "middle" ? x - width / 2 : anchor === "start" ? x : x - width;
+        return [x, y, anchor, [left, y - size * 0.85, left + width, y + size * 0.2]];
+      });
       const always = rank(item) >= 3e6; // l'article de départ, le choisi
-      item.label.classList.toggle("minor", !free && !always);
-      if (free || always) kept.push(box);
+      const place = places.find((p) => !overlaps(p[3])) || (always ? places[0] : null);
+      const [x, y, anchor, box] = place || places[0]; // masquée (montrée au survol) : à sa place habituelle
+      label.setAttribute("x", x);
+      label.setAttribute("y", y);
+      label.setAttribute("text-anchor", anchor);
+      label.classList.toggle("minor", !place);
+      if (place) kept.push(box);
     }
   }
   highlight(); // place aussi les noms

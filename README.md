@@ -126,7 +126,7 @@ references and papers citing them together, relative to the size of the lists (a
 not crowd out a close work). Tabs: the graph, prior works (those most cited by the papers in the graph: often
 the seminal works) and derivative works (those citing the most papers in the graph: surveys, recent work);
 choosing one highlights the papers in the graph linked to it. Graph: the closer two papers, the nearer they are drawn; only each paper's strongest links are drawn, all those of the chosen paper appear; size by
-citations, colour by year, a ring for those in the library; pinch (or ⌘ + scroll, or the − + buttons) to zoom, drag the background to move; the graph can be enlarged to the whole window (Esc to return, keys + − 0). The
+citations, colour by year (the legend gives the years), a check-mark badge for those in the library; pinch (or ⌘ + scroll, or the − + buttons) to zoom, drag the background to move; the graph can be enlarged to the whole window (Esc to return, keys + − 0). The
 chosen paper can be read, added to the library, filed in a folder (or dragged onto one), or become the start of a
 new graph. A graph is kept fifteen days ("Rebuild" to redo it). Building takes from a few seconds to several
 minutes without a Semantic Scholar API key (shared quota); it runs in the background, shows its current step, and "Cancel" stops it.
