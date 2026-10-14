@@ -9,7 +9,7 @@ Tout reste sur votre Mac : le serveur n'écoute que sur 127.0.0.1. Interface en 
 
 ![Démo d'arXivReader : feed trié par pertinence, bibliothèque, lecteur avec aperçu des énoncés, surlignage et copie LaTeX, assistant IA, graphe des dépendances, articles liés](docs/demo.gif)
 
-**Pour contribuer :** : [CONTRIBUTING.md](CONTRIBUTING.md) et la [feuille de route](ROADMAP.md) (en anglais).
+**Pour contribuer :** [CONTRIBUTING.md](CONTRIBUTING.md) et la [feuille de route](ROADMAP.md) (en anglais).
 
 ## Installer
 
