@@ -14,7 +14,7 @@ from collections import Counter
 import httpx
 from bs4 import BeautifulSoup
 
-from . import db
+from . import db, s2
 from .arxiv import ATOM, ArxivError, fetch_metadata, parse_arxiv_id, with_retry
 from .config import USER_AGENT
 from .library import paper_dir
@@ -27,7 +27,7 @@ S2 = "https://api.semanticscholar.org/graph/v1"
 def _get_s2(path, params, api_key=None):
     headers = {"User-Agent": USER_AGENT, **({"x-api-key": api_key} if api_key else {})}
     with httpx.Client(headers=headers, timeout=30) as client:
-        response = with_retry(lambda: client.get(f"{S2}{path}", params=params), retry_on=(429,), delays=(2, 4, 8))
+        response = with_retry(s2.paced(lambda: client.get(f"{S2}{path}", params=params), api_key), retry_on=(429,), delays=(2, 4, 8))
     if response.status_code == 404:
         return None
     response.raise_for_status()

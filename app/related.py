@@ -26,7 +26,7 @@ import unicodedata
 
 import httpx
 
-from . import db
+from . import db, s2
 from .arxiv import fetch_metadata, fetch_titles, with_retry
 from .config import USER_AGENT
 from .feed import tex_text
@@ -107,6 +107,7 @@ def _ensure():
 
 
 RETRIES = (3, 6, 12, 20)  # sans clé, le quota de Semantic Scholar est partagé : on patiente plus longtemps
+UNKEYED_PAUSE = 1.2  # sans clé : une requête toutes les 1,2 s, comme toujours (avec une clé : s2.pace)
 
 
 def _answer(response):
@@ -124,8 +125,8 @@ def _answer(response):
         raise RelatedError("bad-response")
 
 
-def _get(client, url, **params):
-    data = _answer(with_retry(lambda: client.get(url, params=params), retry_on=(429, 503, 504), delays=RETRIES, sleep=_wait))
+def _get(client, url, api_key=None, **params):
+    data = _answer(with_retry(s2.paced(lambda: client.get(url, params=params), api_key, _wait), retry_on=(429, 503, 504), delays=RETRIES, sleep=_wait))
     if not isinstance(data, dict):
         raise RelatedError("bad-response")
     return data
@@ -245,9 +246,10 @@ def _batch(client, ids, fields, api_key, step):
     lots = (len(ids) + 499) // 500
     for start in range(0, len(ids), 500):
         _step(step, start // 500 + 1, lots)
-        _wait(_pause(api_key))
+        if not api_key:
+            _wait(UNKEYED_PAUSE)  # avec une clé : s2.paced, commun à toute l'application (interruptible aussi)
         batch = ids[start:start + 500]
-        answer = _answer(with_retry(lambda: client.post(f"{S2}/paper/batch", params={"fields": fields}, json={"ids": batch}),
+        answer = _answer(with_retry(s2.paced(lambda: client.post(f"{S2}/paper/batch", params={"fields": fields}, json={"ids": batch}), api_key, _wait),
                                     retry_on=(429, 503, 504), delays=RETRIES, sleep=_wait))
         if not isinstance(answer, list):
             raise RelatedError("bad-response")
@@ -256,9 +258,6 @@ def _batch(client, ids, fields, api_key, step):
     return found
 
 
-def _pause(api_key):
-    """Une requête par seconde au plus : quota partagé sans clé, et quota d'une clé nouvelle."""
-    return 1.05 if api_key else 1.2
 
 
 def _ids(item):
@@ -275,10 +274,11 @@ def fetch(arxiv_id, api_key=None):
     with httpx.Client(headers=headers, timeout=60) as client:
         pid = f"arXiv:{arxiv_id}"
         _step("references")
-        refs = _get(client, f"{S2}/paper/{pid}/references", limit=1000, fields=FIELDS).get("data") or []
-        _wait(_pause(api_key))
+        refs = _get(client, f"{S2}/paper/{pid}/references", api_key, limit=1000, fields=FIELDS).get("data") or []
+        if not api_key:
+            _wait(UNKEYED_PAUSE)
         _step("citations")
-        cites = _get(client, f"{S2}/paper/{pid}/citations", limit=1000, fields=FIELDS).get("data") or []
+        cites = _get(client, f"{S2}/paper/{pid}/citations", api_key, limit=1000, fields=FIELDS).get("data") or []
         candidates = {}
         for rel, rows, key in (("ref", refs, "citedPaper"), ("cite", cites, "citingPaper")):
             for row in rows:

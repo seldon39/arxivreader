@@ -12,7 +12,7 @@ from collections import Counter
 
 import httpx
 
-from . import db, library, profile, search, zotero
+from . import db, library, profile, s2, search, zotero
 from .arxiv import with_retry
 from .config import USER_AGENT
 from .relevance import author_key
@@ -166,7 +166,7 @@ def suggest(papers, owner, api_key=None):
         try:
             headers = {"User-Agent": USER_AGENT, **({"x-api-key": api_key} if api_key else {})}
             with httpx.Client(headers=headers, timeout=60) as client:
-                response = with_retry(lambda: client.post(S2_BATCH, params={"fields": "references.authors"}, json={"ids": ids}),
+                response = with_retry(s2.paced(lambda: client.post(S2_BATCH, params={"fields": "references.authors"}, json={"ids": ids}), api_key),
                                       retry_on=(429, 503), delays=(3, 6))
             answer = response.json() if response.status_code == 200 else []
             for paper in answer if isinstance(answer, list) else []:

@@ -67,8 +67,8 @@ def check(api_key=None, force=False):
     for i, paper in enumerate(mine):
         if alerts.stop.is_set():
             return []
-        if i:
-            time.sleep(1.2)  # Semantic Scholar sans clé : environ une requête par seconde
+        if i and not api_key:
+            time.sleep(1.2)  # Semantic Scholar sans clé : environ une requête par seconde (avec une clé : s2.pace)
         try:
             citing = fetch(paper["key"], api_key)
         except Exception:  # réseau, limite de requêtes : nouvel essai au prochain passage

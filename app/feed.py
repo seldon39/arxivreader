@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 
-from . import db, journals, profile, relevance
+from . import db, journals, profile, relevance, s2
 from .arxiv import ATOM, ARXIV_NS, extract_ids, with_retry
 from .config import FEED_CATEGORIES, USER_AGENT
 
@@ -470,7 +470,7 @@ def refresh_recommendations(api_key=None, limit=60):
     headers = {"x-api-key": api_key} if api_key else {}
     body = {"positivePaperIds": positives, "negativePaperIds": negatives}
     with _client(headers) as client:
-        response = with_retry(lambda: client.post(S2_RECOMMEND, params={"fields": S2_FIELDS, "limit": limit}, json=body),
+        response = with_retry(s2.paced(lambda: client.post(S2_RECOMMEND, params={"fields": S2_FIELDS, "limit": limit}, json=body), api_key),
                               retry_on=(429,), delays=(2, 4, 8))
     if response.status_code == 429:
         raise FeedError("rate-limited")

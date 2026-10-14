@@ -15,7 +15,7 @@ from collections import Counter
 
 import httpx
 
-from . import db
+from . import db, s2
 from .arxiv import with_retry
 from .config import PAPERS, USER_AGENT
 
@@ -129,7 +129,7 @@ def fetch_embeddings(keys, api_key=None, timeout=60):
     with httpx.Client(headers=headers, timeout=timeout) as client:
         for start in range(0, len(missing), 500):
             batch = missing[start:start + 500]
-            response = with_retry(lambda: client.post(S2_BATCH, params={"fields": "embedding.specter_v2"}, json={"ids": batch}),
+            response = with_retry(s2.paced(lambda: client.post(S2_BATCH, params={"fields": "embedding.specter_v2"}, json={"ids": batch}), api_key),
                                   retry_on=(429,), delays=(2, 4, 8))
             if response.status_code != 200:
                 return False

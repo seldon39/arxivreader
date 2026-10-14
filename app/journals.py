@@ -11,7 +11,7 @@ import time
 
 import httpx
 
-from . import db
+from . import db, s2
 from .arxiv import with_retry
 from .config import USER_AGENT
 from .relevance import S2_BATCH, s2_key
@@ -80,7 +80,7 @@ def fetch(keys, api_key=None, timeout=30):
         with httpx.Client(headers=headers, timeout=timeout) as client:
             for start in range(0, len(missing), 500):
                 batch = missing[start:start + 500]
-                response = with_retry(lambda: client.post(S2_BATCH, params={"fields": "journal,externalIds"}, json={"ids": batch}),
+                response = with_retry(s2.paced(lambda: client.post(S2_BATCH, params={"fields": "journal,externalIds"}, json={"ids": batch}), api_key),
                                       retry_on=(429,), delays=(2, 4, 8))
                 answers = response.json() if response.status_code == 200 else None
                 if not isinstance(answers, list):

@@ -171,6 +171,10 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
 
 ## 9. Pièges connus
 
+- Semantic Scholar avec une clé : 1 requête/s pour toute l'application. Toute nouvelle requête passe par
+  `s2.paced(send, api_key)` (`app/s2.py`), qui espace les requêtes avec clé quel que soit le fil ; sans clé, rien
+  de commun : chaque module garde ses pauses (`related.UNKEYED_PAUSE`, `citations`), comme avant la clé.
+
 - Le Python embarqué garde en dur des chemins de l'ordinateur où l'application a été construite (fuseaux horaires,
   certificats SSL) : sur un autre Mac, ils n'existent pas. Le lanceur (`macos/main.swift`) donne donc
   `PYTHONTZPATH=/usr/share/zoneinfo` et `SSL_CERT_FILE` (certificats de l'application), et `feed._zone` se rabat sur
