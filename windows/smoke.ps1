@@ -38,7 +38,9 @@ try {
         $file = Join-Path $PWD "shots/$($shot[0]).png"
         & $edge --headless=new --disable-gpu --hide-scrollbars --window-size=1280,860 --virtual-time-budget=20000 `
             --user-data-dir="$env:RUNNER_TEMP\edge-shots" --screenshot="$file" "$base/$($shot[1])" 2>&1 | Out-Null
-        Write-Host "$($shot[0]): $((Get-Item $file -ErrorAction SilentlyContinue).Length) bytes"
+        $bytes = (Get-Item $file -ErrorAction SilentlyContinue).Length
+        Write-Host "$($shot[0]): $bytes bytes"
+        if ($bytes -lt 10000) { throw "screenshot $($shot[0]) missing or blank" }
     }
 }
 finally {
@@ -51,23 +53,41 @@ finally {
 # La fenêtre de l'application elle-même (WebView2), sur deux onglets : capture de l'écran entier
 Remove-Item Env:ARXIVREADER_NO_BROWSER
 $env:ARXIVREADER_START = "#/paper/1603.04246,#/feed"
-$window = Start-Process dist/arXivReader/arXivReader.exe -PassThru
-try {
-    Start-Sleep 35
-    $window.Refresh()
-    Write-Host "window: '$($window.MainWindowTitle)', exited: $($window.HasExited)"
-    Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+function Save-Screen($name) {
     $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
     $bitmap = New-Object System.Drawing.Bitmap $screen.Width, $screen.Height
     [System.Drawing.Graphics]::FromImage($bitmap).CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
-    $bitmap.Save((Join-Path $PWD "shots/window.png"))
-    Write-Host "screen $($screen.Width)x$($screen.Height)"
-    if ($window.HasExited) { throw "the window closed by itself" }
+    $bitmap.Save((Join-Path $PWD "shots/$name.png"))
 }
+$window = Start-Process dist/arXivReader/arXivReader.exe -PassThru
+$failure = $null
+try {
+    # titre de la fenêtre = celui du premier onglet (l'article) une fois la page chargée
+    for ($i = 0; $i -lt 90; $i++) {
+        $window.Refresh()
+        if ($window.HasExited -or $window.MainWindowTitle -like "The sphere packing*") { break }
+        Start-Sleep 1
+    }
+    Start-Sleep 5  # formules, second onglet
+    Write-Host "window: '$($window.MainWindowTitle)', exited: $($window.HasExited)"
+    Save-Screen "window"
+    if ($window.HasExited) { throw "the window closed by itself" }
+    if ($window.MainWindowTitle -notlike "The sphere packing*arXivReader") { throw "the first tab did not load" }
+    # serveur arrêté de lui-même : la fenêtre reste ouverte et propose de le relancer
+    Get-Process arXivReader-server | Stop-Process -Force
+    Start-Sleep 4
+    Save-Screen "server-stopped"
+    $window.Refresh()
+    if ($window.HasExited) { throw "the window closed when the server stopped" }
+}
+catch { $failure = $_ }
 finally {
     Stop-Process -Id $window.Id -Force -ErrorAction SilentlyContinue
     Start-Sleep 2
-    $left = Get-Process arXivReader-server -ErrorAction SilentlyContinue
-    Write-Host "server processes left after the window: $(@($left).Count)"  # 0 attendu : arrêté avec la fenêtre
+    $left = @(Get-Process arXivReader-server -ErrorAction SilentlyContinue).Count
+    Write-Host "server processes left after the window: $left"
     Get-Content "$library/server.log" -ErrorAction SilentlyContinue | Select-Object -Last 20
 }
+if ($failure) { throw $failure }
+if ($left -ne 0) { throw "server still running after the window closed" }

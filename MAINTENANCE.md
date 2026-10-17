@@ -114,13 +114,22 @@ Ouvrir.
 
 ### Version Windows (préversion)
 
-Construite par GitHub Actions (`.github/workflows/windows.yml`, machine `windows-latest`) : installation de
-`requirements.lock` + `tzdata` (fuseaux horaires, absents de Windows) + PyInstaller, **tous les tests** (ceux propres
-au Mac sont sautés), construction d'un dossier `arXivReader\arXivReader.exe` (PyInstaller `--onedir`), puis
-`windows/smoke.ps1` : serveur démarré sur une bibliothèque vide, type des modules JavaScript, import de 1603.04246,
-captures par Edge sans fenêtre (`shots/`, dans l'artefact de l'exécution, avec le zip). Chaque poussée sur la
-branche `windows` la reconstruit ; une étiquette `windows-vX.Y.Z` (même numéro que `app/version.py`) la publie en
-**préversion** : « latest » (Mac) l'ignore, et l'application Windows ne regarde que les étiquettes `windows-v…`.
+Construite par GitHub Actions (`.github/workflows/windows.yml`, machine `windows-latest`) **à chaque poussée sur
+`main`** : installation de `requirements.lock` et de `windows/build-requirements.txt` (PyInstaller, `tzdata` pour les
+fuseaux horaires, versions figées), **tous les tests** (ceux propres au Mac sont sautés), serveur
+`server\arXivReader-server.exe` (PyInstaller `--onedir`), fenêtre `arXivReader.exe` (`dotnet build`, SDK WebView2 à
+version figée), zip, puis `windows/smoke.ps1` : serveur sur une bibliothèque vide, type des modules JavaScript, import
+de 1603.04246, captures par Edge sans fenêtre, puis la fenêtre de l'application sur deux onglets (titre vérifié),
+serveur tué (la fenêtre doit rester et proposer de le relancer), et aucun serveur restant une fois la fenêtre fermée.
+Captures dans `shots/` (artefact de l'exécution, gardé 14 jours, avec le zip).
+
+Publier une version Windows : `VERSION` augmentée et committée, poussée, puis
+`git tag windows-vX.Y.Z && git push origin windows-vX.Y.Z` (X.Y.Z = `app/version.py`, vérifié par le workflow).
+L'étape de publication (seule à pouvoir écrire sur le dépôt) crée la **préversion** `windows-vX.Y.Z` (« latest », lu par
+le Mac, l'ignore ; l'application Windows ne regarde que les étiquettes `windows-v…`) et recrée `windows-latest`,
+l'adresse fixe donnée dans le README et sur le site. Mac et Windows partagent les numéros : une version publiée
+des deux côtés est le même code ; `macos/release.sh` refuse un numéro déjà publié pour Windows avec un autre code
+dans `app/` ou `static/` (une version propre à Windows, comme 1.9.18, ne se republie donc pas telle quelle sur Mac).
 
 - Fenêtre : `windows/shell/` (C#, .NET Framework 4.8 inclus dans Windows, WebView2), l'équivalent de
   `macos/main.swift` : une page WebView2 par onglet (historique propre à chacune), barre d'onglets dessinée façon

@@ -77,3 +77,13 @@ class FollowedAuthors(unittest.TestCase):
              mock.patch.object(profile.httpx, "Client", return_value=client):
             papers = profile.followed_author_papers(["math.DG", "math.CV"])
         self.assertEqual(sorted(p["arxiv_id"] for p in papers), ["2610.00002", "2610.00003"])
+        # grands domaines : physique d'un seul tenant (hep-th, gr-qc…), math-ph pour les mathématiques et la physique
+        from app.profile import _fields
+        self.assertEqual(_fields("gr-qc"), _fields("hep-th"))
+        self.assertEqual(_fields("math-ph"), {"math", "physics"})
+        self.assertEqual(_fields("stat.ML"), _fields("cs.LG"))
+        self.assertNotEqual(_fields("q-bio.PE"), _fields("math.PR"))
+        with mock.patch.object(profile, "list_items", return_value=[{"kind": "author", "label": "Lei Wang"}]), \
+             mock.patch.object(profile.httpx, "Client", return_value=client):
+            physics = profile.followed_author_papers(["math-ph"])  # feed de physique mathématique seule
+        self.assertEqual(sorted(p["arxiv_id"] for p in physics), ["2610.00001", "2610.00002", "2610.00003"])

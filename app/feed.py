@@ -201,13 +201,7 @@ def refresh_arxiv(categories=None, api_key=None):
     response.raise_for_status()
     items = parse_rss(response.text)
     if not items:
-        # flux vide (week-end, jour férié d'arXiv) : sans jour déjà en base (première ouverture), le feed resterait
-        # vide ; la dernière annonce publiée est lue à la place
-        day = latest_announcement_day()
-        if not known_days().get(day):
-            count = fetch_day(day, categories, api_key)
-            db.save_settings({"feed.arxivRefreshed": _now()})
-            return count
+        return _latest_published(categories, api_key)
     with db.connect() as connection:
         for item in items:
             _store(connection, item)
@@ -221,6 +215,32 @@ def refresh_arxiv(categories=None, api_key=None):
     db.save_settings({"feed.arxivRefreshed": _now()})
     threading.Thread(target=_complete_refresh, args=(items, categories, api_key), daemon=True).start()
     return len(items)
+
+
+LOOKBACK_DAYS = 5  # jours ouvrés remontés au plus quand le flux est vide
+
+
+def _latest_published(categories, api_key):
+    """Flux RSS vide (week-end, jour férié d'arXiv, dimanche soir avant la publication) : sans jour déjà en base
+    (première ouverture), le feed resterait vide. La dernière annonce publiée est lue à la place, en remontant les
+    jours ouvrés : un jour férié (aucune annonce) mène à celui d'avant."""
+    known = known_days()
+    day = date.fromisoformat(latest_announcement_day())
+    for _ in range(LOOKBACK_DAYS):
+        iso = day.isoformat()
+        if known.get(iso):  # dernière annonce déjà en base : rien de plus à lire
+            db.save_settings({"feed.arxivRefreshed": _now()})
+            return 0
+        count = 0 if iso in known else fetch_day(iso, categories, api_key)  # 0 en base : jour sans annonce
+        if count:
+            db.save_settings({"feed.arxivRefreshed": _now()})
+            # auteurs suivis, résumés : comme après une mise à jour par le flux (revues et vecteurs : déjà faits)
+            threading.Thread(target=_complete_refresh, args=([], categories, api_key), daemon=True).start()
+            return count
+        day -= timedelta(days=1)
+        while day.weekday() >= 5:
+            day -= timedelta(days=1)
+    return 0  # rien trouvé (réseau, API d'arXiv) : pas de date de mise à jour, la page réessaiera
 
 
 def _complete_refresh(items, categories, api_key):

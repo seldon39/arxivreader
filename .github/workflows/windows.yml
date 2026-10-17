@@ -1,15 +1,16 @@
-# Version Windows (préversion) : construite sur une machine Windows de GitHub, essayée (serveur, import d'un
-# article, captures d'écran par Edge), puis publiée en préversion pour une étiquette windows-vX.Y.Z.
+# Version Windows (préversion) : construite et essayée sur une machine Windows de GitHub à chaque poussée sur main
+# (tests, serveur, import d'un article, fenêtre de l'application, captures d'écran) ; publiée en préversion pour une
+# étiquette windows-vX.Y.Z (même numéro que app/version.py), et sous l'adresse fixe windows-latest.
 name: Windows
 
 on:
   push:
-    branches: [windows]
+    branches: [main, windows]
     tags: ["windows-v*"]
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -17,6 +18,20 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # étiquette windows-vX.Y.Z : le code doit porter le même numéro (sinon l'application annoncerait une autre version)
+      - name: Version
+        if: startsWith(github.ref, 'refs/tags/windows-v')
+        shell: pwsh
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          $version = $env:TAG.Substring("windows-v".Length)
+          if (-not (Select-String -Path app/version.py -SimpleMatch -Pattern "VERSION = `"$version`"" -Quiet)) {
+              throw "tag $env:TAG does not match app/version.py"
+          }
 
       - uses: actions/setup-python@v5
         with:
@@ -25,7 +40,7 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.lock tzdata pyinstaller
+          pip install -r requirements.lock -r windows/build-requirements.txt
 
       # Les mêmes essais que sur le Mac (ceux propres au Mac sont sautés)
       - name: Tests
@@ -62,17 +77,44 @@ jobs:
         if: always()
         with:
           name: arXivReader-windows
+          retention-days: 14
           path: |
             arXivReader-windows.zip
             shots/
             smoke-library/server.log
 
+  # Publication, à part : seule cette étape a le droit d'écrire sur le dépôt
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/windows-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: arXivReader-windows
+
       - name: Publish (pre-release)
-        if: startsWith(github.ref, 'refs/tags/windows-v')
-        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
         run: |
-          $tag = "${{ github.ref_name }}"
-          $version = $tag.Substring("windows-v".Length)
-          gh release create $tag arXivReader-windows.zip --prerelease --title "arXivReader $version for Windows (preview)" --notes-file windows/release-notes.md
+          version="${TAG#windows-v}"
+          # relancée pour la même étiquette : le zip est remplacé plutôt qu'un échec
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" arXivReader-windows.zip --clobber
+          else
+            gh release create "$TAG" arXivReader-windows.zip --prerelease \
+              --title "arXivReader $version for Windows (preview)" --notes-file windows/release-notes.md
+          fi
+          # adresse fixe (README, site) : https://github.com/seldon39/arxivreader/releases/tag/windows-latest
+          { printf 'Latest preview of arXivReader for Windows: **version %s** (same as [%s](https://github.com/seldon39/arxivreader/releases/tag/%s)).\n\n' "$version" "$TAG" "$TAG"
+            cat windows/release-notes.md; } > latest-notes.md
+          gh release delete windows-latest --cleanup-tag --yes > /dev/null 2>&1 || true
+          gh release create windows-latest arXivReader-windows.zip --prerelease --target "$GITHUB_SHA" \
+            --title "arXivReader for Windows — latest preview ($version)" --notes-file latest-notes.md

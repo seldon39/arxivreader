@@ -227,9 +227,22 @@ def _surname(name):
     return parts[-1] if parts else None
 
 
-def _archive(category):
-    """« math.DG » → « math » ; math-ph compte comme les mathématiques."""
-    return "math" if category.startswith("math") else category.split(".")[0]
+PHYSICS = {"astro-ph", "cond-mat", "gr-qc", "hep-ex", "hep-lat", "hep-ph", "hep-th", "nlin", "nucl-ex", "nucl-th",
+           "physics", "quant-ph"}
+COMPUTING = {"cs", "stat", "eess"}
+
+
+def _fields(category):
+    """Grand domaine d'une catégorie d'arXiv : mathématiques, physique, informatique (avec statistiques et
+    traitement du signal), ou l'archive elle-même (q-bio, q-fin, econ). math-ph compte pour les deux premiers."""
+    archive = category.split(".")[0]
+    if archive == "math-ph" or category == "math.MP":
+        return {"math", "physics"}
+    if archive == "math":
+        return {"math"}
+    if archive in PHYSICS:
+        return {"physics"}
+    return {"computing"} if archive in COMPUTING else {archive}
 
 
 def followed_author_papers(categories, per_author=30, days=60, stop=None):
@@ -239,9 +252,10 @@ def followed_author_papers(categories, per_author=30, days=60, stop=None):
     donc le nom de famille seul, un auteur à la fois (3 s entre deux requêtes, comme le demande arXiv),
     puis on filtre l'initiale du prénom et, pour un auteur connu seulement par son initiale, les
     catégories (les homonymes sont fréquents hors des mathématiques). Même avec le nom complet (« Lei Wang »),
-    l'article doit être du même domaine que le feed (mathématiques, physique…) : sinon c'est un homonyme.
+    l'article doit être du même grand domaine que le feed (mathématiques, physique, informatique…) : sinon
+    c'est un homonyme.
     """
-    archives = {_archive(c) for c in categories}
+    fields = {f for c in categories for f in _fields(c)}
     authors = [i["label"] for i in list_items() if i["kind"] == "author"]
     since = time.strftime("%Y-%m-%d", time.gmtime(time.time() - days * 86400))
     papers = {}
@@ -273,7 +287,7 @@ def followed_author_papers(categories, per_author=30, days=60, stop=None):
                 categories_here = [c.get("term") for c in entry.findall(f"{ATOM}category")]
                 if not matched or (not full_name and not any(c in categories for c in categories_here)):
                     continue
-                if not archives & {_archive(c) for c in categories_here}:
+                if not fields & {f for c in categories_here for f in _fields(c)}:
                     continue  # homonyme d'un autre domaine
                 match = re.search(r"abs/(.+?)(v(\d+))?$", entry.findtext(f"{ATOM}id") or "")
                 if not match:

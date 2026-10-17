@@ -3,6 +3,15 @@
 import os
 from pathlib import Path
 
+# Certificats HTTPS : ceux du système (trousseau de macOS, magasin de Windows) en plus de ceux fournis avec Python.
+# Un réseau d'université ou d'entreprise qui inspecte les connexions avec son propre certificat (installé sur ses
+# ordinateurs) reste ainsi joignable ; sinon arXiv, Semantic Scholar… y seraient refusés.
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except ImportError:
+    pass
+
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = ROOT / "static"
 # Bibliothèque : dossier « library » du projet ; l'application Mac la place dans

@@ -23,6 +23,7 @@ namespace ArxivReader
         {
             public WebView2 View;
             public string Title = "arXivReader";
+            public string Route = "#/";  // page affichée (#/…) : rouverte si le serveur ou le moteur redémarre
             public DateTime[] Crashes = new DateTime[0];
         }
 
@@ -37,6 +38,7 @@ namespace ArxivReader
         CoreWebView2Environment environment;
         Tab current;
         int port;
+        bool restarting, rebuilding, closing;
 
         string Origin => $"http://127.0.0.1:{port}";
 
@@ -56,6 +58,7 @@ namespace ArxivReader
             strip.Selected += index => SelectTab(tabs[index]);
             strip.Closed += index => CloseTab(tabs[index]);
             strip.Added += () => _ = OpenTab("#/", true);
+            server.Ended += () => { if (IsHandleCreated && !IsDisposed && !closing) BeginInvoke(new Action(ServerEnded)); };
 
             // second lancement de l'application : cette fenêtre revient au premier plan
             new Thread(() =>
@@ -87,6 +90,12 @@ namespace ArxivReader
                 Close();
                 return;
             }
+            catch (Exception error)
+            {
+                MessageBox.Show(error.Message, "arXivReader", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Close();
+                return;
+            }
             try
             {
                 port = await server.StartAsync();
@@ -107,14 +116,27 @@ namespace ArxivReader
         async Task OpenTab(string route, bool front)
         {
             if (environment == null || port == 0) return;
-            var tab = new Tab { View = new WebView2 { Dock = DockStyle.Fill } };
+            var tab = new Tab { View = new WebView2 { Dock = DockStyle.Fill }, Route = route };
             int at = current == null ? tabs.Count : tabs.IndexOf(current) + 1;  // à droite de l'onglet actif, comme le Mac
             tabs.Insert(at, tab);
             content.Controls.Add(tab.View);
             if (front) SelectTab(tab); else tab.View.SendToBack();
             UpdateStrip();
-            await tab.View.EnsureCoreWebView2Async(environment);
+            try
+            {
+                await tab.View.EnsureCoreWebView2Async(environment);
+            }
+            catch (Exception)
+            {
+                if (tabs.Contains(tab)) CloseTab(tab);  // moteur indisponible pour cet onglet : pas d'onglet blanc
+                return;
+            }
             var core = tab.View.CoreWebView2;
+            core.SourceChanged += (s, e) =>
+            {
+                if (Uri.TryCreate(core.Source, UriKind.Absolute, out var uri) && IsApp(uri))
+                    tab.Route = uri.Fragment.Length > 1 ? uri.Fragment : "#/";
+            };
             core.Settings.AreDevToolsEnabled = Environment.GetEnvironmentVariable("ARXIVREADER_DEVTOOLS") == "1";
             core.Settings.IsStatusBarEnabled = false;
             core.Settings.IsZoomControlEnabled = true;
@@ -141,11 +163,75 @@ namespace ArxivReader
             core.WebMessageReceived += (s, e) => Received(e.WebMessageAsJson);
             core.ProcessFailed += (s, e) =>
             {
-                // page plantée (manque de mémoire…) : rechargée, mais pas en boucle si elle replante aussitôt
-                tab.Crashes = tab.Crashes.Where(d => DateTime.Now - d < TimeSpan.FromMinutes(1)).Append(DateTime.Now).ToArray();
-                if (tab.Crashes.Length <= 3) BeginInvoke(new Action(() => tab.View.Reload()));
+                switch (e.ProcessFailedKind)
+                {
+                    case CoreWebView2ProcessFailedKind.RenderProcessExited:
+                    case CoreWebView2ProcessFailedKind.RenderProcessUnresponsive:
+                        // page plantée (manque de mémoire…) : rechargée, mais pas en boucle si elle replante aussitôt
+                        tab.Crashes = tab.Crashes.Where(d => DateTime.Now - d < TimeSpan.FromMinutes(1)).Append(DateTime.Now).ToArray();
+                        if (tab.Crashes.Length <= 3)
+                            BeginInvoke(new Action(() => { try { tab.View.Reload(); } catch (Exception) { } }));
+                        break;
+                    case CoreWebView2ProcessFailedKind.BrowserProcessExited:
+                        // le moteur entier s'est arrêté : toutes les pages sont à recréer (une seule fois pour tous les onglets)
+                        BeginInvoke(new Action(() => _ = Rebuild()));
+                        break;
+                    // autres processus (carte graphique, utilitaires) : le moteur les relance seul
+                }
             };
             core.Navigate($"{Origin}/{route}");
+        }
+
+        // Serveur arrêté de lui-même : comme sur le Mac, le relancer (les onglets rouvrent leur page) ou quitter
+        async void ServerEnded()
+        {
+            if (restarting || closing) return;
+            restarting = true;
+            var answer = MessageBox.Show(Program.Tr("Le serveur d'arXivReader s'est arrêté. Le relancer ?\n\n",
+                "arXivReader's server stopped. Restart it?\n\n") + server.LogTail(6), "arXivReader",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+            if (answer != DialogResult.Yes) { Close(); return; }
+            try
+            {
+                port = await server.StartAsync();
+            }
+            catch (Exception error)
+            {
+                MessageBox.Show(error.Message + "\n\n" + server.LogTail(), "arXivReader", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Close();
+                return;
+            }
+            foreach (var tab in tabs)
+                try { tab.View.CoreWebView2?.Navigate($"{Origin}/{tab.Route}"); } catch (Exception) { }
+            restarting = false;
+        }
+
+        // Moteur d'affichage arrêté (toutes les pages perdues) : nouveau moteur, mêmes onglets, même onglet actif
+        async Task Rebuild()
+        {
+            if (rebuilding || closing) return;
+            rebuilding = true;
+            var routes = tabs.Select(t => t.Route).ToList();
+            int active = Math.Max(0, tabs.IndexOf(current));
+            foreach (var tab in tabs.ToList())
+            {
+                content.Controls.Remove(tab.View);
+                try { tab.View.Dispose(); } catch (Exception) { }
+            }
+            tabs.Clear();
+            current = null;
+            try
+            {
+                environment = await CoreWebView2Environment.CreateAsync(null, Path.Combine(library, "webview2"));
+            }
+            catch (Exception error)
+            {
+                MessageBox.Show(error.Message, "arXivReader", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Close();
+                return;
+            }
+            for (int i = 0; i < routes.Count; i++) await OpenTab(routes[i], i == active);
+            rebuilding = false;
         }
 
         bool IsApp(Uri uri) =>
@@ -171,6 +257,9 @@ namespace ArxivReader
         // Raccourcis des onglets (Ctrl+T, Ctrl+W, Ctrl+Tab, Ctrl+1…9) ; le reste va à la page
         bool Shortcut(Keys keys)
         {
+            // AltGr arrive comme Ctrl+Alt : AltGr+3 (« # »), AltGr+8 (« \ »)… sont des caractères à taper, pas des
+            // raccourcis (claviers français, allemand…)
+            if ((keys & Keys.Alt) != 0) return false;
             bool shift = (keys & Keys.Shift) != 0;
             switch (keys & ~Keys.Shift)
             {
@@ -214,7 +303,7 @@ namespace ArxivReader
             tabs.Remove(tab);
             content.Controls.Remove(tab.View);
             tab.View.Dispose();
-            if (tabs.Count == 0)
+            if (tabs.Count == 0 && !rebuilding)
             {
                 Close();  // dernier onglet fermé : l'application aussi, comme sur le Mac
                 return;
@@ -253,6 +342,7 @@ namespace ArxivReader
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
+            closing = true;
             var b = WindowState == FormWindowState.Normal ? Bounds : base.RestoreBounds;
             try { File.WriteAllText(BoundsFile, $"{b.X},{b.Y},{b.Width},{b.Height},{(WindowState == FormWindowState.Maximized ? 1 : 0)}"); }
             catch (Exception) { }

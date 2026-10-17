@@ -243,5 +243,22 @@ class RefreshDoesNotWait(unittest.TestCase):
                      mock.patch.object(feed, "known_days", return_value={}):
                     self.assertEqual(feed.refresh_arxiv(["math.DG"]), 42)
                 fetch_day.assert_called_once_with(feed.latest_announcement_day(), ["math.DG"], None)
+                # jour férié : aucune annonce ce jour-là, celle du jour ouvré précédent est lue
+                with mock.patch.object(feed, "fetch_day", side_effect=[0, 37]) as fetch_day, \
+                     mock.patch.object(feed, "known_days", return_value={}), \
+                     mock.patch.object(feed, "latest_announcement_day", return_value="2026-11-26"):  # jeudi
+                    self.assertEqual(feed.refresh_arxiv(["math.DG"]), 37)
+                self.assertEqual([c.args[0] for c in fetch_day.call_args_list], ["2026-11-26", "2026-11-25"])
+                # lundi férié déjà vérifié (0 en base) : vendredi directement ; vendredi déjà en base : rien à lire
+                with mock.patch.object(feed, "fetch_day", return_value=12) as fetch_day, \
+                     mock.patch.object(feed, "known_days", return_value={"2026-09-07": 0}), \
+                     mock.patch.object(feed, "latest_announcement_day", return_value="2026-09-07"):
+                    self.assertEqual(feed.refresh_arxiv(["math.DG"]), 12)
+                fetch_day.assert_called_once_with("2026-09-04", ["math.DG"], None)
+                with mock.patch.object(feed, "fetch_day") as fetch_day, \
+                     mock.patch.object(feed, "known_days", return_value={"2026-10-16": 73}), \
+                     mock.patch.object(feed, "latest_announcement_day", return_value="2026-10-16"):
+                    self.assertEqual(feed.refresh_arxiv(["math.DG"]), 0)
+                fetch_day.assert_not_called()
         finally:
             db.DB_PATH, db.LIBRARY = saved

@@ -12,6 +12,10 @@ TAG="v$VERSION"
 gh auth status >/dev/null 2>&1 || { echo "gh n'est pas connecté à GitHub (gh auth login)."; exit 1; }
 if [ -n "$(git status --porcelain)" ]; then echo "Des modifications ne sont pas committées."; exit 1; fi
 if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then echo "$TAG existe déjà : augmentez VERSION dans app/version.py."; exit 1; fi
+# même numéro que la version Windows déjà publiée : même code (serveur et interface), sinon nouveau numéro
+if git rev-parse -q --verify "refs/tags/windows-$TAG" >/dev/null && ! git diff --quiet "windows-$TAG" HEAD -- app static; then
+  echo "windows-$TAG a été publiée avec un autre code (app/, static/) : augmentez VERSION dans app/version.py."; exit 1
+fi
 ARXIVREADER_NO_ALERTS=1 ARXIVREADER_PORT=8711 .venv/bin/python -m unittest discover -s tests -t . 2>&1 | tail -1
 macos/build.sh
 git tag -a "$TAG" -m "arXivReader $VERSION"

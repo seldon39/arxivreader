@@ -1,6 +1,6 @@
-"""Application Windows (préversion) : le serveur local dans ce processus, l'interface dans une fenêtre
-Microsoft Edge avec ses onglets, et un profil propre à arXivReader (ni les extensions ni les onglets de
-l'utilisateur).
+"""Serveur de l'application Windows (préversion), lancé sans fenêtre par arXivReader.exe (windows/shell) avec
+ARXIVREADER_NO_BROWSER=1 : le serveur local dans ce processus, son port écrit dans server.port. Lancé seul, il
+ouvre l'interface dans une fenêtre Microsoft Edge (repli), avec un profil propre à arXivReader.
 
 Comme l'application Mac : bibliothèque dans %LOCALAPPDATA%\\arXivReader (ARXIVREADER_LIBRARY pour essayer sur
 une copie), port 8720 s'il est libre, serveur arrêté quand la dernière fenêtre se ferme. Un second lancement

@@ -17,7 +17,7 @@ Télécharger `arXivReader.dmg` depuis la page [Releases](https://github.com/sel
 (Mac Apple Silicon, macOS 13 ou plus), l'ouvrir et glisser arXivReader dans Applications. L'application est
 autonome (Python et ses paquets sont inclus) ; rien d'autre à installer.
 
-**Sous Windows** : [télécharger la préversion Windows](https://github.com/seldon39/arxivreader/releases?q=windows&expanded=true) (voir [Windows (préversion)](#windows-préversion) plus bas).
+**Sous Windows** : [télécharger la préversion Windows](https://github.com/seldon39/arxivreader/releases/tag/windows-latest) (voir [Windows (préversion)](#windows-préversion) plus bas).
 
 - **Première ouverture** : voir ci-dessous ; macOS la bloque une fois.
 - **Mises à jour** : l'application vérifie une fois par jour s'il existe une nouvelle version sur GitHub
@@ -54,7 +54,7 @@ Rendre cette étape inutile est dans la [feuille de route](https://github.com/se
 ### Windows (préversion)
 
 Une version Windows est en préversion (Windows 10 ou 11, 64 bits) : télécharger `arXivReader-windows.zip` depuis
-les [préversions Windows](https://github.com/seldon39/arxivreader/releases?q=windows&expanded=true), clic droit → **Extraire tout…**, puis
+les [préversions Windows](https://github.com/seldon39/arxivreader/releases/tag/windows-latest), clic droit → **Extraire tout…**, puis
 double-cliquer sur `arXivReader.exe` dans le dossier `arXivReader`. L'application s'ouvre dans sa propre fenêtre, avec des
 onglets comme sur le Mac (Ctrl+T, Ctrl-clic sur un lien, le **+** de la barre d'onglets) ; elle s'appuie sur
 WebView2, le moteur d'Edge inclus dans Windows 10 et 11 ; la bibliothèque est gardée

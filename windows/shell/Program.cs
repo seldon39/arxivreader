@@ -59,13 +59,18 @@ namespace ArxivReader
         readonly string library;
         readonly IntPtr job = Job.Create();
         Process process;
+        bool stopping, ready;
 
         public Server(string library) { this.library = library; }
+
+        // Serveur arrêté de lui-même après son démarrage (plantage, arrêt forcé) : la fenêtre propose de le relancer
+        public event Action Ended;
 
         public string Log => Path.Combine(library, "server.log");
 
         public Task<int> StartAsync() => Task.Run(() =>
         {
+            ready = false;  // arrêt pendant le démarrage : signalé par StartAsync lui-même, pas par Ended
             string portFile = Path.Combine(library, "server.port");
             try { File.Delete(portFile); } catch (IOException) { }
             string exe = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "server", "arXivReader-server.exe");
@@ -74,13 +79,19 @@ namespace ArxivReader
             info.EnvironmentVariables["ARXIVREADER_NO_BROWSER"] = "1";
             process = Process.Start(info);
             Job.Assign(job, process);
+            var launched = process;
+            launched.EnableRaisingEvents = true;
+            launched.Exited += (s, e) => { if (!stopping && ready && launched == process) Ended?.Invoke(); };
             var started = Stopwatch.StartNew();
             while (started.Elapsed < TimeSpan.FromSeconds(120))
             {
                 if (process.HasExited)
                     throw new InvalidOperationException(Program.Tr("Le serveur s'est arrêté.", "The server stopped."));
                 if (File.Exists(portFile) && int.TryParse(ReadShared(portFile).Trim(), out int port) && Listening(port))
+                {
+                    ready = true;
                     return port;
+                }
                 Thread.Sleep(150);
             }
             throw new TimeoutException(Program.Tr("Le serveur n'a pas démarré.", "The server did not start."));
@@ -111,6 +122,7 @@ namespace ArxivReader
 
         public void Dispose()
         {
+            stopping = true;
             try { if (process != null && !process.HasExited) process.Kill(); } catch (Exception) { }
             Job.Close(job);
         }

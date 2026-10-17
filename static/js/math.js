@@ -27,7 +27,9 @@ function loadMathJax() {
         macros: MACROS,
         noundefined: { color: "" },  // macro propre à l'auteur (\db…) : affichée telle quelle, sans rouge
         // \href, \style, \class, \cssId désactivés : un résumé ou un titre (texte venu d'arXiv) pourrait y
-        // cacher un lien vers n'importe quelle adresse, invisible et étendu à toute la fenêtre
+        // cacher un lien vers n'importe quelle adresse, invisible et étendu à toute la fenêtre. Ni chargés à la
+        // demande (autoload), ni par \require{html} : le paquet require est retiré, et html.js n'est pas livré
+        packages: { "[-]": ["require", "html"] },
         autoload: { html: [] } },
       startup: { typeset: false, ready: () => { window.MathJax.startup.defaultReady(); resolve(window.MathJax); } },
       options: { enableMenu: false, menuOptions: { settings: { assistiveMml: false } } },

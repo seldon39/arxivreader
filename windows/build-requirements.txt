@@ -1,0 +1,10 @@
+# Outils de construction de la version Windows (en plus de requirements.lock), versions figées : une même
+# étiquette reconstruite donne la même application. À mettre à jour volontairement, puis vérifier la construction.
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.8
+altgraph==0.17.5
+pefile==2024.8.26
+pywin32-ctypes==0.2.3
+packaging==26.3
+setuptools==84.0.0
+tzdata==2026.5

@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 import httpx
 
 from .config import USER_AGENT
+from .sanitize import arxiv_host
 
 # 2607.17203, 2607.17203v2, 0704.0001 ; anciens identifiants : math.DG/0601001, hep-th/9901001v3
 NEW_ID = r"\d{4}\.\d{4,5}"
@@ -69,7 +70,16 @@ def _client():
     return httpx.Client(headers={"User-Agent": USER_AGENT}, follow_redirects=True, timeout=30)
 
 
-open_client = _client  # un seul client (connexion réutilisée) pour toutes les images d'un article
+def _arxiv_only(request):
+    if not arxiv_host(str(request.url)):  # redirection vers un autre site : refusée avant d'être suivie
+        raise ArxivError(f"image hors d'arXiv refusée : {request.url.host}")
+
+
+def open_client():
+    """Un seul client (connexion réutilisée) pour toutes les images d'un article ; chaque requête, redirections
+    comprises, doit aller chez arXiv."""
+    return httpx.Client(headers={"User-Agent": USER_AGENT}, follow_redirects=True, timeout=30,
+                        event_hooks={"request": [_arxiv_only]})
 
 
 def with_retry(send, retry_on=(429, 503), delays=(3, 6, 9), sleep=None):

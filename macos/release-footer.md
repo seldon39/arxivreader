@@ -9,4 +9,4 @@ notarized by Apple. Click **Done**, then **System Settings → Privacy & Securit
 Details: [README → If macOS refuses to open the app](https://github.com/seldon39/arxivreader#if-macos-refuses-to-open-the-app)
 · en français : [README.fr](https://github.com/seldon39/arxivreader/blob/main/README.fr.md#si-macos-refuse-douvrir-lapplication).
 
-**Windows**: a preview is available among the [Windows pre-releases](https://github.com/seldon39/arxivreader/releases?q=windows&expanded=true).
+**Windows**: a preview is available: [arXivReader for Windows](https://github.com/seldon39/arxivreader/releases/tag/windows-latest).

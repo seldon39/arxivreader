@@ -10,6 +10,14 @@ from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup, Comment
 
+
+def arxiv_host(url):
+    """Adresse d'arXiv (arxiv.org et ses sous-domaines : ar5iv.labs.arxiv.org…) ? Les images d'un article ne sont
+    téléchargées que de là : une adresse absolue ailleurs (réseau local, autre site) n'est jamais demandée."""
+    parts = urlparse(url)
+    host = (parts.hostname or "").lower().rstrip(".")
+    return parts.scheme in ("http", "https") and (host == "arxiv.org" or host.endswith(".arxiv.org"))
+
 HTML_TAGS = {
     "a", "abbr", "article", "b", "blockquote", "br", "caption", "cite", "code", "col", "colgroup",
     "dd", "del", "div", "dl", "dt", "em", "figcaption", "figure", "footer", "h1", "h2", "h3", "h4",
@@ -122,7 +130,7 @@ def sanitize_document(html, base_url):
                 if DATA_IMAGE.match(src):
                     continue
                 remote = urljoin(base_url, _relative(src, base_url))
-                if urlparse(remote).scheme not in ("http", "https"):
+                if not arxiv_host(remote):
                     del element.attrs[attr]
                     continue
                 local = hashlib.sha1(remote.encode()).hexdigest()[:16] + _extension(remote)

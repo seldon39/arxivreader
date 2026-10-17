@@ -83,6 +83,21 @@ class Import(unittest.TestCase):
                                                                   "https://arxiv.org/html/2609.40232v1/x1.png",
                                                                   "https://arxiv.org/static/a.png"])
 
+    def test_images_only_from_arxiv(self):
+        # adresse absolue hors d'arXiv (réseau local, autre site) : jamais demandée par le serveur
+        html = """<html><body><article class="ltx_document"><img src="https://ar5iv.labs.arxiv.org/x.png"/>
+                  <img src="http://192.168.1.1/admin.png"/><img src="https://evil.example/track.gif"/>
+                  <img src="https://arxiv.org.evil.example/a.png"/><img src="http://127.0.0.1:8720/api/papers"/></article></body></html>"""
+        fragment, assets = sanitize_document(html, "https://arxiv.org/html/2609.40232v1/")
+        self.assertEqual([remote for _, remote in assets], ["https://ar5iv.labs.arxiv.org/x.png"])
+        self.assertEqual(len(fragment.select("img[src]")), 1)
+        # redirection d'une image d'arXiv vers un autre site : refusée avant d'être suivie
+        import httpx
+        from app import arxiv
+        with self.assertRaises(arxiv.ArxivError):
+            arxiv._arxiv_only(httpx.Request("GET", "http://10.0.0.1/secret"))
+        arxiv._arxiv_only(httpx.Request("GET", "https://arxiv.org/html/2609.40232v1/x1.png"))  # accepté
+
     def test_statements_and_proofs(self):
         lemma, theorem = self.structure["nodes"]
         self.assertEqual((lemma["kind"], lemma["label"]), ("lemma", "Lemma 1.1"))

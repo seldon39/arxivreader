@@ -131,3 +131,28 @@ class Helpers(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Replace(unittest.TestCase):
+    """Réimport : dossier bloqué un instant (Windows) puis libéré, ou bloqué pour de bon (ancienne version gardée)."""
+
+    def test_rename_retries_then_rolls_back(self):
+        from unittest import mock
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        source, target = tmp / "a", tmp / "b"
+        source.mkdir()
+        real = pathlib.Path.rename
+        failures = iter([PermissionError("busy"), PermissionError("busy")])
+
+        def flaky(self, other):
+            error = next(failures, None)
+            if error:
+                raise error
+            return real(self, other)
+        with mock.patch.object(pathlib.Path, "rename", flaky), mock.patch.object(library.time, "sleep"):
+            library._rename(source, target)
+        self.assertTrue(target.exists() and not source.exists())
+        with mock.patch.object(pathlib.Path, "rename", side_effect=PermissionError("busy")), \
+             mock.patch.object(library.time, "sleep"), self.assertRaises(PermissionError):
+            library._rename(target, source)
+        self.assertTrue(target.exists())

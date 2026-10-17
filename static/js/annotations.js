@@ -274,11 +274,16 @@ function unpaint(root, id) {
   });
 }
 
+// Texte caché de l'article (blanc, minuscule : marqué par l'analyse) et débris de macros : jamais dans une
+// citation, qui peut partir à l'assistant (« Demander à l'IA sur ce passage ») — comme pour l'article entier
+const HIDDEN = ".arx-hidden-text, .arx-macro-debris";
+
 function quoteOf(range, limit = 1500) {
   const parts = [];
   const box = range.commonAncestorContainer.nodeType === 3 ? range.commonAncestorContainer.parentElement : range.commonAncestorContainer;
   for (const unit of units(box)) {
     if (!range.intersectsNode(unit)) continue;
+    if ((unit.nodeType === 3 ? unit.parentElement : unit).closest(HIDDEN)) continue;
     if (unit.nodeType === 3) {
       const a = unit === range.startContainer ? range.startOffset : 0;
       const b = unit === range.endContainer ? range.endOffset : unit.data.length;

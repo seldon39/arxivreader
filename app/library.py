@@ -7,6 +7,7 @@ import re
 import shutil
 import tempfile
 import threading
+import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
@@ -105,10 +106,29 @@ def _download(paper_id, arxiv_id, meta, pending_source):
     old = folder.with_name(f".{paper_id}.old")
     shutil.rmtree(old, ignore_errors=True)
     if folder.exists():
-        folder.rename(old)
-    staging.rename(folder)
+        _rename(folder, old)
+    try:
+        _rename(staging, folder)
+    except OSError:
+        if old.exists() and not folder.exists():
+            _rename(old, folder)  # l'ancienne version reprend sa place : jamais d'article sans dossier
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
     shutil.rmtree(old, ignore_errors=True)
     return source
+
+
+def _rename(source, target, attempts=6):
+    """Renommage d'un dossier ; sous Windows, refusé tant qu'un de ses fichiers est ouvert (antivirus qui examine
+    les fichiers tout juste écrits, indexation, image en cours d'envoi) : quelques essais espacés."""
+    for attempt in range(attempts):
+        try:
+            source.rename(target)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(0.25 * (attempt + 1))
 
 
 def _source(arxiv_id, version):
