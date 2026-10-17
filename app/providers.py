@@ -90,7 +90,7 @@ def _version_key(path):
 
 def _node_major(folder):
     try:
-        out = subprocess.run([str(Path(folder) / "node"), "--version"], capture_output=True, text=True, encoding="utf-8",
+        out = subprocess.run([str(Path(folder) / ("node.exe" if WINDOWS else "node")), "--version"], capture_output=True, text=True, encoding="utf-8",
                              errors="replace", timeout=5).stdout
     except (OSError, subprocess.SubprocessError):
         return 0

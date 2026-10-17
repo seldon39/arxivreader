@@ -172,6 +172,7 @@ class Setup(unittest.TestCase):
     def test_command_prompt_script(self):
         library = pathlib.Path(tempfile.mkdtemp())
         with unittest.mock.patch.object(providers, "LIBRARY", library), \
+             unittest.mock.patch.object(providers, "_recent_node", return_value=""), \
              unittest.mock.patch.object(providers.subprocess, "Popen") as popen:
             providers.open_setup("claude", "login", r"C:\Program Files\arXivReader\claude.exe")
             script = library / "ai" / "setup-claude.cmd"
