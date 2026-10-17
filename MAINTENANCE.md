@@ -112,6 +112,24 @@ texte venu d'arXiv, de Semantic Scholar, de Zotero ou d'une IA passe par du text
 L'application n'a qu'une signature ad hoc (pas de notarisation) : sur un autre Mac, ouverture par clic droit >
 Ouvrir.
 
+### Version Windows (préversion)
+
+Construite par GitHub Actions (`.github/workflows/windows.yml`, machine `windows-latest`) : installation de
+`requirements.lock` + `tzdata` (fuseaux horaires, absents de Windows) + PyInstaller, **tous les tests** (ceux propres
+au Mac sont sautés), construction d'un dossier `arXivReader\arXivReader.exe` (PyInstaller `--onedir`), puis
+`windows/smoke.ps1` : serveur démarré sur une bibliothèque vide, type des modules JavaScript, import de 1603.04246,
+captures par Edge sans fenêtre (`shots/`, dans l'artefact de l'exécution, avec le zip). Chaque poussée sur la
+branche `windows` la reconstruit ; une étiquette `windows-vX.Y.Z` (même numéro que `app/version.py`) la publie en
+**préversion** : « latest » (Mac) l'ignore, et l'application Windows ne regarde que les étiquettes `windows-v…`.
+
+- Lanceur : `windows/launcher.py` (serveur dans le processus, fenêtre Edge `--app` avec le profil
+  `%LOCALAPPDATA%\arXivReader\edge-profile`, verrou nommé contre un second serveur, `server.port`, `server.log`).
+- Différences côté serveur, toutes sous `sys.platform == "win32"` : notification par PowerShell (`alerts.py`),
+  connexion des assistants dans `cmd.exe` (`providers.py`), `claude.exe` du SDK (`ai.py`), versions `windows-v…`
+  (`updates.py`). Types MIME fixés dans `main.py` (le registre de Windows sert parfois `.js` en `text/plain`).
+- Interface : `MAC` / `WINDOWS` dans `static/js/i18n.js` ; hors Mac, ⌘ ⌥ ⇧ deviennent Ctrl Alt Maj à l'affichage.
+- Pas encore sous Windows : « Recopier une bibliothèque… » (menu de l'application Mac), signature du `.exe`.
+
 ## 6. Services extérieurs : ce qui peut changer, où regarder
 
 `./arxivreader check` appelle pour de vrai ceux que liste `CHECKS` (`app/check.py` : à compléter si l'application

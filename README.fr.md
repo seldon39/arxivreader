@@ -2,7 +2,7 @@
 
 [English](README.md) · **Français**
 
-Lecteur d'articles arXiv pour Mac, pensé pour les mathématiques : mise en page « papier AMS », énoncés et
+Lecteur d'articles arXiv pour Mac (Windows en préversion), pensé pour les mathématiques : mise en page « papier AMS », énoncés et
 preuves navigables, graphe des dépendances, notes et surlignages, feed des nouveautés trié selon votre profil,
 et un assistant IA (Claude, Codex, Gemini ou un modèle local) qui ne voit que le texte de l'article.
 Tout reste sur votre Mac : le serveur n'écoute que sur 127.0.0.1. Interface en français et en anglais.
@@ -48,6 +48,16 @@ xattr -dr com.apple.quarantine /Applications/arXivReader.app
 ```
 
 Rendre cette étape inutile est dans la [feuille de route](https://github.com/seldon39/arxivreader/issues/1).
+
+### Windows (préversion)
+
+Une version Windows est en préversion (Windows 10 ou 11, 64 bits) : télécharger `arXivReader-windows.zip` depuis
+les [préversions Windows](https://github.com/seldon39/arxivreader/releases), clic droit → **Extraire tout…**, puis
+double-cliquer sur `arXivReader.exe` dans le dossier `arXivReader`. L'application s'ouvre dans une fenêtre
+Microsoft Edge à part (sans barre d'adresse, séparée de votre profil Edge habituel) ; la bibliothèque est gardée
+dans `%LOCALAPPDATA%\arXivReader`. Si Windows affiche *Windows a protégé votre ordinateur* : **Informations
+complémentaires**, puis **Exécuter quand même** (l'application n'est pas signée). Les retours sur cette version
+sont particulièrement bienvenus.
 
 ## Application Mac : construction
 

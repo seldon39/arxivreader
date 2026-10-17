@@ -2,7 +2,7 @@
 
 **English** · [Français](README.fr.md)
 
-A Mac reader for arXiv papers, built for mathematics: AMS-style "paper" layout, navigable statements and
+A reader for arXiv papers on the Mac (Windows in preview), built for mathematics: AMS-style "paper" layout, navigable statements and
 proofs, dependency graph, notes and highlights, a feed of new papers sorted by your profile, and an AI
 assistant (Claude, Codex, Gemini or a local model) that only sees the text of the paper.
 Everything stays on your Mac: the server only listens on 127.0.0.1. French and English interface.
@@ -45,6 +45,15 @@ xattr -dr com.apple.quarantine /Applications/arXivReader.app
 ```
 
 Making this unnecessary is on the [roadmap](https://github.com/seldon39/arxivreader/issues/1).
+
+### Windows (preview)
+
+A Windows version is in preview (Windows 10 or 11, 64-bit): download `arXivReader-windows.zip` from the
+[Windows pre-releases](https://github.com/seldon39/arxivreader/releases), right-click it → **Extract All…**, and
+double-click `arXivReader.exe` in the `arXivReader` folder. The app opens in a Microsoft Edge window of its own
+(no address bar, separate from your usual Edge profile); your library is kept in `%LOCALAPPDATA%\arXivReader`.
+If Windows says *Windows protected your PC*, click **More info**, then **Run anyway**: the app is not signed.
+Feedback on this version is especially welcome.
 
 ## Mac app: building
 
