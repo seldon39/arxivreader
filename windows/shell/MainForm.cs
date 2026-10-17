@@ -55,9 +55,7 @@ namespace ArxivReader
             content.BringToFront();  // la barre d'onglets en haut, les pages dans le reste
             strip.Selected += index => SelectTab(tabs[index]);
             strip.Closed += index => CloseTab(tabs[index]);
-            strip.Added += () => OpenTab("#/", true);
-            KeyPreview = true;
-            KeyDown += (s, e) => { if (Shortcut(e.KeyData)) e.Handled = true; };
+            strip.Added += () => _ = OpenTab("#/", true);
 
             // second lancement de l'application : cette fenêtre revient au premier plan
             new Thread(() =>
@@ -141,12 +139,6 @@ namespace ArxivReader
                 else if (e.IsUserInitiated) OpenOutside(uri);
             };
             core.WebMessageReceived += (s, e) => Received(e.WebMessageAsJson);
-            core.AcceleratorKeyPressed += (s, e) =>
-            {
-                if (e.KeyEventKind != CoreWebView2KeyEventKind.KeyDown) return;
-                var keys = (Keys)e.VirtualKey | ModifierKeys;
-                if (Shortcut(keys)) e.Handled = true;
-            };
             core.ProcessFailed += (s, e) =>
             {
                 // page plantée (manque de mémoire…) : rechargée, mais pas en boucle si elle replante aussitôt
@@ -203,6 +195,9 @@ namespace ArxivReader
             }
             return false;
         }
+
+        // Touches de raccourci : le contrôle WebView2 les passe à la fenêtre (comme celles de la barre d'onglets)
+        protected override bool ProcessCmdKey(ref Message message, Keys keys) => Shortcut(keys) || base.ProcessCmdKey(ref message, keys);
 
         void SelectTab(Tab tab)
         {
