@@ -59,7 +59,7 @@ def check(categories=None):
         for item in items:
             item["title"], item["abstract"] = feed.tex_text(item["title"]), feed.tex_text(item["abstract"])
             feed._store(connection, item, followed=True)
-    _forget_unfollowed()
+    forget_unfollowed()
     with _lock:
         settings = db.get_settings()
         first = "alerts.known" not in settings  # premier passage : on retient l'existant, sans rien annoncer
@@ -76,8 +76,9 @@ def check(categories=None):
     return new
 
 
-def _forget_unfollowed():
-    """Auteur retiré du profil : ses articles quittent la section « auteurs suivis » et la pastille."""
+def forget_unfollowed():
+    """Auteur retiré du profil : ses articles quittent la section « auteurs suivis » et la pastille (tout de suite,
+    sans attendre la vérification suivante)."""
     import json
     names = _followed_names()
     stale = [row["key"] for row in recent_followed()

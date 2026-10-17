@@ -892,6 +892,7 @@ async def add_profile_item(body: ProfileItem):
 @app.delete("/api/profile/items/{item_id}")
 def remove_profile_item(item_id: int):
     profile.remove_item(item_id)
+    alerts.forget_unfollowed()  # auteur retiré : ses articles quittent aussitôt la section « auteurs suivis »
     return get_profile()
 
 

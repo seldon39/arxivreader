@@ -70,6 +70,16 @@ class Alerts(unittest.TestCase):
         self.run_check([])
         self.assertEqual(alerts.recent_followed(), [])
 
+    def test_removing_an_author_empties_the_section_at_once(self):
+        from fastapi.testclient import TestClient
+        from app import main
+        self.run_check([paper("2601.00009")])
+        self.assertEqual(len(alerts.recent_followed()), 1)
+        client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
+        for item in profile.list_items():
+            self.assertEqual(client.delete(f"/api/profile/items/{item['id']}").status_code, 200)
+        self.assertEqual(alerts.recent_followed(), [])  # sans nouvelle vérification
+
     def test_seen_keys_are_restricted_to_followed_papers(self):
         self.run_check([paper("2601.00008")])
         alerts.unseen()
