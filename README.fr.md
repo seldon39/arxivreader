@@ -53,9 +53,9 @@ Rendre cette étape inutile est dans la [feuille de route](https://github.com/se
 
 Une version Windows est en préversion (Windows 10 ou 11, 64 bits) : télécharger `arXivReader-windows.zip` depuis
 les [préversions Windows](https://github.com/seldon39/arxivreader/releases), clic droit → **Extraire tout…**, puis
-double-cliquer sur `arXivReader.exe` dans le dossier `arXivReader`. L'application s'ouvre dans une fenêtre
-Microsoft Edge à part, avec des onglets (le **+** en haut à droite de l'application ouvre un nouvel onglet
-arXivReader), séparée de votre profil Edge habituel ; la bibliothèque est gardée
+double-cliquer sur `arXivReader.exe` dans le dossier `arXivReader`. L'application s'ouvre dans sa propre fenêtre, avec des
+onglets comme sur le Mac (Ctrl+T, Ctrl-clic sur un lien, le **+** de la barre d'onglets) ; elle s'appuie sur
+WebView2, le moteur d'Edge inclus dans Windows 10 et 11 ; la bibliothèque est gardée
 dans `%LOCALAPPDATA%\arXivReader`. Si Windows affiche *Windows a protégé votre ordinateur* : **Informations
 complémentaires**, puis **Exécuter quand même** (l'application n'est pas signée). Les retours sur cette version
 sont particulièrement bienvenus.

@@ -122,8 +122,14 @@ captures par Edge sans fenêtre (`shots/`, dans l'artefact de l'exécution, avec
 branche `windows` la reconstruit ; une étiquette `windows-vX.Y.Z` (même numéro que `app/version.py`) la publie en
 **préversion** : « latest » (Mac) l'ignore, et l'application Windows ne regarde que les étiquettes `windows-v…`.
 
-- Lanceur : `windows/launcher.py` (serveur dans le processus, fenêtre Edge avec onglets (profil
-  `%LOCALAPPDATA%\arXivReader\edge-profile`), verrou nommé contre un second serveur, `server.port`, `server.log`).
+- Fenêtre : `windows/shell/` (C#, .NET Framework 4.8 inclus dans Windows, WebView2), l'équivalent de
+  `macos/main.swift` : une page WebView2 par onglet (historique propre à chacune), barre d'onglets dessinée façon
+  macOS (`TabStrip.cs`), liens extérieurs dans le navigateur par défaut, `window.chrome.webview.postMessage` pour
+  ouvrir un onglet (`nativeBridge` dans `static/js/util.js`), taille gardée dans `window.txt`. Elle lance
+  `server\arXivReader-server.exe` (PyInstaller, `windows/launcher.py` avec `ARXIVREADER_NO_BROWSER=1`) dans un
+  « job » Windows qui l'arrête avec elle, et lit son port dans `server.port`. Lancé seul, `launcher.py` ouvre encore
+  une fenêtre Edge (repli).
+- Essai : `windows/smoke.ps1` lance aussi la fenêtre sur deux onglets et capture l'écran (`shots/window.png`).
 - Différences côté serveur, toutes sous `sys.platform == "win32"` : notification par PowerShell (`alerts.py`),
   connexion des assistants dans `cmd.exe` (`providers.py`), `claude.exe` du SDK (`ai.py`), versions `windows-v…`
   (`updates.py`). Types MIME fixés dans `main.py` (le registre de Windows sert parfois `.js` en `text/plain`).
