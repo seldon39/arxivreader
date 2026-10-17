@@ -5,7 +5,7 @@ $library = Join-Path $PWD "smoke-library"
 New-Item -ItemType Directory -Force $library, shots | Out-Null
 $env:ARXIVREADER_LIBRARY = $library
 $env:ARXIVREADER_NO_BROWSER = "1"
-$process = Start-Process dist/arXivReader/arXivReader.exe -PassThru
+$process = Start-Process dist/arXivReader/server/arXivReader-server.exe -PassThru
 
 try {
     for ($i = 0; $i -lt 90 -and -not (Test-Path "$library/server.port"); $i++) { Start-Sleep 1 }
@@ -46,4 +46,28 @@ finally {
     Start-Sleep 1
     Write-Host "----- server.log"
     Get-Content "$library/server.log" -ErrorAction SilentlyContinue | Select-Object -Last 40
+}
+
+# La fenêtre de l'application elle-même (WebView2), sur deux onglets : capture de l'écran entier
+Remove-Item Env:ARXIVREADER_NO_BROWSER
+$env:ARXIVREADER_START = "#/paper/1603.04246,#/feed"
+$window = Start-Process dist/arXivReader/arXivReader.exe -PassThru
+try {
+    Start-Sleep 35
+    $window.Refresh()
+    Write-Host "window: '$($window.MainWindowTitle)', exited: $($window.HasExited)"
+    Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+    $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+    $bitmap = New-Object System.Drawing.Bitmap $screen.Width, $screen.Height
+    [System.Drawing.Graphics]::FromImage($bitmap).CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
+    $bitmap.Save((Join-Path $PWD "shots/window.png"))
+    Write-Host "screen $($screen.Width)x$($screen.Height)"
+    if ($window.HasExited) { throw "the window closed by itself" }
+}
+finally {
+    Stop-Process -Id $window.Id -Force -ErrorAction SilentlyContinue
+    Start-Sleep 2
+    $left = Get-Process arXivReader-server -ErrorAction SilentlyContinue
+    Write-Host "server processes left after the window: $(@($left).Count)"  # 0 attendu : arrêté avec la fenêtre
+    Get-Content "$library/server.log" -ErrorAction SilentlyContinue | Select-Object -Last 20
 }

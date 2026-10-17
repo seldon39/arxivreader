@@ -31,17 +31,26 @@ jobs:
       - name: Tests
         run: python -m unittest discover -s tests
 
-      - name: Build
+      # Serveur (Python, PyInstaller) : server\arXivReader-server.exe, lancé sans fenêtre par l'application
+      - name: Build server
         run: >
-          pyinstaller windows/launcher.py --name arXivReader --noconsole --onedir --noconfirm
+          pyinstaller windows/launcher.py --name arXivReader-server --noconsole --onedir --noconfirm
           --icon windows/arXivReader.ico --paths . --add-data "static;static"
           --collect-submodules app --collect-submodules uvicorn --collect-all claude_agent_sdk
           --collect-data tzdata --collect-data certifi
+
+      # Fenêtre de l'application (C#, WebView2) : arXivReader.exe
+      - name: Build window
+        shell: pwsh
+        run: |
+          dotnet build windows/shell/arXivReader.csproj -c Release -o dist/arXivReader
+          Move-Item dist/arXivReader-server dist/arXivReader/server
 
       - name: Package
         shell: pwsh
         run: |
           Copy-Item windows/LISEZMOI.txt dist/arXivReader/
+          Get-ChildItem dist/arXivReader -Name
           Compress-Archive -Path dist/arXivReader -DestinationPath arXivReader-windows.zip
           "{0:N0} Mo" -f ((Get-Item arXivReader-windows.zip).Length / 1MB)
 

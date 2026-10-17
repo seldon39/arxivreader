@@ -16,7 +16,7 @@ import { typesetFragment, typesetMath, typesetTex } from "./math.js";
 const typesetTexSafe = (element) => typesetTex([element]).catch(() => {});
 import { t } from "./i18n.js";
 import { DEFAULT_FONT_SIZE, READING_WIDTHS, onSettingsChange, saveSettings, settings } from "./settings.js";
-import { debounce, formatDate, h, icons, navigation, openRoute, plainTitle, titleTex, toast, toggleIcon, wantsNewTab, withMath } from "./util.js";
+import { debounce, formatDate, h, icons, nativeBridge, navigation, openRoute, plainTitle, titleTex, toast, toggleIcon, wantsNewTab, withMath } from "./util.js";
 
 const NEEDS_PROOF = new Set(["theorem", "proposition", "lemma", "corollary", "claim"]);
 const WIDE = 1280;
@@ -1259,7 +1259,7 @@ class Reader {
     link.dataset.loading = "1";
     try {
       const paper = await api.importPaper(link.dataset.arxiv, false);
-      const app = Boolean(window.webkit?.messageHandlers?.arxivreader); // navigateur : pas de fenêtre ouverte après un await
+      const app = Boolean(nativeBridge); // navigateur : pas de fenêtre ouverte après un await
       openRoute(`#/paper/${encodeURIComponent(paper.id)}`, app, front);
     } catch (error) {
       toast(error.message, { error: true });

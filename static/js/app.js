@@ -9,7 +9,7 @@ import { renderSearch } from "./search.js";
 import { loadSettings, onSettingsChange, openSettingsDialog, settings } from "./settings.js";
 import { refreshUpdates } from "./updates.js";
 import { api } from "./api.js";
-import { droppedPapers, h, icons, mayBePaper, navigation, openRoute, toast, toastError, wantsNewTab } from "./util.js";
+import { droppedPapers, h, icons, mayBePaper, nativeBridge, navigation, openRoute, toast, toastError, wantsNewTab } from "./util.js";
 import { addToLibrary, selectionDropped } from "./selection.js";
 import { watchZotero } from "./zotero.js";
 import { maybeOnboard } from "./onboarding.js";
@@ -112,8 +112,8 @@ onSettingsChange(() => {
   }
 });
 document.getElementById("settings-button").addEventListener("click", () => openSettingsDialog());
-// Windows : la fenêtre est celle d'Edge, dont le « + » ouvre la page d'accueil d'Edge ; celui-ci, arXivReader
-if (WINDOWS) {
+// Windows dans Edge (sans la fenêtre de l'application) : le « + » d'Edge ouvre sa page d'accueil ; celui-ci, arXivReader
+if (WINDOWS && !nativeBridge) {
   const newTab = h("button", { class: "icon-button", type: "button", title: t("nav.newTab"), "aria-label": t("nav.newTab"),
     html: icons.add, onclick: () => openRoute("#/", true, true) });
   document.getElementById("settings-button").before(newTab);

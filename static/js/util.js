@@ -265,10 +265,13 @@ export function plainTitle(title) {
   }).join("").replace(/\s+/g, " ").trim();
 }
 
+// Fenêtre de l'application Mac (WKWebView) ou Windows (WebView2) : elle ouvre les onglets ; null dans un navigateur
+export const nativeBridge = window.webkit?.messageHandlers?.arxivreader || window.chrome?.webview || null;
+
 // Ouvre une page de l'application (« #/paper/… ») ; dans un nouvel onglet si demandé (⌘-clic, clic du
-// milieu) : onglet de l'application Mac (en arrière-plan, au premier plan avec ⇧), sinon du navigateur
+// milieu) : onglet de l'application (en arrière-plan, au premier plan avec ⇧), sinon du navigateur
 export function openRoute(hash, newTab = false, front = false) {
-  const bridge = window.webkit?.messageHandlers?.arxivreader;
+  const bridge = nativeBridge;
   if (!newTab) location.hash = hash;
   else if (bridge) bridge.postMessage({ action: "openTab", route: hash, front });
   else window.open(`${location.pathname}${hash}`, "_blank", "noopener");
