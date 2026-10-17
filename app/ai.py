@@ -475,7 +475,7 @@ def _claude_status():
     if not cli:
         return {"available": False, "loggedIn": False}
     try:
-        result = subprocess.run([cli, "auth", "status", "--json"], capture_output=True, text=True, timeout=20,
+        result = subprocess.run([cli, "auth", "status", "--json"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20,
                                 env=_environment())
         info = json.loads(result.stdout or "{}")
     except (OSError, subprocess.TimeoutExpired, ValueError):

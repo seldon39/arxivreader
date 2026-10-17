@@ -54,13 +54,15 @@ Rendre cette étape inutile est dans la [feuille de route](https://github.com/se
 ### Windows (préversion)
 
 Une version Windows est en préversion (Windows 10 ou 11, 64 bits) : télécharger `arXivReader-windows.zip` depuis
-les [préversions Windows](https://github.com/seldon39/arxivreader/releases/tag/windows-latest), clic droit → **Extraire tout…**, puis
+[la dernière préversion Windows](https://github.com/seldon39/arxivreader/releases/tag/windows-latest), clic droit → **Extraire tout…**, puis
 double-cliquer sur `arXivReader.exe` dans le dossier `arXivReader`. L'application s'ouvre dans sa propre fenêtre, avec des
 onglets comme sur le Mac (Ctrl+T, Ctrl-clic sur un lien, le **+** de la barre d'onglets) ; elle s'appuie sur
-WebView2, le moteur d'Edge inclus dans Windows 10 et 11 ; la bibliothèque est gardée
-dans `%LOCALAPPDATA%\arXivReader`. Si Windows affiche *Windows a protégé votre ordinateur* : **Informations
-complémentaires**, puis **Exécuter quand même** (l'application n'est pas signée). Les retours sur cette version
-sont particulièrement bienvenus.
+WebView2, le moteur d'Edge inclus dans Windows 10 et 11 (s'il manque, sur un Windows allégé, l'application indique
+où l'installer) ; la bibliothèque est gardée dans `%LOCALAPPDATA%\arXivReader`. Si Windows affiche *Windows a protégé
+votre ordinateur* : **Informations complémentaires**, puis **Exécuter quand même** (l'application n'est pas signée).
+**Mises à jour** : l'application signale une nouvelle version Windows une fois par jour ; quitter arXivReader et
+remplacer le dossier `arXivReader` par le nouveau (la bibliothèque est ailleurs, elle est conservée).
+Les retours sur cette version sont particulièrement bienvenus.
 
 ## Application Mac : construction
 
@@ -390,6 +392,9 @@ app/            serveur Python (FastAPI)
   providers.py  autres assistants : Codex (en ligne de commande), Gemini (API), modèle local (Ollama, LM Studio)
   library.py    import d'un article ; db.py : base SQLite ; main.py : routes web
 macos/          application Mac : main.swift (fenêtre, onglets, serveur), icon.swift, build.sh, release.sh
+windows/        application Windows : shell/ (fenêtre à onglets en C#, WebView2), launcher.py (serveur, construit
+                par PyInstaller), smoke.ps1 (essai de l'application construite), build-requirements.txt
+.github/        workflows/windows.yml : construction, tests et préversion Windows (GitHub Actions)
 static/         interface (HTML, CSS, JavaScript sans compilation) ;
                 vendor/mathjax (MathJax 3.2.2), vendor/pdfjs (pdf.js 6.3.289, Apache 2.0)
                 et fonts/ (Latin Modern) copiés localement

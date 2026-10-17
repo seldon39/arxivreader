@@ -1,7 +1,7 @@
 // Articles sans version HTML : énoncés rendus à partir de leur source TeX (formules par MathJax), pour le
 // panneau (énoncés, dépendances, graphe) et les aperçus. L'article lui-même se lit dans le PDF.
 
-import { typesetTex } from "./math.js";
+import { DEFAULT_MACROS, typesetTex } from "./math.js";
 
 const escape = (text) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -77,15 +77,17 @@ export function statementElement(node, context) {
   return element;
 }
 
-// Macros de l'auteur, connues de MathJax pour la suite (\newcommand vaut pour les formules suivantes)
+// Macros de l'auteur, connues de MathJax pour la suite (\newcommand vaut pour les formules suivantes). Changement
+// d'article, ou page sans article (macros = []) : les macros courantes (\R, \abs…) reprennent d'abord leur sens,
+// au cas où l'article précédent les aurait redéfinies
 let defined = "";
 export async function defineMacros(macros = []) {
   const key = macros.join("");
-  if (!key || key === defined) return;
+  if (key === defined) return;
   defined = key;
   const holder = document.createElement("div");
   holder.className = "tex-macros";
-  holder.textContent = `\\(${macros.join(" ")}\\)`;
+  holder.textContent = `\\(${[...DEFAULT_MACROS, ...macros].join(" ")}\\)`;
   document.body.append(holder);
   await typesetTex([holder]).catch(() => {});
   holder.remove();

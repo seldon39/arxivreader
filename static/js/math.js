@@ -17,6 +17,10 @@ const MACROS = {
   id: op("id"), Id: op("Id"), rank: op("rank"), diag: op("diag"), dist: op("dist"), vol: op("vol"),
   sgn: op("sgn"), Spec: op("Spec"),
 };
+// Les mêmes en \def : rétablies quand on quitte un article qui les avait redéfinies (MathJax garde les \newcommand
+// d'une page à l'autre)
+export const DEFAULT_MACROS = Object.entries(MACROS).map(([name, value]) =>
+  Array.isArray(value) ? `\\def\\${name}#1{${value[0]}}` : `\\def\\${name}{${value}}`);
 
 function loadMathJax() {
   loading ||= new Promise((resolve, reject) => {

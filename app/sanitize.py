@@ -63,6 +63,9 @@ ALLOWED_ATTRS = {
 }
 
 UNSAFE_STYLE = re.compile(r"url\s*\(|expression|javascript|@import|behavior", re.I)
+# position fixe ou collante : un élément de l'article pourrait couvrir l'interface (et ses liens s'ouvrir dehors) ;
+# position relative ou absolue (texte remonté, \raisebox de LaTeXML) : gardée, elle reste dans l'article
+PINNED = re.compile(r"position\s*:\s*(fixed|sticky)\s*(!important)?\s*;?", re.I)
 DATA_IMAGE = re.compile(r"^data:image/(png|jpeg|gif|webp|svg\+xml)[;,]", re.I)
 
 # Éléments de la page LaTeXML qui ne font pas partie de l'article.
@@ -113,6 +116,8 @@ def sanitize_document(html, base_url):
                 del element.attrs[attr]
             elif key == "style" and UNSAFE_STYLE.search(str(value)):
                 del element.attrs[attr]
+            elif key == "style" and PINNED.search(str(value)):
+                element.attrs[attr] = PINNED.sub("", str(value))
             elif key == "href":
                 safe = _safe_href(str(value).strip())
                 if safe is None:

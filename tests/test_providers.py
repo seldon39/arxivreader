@@ -181,8 +181,11 @@ class Setup(unittest.TestCase):
             self.assertEqual(popen.call_args[0][0], ["cmd.exe", "/k", str(script)])
             providers.open_setup("local", "missing")
             text = (library / "ai" / "setup-local.cmd").read_text(encoding="utf-8")
-            self.assertIn("set OLLAMA_CONTEXT_LENGTH=32768 && ollama serve", text)
-            self.assertIn("echo $ set OLLAMA_CONTEXT_LENGTH=32768 ^&^& ollama serve", text)  # affichée, pas exécutée
+            self.assertIn("set OLLAMA_CONTEXT_LENGTH=32768 && call ollama serve", text)
+            self.assertIn("echo $ set OLLAMA_CONTEXT_LENGTH=32768 ^&^& call ollama serve", text)  # affichée, pas exécutée
+            providers.open_setup("codex", "missing")  # npm et codex sont des .cmd : « call », sinon le script s'arrête
+            self.assertIn("call npm install -g @openai/codex && call codex login", (library / "ai" / "setup-codex.cmd").read_text(encoding="utf-8"))
+            self.assertIn("set OPENAI_API_KEY=", text)
             with self.assertRaises(ValueError):
                 providers.open_setup("codex", "rm -rf ~")
 

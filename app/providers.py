@@ -30,6 +30,7 @@ import httpx
 from .config import LIBRARY
 
 PROVIDERS = ("claude", "codex", "gemini", "local")
+WINDOWS = sys.platform == "win32"
 NAMES = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini"}
 LOCAL_URL = "http://127.0.0.1:11434/v1"  # Ollama ; LM Studio : http://127.0.0.1:1234/v1
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
@@ -89,7 +90,8 @@ def _version_key(path):
 
 def _node_major(folder):
     try:
-        out = subprocess.run([str(Path(folder) / "node"), "--version"], capture_output=True, text=True, timeout=5).stdout
+        out = subprocess.run([str(Path(folder) / "node"), "--version"], capture_output=True, text=True, encoding="utf-8",
+                             errors="replace", timeout=5).stdout
     except (OSError, subprocess.SubprocessError):
         return 0
     found = re.match(r"v(\d+)", out.strip())
@@ -112,7 +114,8 @@ def _recent_node():
                   *sorted(glob.glob(str(home / ".nvm/versions/node/*/bin")), key=_version_key, reverse=True),
                   str(home / ".volta/bin"), str(home / ".local/share/mise/shims"), str(home / ".asdf/shims"),
                   "/opt/homebrew/bin", "/usr/local/bin", *os.environ.get("PATH", "").split(os.pathsep)]
-    found = next((d for d in dict.fromkeys(candidates) if d and (Path(d) / "node").exists() and _node_major(d) >= NODE_MIN), "")
+    node = "node.exe" if WINDOWS else "node"
+    found = next((d for d in dict.fromkeys(candidates) if d and (Path(d) / node).exists() and _node_major(d) >= NODE_MIN), "")
     if found:  # pas trouvé : recherché de nouveau la prochaine fois (Node installé entre-temps)
         _node_folder = found
     return found
@@ -167,7 +170,6 @@ SETUP = {
     ("local", "login"): "ollama pull qwen3",
     ("local", "missing"): "OLLAMA_CONTEXT_LENGTH=32768 ollama serve",
 }
-WINDOWS = sys.platform == "win32"
 WINDOWS_SETUP = {("local", "missing"): "set OLLAMA_CONTEXT_LENGTH=32768 && ollama serve"}  # syntaxe de cmd.exe
 
 
@@ -179,6 +181,8 @@ def _open_setup_windows(provider, step, claude_cli):
         command = f'"{claude_cli}" auth login --claudeai && "{claude_cli}" auth status --text'
     elif (provider, step) in SETUP:
         command = WINDOWS_SETUP.get((provider, step), SETUP[provider, step])
+        # npm, codex… sont des scripts .cmd : appelés sans « call », ils termineraient le script avant la suite
+        command = " && ".join(part if part.startswith("set ") else f"call {part}" for part in command.split(" && "))
     else:
         raise ValueError(provider)
     folder = LIBRARY / "ai"
@@ -188,11 +192,14 @@ def _open_setup_windows(provider, step, claude_cli):
     # fins de ligne \r\n : ajoutées par l'écriture en mode texte de Windows
     _write(script, "@echo off\nchcp 65001 >nul\n"
                    f'set "PATH={_search_path()}"\n'
-                   "set ANTHROPIC_API_KEY=\n"  # le compte de l'utilisateur, pas une clé d'API de l'environnement
+                   # le compte de l'utilisateur, pas une clé d'API qui traînerait dans l'environnement
+                   "set ANTHROPIC_API_KEY=\nset OPENAI_API_KEY=\nset CODEX_API_KEY=\n"
                    f"echo $ {shown.replace('&', '^&')}\n"  # ^& : affiché, pas exécuté
                    f"{command}\n"
                    "echo.\necho Terminé : revenez dans arXivReader et cliquez sur « Vérifier à nouveau ».\n")
-    subprocess.Popen(["cmd.exe", "/k", str(script)], creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0))
+    # console à part, et hors du « job » de la fenêtre : « ollama serve », « npm install » continuent si on la ferme
+    subprocess.Popen(["cmd.exe", "/k", str(script)],
+                     creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0x10) | 0x01000000)  # CREATE_BREAKAWAY_FROM_JOB
 
 
 def open_setup(provider, step, claude_cli=None):
@@ -220,6 +227,7 @@ def open_setup(provider, step, claude_cli=None):
                   "  exit 1\nfi\n")
     _write(script, "#!/bin/bash\n"
                    f"export PATH={shlex.quote(_search_path())}\n"
+                   "unset OPENAI_API_KEY CODEX_API_KEY\n"  # le compte de l'utilisateur, pas une clé de l'environnement
                    + node_check +
                    f"echo {shlex.quote('$ ' + shown)}\n"
                    f"{command}\n"
@@ -243,7 +251,8 @@ def status(provider, settings):
         if not cli:
             return {"available": False, "loggedIn": False}
         try:
-            result = subprocess.run([cli, "login", "status"], capture_output=True, text=True, timeout=20, env=_environment())
+            result = subprocess.run([cli, "login", "status"], capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                    timeout=20, env=_environment())
             output = (result.stdout + result.stderr).lower()
             logged = result.returncode == 0 and "not logged in" not in output
         except (OSError, subprocess.TimeoutExpired):
@@ -313,8 +322,10 @@ async def _run(argv, stdin_text, cwd, parse, env=None):
         errors.cancel()
         if process.returncode is None:
             with contextlib.suppress(ProcessLookupError, PermissionError):
-                if WINDOWS:  # pas de groupe de processus : le programme lui-même
-                    process.kill()
+                if WINDOWS:  # pas de groupe de processus : le programme et ce qu'il a lancé (codex.cmd → node)
+                    subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, timeout=10)
+                    with contextlib.suppress(ProcessLookupError):
+                        process.kill()
                 else:
                     os.killpg(process.pid, signal.SIGKILL)
             with anyio.CancelScope(shield=True):  # page fermée : l'attente n'est pas interrompue à son tour

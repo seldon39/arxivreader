@@ -134,8 +134,11 @@ def log_to(library):
     """Sorties du serveur dans server.log (le précédent gardé dans server.log.1) : sans console, rien ne
     s'afficherait, et les écritures échoueraient."""
     log = library / "server.log"
-    if log.exists():
-        os.replace(log, library / "server.log.1")
+    try:
+        if log.exists():
+            os.replace(log, library / "server.log.1")
+    except OSError:
+        pass  # journal encore ouvert par un serveur qui s'arrête : on écrit à la suite
     stream = open(log, "a", encoding="utf-8", buffering=1)
     sys.stdout = sys.stderr = stream
     return log
@@ -181,6 +184,8 @@ def main():
             port = PREFERRED_PORT
         if browser and listening(port):
             open_window(browser, library, f"http://127.0.0.1:{port}/{route}", new_window=False)
+        if headless:
+            sys.exit(3)  # lancé par la fenêtre : un autre serveur (version précédente ?) tient la bibliothèque
         return
 
     port = free_port(PREFERRED_PORT)

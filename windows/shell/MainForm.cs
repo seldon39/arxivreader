@@ -39,6 +39,16 @@ namespace ArxivReader
         Tab current;
         int port;
         bool restarting, rebuilding, closing;
+        FormWindowState lastState = FormWindowState.Normal;  // avant réduction dans la barre des tâches
+
+        // tailles données en pixels « à 96 ppp », agrandies sur les écrans à haute densité
+        int Scaled(int pixels) => (int)Math.Round(pixels * DeviceDpi / 96.0);
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            if (WindowState != FormWindowState.Minimized) lastState = WindowState;
+        }
 
         string Origin => $"http://127.0.0.1:{port}";
 
@@ -48,7 +58,7 @@ namespace ArxivReader
             this.server = server;
             Text = "arXivReader";
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
-            MinimumSize = new Size(640, 420);
+            MinimumSize = new Size(Scaled(640), Scaled(420));
             LoadBounds();
             status.Text = Program.Tr("Démarrage d'arXivReader…", "Starting arXivReader…");
             content.Controls.Add(status);
@@ -60,15 +70,31 @@ namespace ArxivReader
             strip.Added += () => _ = OpenTab("#/", true);
             server.Ended += () => { if (IsHandleCreated && !IsDisposed && !closing) BeginInvoke(new Action(ServerEnded)); };
 
-            // second lancement de l'application : cette fenêtre revient au premier plan
+            this.show = show;
+        }
+
+        readonly EventWaitHandle show;
+
+        // Second lancement de l'application : cette fenêtre revient au premier plan (attente démarrée une fois la
+        // fenêtre créée ; signal reçu pendant la fermeture : ignoré)
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
             new Thread(() =>
             {
                 while (show.WaitOne())
-                    BeginInvoke(new Action(() =>
+                {
+                    if (!IsHandleCreated || IsDisposed || closing) continue;
+                    try
                     {
-                        if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
-                        Activate();
-                    }));
+                        BeginInvoke(new Action(() =>
+                        {
+                            if (WindowState == FormWindowState.Minimized) WindowState = lastState;
+                            Activate();
+                        }));
+                    }
+                    catch (InvalidOperationException) { }  // fenêtre fermée entre-temps
+                }
             }) { IsBackground = true }.Start();
         }
 
@@ -111,6 +137,10 @@ namespace ArxivReader
                 .Where(r => Route.IsMatch(r)).DefaultIfEmpty("#/").ToList();
             content.Controls.Remove(status);
             foreach (var route in routes) await OpenTab(route, route == routes[0]);
+            // profil Edge des préversions 1.9.15–1.9.16, inutile depuis : supprimé (en arrière-plan)
+            string oldProfile = Path.Combine(library, "edge-profile");
+            if (Directory.Exists(oldProfile))
+                _ = Task.Run(() => { try { Directory.Delete(oldProfile, true); } catch (Exception) { } });
         }
 
         async Task OpenTab(string route, bool front)
@@ -157,10 +187,15 @@ namespace ArxivReader
             {
                 e.Handled = true;  // target="_blank", window.open : page de l'application dans un onglet, le reste dehors
                 if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri)) return;
-                if (IsApp(uri)) _ = OpenTab(uri.Fragment.Length > 1 ? uri.Fragment : "#/", true);
+                if (IsApp(uri) && uri.AbsolutePath != "/") core.Navigate(uri.AbsoluteUri);  // export, PDF : téléchargé ici
+                else if (IsApp(uri)) _ = OpenTab(uri.Fragment.Length > 1 ? uri.Fragment : "#/", true);
                 else if (e.IsUserInitiated) OpenOutside(uri);
             };
-            core.WebMessageReceived += (s, e) => Received(e.WebMessageAsJson);
+            core.WebMessageReceived += (s, e) =>
+            {
+                // seulement les pages de l'application (pas un contenu data:, blob: ou un cadre d'ailleurs)
+                if (Uri.TryCreate(e.Source, UriKind.Absolute, out var from) && IsApp(from)) Received(e.WebMessageAsJson);
+            };
             core.ProcessFailed += (s, e) =>
             {
                 switch (e.ProcessFailedKind)
@@ -255,7 +290,7 @@ namespace ArxivReader
         }
 
         // Raccourcis des onglets (Ctrl+T, Ctrl+W, Ctrl+Tab, Ctrl+1…9) ; le reste va à la page
-        bool Shortcut(Keys keys)
+        bool Shortcut(Keys keys, bool dryRun = false)
         {
             // AltGr arrive comme Ctrl+Alt : AltGr+3 (« # »), AltGr+8 (« \ »)… sont des caractères à taper, pas des
             // raccourcis (claviers français, allemand…)
@@ -265,28 +300,34 @@ namespace ArxivReader
             {
                 case Keys.Control | Keys.T:
                 case Keys.Control | Keys.N:
-                    _ = OpenTab("#/", true);
+                    if (!dryRun) _ = OpenTab("#/", true);
                     return true;
                 case Keys.Control | Keys.W:
                 case Keys.Control | Keys.F4:
-                    if (current != null) CloseTab(current);
+                    var closed = current;
+                    if (!dryRun && closed != null) BeginInvoke(new Action(() => { if (tabs.Contains(closed)) CloseTab(closed); }));
                     return true;
                 case Keys.Control | Keys.Tab:
-                    if (tabs.Count > 1) SelectTab(tabs[(tabs.IndexOf(current) + (shift ? tabs.Count - 1 : 1)) % tabs.Count]);
+                    if (!dryRun && tabs.Count > 1) SelectTab(tabs[(tabs.IndexOf(current) + (shift ? tabs.Count - 1 : 1)) % tabs.Count]);
                     return true;
             }
             var key = keys & Keys.KeyCode;
             if ((keys & Keys.Control) != 0 && !shift && key >= Keys.D1 && key <= Keys.D9)
             {
                 int index = key == Keys.D9 ? tabs.Count - 1 : key - Keys.D1;  // Ctrl+9 : le dernier, comme dans les navigateurs
-                if (index >= 0 && index < tabs.Count) SelectTab(tabs[index]);
+                if (!dryRun && index >= 0 && index < tabs.Count) SelectTab(tabs[index]);
                 return true;
             }
             return false;
         }
 
         // Touches de raccourci : le contrôle WebView2 les passe à la fenêtre (comme celles de la barre d'onglets)
-        protected override bool ProcessCmdKey(ref Message message, Keys keys) => Shortcut(keys) || base.ProcessCmdKey(ref message, keys);
+        protected override bool ProcessCmdKey(ref Message message, Keys keys)
+        {
+            bool repeat = ((long)message.LParam & 0x40000000) != 0;  // touche maintenue (répétition automatique)
+            if (repeat && Shortcut(keys, dryRun: true)) return true;  // Ctrl+W maintenu : pas tous les onglets d'un coup
+            return Shortcut(keys) || base.ProcessCmdKey(ref message, keys);
+        }
 
         void SelectTab(Tab tab)
         {
@@ -325,14 +366,16 @@ namespace ArxivReader
         {
             StartPosition = FormStartPosition.Manual;
             var area = Screen.PrimaryScreen.WorkingArea;
-            var bounds = new Rectangle(0, 0, Math.Min(1280, area.Width), Math.Min(860, area.Height));
+            var bounds = new Rectangle(0, 0, Math.Min(Scaled(1280), area.Width), Math.Min(Scaled(860), area.Height));
             bounds.Offset(area.Left + (area.Width - bounds.Width) / 2, area.Top + (area.Height - bounds.Height) / 2);
             bool maximized = false;
             try
             {
                 var parts = File.ReadAllText(BoundsFile).Trim().Split(',').Select(int.Parse).ToArray();
                 var saved = new Rectangle(parts[0], parts[1], parts[2], parts[3]);
-                if (Screen.AllScreens.Any(s => s.WorkingArea.IntersectsWith(saved))) bounds = saved;  // écran encore là
+                // écran encore là, et barre de titre atteignable (pas seulement un coin de fenêtre visible)
+                var grip = new Point(saved.Left + Math.Min(120, saved.Width / 2), saved.Top + 10);
+                if (saved.Width >= 200 && saved.Height >= 150 && Screen.AllScreens.Any(s => s.WorkingArea.Contains(grip))) bounds = saved;
                 maximized = parts.Length > 4 && parts[4] == 1;
             }
             catch (Exception) { }
@@ -344,7 +387,9 @@ namespace ArxivReader
         {
             closing = true;
             var b = WindowState == FormWindowState.Normal ? Bounds : base.RestoreBounds;
-            try { File.WriteAllText(BoundsFile, $"{b.X},{b.Y},{b.Width},{b.Height},{(WindowState == FormWindowState.Maximized ? 1 : 0)}"); }
+            bool maximized = WindowState == FormWindowState.Maximized
+                || (WindowState == FormWindowState.Minimized && lastState == FormWindowState.Maximized);  // fermée réduite
+            try { File.WriteAllText(BoundsFile, $"{b.X},{b.Y},{b.Width},{b.Height},{(maximized ? 1 : 0)}"); }
             catch (Exception) { }
             base.OnFormClosing(e);
         }

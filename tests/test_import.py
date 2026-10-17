@@ -83,6 +83,15 @@ class Import(unittest.TestCase):
                                                                   "https://arxiv.org/html/2609.40232v1/x1.png",
                                                                   "https://arxiv.org/static/a.png"])
 
+    def test_pinned_styles_removed(self):
+        # position fixe ou collante (couvrirait l'interface) retirée ; position relative (\raisebox) gardée
+        html = """<html><body><article class="ltx_document"><span id="a" style="position: fixed; inset:0">x</span>
+                  <span id="b" style="position:relative; bottom:0.5em">y</span></article></body></html>"""
+        fragment, _ = sanitize_document(html, "https://arxiv.org/html/2609.40232v1/")
+        self.assertNotIn("fixed", fragment.select_one("#a").get("style", ""))
+        self.assertIn("inset:0", fragment.select_one("#a")["style"])
+        self.assertEqual(fragment.select_one("#b")["style"], "position:relative; bottom:0.5em")
+
     def test_images_only_from_arxiv(self):
         # adresse absolue hors d'arXiv (réseau local, autre site) : jamais demandée par le serveur
         html = """<html><body><article class="ltx_document"><img src="https://ar5iv.labs.arxiv.org/x.png"/>
@@ -221,7 +230,6 @@ class QuickAdd(unittest.TestCase):
 
         def slow_import(arxiv_id, add_to_library=True):
             release.wait(5)  # import long (figures, source)
-            previous = db.get_paper(arxiv_id)
             db.update_paper(arxiv_id, source="arxiv-html", version=1)
             return db.get_paper(arxiv_id)
         with mock.patch.object(library, "import_paper", side_effect=slow_import):

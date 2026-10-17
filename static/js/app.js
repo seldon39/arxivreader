@@ -4,6 +4,7 @@ import { WINDOWS, t, tn } from "./i18n.js";
 import { renderFeed } from "./feed.js";
 import { renderLibrary } from "./library.js";
 import { renderReader } from "./reader.js";
+import { defineMacros } from "./texview.js";
 import { renderRelated } from "./related.js";
 import { renderSearch } from "./search.js";
 import { loadSettings, onSettingsChange, openSettingsDialog, settings } from "./settings.js";
@@ -34,7 +35,10 @@ async function route() {
   const searchMatch = location.hash === "#/search";
   const relatedMatch = location.hash.match(/^#\/related(?:\/(.+))?$/);
   const section = match ? "paper" : feedMatch ? "#/feed" : searchMatch ? "#/search" : relatedMatch ? "#/related" : "#/";
-  if (!match) navigation.listHash = location.hash || "#/";
+  if (!match) {
+    navigation.listHash = location.hash || "#/";
+    defineMacros([]).catch(() => {});  // macros de l'article quitté : plus valables dans le feed, la recherche…
+  }
   // titre de l'onglet (et de la fenêtre) : la page ; le lecteur y met le titre de l'article
   document.title = match ? "arXivReader" : feedMatch ? t("feed.title") : searchMatch ? t("search.title") : relatedMatch ? t("related.title") : t("library.title");
   document.querySelectorAll(".topnav a").forEach((a) => {
@@ -115,7 +119,7 @@ document.getElementById("settings-button").addEventListener("click", () => openS
 // Windows dans Edge (sans la fenêtre de l'application) : le « + » d'Edge ouvre sa page d'accueil ; celui-ci, arXivReader
 if (WINDOWS && !nativeBridge) {
   const newTab = h("button", { class: "icon-button", type: "button", title: t("nav.newTab"), "aria-label": t("nav.newTab"),
-    html: icons.add, onclick: () => openRoute("#/", true, true) });
+    "data-i18n-title": "nav.newTab", html: icons.add, onclick: () => openRoute("#/", true, true) });  // suit la langue
   document.getElementById("settings-button").before(newTab);
 }
 addEventListener("arxivreader:settings", (event) => openSettingsDialog({ section: event.detail }));

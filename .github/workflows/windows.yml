@@ -17,7 +17,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           persist-credentials: false
 
@@ -33,7 +33,7 @@ jobs:
               throw "tag $env:TAG does not match app/version.py"
           }
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.14"
 
@@ -59,6 +59,7 @@ jobs:
         shell: pwsh
         run: |
           dotnet build windows/shell/arXivReader.csproj -c Release -o dist/arXivReader
+          Remove-Item dist/arXivReader/Microsoft.Web.WebView2.Wpf.* -ErrorAction SilentlyContinue  # pas de WPF ici
           Move-Item dist/arXivReader-server dist/arXivReader/server
 
       - name: Package
@@ -91,7 +92,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           persist-credentials: false
 

@@ -50,12 +50,15 @@ Making this unnecessary is on the [roadmap](https://github.com/seldon39/arxivrea
 
 ### Windows (preview)
 
-A Windows version is in preview (Windows 10 or 11, 64-bit): download `arXivReader-windows.zip` from the
-[Windows pre-releases](https://github.com/seldon39/arxivreader/releases/tag/windows-latest), right-click it → **Extract All…**, and
+A Windows version is in preview (Windows 10 or 11, 64-bit): download `arXivReader-windows.zip` from
+[the latest Windows preview](https://github.com/seldon39/arxivreader/releases/tag/windows-latest), right-click it → **Extract All…**, and
 double-click `arXivReader.exe` in the `arXivReader` folder. The app opens in its own window with tabs, as on the Mac
 (Ctrl+T, Ctrl-click a link, the **+** of the tab bar); it relies on WebView2, the Edge engine included in Windows 10
-and 11; your library is kept in `%LOCALAPPDATA%\arXivReader`.
+and 11 (if a stripped-down Windows lacks it, the app says where to install it); your library is kept in
+`%LOCALAPPDATA%\arXivReader`.
 If Windows says *Windows protected your PC*, click **More info**, then **Run anyway**: the app is not signed.
+**Updates**: the app announces a new Windows version once a day; quit arXivReader and replace the `arXivReader`
+folder with the new one (your library lives elsewhere and is kept).
 Feedback on this version is especially welcome.
 
 ## Mac app: building
@@ -375,6 +378,9 @@ app/            Python server (FastAPI)
   providers.py  other assistants: Codex (command line), Gemini (API), local model (Ollama, LM Studio)
   library.py    importing a paper; db.py: SQLite database; main.py: web routes
 macos/          Mac app: main.swift (window, tabs, server), icon.swift, build.sh, release.sh
+windows/        Windows app: shell/ (C# window with tabs, WebView2), launcher.py (server, built with PyInstaller),
+                smoke.ps1 (test of the built app), build-requirements.txt
+.github/        workflows/windows.yml: Windows build, tests and pre-release on GitHub Actions
 static/         interface (HTML, CSS, JavaScript with no build step);
                 vendor/mathjax (MathJax 3.2.2), vendor/pdfjs (pdf.js 6.3.289, Apache 2.0)
                 and fonts/ (Latin Modern) copied locally

@@ -206,7 +206,7 @@ def run(baseline=True):
         results.append({"name": name, "status": status, "detail": detail or "", "seconds": round(time.time() - started, 1)})
     previous = {}
     try:
-        previous = json.loads(REPORT.read_text())
+        previous = json.loads(REPORT.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         pass
     if not isinstance(previous, dict):
@@ -218,7 +218,7 @@ def run(baseline=True):
               "baseline": now if baseline or not reference else reference,
               "systemChanged": moved, "previousSystem": reference, "results": results}
     try:
-        REPORT.write_text(json.dumps(report, ensure_ascii=False, indent=1))
+        REPORT.write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
     except OSError:
         pass
     return report

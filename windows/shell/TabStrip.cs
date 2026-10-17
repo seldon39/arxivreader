@@ -29,16 +29,18 @@ namespace ArxivReader
             Dock = DockStyle.Top;
             DoubleBuffered = true;
             SetStyle(ControlStyles.ResizeRedraw | ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true);
-            Font = new Font("Segoe UI", 9f);
+            Font = UiFont();
             Height = Scale(32);
         }
 
         float Ratio => DeviceDpi / 96f;
+        Font UiFont() => new Font("Segoe UI", 12f * Ratio, GraphicsUnit.Pixel);  // suit la densité de l'écran
         int Scale(int pixels) => (int)Math.Round(pixels * Ratio);
 
         protected override void OnDpiChangedAfterParent(EventArgs e)
         {
             base.OnDpiChangedAfterParent(e);
+            Font = UiFont();
             Height = Scale(32);
         }
 

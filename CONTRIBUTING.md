@@ -9,7 +9,7 @@ Thank you for your interest. arXivReader is a reader for arXiv papers built for 
 
 - the **arXiv identifier and version** of the paper (e.g. `arXiv:2609.40232v1`) — most display problems are
   specific to one paper's LaTeXML conversion;
-- the **app version** (Settings → Updates) and your macOS version;
+- the **app version** (Settings → Updates) and your system (macOS or Windows, with its version);
 - a **screenshot** or a short screen recording, and what you expected instead.
 
 To see whether a problem comes from arXivReader or from arXiv's own HTML, compare with
@@ -35,14 +35,18 @@ These are not negotiable; a change that weakens one of them will not be merged.
   Semantic Scholar, Zotero, GitHub releases, the AI provider the user chose).
 - **The user's keys** (Semantic Scholar, Gemini, Zotero) are typed by the user in the settings; they never
   appear in code, logs or error messages.
-- **Zotero: nothing is ever deleted or trashed.** Only the "arXivReader" collections are modified.
+- **Zotero: no item is ever deleted or trashed.** Only the "arXivReader" collection and its sub-collections are
+  modified (a sub-collection is removed when its folder is deleted in arXivReader; the papers stay in Zotero).
 - **No long requests from the page**: anything slow (imports, related-papers graphs) runs in the background and
   is polled, because WebKit may drop a request left unanswered for about a minute.
 
 ## Development setup
 
-Requirements: macOS, Python 3.14 (the version in `requirements.lock`), and Xcode command-line tools to build the
-Mac app.
+Requirements: Python 3.14 (the version in `requirements.lock`) on macOS — or on Windows/Linux for the server and
+the tests —, and Xcode command-line tools to build the Mac app. The Windows app (`windows/`: a C# window around
+WebView2, and the server built with PyInstaller) is built and tested by GitHub Actions on every push to `main`
+(`.github/workflows/windows.yml`, which also runs `windows/smoke.ps1` on the built app); the test suite passes on
+both systems, Mac-only tests being skipped on Windows.
 
 ```bash
 git clone https://github.com/seldon39/arxivreader.git && cd arxivreader

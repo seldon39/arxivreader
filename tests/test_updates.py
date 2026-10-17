@@ -54,9 +54,6 @@ class Updates(unittest.TestCase):
         self.assertFalse(updates.state()["available"])  # déjà à jour
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class Releases(unittest.TestCase):
     """Choix de la version publiée : le Mac lit « latest », Windows la plus récente des préversions windows-v…"""
@@ -81,6 +78,8 @@ class Releases(unittest.TestCase):
         latest = updates.fetch(windows=False)
         self.assertEqual((latest["version"], latest["download"]), ("1.9.14", "https://x/arXivReader.dmg"))
         self.assertTrue(self.urls[0].endswith("/releases/latest"))
+        self.answer({"tag_name": "windows-v1.9.20", "assets": []})  # préversion Windows promue par erreur : ignorée
+        self.assertIsNone(updates.fetch(windows=False))
 
     def test_windows(self):
         self.answer([{"tag_name": "v1.9.15", "assets": []},
@@ -91,3 +90,7 @@ class Releases(unittest.TestCase):
         self.assertEqual((latest["version"], latest["download"]), ("1.9.14", "https://x/arXivReader-windows.zip"))
         self.answer([{"tag_name": "v1.9.15", "assets": []}])
         self.assertIsNone(updates.fetch(windows=True))
+
+
+if __name__ == "__main__":
+    unittest.main()

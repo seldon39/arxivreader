@@ -187,7 +187,6 @@ def normalize_proofs(body, envs):
             next_statement = re.compile(starts).search(body, rest)
             if next_statement and next_statement.start() < stop:
                 stop = next_statement.start()
-        heading = re.sub(r"^(?:Proof|Preuve|Démonstration)\s*(?:of|de)?\s*", "", plain(title.replace("\\ref", "\\ref")), flags=re.I)
         out.append(body[pos:match.start()])
         out.append(f"\\begin{{proof}}[{title}]{body[rest:stop]}\\end{{proof}}")
         pos = stop

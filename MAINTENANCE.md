@@ -54,6 +54,7 @@ anglais.
 | Réglages | `main.py` (liste `allowed` et `_valid_setting` de `/api/settings`) | `settings.js` |
 | Textes de l'interface | — | `i18n.js` (blocs FR et EN : mêmes clés) |
 | Application Mac | — | `macos/main.swift` (onglets, glisser sur un onglet, téléchargements, essais), `macos/build.sh`, `macos/release.sh` |
+| Application Windows | `windows/launcher.py` (serveur sans fenêtre, repli Edge) | `windows/shell/` (fenêtre C# : `MainForm.cs`, `TabStrip.cs`, `Program.cs`), `windows/smoke.ps1`, `.github/workflows/windows.yml` |
 
 Base : `app/db.py` (`SCHEMA` en `CREATE TABLE IF NOT EXISTS`, colonnes ajoutées par `ALTER TABLE` après
 `PRAGMA table_info` dans `init()`) ; modules qui ont leurs tables : `related.py`, `zotero.py`, `journals.py`

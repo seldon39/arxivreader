@@ -19,6 +19,9 @@ Your library is kept in `%LOCALAPPDATA%\arXivReader`.
 
 **Préversion d'arXivReader pour Windows** (Windows 10 ou 11, 64 bits). Installation : télécharger
 `arXivReader-windows.zip`, clic droit → **Extraire tout…**, puis double-cliquer sur `arXivReader.exe` dans le dossier
-`arXivReader`. Si Windows affiche « Windows a protégé votre ordinateur » : **Informations complémentaires**, puis
-**Exécuter quand même**. Mise à jour : quitter arXivReader et remplacer le dossier ; la bibliothèque, dans
-`%LOCALAPPDATA%\arXivReader`, est conservée.
+`arXivReader`. L'application s'ouvre dans sa propre fenêtre, avec des onglets comme sur le Mac (Ctrl+T ou le **+**,
+Ctrl-clic sur un lien, Ctrl+W, Ctrl+Tab) ; les liens vers d'autres sites s'ouvrent dans votre navigateur habituel.
+Si Windows affiche « Windows a protégé votre ordinateur » : **Informations complémentaires**, puis
+**Exécuter quand même**. Mise à jour (signalée une fois par jour) : quitter arXivReader et remplacer le dossier ; la
+bibliothèque, dans `%LOCALAPPDATA%\arXivReader`, est conservée. Pas encore sous Windows : recopier une bibliothèque
+d'un autre ordinateur (menu Fichier de l'application Mac).

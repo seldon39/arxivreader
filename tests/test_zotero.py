@@ -1,6 +1,5 @@
 """Synchronisation avec Zotero : un faux Zotero en mémoire (API web v3, ce que l'application en utilise)."""
 
-import json
 import pathlib
 import re
 import tempfile

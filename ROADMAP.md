@@ -1,6 +1,6 @@
 # Roadmap
 
-arXivReader works well for one mathematician on one Mac. These are the steps that would let it serve many
+arXivReader works well for one mathematician on a Mac, and now on Windows (preview). These are the steps that would let it serve many
 readers, roughly in order of impact. Each one is a GitHub issue with the context, the code involved and what
 "done" means: comment there before starting, so that work is not duplicated.
 
@@ -12,7 +12,9 @@ readers, roughly in order of impact. Each one is a GitHub issue with the context
 
 ## More platforms, more devices
 
-- [#3](https://github.com/seldon39/arxivreader/issues/3) Windows version (preview).
+- ~~[#3](https://github.com/seldon39/arxivreader/issues/3) Windows version (preview)~~: done in 1.9.15–1.9.19
+  ([latest Windows preview](https://github.com/seldon39/arxivreader/releases/tag/windows-latest)); a signed
+  Windows build would be the next step.
 - [#4](https://github.com/seldon39/arxivreader/issues/4) Read on iPad.
 - [#5](https://github.com/seldon39/arxivreader/issues/5) Sync the library, notes and highlights across devices.
 

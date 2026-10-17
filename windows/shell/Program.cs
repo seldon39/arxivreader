@@ -35,6 +35,7 @@ namespace ArxivReader
             var show = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\" + key + "-show");
             if (!first)
             {
+                AllowSetForegroundWindow(-1);  // ASFW_ANY : la fenêtre déjà ouverte peut passer devant (pas seulement clignoter)
                 show.Set();  // déjà lancée : sa fenêtre revient au premier plan
                 return;
             }
@@ -44,6 +45,8 @@ namespace ArxivReader
             using var server = new Server(library);
             Application.Run(new MainForm(library, server, show));
         }
+
+        [DllImport("user32.dll")] static extern bool AllowSetForegroundWindow(int processId);
 
         static string Hash(string text)
         {
@@ -86,7 +89,10 @@ namespace ArxivReader
             while (started.Elapsed < TimeSpan.FromSeconds(120))
             {
                 if (process.HasExited)
-                    throw new InvalidOperationException(Program.Tr("Le serveur s'est arrêté.", "The server stopped."));
+                    throw new InvalidOperationException(process.ExitCode == 3
+                        ? Program.Tr("Une autre fenêtre d'arXivReader (peut-être une version précédente) est encore ouverte : fermez-la, puis relancez arXivReader.",
+                                     "Another arXivReader window (perhaps a previous version) is still open: close it, then start arXivReader again.")
+                        : Program.Tr("Le serveur s'est arrêté.", "The server stopped."));
                 if (File.Exists(portFile) && int.TryParse(ReadShared(portFile).Trim(), out int port) && Listening(port))
                 {
                     ready = true;
@@ -161,7 +167,9 @@ namespace ArxivReader
         {
             IntPtr job = CreateJobObject(IntPtr.Zero, null);
             var limits = new ExtendedLimits();
-            limits.Basic.LimitFlags = 0x2000;  // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            // KILL_ON_JOB_CLOSE : le serveur s'arrête avec la fenêtre ; BREAKAWAY_OK : sauf ce qui est lancé à part
+            // exprès (invite de commandes de connexion : « ollama serve », « npm install » continuent)
+            limits.Basic.LimitFlags = 0x2000 | 0x800;
             SetInformationJobObject(job, 9, ref limits, Marshal.SizeOf(typeof(ExtendedLimits)));  // JobObjectExtendedLimitInformation
             return job;
         }

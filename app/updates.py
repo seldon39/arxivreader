@@ -20,7 +20,7 @@ LATEST = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
 RELEASES = f"https://github.com/{REPOSITORY}/releases"
 # Version Windows : publiée à part, en préversion (« windows-v1.9.14 », un .zip), que « latest » ignore
 WINDOWS = sys.platform == "win32"
-ALL_RELEASES = f"https://api.github.com/repos/{REPOSITORY}/releases?per_page=30"
+ALL_RELEASES = f"https://api.github.com/repos/{REPOSITORY}/releases?per_page=100"
 WINDOWS_TAG = "windows-v"
 EVERY = 24 * 3600
 _lock = threading.Lock()
@@ -51,7 +51,9 @@ def fetch(windows=WINDOWS):
         version, suffix = release["tag_name"][len(WINDOWS_TAG):], ".zip"
     else:
         release = response.json()
-        version, suffix = (release.get("tag_name") or "").lstrip("v"), ".dmg"
+        if not re.match(r"v\d", release.get("tag_name") or ""):
+            return None  # pas une version Mac (vX.Y.Z) : jamais une version Windows promue par erreur
+        version, suffix = release["tag_name"][1:], ".dmg"
     package = next((a["browser_download_url"] for a in release.get("assets", []) if a.get("name", "").endswith(suffix)), None)
     return {"version": version, "url": release.get("html_url") or RELEASES,
             "download": package, "notes": (release.get("body") or "")[:4000], "published": release.get("published_at")}
