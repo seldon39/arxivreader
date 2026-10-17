@@ -1,5 +1,6 @@
 """Alertes : premier passage silencieux, notification des seuls nouveaux articles, articles vus."""
 
+import json
 import pathlib
 import tempfile
 import unittest
@@ -75,6 +76,7 @@ class Alerts(unittest.TestCase):
         alerts.mark_seen(["2601.00008", "anything-else"])
         self.assertEqual(db.get_settings()["alerts.seen"], ["2601.00008"])
 
+    @mock.patch.object(alerts.sys, "platform", "darwin")
     def test_notification_text(self):
         with mock.patch.object(alerts.subprocess, "run") as run:
             alerts.notify([paper("1"), paper("2"), paper("3"), paper("4")])
@@ -86,6 +88,17 @@ class Alerts(unittest.TestCase):
         script = run.call_args[0][0][2]
         self.assertIn('\\"', script)
         self.assertLess(len(script), 420)  # titre coupé
+
+    @mock.patch.object(alerts.sys, "platform", "win32")
+    def test_windows_notification(self):
+        with mock.patch.object(alerts.subprocess, "run") as run:
+            alerts.notify([{**paper("5"), "title": 'Quote " and $(evil) ' + "x" * 400}])
+        argv, env = run.call_args[0][0], run.call_args[1]["env"]
+        self.assertEqual(argv[0], "powershell.exe")
+        self.assertNotIn("evil", argv[-1])  # textes passés par l'environnement, jamais dans le script
+        toast = json.loads(env["ARXIVREADER_TOAST"])
+        self.assertTrue(toast["body"].startswith('Quote " and $(evil)'))
+        self.assertLessEqual(len(toast["body"]), 240)
 
     def test_who(self):
         self.assertEqual(alerts._who(paper("x", "X. Ma")), "X. Ma")  # forme abrégée reconnue

@@ -29,7 +29,8 @@ try {
         Start-Sleep 1
     }
     $paper = Invoke-RestMethod "$base/api/papers/1603.04246"
-    Write-Host "imported: $($paper.title)"
+    Write-Host "imported: $($paper.paper.title) ($($paper.structure.nodes.Count) statements)"
+    if (-not $paper.paper.title) { throw "import failed" }
 
     $edge = "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe"
     if (-not (Test-Path $edge)) { $edge = "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe" }

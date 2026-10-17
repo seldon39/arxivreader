@@ -2,6 +2,7 @@
 et repérage d'articles arXiv dans un texte collé (e-mail Scholar Inbox, export BibTeX…)."""
 
 import json
+import os
 import re
 import threading
 import time
@@ -320,6 +321,8 @@ def _zone(name):
     try:
         return ZoneInfo(name)
     except ZoneInfoNotFoundError:
+        if not os.path.isabs(SYSTEM_ZONES):  # Windows : fuseaux du paquet tzdata seulement
+            raise
         zoneinfo.reset_tzpath([*zoneinfo.TZPATH, SYSTEM_ZONES])
         return ZoneInfo(name)
 

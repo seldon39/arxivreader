@@ -86,11 +86,13 @@ class Settings(unittest.TestCase):
 
 class Reanalysis(unittest.TestCase):
     def setUp(self):
-        self.saved = library.PAPERS
+        self.saved = (library.PAPERS, db.DB_PATH, db.LIBRARY)
         library.PAPERS = pathlib.Path(tempfile.mkdtemp())
+        db.DB_PATH, db.LIBRARY = library.PAPERS / "test.db", library.PAPERS
+        db.init()
 
     def tearDown(self):
-        library.PAPERS = self.saved
+        library.PAPERS, db.DB_PATH, db.LIBRARY = self.saved
 
     def test_old_structure_is_reanalysed_with_stable_ids(self):
         html = ('<section id="S1" class="ltx_section"><h2>1. A</h2>'

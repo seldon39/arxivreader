@@ -192,7 +192,7 @@ def _open_setup_windows(provider, step, claude_cli):
                    f"echo $ {shown.replace('&', '^&')}\n"  # ^& : affiché, pas exécuté
                    f"{command}\n"
                    "echo.\necho Terminé : revenez dans arXivReader et cliquez sur « Vérifier à nouveau ».\n")
-    subprocess.Popen(["cmd.exe", "/k", str(script)], creationflags=subprocess.CREATE_NEW_CONSOLE)
+    subprocess.Popen(["cmd.exe", "/k", str(script)], creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0))
 
 
 def open_setup(provider, step, claude_cli=None):

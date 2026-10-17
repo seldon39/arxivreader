@@ -1,6 +1,7 @@
 """Vérification des services : classement des résultats, changement de macOS/WebKit, notification (sans réseau)."""
 
 import pathlib
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -8,6 +9,7 @@ from unittest import mock
 from app import check
 
 
+@unittest.skipIf(sys.platform == "win32", "vérification hebdomadaire : outil du Mac (launchd)")
 class Check(unittest.TestCase):
     def setUp(self):
         self.report = pathlib.Path(tempfile.mkdtemp()) / "check.json"

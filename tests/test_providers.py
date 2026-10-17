@@ -5,9 +5,11 @@ import json
 import os
 import pathlib
 import stat
+import sys
 import tempfile
 import threading
 import unittest
+import unittest.mock
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from fastapi.testclient import TestClient
@@ -30,10 +32,13 @@ async def collect(stream):
     return [text async for text in stream]
 
 
+@unittest.skipIf(sys.platform == "win32", "programmes simulés : scripts Unix")
 class Providers(unittest.TestCase):
     def setUp(self):
         self.tmp = pathlib.Path(tempfile.mkdtemp())
-        self.saved = (providers.find, providers.LIBRARY, dict(os.environ))
+        self.saved = (providers.find, providers.LIBRARY, dict(os.environ), db.DB_PATH, db.LIBRARY)
+        db.DB_PATH, db.LIBRARY = self.tmp / "test.db", self.tmp
+        db.init()
         providers.LIBRARY = self.tmp / "library"
         script = self.tmp / "fake"
         script.write_text(FAKE)
@@ -44,6 +49,7 @@ class Providers(unittest.TestCase):
 
     def tearDown(self):
         providers.find, providers.LIBRARY = self.saved[:2]
+        db.DB_PATH, db.LIBRARY = self.saved[3:]
         os.environ.clear()
         os.environ.update(self.saved[2])
 
@@ -144,6 +150,7 @@ class Providers(unittest.TestCase):
 
 
 class Setup(unittest.TestCase):
+    @unittest.mock.patch.object(providers, "WINDOWS", False)
     def test_terminal_script(self):
         saved = (providers.LIBRARY, providers.subprocess.run)
         providers.LIBRARY = pathlib.Path(tempfile.mkdtemp())
@@ -160,6 +167,24 @@ class Setup(unittest.TestCase):
                 providers.open_setup("codex", "rm -rf ~")
         finally:
             providers.LIBRARY, providers.subprocess.run = saved
+
+    @unittest.mock.patch.object(providers, "WINDOWS", True)
+    def test_command_prompt_script(self):
+        library = pathlib.Path(tempfile.mkdtemp())
+        with unittest.mock.patch.object(providers, "LIBRARY", library), \
+             unittest.mock.patch.object(providers.subprocess, "Popen") as popen:
+            providers.open_setup("claude", "login", r"C:\Program Files\arXivReader\claude.exe")
+            script = library / "ai" / "setup-claude.cmd"
+            text = script.read_text(encoding="utf-8")
+            self.assertIn('"C:\\Program Files\\arXivReader\\claude.exe" auth login --claudeai', text)
+            self.assertIn("set ANTHROPIC_API_KEY=", text)
+            self.assertEqual(popen.call_args[0][0], ["cmd.exe", "/k", str(script)])
+            providers.open_setup("local", "missing")
+            text = (library / "ai" / "setup-local.cmd").read_text(encoding="utf-8")
+            self.assertIn("set OLLAMA_CONTEXT_LENGTH=32768 && ollama serve", text)
+            self.assertIn("echo $ set OLLAMA_CONTEXT_LENGTH=32768 ^&^& ollama serve", text)  # affichée, pas exécutée
+            with self.assertRaises(ValueError):
+                providers.open_setup("codex", "rm -rf ~")
 
 
 class Local(unittest.TestCase):
@@ -357,6 +382,7 @@ if __name__ == "__main__":
     unittest.main()
 
 
+@unittest.skipIf(sys.platform == "win32", "Node simulé : script Unix")
 class RecentNode(unittest.TestCase):
     """codex et gemini : le Node d'un gestionnaire de versions passe devant un vieux Node de /usr/local/bin."""
 

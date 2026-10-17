@@ -27,9 +27,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.lock tzdata pyinstaller
 
-      # Les essais tournent aussi sous Windows ; un échec n'empêche pas (encore) la construction
+      # Les mêmes essais que sur le Mac (ceux propres au Mac sont sautés)
       - name: Tests
-        continue-on-error: true
         run: python -m unittest discover -s tests
 
       - name: Build

@@ -124,7 +124,7 @@ def _display_windows(title, subtitle, body):
     env = dict(os.environ, ARXIVREADER_TOAST=json.dumps({"title": title, "subtitle": subtitle, "body": body[:240]}))
     try:
         subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", TOAST], env=env, timeout=20,
-                       check=False, capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+                       check=False, capture_output=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except (OSError, subprocess.TimeoutExpired):
         log.warning("notification Windows impossible")
 

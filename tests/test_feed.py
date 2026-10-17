@@ -1,5 +1,6 @@
 """Feed : lecture du flux RSS d'arXiv, nettoyage du TeX hors formules."""
 
+import sys
 import unittest
 
 from app import feed
@@ -23,6 +24,7 @@ Abstract: We prove $p&gt; n/2$ estimates.</description>
 
 
 class Feed(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "win32", "chemin des fuseaux de macOS")
     def test_time_zone_falls_back_to_macos(self):
         # Python de l'application sur un autre Mac : chemin des fuseaux de l'ordinateur de construction, introuvable
         import zoneinfo
