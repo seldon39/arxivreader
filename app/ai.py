@@ -374,9 +374,10 @@ def cli_path():
     """CLI Claude Code livré avec le SDK (sinon celui du PATH)."""
     try:
         import claude_agent_sdk
-        bundled = Path(claude_agent_sdk.__file__).parent / "_bundled" / "claude"
-        if bundled.exists():
-            return str(bundled)
+        for name in ("claude", "claude.exe"):  # claude.exe : SDK pour Windows
+            bundled = Path(claude_agent_sdk.__file__).parent / "_bundled" / name
+            if bundled.exists():
+                return str(bundled)
     except ImportError:
         return None
     return shutil.which("claude")

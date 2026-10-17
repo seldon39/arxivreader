@@ -19,6 +19,7 @@ import shlex
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -166,9 +167,37 @@ SETUP = {
     ("local", "login"): "ollama pull qwen3",
     ("local", "missing"): "OLLAMA_CONTEXT_LENGTH=32768 ollama serve",
 }
+WINDOWS = sys.platform == "win32"
+WINDOWS_SETUP = {("local", "missing"): "set OLLAMA_CONTEXT_LENGTH=32768 && ollama serve"}  # syntaxe de cmd.exe
+
+
+def _open_setup_windows(provider, step, claude_cli):
+    """Comme open_setup, dans une invite de commandes (cmd.exe) qui reste ouverte à la fin."""
+    if provider == "claude" and step in ("login", "missing"):
+        if not claude_cli:
+            raise OSError("claude-agent-sdk is missing")
+        command = f'"{claude_cli}" auth login --claudeai && "{claude_cli}" auth status --text'
+    elif (provider, step) in SETUP:
+        command = WINDOWS_SETUP.get((provider, step), SETUP[provider, step])
+    else:
+        raise ValueError(provider)
+    folder = LIBRARY / "ai"
+    folder.mkdir(parents=True, exist_ok=True)
+    script = folder / f"setup-{provider}.cmd"
+    shown = "claude auth login" if provider == "claude" else command
+    # fins de ligne \r\n : ajoutées par l'écriture en mode texte de Windows
+    _write(script, "@echo off\nchcp 65001 >nul\n"
+                   f'set "PATH={_search_path()}"\n'
+                   "set ANTHROPIC_API_KEY=\n"  # le compte de l'utilisateur, pas une clé d'API de l'environnement
+                   f"echo $ {shown.replace('&', '^&')}\n"  # ^& : affiché, pas exécuté
+                   f"{command}\n"
+                   "echo.\necho Terminé : revenez dans arXivReader et cliquez sur « Vérifier à nouveau ».\n")
+    subprocess.Popen(["cmd.exe", "/k", str(script)], creationflags=subprocess.CREATE_NEW_CONSOLE)
 
 
 def open_setup(provider, step, claude_cli=None):
+    if WINDOWS:
+        return _open_setup_windows(provider, step, claude_cli)
     if provider == "claude" and step in ("login", "missing"):
         if not claude_cli:
             raise OSError("claude-agent-sdk is missing")
@@ -284,7 +313,10 @@ async def _run(argv, stdin_text, cwd, parse, env=None):
         errors.cancel()
         if process.returncode is None:
             with contextlib.suppress(ProcessLookupError, PermissionError):
-                os.killpg(process.pid, signal.SIGKILL)
+                if WINDOWS:  # pas de groupe de processus : le programme lui-même
+                    process.kill()
+                else:
+                    os.killpg(process.pid, signal.SIGKILL)
             with anyio.CancelScope(shield=True):  # page fermée : l'attente n'est pas interrompue à son tour
                 await process.wait()
 

@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import mimetypes
 import os
 import re
 import signal
@@ -21,6 +22,14 @@ from . import (ai, alerts, annotations, citations, crossrefs, db, export, feed, 
                relevance, search, updates, zotero)
 from .arxiv import ArxivError, fetch_metadata, parse_arxiv_id
 from .config import HOST, PORT, STATIC
+
+# Types des fichiers servis fixés ici : sous Windows, le registre en donne parfois d'autres (.js en
+# text/plain), et le navigateur refuse alors de charger les modules de la page
+for _type, _extensions in {"text/javascript": (".js", ".mjs"), "text/css": (".css",), "image/svg+xml": (".svg",),
+                           "application/json": (".json", ".map"), "font/woff2": (".woff2",), "font/woff": (".woff",),
+                           "application/wasm": (".wasm",)}.items():
+    for _extension in _extensions:
+        mimetypes.add_type(_type, _extension)
 
 ALLOWED_HOSTS = {f"{HOST}:{PORT}", f"localhost:{PORT}"}
 ALLOWED_ORIGINS = {f"http://{h}" for h in ALLOWED_HOSTS}

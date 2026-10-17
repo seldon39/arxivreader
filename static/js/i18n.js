@@ -1289,6 +1289,38 @@ const STRINGS = {
   },
 };
 
+// Hors du Mac (version Windows, navigateur sous Linux) : raccourcis et mots propres au Mac remplacés à
+// l'affichage, et quelques textes propres à Windows
+const PLATFORM = navigator.userAgentData?.platform || navigator.platform || "";
+export const MAC = /mac/i.test(PLATFORM);
+export const WINDOWS = /win/i.test(PLATFORM);
+const WINDOWS_STRINGS = {
+  fr: {
+    "updates.howTo": "Quittez arXivReader, décompressez le .zip téléchargé et remplacez l'ancien dossier arXivReader par le nouveau : votre bibliothèque est conservée (elle est ailleurs, dans %LOCALAPPDATA%\\arXivReader).",
+  },
+  en: {
+    "updates.howTo": "Quit arXivReader, unzip the downloaded .zip and replace the old arXivReader folder with the new one: your library is kept (it lives elsewhere, in %LOCALAPPDATA%\\arXivReader).",
+  },
+};
+const OTHER_SYSTEMS = [
+  [/⇧⌘/g, "Maj+Ctrl+", "Shift+Ctrl+"], [/⌘-/g, "Ctrl-", "Ctrl-"], [/⌥-/g, "Alt-", "Alt-"],
+  [/⌘ ?/g, "Ctrl+", "Ctrl+"], [/⌥/g, "Alt+", "Alt+"],
+  [/ce Mac/g, "cet ordinateur", null], [/this Mac/g, null, "this computer"],
+];
+const WINDOWS_WORDS = [
+  [/dans le Terminal/g, "dans une invite de commandes", null], [/in Terminal/g, null, "in a command prompt"],
+  [/Notification macOS/g, "Notification Windows", null], [/macOS notification/g, null, "Windows notification"],
+];
+
+function forSystem(text) {
+  if (MAC) return text;
+  const index = language === "fr" ? 1 : 2;
+  for (const rule of WINDOWS ? [...OTHER_SYSTEMS, ...WINDOWS_WORDS] : OTHER_SYSTEMS) {
+    if (rule[index] !== null) text = text.replace(rule[0], rule[index]);
+  }
+  return text;
+}
+
 let language = "fr";
 let aiName = "Claude"; // {ai} dans les textes : l'assistant choisi dans les réglages
 
@@ -1313,7 +1345,7 @@ export function tn(key, n, params = {}) {
 }
 
 export function t(key, params = {}) {
-  const text = STRINGS[language][key] ?? STRINGS.fr[key] ?? key;
+  const text = forSystem((WINDOWS ? WINDOWS_STRINGS[language][key] : undefined) ?? STRINGS[language][key] ?? STRINGS.fr[key] ?? key);
   return text.replace(/\{(\w+)\}/g, (_, name) => params[name] ?? (name === "ai" ? aiName : ""));
 }
 

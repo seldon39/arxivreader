@@ -1,0 +1,19 @@
+arXivReader pour Windows (préversion)
+
+Pour lancer arXivReader : double-cliquez sur arXivReader.exe dans ce dossier.
+Si Windows affiche « Windows a protégé votre ordinateur » : cliquez sur « Informations complémentaires »,
+puis sur « Exécuter quand même » (l'application est libre mais pas signée).
+Votre bibliothèque est enregistrée dans %LOCALAPPDATA%\arXivReader, pas dans ce dossier :
+pour mettre à jour, remplacez ce dossier par le nouveau.
+
+----
+
+arXivReader for Windows (preview)
+
+To start arXivReader, double-click arXivReader.exe in this folder.
+If Windows says "Windows protected your PC", click "More info", then "Run anyway"
+(the app is open source but not signed).
+Your library is stored in %LOCALAPPDATA%\arXivReader, not in this folder:
+to update, replace this folder with the new one.
+
+https://github.com/seldon39/arxivreader

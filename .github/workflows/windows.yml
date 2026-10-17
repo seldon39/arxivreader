@@ -1,0 +1,70 @@
+# Version Windows (préversion) : construite sur une machine Windows de GitHub, essayée (serveur, import d'un
+# article, captures d'écran par Edge), puis publiée en préversion pour une étiquette windows-vX.Y.Z.
+name: Windows
+
+on:
+  push:
+    branches: [windows]
+    tags: ["windows-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.lock tzdata pyinstaller
+
+      # Les essais tournent aussi sous Windows ; un échec n'empêche pas (encore) la construction
+      - name: Tests
+        continue-on-error: true
+        run: python -m unittest discover -s tests
+
+      - name: Build
+        run: >
+          pyinstaller windows/launcher.py --name arXivReader --noconsole --onedir --noconfirm
+          --icon windows/arXivReader.ico --paths . --add-data "static;static"
+          --collect-submodules app --collect-submodules uvicorn --collect-all claude_agent_sdk
+          --collect-data tzdata --collect-data certifi
+
+      - name: Package
+        shell: pwsh
+        run: |
+          Copy-Item windows/LISEZMOI.txt dist/arXivReader/
+          Compress-Archive -Path dist/arXivReader -DestinationPath arXivReader-windows.zip
+          "{0:N0} Mo" -f ((Get-Item arXivReader-windows.zip).Length / 1MB)
+
+      - name: Smoke test
+        shell: pwsh
+        run: windows/smoke.ps1
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: arXivReader-windows
+          path: |
+            arXivReader-windows.zip
+            shots/
+            smoke-library/server.log
+
+      - name: Publish (pre-release)
+        if: startsWith(github.ref, 'refs/tags/windows-v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = $tag.Substring("windows-v".Length)
+          gh release create $tag arXivReader-windows.zip --prerelease --title "arXivReader $version for Windows (preview)" --notes-file windows/release-notes.md

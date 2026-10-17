@@ -1,13 +1,16 @@
 """Alertes : nouveaux articles des auteurs suivis.
 
 Le serveur vérifie toutes les 3 heures (et une minute après le lancement) ; chaque article jamais vu et
-récent (moins de NOTIFY_DAYS jours) déclenche une notification macOS (réglage « notifyFollowed »), et
+récent (moins de NOTIFY_DAYS jours) déclenche une notification macOS ou Windows (réglage « notifyFollowed »), et
 compte dans la pastille du feed jusqu'à ce qu'il ait été affiché.
 """
 
 import asyncio
+import json
 import logging
+import os
 import subprocess
+import sys
 import threading
 import time
 
@@ -101,8 +104,35 @@ def notify(items):
         display(title, subtitle, body)
 
 
+# Notification Windows (centre de notifications), par Windows PowerShell : textes passés par une variable
+# d'environnement, jamais insérés dans le script ; affichée au nom de PowerShell (pas d'identité d'application
+# enregistrée pour la version portable)
+TOAST = r"""
+$d = $env:ARXIVREADER_TOAST | ConvertFrom-Json
+[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null
+$x = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText04)
+$t = $x.GetElementsByTagName('text')
+$t.Item(0).AppendChild($x.CreateTextNode($d.title)) > $null
+$t.Item(1).AppendChild($x.CreateTextNode($d.subtitle)) > $null
+$t.Item(2).AppendChild($x.CreateTextNode($d.body)) > $null
+$id = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($id).Show([Windows.UI.Notifications.ToastNotification]::new($x))
+"""
+
+
+def _display_windows(title, subtitle, body):
+    env = dict(os.environ, ARXIVREADER_TOAST=json.dumps({"title": title, "subtitle": subtitle, "body": body[:240]}))
+    try:
+        subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", TOAST], env=env, timeout=20,
+                       check=False, capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+    except (OSError, subprocess.TimeoutExpired):
+        log.warning("notification Windows impossible")
+
+
 def display(title, subtitle, body):
-    """Notification macOS (Centre de notifications)."""
+    """Notification macOS (Centre de notifications), ou Windows."""
+    if sys.platform == "win32":
+        return _display_windows(title, subtitle, body)
     script = f"display notification {_quote(body[:240])} with title {_quote(title)} subtitle {_quote(subtitle)}"
     try:
         subprocess.run(["osascript", "-e", script], timeout=10, check=False, capture_output=True)

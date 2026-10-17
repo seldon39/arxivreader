@@ -56,3 +56,38 @@ class Updates(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Releases(unittest.TestCase):
+    """Choix de la version publiée : le Mac lit « latest », Windows la plus récente des préversions windows-v…"""
+
+    def setUp(self):
+        self.saved = updates.httpx.get
+
+    def tearDown(self):
+        updates.httpx.get = self.saved
+
+    def answer(self, body):
+        class Response:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self): return body
+        self.urls = []
+        updates.httpx.get = lambda url, **kwargs: self.urls.append(url) or Response()
+
+    def test_mac(self):
+        self.answer({"tag_name": "v1.9.14", "html_url": "https://x/v1.9.14",
+                     "assets": [{"name": "arXivReader.dmg", "browser_download_url": "https://x/arXivReader.dmg"}]})
+        latest = updates.fetch(windows=False)
+        self.assertEqual((latest["version"], latest["download"]), ("1.9.14", "https://x/arXivReader.dmg"))
+        self.assertTrue(self.urls[0].endswith("/releases/latest"))
+
+    def test_windows(self):
+        self.answer([{"tag_name": "v1.9.15", "assets": []},
+                     {"tag_name": "windows-v1.9.15", "draft": True, "assets": []},
+                     {"tag_name": "windows-v1.9.14", "html_url": "https://x/windows-v1.9.14",
+                      "assets": [{"name": "arXivReader-windows.zip", "browser_download_url": "https://x/arXivReader-windows.zip"}]}])
+        latest = updates.fetch(windows=True)
+        self.assertEqual((latest["version"], latest["download"]), ("1.9.14", "https://x/arXivReader-windows.zip"))
+        self.answer([{"tag_name": "v1.9.15", "assets": []}])
+        self.assertIsNone(updates.fetch(windows=True))

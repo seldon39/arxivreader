@@ -5,6 +5,7 @@ rien n'est envoyé d'autre que la requête elle-même. Le résultat est gardé d
 """
 
 import re
+import sys
 import threading
 import time
 
@@ -17,6 +18,10 @@ from .version import VERSION
 REPOSITORY = "seldon39/arxivreader"
 LATEST = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
 RELEASES = f"https://github.com/{REPOSITORY}/releases"
+# Version Windows : publiée à part, en préversion (« windows-v1.9.14 », un .zip), que « latest » ignore
+WINDOWS = sys.platform == "win32"
+ALL_RELEASES = f"https://api.github.com/repos/{REPOSITORY}/releases?per_page=30"
+WINDOWS_TAG = "windows-v"
 EVERY = 24 * 3600
 _lock = threading.Lock()
 
@@ -32,16 +37,24 @@ def newer(latest, current=None):
     return bool(parse(latest) and parse(current) and parse(latest) > parse(current))
 
 
-def fetch():
-    response = httpx.get(LATEST, timeout=10, follow_redirects=True,
+def fetch(windows=WINDOWS):
+    response = httpx.get(ALL_RELEASES if windows else LATEST, timeout=10, follow_redirects=True,
                          headers={"Accept": "application/vnd.github+json", "User-Agent": USER_AGENT})
     if response.status_code == 404:  # aucune version publiée
         return None
     response.raise_for_status()
-    release = response.json()
-    dmg = next((a["browser_download_url"] for a in release.get("assets", []) if a.get("name", "").endswith(".dmg")), None)
-    return {"version": (release.get("tag_name") or "").lstrip("v"), "url": release.get("html_url") or RELEASES,
-            "download": dmg, "notes": (release.get("body") or "")[:4000], "published": release.get("published_at")}
+    if windows:  # la plus récente des versions Windows (liste de la plus récente à la plus ancienne)
+        release = next((r for r in response.json() if not r.get("draft")
+                        and (r.get("tag_name") or "").startswith(WINDOWS_TAG)), None)
+        if release is None:
+            return None
+        version, suffix = release["tag_name"][len(WINDOWS_TAG):], ".zip"
+    else:
+        release = response.json()
+        version, suffix = (release.get("tag_name") or "").lstrip("v"), ".dmg"
+    package = next((a["browser_download_url"] for a in release.get("assets", []) if a.get("name", "").endswith(suffix)), None)
+    return {"version": version, "url": release.get("html_url") or RELEASES,
+            "download": package, "notes": (release.get("body") or "")[:4000], "published": release.get("published_at")}
 
 
 def state(force=False):
