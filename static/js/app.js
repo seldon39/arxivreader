@@ -1,6 +1,6 @@
 // Point d'entrée : réglages, navigation entre la bibliothèque et le lecteur.
 
-import { t, tn } from "./i18n.js";
+import { WINDOWS, t, tn } from "./i18n.js";
 import { renderFeed } from "./feed.js";
 import { renderLibrary } from "./library.js";
 import { renderReader } from "./reader.js";
@@ -9,7 +9,7 @@ import { renderSearch } from "./search.js";
 import { loadSettings, onSettingsChange, openSettingsDialog, settings } from "./settings.js";
 import { refreshUpdates } from "./updates.js";
 import { api } from "./api.js";
-import { droppedPapers, h, mayBePaper, navigation, openRoute, toast, toastError, wantsNewTab } from "./util.js";
+import { droppedPapers, h, icons, mayBePaper, navigation, openRoute, toast, toastError, wantsNewTab } from "./util.js";
 import { addToLibrary, selectionDropped } from "./selection.js";
 import { watchZotero } from "./zotero.js";
 import { maybeOnboard } from "./onboarding.js";
@@ -112,6 +112,12 @@ onSettingsChange(() => {
   }
 });
 document.getElementById("settings-button").addEventListener("click", () => openSettingsDialog());
+// Windows : la fenêtre est celle d'Edge, dont le « + » ouvre la page d'accueil d'Edge ; celui-ci, arXivReader
+if (WINDOWS) {
+  const newTab = h("button", { class: "icon-button", type: "button", title: t("nav.newTab"), "aria-label": t("nav.newTab"),
+    html: icons.add, onclick: () => openRoute("#/", true, true) });
+  document.getElementById("settings-button").before(newTab);
+}
 addEventListener("arxivreader:settings", (event) => openSettingsDialog({ section: event.detail }));
 addEventListener("hashchange", route);
 // ⌘-clic ou clic du milieu sur un lien de l'application (article, renvoi) : dans un nouvel onglet

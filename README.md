@@ -50,8 +50,8 @@ Making this unnecessary is on the [roadmap](https://github.com/seldon39/arxivrea
 
 A Windows version is in preview (Windows 10 or 11, 64-bit): download `arXivReader-windows.zip` from the
 [Windows pre-releases](https://github.com/seldon39/arxivreader/releases), right-click it → **Extract All…**, and
-double-click `arXivReader.exe` in the `arXivReader` folder. The app opens in a Microsoft Edge window of its own
-(no address bar, separate from your usual Edge profile); your library is kept in `%LOCALAPPDATA%\arXivReader`.
+double-click `arXivReader.exe` in the `arXivReader` folder. The app opens in a Microsoft Edge window of its own,
+with tabs (the **+** at the top right of the app opens a new arXivReader tab), separate from your usual Edge profile; your library is kept in `%LOCALAPPDATA%\arXivReader`.
 If Windows says *Windows protected your PC*, click **More info**, then **Run anyway**: the app is not signed.
 Feedback on this version is especially welcome.
 

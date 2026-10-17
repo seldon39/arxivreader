@@ -36,6 +36,15 @@ class Feed(unittest.TestCase):
         finally:
             zoneinfo.reset_tzpath(saved)
 
+    def test_latest_announcement_day(self):
+        from datetime import datetime, timezone
+        at = lambda text: feed.latest_announcement_day(datetime.fromisoformat(text).astimezone(timezone.utc))  # noqa: E731
+        self.assertEqual(at("2026-10-17T10:00:00-04:00"), "2026-10-16")  # samedi : annonce du vendredi
+        self.assertEqual(at("2026-10-18T19:59:00-04:00"), "2026-10-16")  # dimanche avant 20 h
+        self.assertEqual(at("2026-10-18T20:00:00-04:00"), "2026-10-19")  # dimanche 20 h : celle du lundi
+        self.assertEqual(at("2026-10-14T09:00:00-04:00"), "2026-10-14")  # mercredi matin
+        self.assertEqual(at("2026-10-14T21:00:00-04:00"), "2026-10-15")  # mercredi soir
+
     def test_parse_rss(self):
         (item,) = parse_rss(RSS)
         self.assertEqual((item["arxiv_id"], item["version"], item["announce_type"]), ("2610.10575", 2, "replace"))
@@ -227,5 +236,12 @@ class RefreshDoesNotWait(unittest.TestCase):
                 self.assertTrue(started.wait(2))         # mais ils sont bien cherchés
                 release.set()
                 time.sleep(0.2)
+                # flux vide (week-end) sur une bibliothèque neuve : la dernière annonce est lue à la place
+                client.__enter__.return_value.get.return_value = mock.Mock(text=RSS.replace(RSS[RSS.index("<item>"):RSS.index("</channel>")], ""),
+                                                                           raise_for_status=lambda: None)
+                with mock.patch.object(feed, "fetch_day", return_value=42) as fetch_day, \
+                     mock.patch.object(feed, "known_days", return_value={}):
+                    self.assertEqual(feed.refresh_arxiv(["math.DG"]), 42)
+                fetch_day.assert_called_once_with(feed.latest_announcement_day(), ["math.DG"], None)
         finally:
             db.DB_PATH, db.LIBRARY = saved

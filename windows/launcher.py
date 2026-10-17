@@ -1,9 +1,10 @@
 """Application Windows (préversion) : le serveur local dans ce processus, l'interface dans une fenêtre
-Microsoft Edge en mode application (sans barre d'adresse), avec un profil propre à arXivReader.
+Microsoft Edge avec ses onglets, et un profil propre à arXivReader (ni les extensions ni les onglets de
+l'utilisateur).
 
 Comme l'application Mac : bibliothèque dans %LOCALAPPDATA%\\arXivReader (ARXIVREADER_LIBRARY pour essayer sur
 une copie), port 8720 s'il est libre, serveur arrêté quand la dernière fenêtre se ferme. Un second lancement
-ouvre seulement une nouvelle fenêtre sur le serveur déjà démarré.
+ouvre seulement un nouvel onglet sur le serveur déjà démarré.
 
 Essais : ARXIVREADER_NO_BROWSER=1 démarre le serveur seul (arrêt : Ctrl+C ou fin du processus) ;
 ARXIVREADER_START=#/feed ouvre cette page.
@@ -82,7 +83,7 @@ def single_instance(library):
 
 
 def find_browser():
-    """Microsoft Edge (présent sur tout Windows 10 et 11), sinon Chrome : tous deux ont le mode application."""
+    """Microsoft Edge (présent sur tout Windows 10 et 11), sinon Chrome."""
     roots = [os.environ.get(v) for v in ("ProgramFiles(x86)", "ProgramFiles", "LOCALAPPDATA")]
     names = [Path("Microsoft/Edge/Application/msedge.exe"), Path("Google/Chrome/Application/chrome.exe")]
     for name in names:
@@ -105,14 +106,15 @@ def find_browser():
     return None
 
 
-def open_window(browser, library, url):
+def open_window(browser, library, url, new_window=True):
+    """Fenêtre Edge (avec onglets) sur le profil d'arXivReader ; déjà ouverte : un onglet de plus."""
     profile = library / "edge-profile"  # séparé du profil de l'utilisateur : ni ses extensions, ni ses onglets
     first = not profile.exists()
-    arguments = [browser, f"--app={url}", f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check",
+    arguments = [browser, f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check",
                  "--disable-background-mode"]  # sinon le navigateur resterait lancé une fois la fenêtre fermée
     if first:
         arguments.append("--window-size=1280,860")  # ensuite, le navigateur garde la taille choisie
-    return subprocess.Popen(arguments)
+    return subprocess.Popen([*arguments, *(["--new-window"] if new_window else []), url])
 
 
 def browser_running(library):
@@ -160,7 +162,7 @@ def main():
         except (OSError, ValueError):
             port = PREFERRED_PORT
         if browser and listening(port):
-            open_window(browser, library, f"http://127.0.0.1:{port}/{route}")
+            open_window(browser, library, f"http://127.0.0.1:{port}/{route}", new_window=False)
         return
 
     port = free_port(PREFERRED_PORT)

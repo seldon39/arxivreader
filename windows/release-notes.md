@@ -3,7 +3,8 @@ in the [issues](https://github.com/seldon39/arxivreader/issues).
 
 **Installation**: download `arXivReader-windows.zip`, right-click it → **Extract All…**, put the `arXivReader` folder
 wherever you like (e.g. in Documents) and double-click `arXivReader.exe` inside it. Nothing else to install. The app
-opens in a Microsoft Edge window of its own; your library is kept in `%LOCALAPPDATA%\arXivReader`.
+opens in a Microsoft Edge window of its own, with tabs: the **+** at the top right of the app opens a new
+arXivReader tab, and Ctrl-click opens a link in a new tab. Your library is kept in `%LOCALAPPDATA%\arXivReader`.
 
 **If Windows refuses to start it** ("Windows protected your PC"): the app is open source but not signed. Click
 **More info**, then **Run anyway**. Your antivirus may also ask for confirmation the first time.

@@ -54,3 +54,26 @@ class LibraryRelevance(unittest.TestCase):
             scores = relevance.library_relevance()
         self.assertEqual(set(scores), {"2601.00001", "2601.00002"})
         self.assertGreater(scores["2601.00001"], scores["2601.00002"])
+
+
+class FollowedAuthors(unittest.TestCase):
+    """Auteurs suivis : un homonyme d'un autre domaine (« Lei Wang » en physique) n'apparaît pas."""
+
+    def test_homonym_from_another_field(self):
+        import time
+        from unittest import mock
+        from app import profile
+        today = time.strftime("%Y-%m-%d")
+        entry = lambda arxiv, name, categories: (  # noqa: E731
+            f"<entry><id>http://arxiv.org/abs/{arxiv}v1</id><published>{today}T00:00:00Z</published>"
+            f"<title>T {arxiv}</title><summary>S</summary><author><name>{name}</name></author>"
+            + "".join(f'<category term="{c}"/>' for c in categories) + "</entry>")
+        atom = ('<feed xmlns="http://www.w3.org/2005/Atom">' + entry("2610.00001", "Lei Wang", ["hep-th"])
+                + entry("2610.00002", "Lei Wang", ["math.AP"]) + entry("2610.00003", "Lei Wang", ["math-ph", "hep-th"])
+                + entry("2610.00004", "Lin Wang", ["math.DG"]) + "</feed>")
+        client = mock.MagicMock()
+        client.__enter__.return_value.get.return_value = mock.Mock(status_code=200, text=atom)
+        with mock.patch.object(profile, "list_items", return_value=[{"kind": "author", "label": "Lei Wang"}]), \
+             mock.patch.object(profile.httpx, "Client", return_value=client):
+            papers = profile.followed_author_papers(["math.DG", "math.CV"])
+        self.assertEqual(sorted(p["arxiv_id"] for p in papers), ["2610.00002", "2610.00003"])

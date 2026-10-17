@@ -181,6 +181,16 @@ def _quietly(function, *args):
         pass
 
 
+def latest_announcement_day(now=None):
+    """Dernier jour d'annonce d'arXiv déjà publié : les annonces paraissent du dimanche au jeudi à 20 h (heure de
+    New York), datées du lendemain ; le samedi et le dimanche, c'est donc celle du vendredi."""
+    moment = (now or datetime.now(timezone.utc)).astimezone(NEW_YORK)
+    day = moment.date() + timedelta(days=1 if moment.hour >= 20 else 0)
+    while day.weekday() >= 5:
+        day -= timedelta(days=1)
+    return day.isoformat()
+
+
 def refresh_arxiv(categories=None, api_key=None):
     """Annonces du jour (flux RSS d'arXiv, rapide), enregistrées et rendues tout de suite, avec leurs vecteurs de
     sens (tri par pertinence) ; les articles des auteurs suivis (API de recherche, une requête toutes les 3 s par
@@ -190,6 +200,14 @@ def refresh_arxiv(categories=None, api_key=None):
         response = client.get(RSS_URL.format(categories="+".join(categories)))
     response.raise_for_status()
     items = parse_rss(response.text)
+    if not items:
+        # flux vide (week-end, jour férié d'arXiv) : sans jour déjà en base (première ouverture), le feed resterait
+        # vide ; la dernière annonce publiée est lue à la place
+        day = latest_announcement_day()
+        if not known_days().get(day):
+            count = fetch_day(day, categories, api_key)
+            db.save_settings({"feed.arxivRefreshed": _now()})
+            return count
     with db.connect() as connection:
         for item in items:
             _store(connection, item)

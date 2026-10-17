@@ -122,8 +122,8 @@ captures par Edge sans fenêtre (`shots/`, dans l'artefact de l'exécution, avec
 branche `windows` la reconstruit ; une étiquette `windows-vX.Y.Z` (même numéro que `app/version.py`) la publie en
 **préversion** : « latest » (Mac) l'ignore, et l'application Windows ne regarde que les étiquettes `windows-v…`.
 
-- Lanceur : `windows/launcher.py` (serveur dans le processus, fenêtre Edge `--app` avec le profil
-  `%LOCALAPPDATA%\arXivReader\edge-profile`, verrou nommé contre un second serveur, `server.port`, `server.log`).
+- Lanceur : `windows/launcher.py` (serveur dans le processus, fenêtre Edge avec onglets (profil
+  `%LOCALAPPDATA%\arXivReader\edge-profile`), verrou nommé contre un second serveur, `server.port`, `server.log`).
 - Différences côté serveur, toutes sous `sys.platform == "win32"` : notification par PowerShell (`alerts.py`),
   connexion des assistants dans `cmd.exe` (`providers.py`), `claude.exe` du SDK (`ai.py`), versions `windows-v…`
   (`updates.py`). Types MIME fixés dans `main.py` (le registre de Windows sert parfois `.js` en `text/plain`).
