@@ -148,7 +148,25 @@ def tail(log, lines=12):
         return str(log)
 
 
+def hide_consoles():
+    """Programmes lancés par le serveur (claude.exe, codex…) : sans fenêtre de console. Le serveur n'en a pas,
+    et Windows en ouvrirait une, un instant, pour chacun (à chaque ouverture des réglages, à chaque question à
+    l'assistant). Seule l'invite de commandes de connexion (CREATE_NEW_CONSOLE) reste visible."""
+    original = subprocess.Popen.__init__
+    new_console = getattr(subprocess, "CREATE_NEW_CONSOLE", 0x10)  # constantes de Windows (essais ailleurs)
+    no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+
+    def without_console(self, *args, creationflags=0, **kwargs):
+        if not creationflags & new_console:
+            creationflags |= no_window
+        original(self, *args, creationflags=creationflags, **kwargs)
+
+    subprocess.Popen.__init__ = without_console  # aussi pour asyncio et anyio (SDK de Claude), qui passent par Popen
+
+
 def main():
+    if sys.platform == "win32":
+        hide_consoles()
     library = library_folder()
     library.mkdir(parents=True, exist_ok=True)
     port_file = library / "server.port"
