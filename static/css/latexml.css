@@ -7,16 +7,22 @@
 @font-face { font-family: "LM Roman"; src: url("/static/fonts/lmroman10-italic.otf") format("opentype"); font-weight: 400; font-style: italic; font-display: swap; }
 @font-face { font-family: "LM Roman"; src: url("/static/fonts/lmroman10-bold.otf") format("opentype"); font-weight: 700; font-style: normal; font-display: swap; }
 @font-face { font-family: "LM Roman"; src: url("/static/fonts/lmroman10-bolditalic.otf") format("opentype"); font-weight: 700; font-style: italic; font-display: swap; }
+/* Charter libre (XCharter) : sous Windows, où Charter n'est pas installé, plutôt que Georgia (plus large et plus
+   grasse, chiffres elzéviriens) ; sur Mac, le Charter du système passe d'abord (même dessin) */
+@font-face { font-family: "XCharter"; src: url("/static/fonts/XCharter-Roman.otf") format("opentype"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "XCharter"; src: url("/static/fonts/XCharter-Italic.otf") format("opentype"); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: "XCharter"; src: url("/static/fonts/XCharter-Bold.otf") format("opentype"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "XCharter"; src: url("/static/fonts/XCharter-BoldItalic.otf") format("opentype"); font-weight: 700; font-style: italic; font-display: swap; }
 @font-face { font-family: "LM Roman Caps"; src: url("/static/fonts/lmromancaps10-regular.otf") format("opentype"); font-display: swap; }
 
 :root {
-  --paper-font: Charter, "Bitstream Charter", "Charis SIL", Georgia, serif;
+  --paper-font: Charter, "Bitstream Charter", "XCharter", "Charis SIL", Georgia, serif;
   --paper-caps: var(--paper-font);
   --font-math: "Latin Modern Math", "STIX Two Math", math;
   --indent: 1.5em;
 }
 /* Police du texte : réglage, ou « comme l'article » (paquet de police lu dans la source TeX) */
-[data-paper-font="charter"] { --paper-font: Charter, "Bitstream Charter", Georgia, serif; --paper-caps: var(--paper-font); }
+[data-paper-font="charter"] { --paper-font: Charter, "Bitstream Charter", "XCharter", Georgia, serif; --paper-caps: var(--paper-font); }
 [data-paper-font="lm"] { --paper-font: "LM Roman", "Latin Modern Roman", "Computer Modern", serif; --paper-caps: "LM Roman Caps", "LM Roman", serif; }
 [data-paper-font="times"] { --paper-font: "Times New Roman", Times, serif; --paper-caps: var(--paper-font); }
 [data-paper-font="palatino"] { --paper-font: Palatino, "Palatino Linotype", "Book Antiqua", serif; --paper-caps: var(--paper-font); }

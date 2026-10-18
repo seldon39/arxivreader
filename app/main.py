@@ -26,7 +26,7 @@ from .config import HOST, PORT, STATIC
 # Types des fichiers servis fixés ici : sous Windows, le registre en donne parfois d'autres (.js en
 # text/plain), et le navigateur refuse alors de charger les modules de la page
 for _type, _extensions in {"text/javascript": (".js", ".mjs"), "text/css": (".css",), "image/svg+xml": (".svg",),
-                           "application/json": (".json", ".map"), "font/woff2": (".woff2",), "font/woff": (".woff",),
+                           "application/json": (".json", ".map"), "font/woff2": (".woff2",), "font/woff": (".woff",), "font/otf": (".otf",),
                            "application/wasm": (".wasm",)}.items():
     for _extension in _extensions:
         mimetypes.add_type(_type, _extension)
