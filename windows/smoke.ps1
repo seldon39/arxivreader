@@ -34,13 +34,21 @@ try {
 
     $edge = "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe"
     if (-not (Test-Path $edge)) { $edge = "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe" }
-    foreach ($shot in @(@("library", "#/library"), @("paper", "#/paper/1603.04246"), @("feed", "#/feed"))) {
+    # chaque capture bornée à 90 s ; le feed dépend d'arXiv (lent par moments) : sa capture ne bloque pas
+    foreach ($shot in @(@("library", "#/library", $true), @("paper", "#/paper/1603.04246", $true), @("feed", "#/feed", $false))) {
         $file = Join-Path $PWD "shots/$($shot[0]).png"
-        & $edge --headless=new --disable-gpu --hide-scrollbars --window-size=1280,860 --virtual-time-budget=20000 `
-            --user-data-dir="$env:RUNNER_TEMP\edge-shots" --screenshot="$file" "$base/$($shot[1])" 2>&1 | Out-Null
+        $capture = Start-Process $edge -PassThru -ArgumentList "--headless=new", "--disable-gpu", "--hide-scrollbars",
+            "--window-size=1280,860", "--virtual-time-budget=20000", "--user-data-dir=$env:RUNNER_TEMP\edge-$($shot[0])",
+            "--screenshot=$file", "$base/$($shot[1])"
+        if (-not $capture.WaitForExit(90000)) {
+            Write-Host "$($shot[0]): screenshot timed out"
+            Stop-Process -Id $capture.Id -Force -ErrorAction SilentlyContinue
+            Get-CimInstance Win32_Process -Filter "name='msedge.exe'" | Where-Object { $_.CommandLine -like "*edge-$($shot[0])*" } |
+                ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        }
         $bytes = (Get-Item $file -ErrorAction SilentlyContinue).Length
         Write-Host "$($shot[0]): $bytes bytes"
-        if ($bytes -lt 10000) { throw "screenshot $($shot[0]) missing or blank" }
+        if ($shot[2] -and $bytes -lt 10000) { throw "screenshot $($shot[0]) missing or blank" }
     }
 }
 finally {
