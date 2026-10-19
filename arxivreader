@@ -13,6 +13,14 @@ PORT=8710
 URL="http://127.0.0.1:$PORT/"
 PYTHON="${PYTHON:-python3}"
 
+# macOS et Linux : empreinte du fichier des versions (shasum, sinon sha1sum : même SHA-1), ouverture du navigateur
+sha1_of() { if command -v shasum >/dev/null 2>&1; then shasum "$1"; else sha1sum "$1"; fi | cut -d' ' -f1; }
+open_url() {
+  if [ "$(uname)" = Darwin ]; then open "$1"
+  elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$1" >/dev/null 2>&1 &
+  else echo "Ouvrez $1 dans votre navigateur."; fi
+}
+
 # Environnement Python du projet (.venv), aux versions exactes de requirements.lock (réinstallé s'il change).
 # requirements.txt : les paquets voulus ; requirements.lock : leurs versions testées, embarquées par l'application.
 if [ ! -x .venv/bin/python ]; then
@@ -23,11 +31,11 @@ fi
 # « .venv/bin/pip install -U <paquet> » (ou l'ajout d'un paquet à requirements.txt puis son installation) et les tests
 if [ "${1:-}" = "lock" ] && [ -x .venv/bin/python ]; then
   .venv/bin/pip freeze --exclude-editable > requirements.lock
-  shasum requirements.lock | cut -d' ' -f1 > .venv/.requirements-hash
+  sha1_of requirements.lock > .venv/.requirements-hash
   echo "requirements.lock mis à jour ($(wc -l < requirements.lock | tr -d ' ') paquets) : à committer."
   exit 0
 fi
-HASH=$(shasum requirements.lock | cut -d' ' -f1)
+HASH=$(sha1_of requirements.lock)
 if [ "$(cat .venv/.requirements-hash 2>/dev/null)" != "$HASH" ]; then
   .venv/bin/pip install --quiet --upgrade pip
   .venv/bin/pip install --quiet -r requirements.lock
@@ -39,6 +47,9 @@ if [ "${1:-}" = "check" ]; then
   AGENT="$HOME/Library/LaunchAgents/org.arxivreader.check.plist"
   INSTALLED=/Applications/arXivReader.app/Contents/Resources
   SUPPORT="$HOME/Library/Application Support/arXivReader"
+  if [ "${2:-}" = "--weekly" ] || [ "${2:-}" = "--no-weekly" ]; then
+    [ "$(uname)" = Darwin ] || { echo "Vérification hebdomadaire : macOS seulement (launchd). « ./arxivreader check » marche partout."; exit 1; }
+  fi
   if [ "${2:-}" = "--no-weekly" ]; then
     launchctl bootout "gui/$(id -u)" "$AGENT" 2>/dev/null || true
     rm -f "$AGENT"
@@ -92,16 +103,16 @@ if [ "${1:-}" = "login" ]; then
 fi
 
 # Déjà lancé ? On ouvre simplement le navigateur.
-if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+if curl -s -o /dev/null "$URL"; then
   echo "arXivReader tourne déjà : $URL"
-  open "$URL"
+  open_url "$URL"
   exit 0
 fi
 
 # Ouvre le navigateur dès que le serveur répond.
 (
   for _ in $(seq 1 50); do
-    if curl -s -o /dev/null "$URL"; then open "$URL"; exit 0; fi
+    if curl -s -o /dev/null "$URL"; then open_url "$URL"; exit 0; fi
     sleep 0.2
   done
 ) &
