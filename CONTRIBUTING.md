@@ -45,8 +45,9 @@ These are not negotiable; a change that weakens one of them will not be merged.
 Requirements: Python 3.14 (the version in `requirements.lock`) on macOS — or on Windows/Linux for the server and
 the tests —, and Xcode command-line tools to build the Mac app. The Windows app (`windows/`: a C# window around
 WebView2, and the server built with PyInstaller) is built and tested by GitHub Actions on every push to `main`
-(`.github/workflows/windows.yml`, which also runs `windows/smoke.ps1` on the built app); the test suite passes on
-both systems, Mac-only tests being skipped on Windows.
+(`.github/workflows/windows.yml`, which also runs `windows/smoke.ps1` on the built app); the test suite also runs on
+Linux (`.github/workflows/linux.yml`, with the `./arxivreader` script itself) and passes on the three systems,
+Mac-only tests being skipped on Windows.
 
 ```bash
 git clone https://github.com/seldon39/arxivreader.git && cd arxivreader
