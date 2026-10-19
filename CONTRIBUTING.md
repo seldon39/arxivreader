@@ -42,8 +42,8 @@ These are not negotiable; a change that weakens one of them will not be merged.
 
 ## Development setup
 
-Requirements: Python 3.14 (the version in `requirements.lock`) on macOS — or on Windows/Linux for the server and
-the tests —, and Xcode command-line tools to build the Mac app. The Windows app (`windows/`: a C# window around
+Requirements: Python 3.12 or later (3.14 is the version the apps ship; CI also tests 3.12 and 3.13 on Linux) on
+macOS — or on Windows/Linux for the server and the tests —, and Xcode command-line tools to build the Mac app. The Windows app (`windows/`: a C# window around
 WebView2, and the server built with PyInstaller) is built and tested by GitHub Actions on every push to `main`
 (`.github/workflows/windows.yml`, which also runs `windows/smoke.ps1` on the built app); the test suite also runs on
 Linux (`.github/workflows/linux.yml`, with the `./arxivreader` script itself) and passes on the three systems,

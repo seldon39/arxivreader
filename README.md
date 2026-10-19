@@ -90,9 +90,11 @@ that bundles Python and its packages. `macos/release.sh` publishes it as a new v
 The first time, the script creates the Python environment (`.venv/`, ~1 min). The address is
 http://127.0.0.1:8710/; the server only listens on this computer (not on Wi-Fi).
 
-**On Linux**, the same script works in your browser (no packaged app yet): Python 3.14 with its `venv` module
-(on Debian/Ubuntu, the `python3-venv` package), then `git clone https://github.com/seldon39/arxivreader.git && cd
-arxivreader && ./arxivreader`; it opens the browser with `xdg-open`. The tests run on Linux at every push.
+**On Linux**, the same script works in your browser (no packaged app yet): Python 3.12 or later with its `venv`
+module (on Debian/Ubuntu, the `python3-venv` package), then `git clone https://github.com/seldon39/arxivreader.git &&
+cd arxivreader && ./arxivreader`; it opens the browser with `xdg-open`. Another Python: `PYTHON=python3.14
+./arxivreader`. To update: `git pull`, then `./arxivreader` again (the app says when a new version is out). The
+tests run on Linux with Python 3.12, 3.13 and 3.14 at every push.
 
 ## The reader
 

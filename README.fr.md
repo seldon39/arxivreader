@@ -92,10 +92,12 @@ augmenté `VERSION` dans `app/version.py`) : étiquette Git, envoi sur GitHub, i
 La première fois, le script crée l'environnement Python (`.venv/`, ~1 min). L'adresse est
 http://127.0.0.1:8710/ ; le serveur n'écoute que sur cet ordinateur (pas sur le Wi-Fi).
 
-**Sous Linux**, le même script marche dans le navigateur (pas encore d'application empaquetée) : Python 3.14 avec
-son module `venv` (sous Debian/Ubuntu, le paquet `python3-venv`), puis `git clone
+**Sous Linux**, le même script marche dans le navigateur (pas encore d'application empaquetée) : Python 3.12 ou plus
+avec son module `venv` (sous Debian/Ubuntu, le paquet `python3-venv`), puis `git clone
 https://github.com/seldon39/arxivreader.git && cd arxivreader && ./arxivreader` ; il ouvre le navigateur avec
-`xdg-open`. Les tests tournent sous Linux à chaque poussée.
+`xdg-open`. Autre Python : `PYTHON=python3.14 ./arxivreader`. Mise à jour : `git pull`, puis `./arxivreader` de
+nouveau (l'application signale les nouvelles versions). Les tests tournent sous Linux avec Python 3.12, 3.13 et 3.14 à
+chaque poussée.
 
 ## Ce que fait la version actuelle (étape 1 : lecteur structuré)
 

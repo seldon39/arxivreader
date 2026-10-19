@@ -24,6 +24,12 @@ open_url() {
 # Environnement Python du projet (.venv), aux versions exactes de requirements.lock (réinstallé s'il change).
 # requirements.txt : les paquets voulus ; requirements.lock : leurs versions testées, embarquées par l'application.
 if [ ! -x .venv/bin/python ]; then
+  # Python 3.12 ou plus (essayé sur 3.12, 3.13, 3.14) ; un autre Python : PYTHON=python3.14 ./arxivreader
+  "$PYTHON" -c 'import sys; sys.exit(sys.version_info < (3, 12))' 2>/dev/null || {
+    echo "Python 3.12 ou plus est nécessaire ($("$PYTHON" --version 2>&1 || echo "$PYTHON introuvable"))."
+    echo "Installez-en un (par exemple « uv python install 3.14 »), puis : PYTHON=python3.14 ./arxivreader"
+    exit 1
+  }
   echo "Première installation de l'environnement Python…"
   "$PYTHON" -m venv .venv
 fi
