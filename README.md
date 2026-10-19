@@ -2,7 +2,7 @@
 
 **English** · [Français](README.fr.md)
 
-A reader for arXiv papers on the Mac (Windows in preview), built for mathematics: AMS-style "paper" layout, navigable statements and
+A reader for arXiv papers on the Mac (Windows in preview; Linux from source), built for mathematics: AMS-style "paper" layout, navigable statements and
 proofs, dependency graph, notes and highlights, a feed of new papers sorted by your profile, and an AI
 assistant (Claude, Codex, Gemini or a local model) that only sees the text of the paper.
 Everything stays on your Mac: the server only listens on 127.0.0.1. French and English interface.
@@ -18,6 +18,8 @@ Download `arXivReader.dmg` from the [Releases](https://github.com/seldon39/arxiv
 self-contained (Python and its packages are included); there is nothing else to install.
 
 **On Windows**: [download the Windows preview](https://github.com/seldon39/arxivreader/releases/tag/windows-latest) (see [Windows (preview)](#windows-preview) below).
+
+**On Linux**: from the source code, in your browser (Python 3.12 or later): see [Running from source](#running-from-source).
 
 - **Opening it the first time**: see below; macOS blocks it once.
 - **Updates**: the app checks once a day whether a new version is available on GitHub

@@ -2,7 +2,7 @@
 
 [English](README.md) · **Français**
 
-Lecteur d'articles arXiv pour Mac (Windows en préversion), pensé pour les mathématiques : mise en page « papier AMS », énoncés et
+Lecteur d'articles arXiv pour Mac (Windows en préversion ; Linux depuis le code source), pensé pour les mathématiques : mise en page « papier AMS », énoncés et
 preuves navigables, graphe des dépendances, notes et surlignages, feed des nouveautés trié selon votre profil,
 et un assistant IA (Claude, Codex, Gemini ou un modèle local) qui ne voit que le texte de l'article.
 Tout reste sur votre Mac : le serveur n'écoute que sur 127.0.0.1. Interface en français et en anglais.
@@ -18,6 +18,8 @@ Télécharger `arXivReader.dmg` depuis la page [Releases](https://github.com/sel
 autonome (Python et ses paquets sont inclus) ; rien d'autre à installer.
 
 **Sous Windows** : [télécharger la préversion Windows](https://github.com/seldon39/arxivreader/releases/tag/windows-latest) (voir [Windows (préversion)](#windows-préversion) plus bas).
+
+**Sous Linux** : depuis le code source, dans le navigateur (Python 3.12 ou plus) : voir [Lancer depuis le code source](#lancer-depuis-le-code-source).
 
 - **Première ouverture** : voir ci-dessous ; macOS la bloque une fois.
 - **Mises à jour** : l'application vérifie une fois par jour s'il existe une nouvelle version sur GitHub
