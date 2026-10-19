@@ -18,7 +18,7 @@ class Updates(unittest.TestCase):
         db.init()
         self.calls = 0
 
-        def fake():
+        def fake(windows=False):
             self.calls += 1
             return {"version": "1.2.0", "url": "https://github.com/x/releases/tag/v1.2.0", "download": "https://x/arXivReader.dmg",
                     "notes": "", "published": None}
@@ -53,6 +53,30 @@ class Updates(unittest.TestCase):
         updates.VERSION = "1.2.0"
         self.assertFalse(updates.state()["available"])  # déjà à jour
 
+
+
+class Install(unittest.TestCase):
+    """Mac (.app), Windows (empaquetée) ou code source : la pastille ne propose pas de .dmg à qui fait « git pull »."""
+
+    def test_kinds(self):
+        self.assertEqual(updates.install_kind("/Applications/arXivReader.app/Contents/Resources/arxivreader", False), "mac-app")
+        self.assertEqual(updates.install_kind(r"C:\arXivReader\server\_internal", True), "windows")
+        self.assertEqual(updates.install_kind("/home/me/arxivreader", False), "source")
+
+    def test_source_install_gets_no_download(self):
+        saved = (db.DB_PATH, db.LIBRARY, updates.fetch, updates.VERSION, updates.INSTALL)
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        db.DB_PATH, db.LIBRARY = tmp / "test.db", tmp
+        db.init()
+        asked = []
+        updates.fetch = lambda windows=False: asked.append(windows) or {"version": "9.0.0", "url": "https://x/v9.0.0",
+                                                                        "download": "https://x/arXivReader.dmg", "notes": "", "published": None}
+        updates.VERSION, updates.INSTALL = "1.0.0", "source"
+        try:
+            state = updates.state(force=True)
+            self.assertEqual((state["install"], state["latest"]["download"], asked), ("source", None, [False]))
+        finally:
+            db.DB_PATH, db.LIBRARY, updates.fetch, updates.VERSION, updates.INSTALL = saved
 
 
 class Releases(unittest.TestCase):

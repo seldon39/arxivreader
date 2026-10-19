@@ -12,7 +12,7 @@ import time
 import httpx
 
 from . import db
-from .config import USER_AGENT
+from .config import ROOT, USER_AGENT
 from .version import VERSION
 
 REPOSITORY = "seldon39/arxivreader"
@@ -22,6 +22,18 @@ RELEASES = f"https://github.com/{REPOSITORY}/releases"
 WINDOWS = sys.platform == "win32"
 ALL_RELEASES = f"https://api.github.com/repos/{REPOSITORY}/releases?per_page=100"
 WINDOWS_TAG = "windows-v"
+
+
+def install_kind(root=ROOT, frozen=None):
+    """Comment arXivReader est installé : application Windows (empaquetée), application Mac (dans un .app), ou code
+    source (./arxivreader, sous Linux ou sur un Mac de développement) — mis à jour par « git pull »."""
+    frozen = getattr(sys, "frozen", False) if frozen is None else frozen
+    if frozen:
+        return "windows"
+    return "mac-app" if ".app/Contents/" in str(root) else "source"
+
+
+INSTALL = install_kind()
 EVERY = 24 * 3600
 _lock = threading.Lock()
 
@@ -69,7 +81,7 @@ def state(force=False):
         error = None
         if force or (enabled and due):
             try:
-                latest = fetch()
+                latest = fetch(windows=INSTALL == "windows")  # code source : mêmes numéros que la version Mac
                 db.save_settings({"updates.latest": latest, "updates.checked": time.time()})
             except (httpx.HTTPError, ValueError, KeyError, TypeError) as failure:
                 latest = settings.get("updates.latest")
@@ -78,7 +90,9 @@ def state(force=False):
             latest = settings.get("updates.latest")
         settings = db.get_settings()
     available = bool(latest) and newer(latest.get("version"))
-    return {"current": VERSION, "latest": latest if available else None, "available": available,
+    if available and INSTALL == "source":
+        latest = {**latest, "download": None}  # pas de .dmg à proposer : « git pull »
+    return {"current": VERSION, "latest": latest if available else None, "available": available, "install": INSTALL,
             "dismissed": available and settings.get("updates.dismissed") == latest["version"],
             "checked": settings.get("updates.checked"), "enabled": enabled, "error": error, "releases": RELEASES}
 

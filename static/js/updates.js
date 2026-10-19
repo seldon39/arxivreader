@@ -36,10 +36,10 @@ export function updatesSection() {
     if (state?.available) {
       parts.push(h("div", { class: "notice update-notice" },
         h("strong", {}, t("updates.available", { version: latest.version })),
-        h("p", {}, t("updates.howTo")),
+        h("p", {}, t(state.install === "source" ? "updates.howTo.source" : "updates.howTo")),
         h("div", { class: "ai-setup-actions" },
-          h("a", { class: "button small-button primary", href: latest.download || latest.url, target: "_blank", rel: "noopener noreferrer" },
-            t("updates.download")),
+          state.install !== "source" && h("a", { class: "button small-button primary", href: latest.download || latest.url, target: "_blank",
+            rel: "noopener noreferrer" }, t("updates.download")),
           h("a", { class: "button small-button", href: latest.url, target: "_blank", rel: "noopener noreferrer" }, t("updates.notes")),
           !state.dismissed && h("button", { class: "button small-button", type: "button", onclick: () =>
             api.dismissUpdate(latest.version).then((next) => { current = next; showPill(); draw(next); }, toastError) }, t("updates.ignore")))));
