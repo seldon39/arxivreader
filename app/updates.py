@@ -18,10 +18,8 @@ from .version import VERSION
 REPOSITORY = "seldon39/arxivreader"
 LATEST = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
 RELEASES = f"https://github.com/{REPOSITORY}/releases"
-# Version Windows : publiée à part, en préversion (« windows-v1.9.14 », un .zip), que « latest » ignore
+# Une version GitHub par numéro (vX.Y.Z) : le .dmg du Mac et le .zip de Windows, joint quelques minutes plus tard
 WINDOWS = sys.platform == "win32"
-ALL_RELEASES = f"https://api.github.com/repos/{REPOSITORY}/releases?per_page=100"
-WINDOWS_TAG = "windows-v"
 
 
 def install_kind(root=ROOT, frozen=None):
@@ -50,24 +48,19 @@ def newer(latest, current=None):
 
 
 def fetch(windows=WINDOWS):
-    response = httpx.get(ALL_RELEASES if windows else LATEST, timeout=10, follow_redirects=True,
+    response = httpx.get(LATEST, timeout=10, follow_redirects=True,
                          headers={"Accept": "application/vnd.github+json", "User-Agent": USER_AGENT})
     if response.status_code == 404:  # aucune version publiée
         return None
     response.raise_for_status()
-    if windows:  # la plus récente des versions Windows (liste de la plus récente à la plus ancienne)
-        release = next((r for r in response.json() if not r.get("draft")
-                        and (r.get("tag_name") or "").startswith(WINDOWS_TAG)), None)
-        if release is None:
-            return None
-        version, suffix = release["tag_name"][len(WINDOWS_TAG):], ".zip"
-    else:
-        release = response.json()
-        if not re.match(r"v\d", release.get("tag_name") or ""):
-            return None  # pas une version Mac (vX.Y.Z) : jamais une version Windows promue par erreur
-        version, suffix = release["tag_name"][1:], ".dmg"
+    release = response.json()
+    if not re.match(r"v\d", release.get("tag_name") or ""):
+        return None  # pas une version vX.Y.Z
+    suffix = ".zip" if windows else ".dmg"
     package = next((a["browser_download_url"] for a in release.get("assets", []) if a.get("name", "").endswith(suffix)), None)
-    return {"version": version, "url": release.get("html_url") or RELEASES,
+    if windows and package is None:
+        return None  # zip pas encore joint (construit après le .dmg) : annoncée à la vérification suivante
+    return {"version": release["tag_name"][1:], "url": release.get("html_url") or RELEASES,
             "download": package, "notes": (release.get("body") or "")[:4000], "published": release.get("published_at")}
 
 

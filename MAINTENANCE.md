@@ -7,7 +7,7 @@ fichier, son entretien. Le tenir à jour quand une règle ou un piège change.
 
 ## 1. En deux mots
 
-Lecteur d'articles arXiv pour Mac, pensé pour les mathématiques : serveur Python (FastAPI + SQLite) sur
+Lecteur d'articles arXiv (macOS, Windows ; Linux depuis le code source), pensé pour les mathématiques : serveur Python (FastAPI + SQLite) sur
 127.0.0.1, page en JavaScript sans compilation (`static/`), application Mac en Swift (`macos/main.swift`, une
 fenêtre WebKit par onglet) qui embarque son propre Python. Données de l'utilisateur dans
 `~/Library/Application Support/arXivReader` (base `arxivreader.db`, dossier `papers/`). Dépôt public
@@ -113,7 +113,7 @@ texte venu d'arXiv, de Semantic Scholar, de Zotero ou d'une IA passe par du text
 L'application n'a qu'une signature ad hoc (pas de notarisation) : sur un autre Mac, ouverture par clic droit >
 Ouvrir.
 
-### Version Windows (préversion)
+### Version Windows
 
 Construite par GitHub Actions (`.github/workflows/windows.yml`, machine `windows-latest`) **à chaque poussée sur
 `main`** : installation de `requirements.lock` et de `windows/build-requirements.txt` (PyInstaller, `tzdata` pour les
@@ -124,13 +124,13 @@ de 1603.04246, captures par Edge sans fenêtre, puis la fenêtre de l'applicatio
 serveur tué (la fenêtre doit rester et proposer de le relancer), et aucun serveur restant une fois la fenêtre fermée.
 Captures dans `shots/` (artefact de l'exécution, gardé 14 jours, avec le zip).
 
-Publier une version Windows : `VERSION` augmentée et committée, poussée, puis
-`git tag windows-vX.Y.Z && git push origin windows-vX.Y.Z` (X.Y.Z = `app/version.py`, vérifié par le workflow).
-L'étape de publication (seule à pouvoir écrire sur le dépôt) crée la **préversion** `windows-vX.Y.Z` (« latest », lu par
-le Mac, l'ignore ; l'application Windows ne regarde que les étiquettes `windows-v…`) et recrée `windows-latest`,
-l'adresse fixe donnée dans le README et sur le site. Mac et Windows partagent les numéros : une version publiée
-des deux côtés est le même code ; `macos/release.sh` refuse un numéro déjà publié pour Windows avec un autre code
-dans `app/` ou `static/` (une version propre à Windows, comme 1.9.18, ne se republie donc pas telle quelle sur Mac).
+Publier : une seule version GitHub par numéro. `macos/release.sh` crée l'étiquette `vX.Y.Z` et la version avec le
+`.dmg` ; l'étiquette déclenche le workflow Windows, qui vérifie que X.Y.Z est celui de `app/version.py`, construit et
+essaie l'application, puis **joint `arXivReader-windows.zip` à la version `vX.Y.Z`** (étape à part, seule à pouvoir
+écrire sur le dépôt ; relancée, elle remplace le zip). Les deux applications lisent « latest » : le Mac y prend le
+`.dmg`, Windows le `.zip` (pas encore joint : rien d'annoncé, la vérification suivante le verra). Les anciennes
+préversions `windows-v1.9.15`… `windows-v1.9.21` et `windows-latest` restent de l'histoire : les versions Windows
+1.9.21 et antérieures ne voient pas les versions unifiées, il faut les mettre à jour une fois à la main.
 
 - Fenêtre : `windows/shell/` (C#, .NET Framework 4.8 inclus dans Windows, WebView2), l'équivalent de
   `macos/main.swift` : une page WebView2 par onglet (historique propre à chacune), barre d'onglets dessinée façon
@@ -141,7 +141,7 @@ dans `app/` ou `static/` (une version propre à Windows, comme 1.9.18, ne se rep
   une fenêtre Edge (repli).
 - Essai : `windows/smoke.ps1` lance aussi la fenêtre sur deux onglets et capture l'écran (`shots/window.png`).
 - Différences côté serveur, toutes sous `sys.platform == "win32"` : notification par PowerShell (`alerts.py`),
-  connexion des assistants dans `cmd.exe` (`providers.py`), `claude.exe` du SDK (`ai.py`), versions `windows-v…`
+  connexion des assistants dans `cmd.exe` (`providers.py`), `claude.exe` du SDK (`ai.py`), le `.zip` de la dernière version
   (`updates.py`). Types MIME fixés dans `main.py` (le registre de Windows sert parfois `.js` en `text/plain`).
 - Interface : `MAC` / `WINDOWS` dans `static/js/i18n.js` ; hors Mac, ⌘ ⌥ ⇧ deviennent Ctrl Alt Maj à l'affichage.
 - Pas encore sous Windows : « Recopier une bibliothèque… » (menu de l'application Mac), signature du `.exe`.

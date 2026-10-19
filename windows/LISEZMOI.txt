@@ -1,4 +1,4 @@
-arXivReader pour Windows (préversion)
+arXivReader pour Windows
 
 Pour lancer arXivReader : double-cliquez sur arXivReader.exe dans ce dossier.
 Si Windows affiche « Windows a protégé votre ordinateur » : cliquez sur « Informations complémentaires »,
@@ -8,7 +8,7 @@ pour mettre à jour, remplacez ce dossier par le nouveau.
 
 ----
 
-arXivReader for Windows (preview)
+arXivReader for Windows
 
 To start arXivReader, double-click arXivReader.exe in this folder.
 If Windows says "Windows protected your PC", click "More info", then "Run anyway"

@@ -2,10 +2,13 @@
 
 [English](README.md) · **Français**
 
-Lecteur d'articles arXiv pour Mac (Windows en préversion ; Linux depuis le code source), pensé pour les mathématiques : mise en page « papier AMS », énoncés et
-preuves navigables, graphe des dépendances, notes et surlignages, feed des nouveautés trié selon votre profil,
-et un assistant IA (Claude, Codex, Gemini ou un modèle local) qui ne voit que le texte de l'article.
-Tout reste sur votre Mac : le serveur n'écoute que sur 127.0.0.1. Interface en français et en anglais.
+Lecteur d'articles arXiv pensé pour les mathématiques : mise en page « papier AMS », énoncés et preuves navigables,
+graphe des dépendances, notes et surlignages, feed des nouveautés trié selon votre profil, graphes de papiers liés, et
+un assistant IA (Claude, Codex, Gemini ou un modèle local) qui ne voit que le texte de l'article. Interface en
+français et en anglais.
+
+Il fonctionne sous **macOS** et **Windows** (applications à télécharger) et sous **Linux** (depuis le code source).
+Tout reste sur votre ordinateur : le serveur n'écoute que sur 127.0.0.1.
 
 ![Démo d'arXivReader : feed trié par pertinence, bibliothèque, lecteur avec aperçu des énoncés, surlignage et copie LaTeX, assistant IA, graphe des dépendances, articles liés](docs/demo.gif)
 
@@ -13,20 +16,22 @@ Tout reste sur votre Mac : le serveur n'écoute que sur 127.0.0.1. Interface en 
 
 ## Installer
 
-Télécharger `arXivReader.dmg` depuis la page [Releases](https://github.com/seldon39/arxivreader/releases)
-(Mac Apple Silicon, macOS 13 ou plus), l'ouvrir et glisser arXivReader dans Applications. L'application est
-autonome (Python et ses paquets sont inclus) ; rien d'autre à installer.
+| Système | Téléchargement | Configuration |
+|---|---|---|
+| macOS | `arXivReader.dmg` dans la [dernière version](https://github.com/seldon39/arxivreader/releases/latest) | Mac Apple Silicon, macOS 13 ou plus |
+| Windows | `arXivReader-windows.zip` dans la [dernière version](https://github.com/seldon39/arxivreader/releases/latest) | Windows 10 ou 11, 64 bits |
+| Linux | depuis le code source : voir [Linux](#linux) | Python 3.12 ou plus |
 
-**Sous Windows** : [télécharger la préversion Windows](https://github.com/seldon39/arxivreader/releases/tag/windows-latest) (voir [Windows (préversion)](#windows-préversion) plus bas).
+Les applications sont autonomes (Python et ses paquets sont inclus) : rien d'autre à installer. Elles vérifient une
+fois par jour s'il existe une nouvelle version (Réglages → Mises à jour) et affichent alors une pastille « Mise à
+jour » en haut à droite ; la bibliothèque est conservée lors d'une mise à jour.
 
-**Sous Linux** : depuis le code source, dans le navigateur (Python 3.12 ou plus) : voir [Lancer depuis le code source](#lancer-depuis-le-code-source).
+### macOS
 
-- **Première ouverture** : voir ci-dessous ; macOS la bloque une fois.
-- **Mises à jour** : l'application vérifie une fois par jour s'il existe une nouvelle version sur GitHub
-  (réglable dans Réglages → Mises à jour) ; une pastille « Mise à jour » apparaît alors en haut à droite.
-  Remplacer l'application dans Applications ; la bibliothèque est conservée.
+Ouvrir `arXivReader.dmg` et glisser arXivReader dans Applications. Pour mettre à jour, remplacer l'application dans
+Applications (la quitter d'abord). La première fois, macOS bloque l'application une fois : voir ci-dessous.
 
-### Si macOS refuse d'ouvrir l'application
+#### Si macOS refuse d'ouvrir l'application
 
 L'application est libre, mais elle n'est pas signée par un compte développeur Apple (payant) ni « notarisée »
 par Apple. Sur un autre Mac que celui qui l'a construite, la première ouverture affiche un message du type
@@ -53,18 +58,34 @@ xattr -dr com.apple.quarantine /Applications/arXivReader.app
 
 Rendre cette étape inutile est dans la [feuille de route](https://github.com/seldon39/arxivreader/issues/1).
 
-### Windows (préversion)
+### Windows
 
-Une version Windows est en préversion (Windows 10 ou 11, 64 bits) : télécharger `arXivReader-windows.zip` depuis
-[la dernière préversion Windows](https://github.com/seldon39/arxivreader/releases/tag/windows-latest), clic droit → **Extraire tout…**, puis
-double-cliquer sur `arXivReader.exe` dans le dossier `arXivReader`. L'application s'ouvre dans sa propre fenêtre, avec des
-onglets comme sur le Mac (Ctrl+T, Ctrl-clic sur un lien, le **+** de la barre d'onglets) ; elle s'appuie sur
-WebView2, le moteur d'Edge inclus dans Windows 10 et 11 (s'il manque, sur un Windows allégé, l'application indique
-où l'installer) ; la bibliothèque est gardée dans `%LOCALAPPDATA%\arXivReader`. Si Windows affiche *Windows a protégé
-votre ordinateur* : **Informations complémentaires**, puis **Exécuter quand même** (l'application n'est pas signée).
-**Mises à jour** : l'application signale une nouvelle version Windows une fois par jour ; quitter arXivReader et
-remplacer le dossier `arXivReader` par le nouveau (la bibliothèque est ailleurs, elle est conservée).
-Les retours sur cette version sont particulièrement bienvenus.
+Clic droit sur `arXivReader-windows.zip` → **Extraire tout…**, placer le dossier `arXivReader` où vous voulez (par
+exemple dans Documents) et double-cliquer sur `arXivReader.exe` à l'intérieur. L'application s'ouvre dans sa propre
+fenêtre, avec des onglets comme sur le Mac (Ctrl+T, Ctrl-clic sur un lien, le **+** de la barre d'onglets) ; les liens
+vers d'autres sites s'ouvrent dans votre navigateur habituel. La bibliothèque est gardée dans
+`%LOCALAPPDATA%\arXivReader`.
+
+- Si Windows affiche *Windows a protégé votre ordinateur* : **Informations complémentaires**, puis **Exécuter quand
+  même** (l'application est libre mais pas signée). L'antivirus peut aussi demander confirmation la première fois.
+- L'application s'appuie sur WebView2, le moteur d'Edge inclus dans Windows 10 et 11 (s'il manque, sur un Windows
+  allégé, l'application indique où l'installer).
+- Pour mettre à jour, quitter arXivReader et remplacer le dossier `arXivReader` par le nouveau : la bibliothèque est
+  ailleurs, elle est conservée.
+
+### Linux
+
+Pas encore d'application empaquetée : arXivReader tourne depuis le code source, dans le navigateur. Il faut Python 3.12
+ou plus avec son module `venv` (sous Debian/Ubuntu, le paquet `python3-venv`), puis :
+
+```bash
+git clone https://github.com/seldon39/arxivreader.git && cd arxivreader && ./arxivreader
+```
+
+La première fois, le script crée l'environnement Python (`.venv/`, ~1 min), puis ouvre http://127.0.0.1:8710/ avec
+`xdg-open` ; Ctrl+C arrête l'application. Autre Python : `PYTHON=python3.14 ./arxivreader`. Mise à jour : `git pull`,
+puis `./arxivreader` de nouveau (l'application signale les nouvelles versions). Les tests tournent sous Linux avec
+Python 3.12, 3.13 et 3.14 à chaque poussée.
 
 ## Application Mac : construction
 
@@ -87,19 +108,14 @@ augmenté `VERSION` dans `app/version.py`) : étiquette Git, envoi sur GitHub, i
 
 ## Lancer depuis le code source
 
+Sous Linux, voir [Linux](#linux) plus haut. Sur un Mac (développement) :
+
 - **Double-clic** sur `ArXivReader.command` dans le Finder : une fenêtre Terminal s'ouvre, puis le navigateur.
   Fermer la fenêtre Terminal (ou Ctrl+C) arrête l'application.
 - **Terminal** : `./arxivreader` depuis ce dossier.
 
 La première fois, le script crée l'environnement Python (`.venv/`, ~1 min). L'adresse est
 http://127.0.0.1:8710/ ; le serveur n'écoute que sur cet ordinateur (pas sur le Wi-Fi).
-
-**Sous Linux**, le même script marche dans le navigateur (pas encore d'application empaquetée) : Python 3.12 ou plus
-avec son module `venv` (sous Debian/Ubuntu, le paquet `python3-venv`), puis `git clone
-https://github.com/seldon39/arxivreader.git && cd arxivreader && ./arxivreader` ; il ouvre le navigateur avec
-`xdg-open`. Autre Python : `PYTHON=python3.14 ./arxivreader`. Mise à jour : `git pull`, puis `./arxivreader` de
-nouveau (l'application signale les nouvelles versions). Les tests tournent sous Linux avec Python 3.12, 3.13 et 3.14 à
-chaque poussée.
 
 ## Ce que fait la version actuelle (étape 1 : lecteur structuré)
 
@@ -403,7 +419,7 @@ app/            serveur Python (FastAPI)
 macos/          application Mac : main.swift (fenêtre, onglets, serveur), icon.swift, build.sh, release.sh
 windows/        application Windows : shell/ (fenêtre à onglets en C#, WebView2), launcher.py (serveur, construit
                 par PyInstaller), smoke.ps1 (essai de l'application construite), build-requirements.txt
-.github/        workflows/windows.yml : construction, tests et préversion Windows (GitHub Actions)
+.github/        workflows : construction, tests et publication Windows (windows.yml), tests Linux (linux.yml)
 static/         interface (HTML, CSS, JavaScript sans compilation) ;
                 vendor/mathjax (MathJax 3.2.2), vendor/pdfjs (pdf.js 6.3.289, Apache 2.0)
                 et fonts/ (Latin Modern) copiés localement

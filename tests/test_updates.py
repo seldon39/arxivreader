@@ -80,7 +80,7 @@ class Install(unittest.TestCase):
 
 
 class Releases(unittest.TestCase):
-    """Choix de la version publiée : le Mac lit « latest », Windows la plus récente des préversions windows-v…"""
+    """Une version GitHub par numéro (« latest ») : le Mac y prend le .dmg, Windows le .zip (joint après le .dmg)."""
 
     def setUp(self):
         self.saved = updates.httpx.get
@@ -106,15 +106,16 @@ class Releases(unittest.TestCase):
         self.assertIsNone(updates.fetch(windows=False))
 
     def test_windows(self):
-        self.answer([{"tag_name": "v1.9.15", "assets": []},
-                     {"tag_name": "windows-v1.9.15", "draft": True, "assets": []},
-                     {"tag_name": "windows-v1.9.14", "html_url": "https://x/windows-v1.9.14",
-                      "assets": [{"name": "arXivReader-windows.zip", "browser_download_url": "https://x/arXivReader-windows.zip"}]}])
+        release = {"tag_name": "v1.9.22", "html_url": "https://x/v1.9.22",
+                   "assets": [{"name": "arXivReader.dmg", "browser_download_url": "https://x/arXivReader.dmg"},
+                              {"name": "arXivReader-windows.zip", "browser_download_url": "https://x/arXivReader-windows.zip"}]}
+        self.answer(release)
         latest = updates.fetch(windows=True)
-        self.assertEqual((latest["version"], latest["download"]), ("1.9.14", "https://x/arXivReader-windows.zip"))
-        self.answer([{"tag_name": "v1.9.15", "assets": []}])
+        self.assertEqual((latest["version"], latest["download"]), ("1.9.22", "https://x/arXivReader-windows.zip"))
+        self.assertTrue(self.urls[0].endswith("/releases/latest"))
+        self.answer({**release, "assets": release["assets"][:1]})  # zip pas encore joint : rien d'annoncé pour l'instant
         self.assertIsNone(updates.fetch(windows=True))
-
+        self.assertEqual(updates.fetch(windows=False)["download"], "https://x/arXivReader.dmg")  # le Mac, déjà oui
 
 if __name__ == "__main__":
     unittest.main()

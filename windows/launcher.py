@@ -1,4 +1,4 @@
-"""Serveur de l'application Windows (préversion), lancé sans fenêtre par arXivReader.exe (windows/shell) avec
+"""Serveur de l'application Windows, lancé sans fenêtre par arXivReader.exe (windows/shell) avec
 ARXIVREADER_NO_BROWSER=1 : le serveur local dans ce processus, son port écrit dans server.port. Lancé seul, il
 ouvre l'interface dans une fenêtre Microsoft Edge (repli), avec un profil propre à arXivReader.
 

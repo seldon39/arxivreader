@@ -1,12 +1,12 @@
-# Version Windows (préversion) : construite et essayée sur une machine Windows de GitHub à chaque poussée sur main
-# (tests, serveur, import d'un article, fenêtre de l'application, captures d'écran) ; publiée en préversion pour une
-# étiquette windows-vX.Y.Z (même numéro que app/version.py), et sous l'adresse fixe windows-latest.
+# Version Windows : construite et essayée sur une machine Windows de GitHub à chaque poussée sur main (tests, serveur,
+# import d'un article, fenêtre de l'application, captures d'écran). Pour une étiquette vX.Y.Z (macos/release.sh, même
+# numéro que app/version.py), le zip est joint à la version GitHub vX.Y.Z, à côté du .dmg du Mac.
 name: Windows
 
 on:
   push:
     branches: [main, windows]
-    tags: ["windows-v*"]
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -21,14 +21,14 @@ jobs:
         with:
           persist-credentials: false
 
-      # étiquette windows-vX.Y.Z : le code doit porter le même numéro (sinon l'application annoncerait une autre version)
+      # étiquette vX.Y.Z : le code doit porter le même numéro (sinon l'application annoncerait une autre version)
       - name: Version
-        if: startsWith(github.ref, 'refs/tags/windows-v')
+        if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          $version = $env:TAG.Substring("windows-v".Length)
+          $version = $env:TAG.Substring(1)
           if (-not (Select-String -Path app/version.py -SimpleMatch -Pattern "VERSION = `"$version`"" -Quiet)) {
               throw "tag $env:TAG does not match app/version.py"
           }
@@ -84,38 +84,25 @@ jobs:
             shots/
             smoke-library/server.log
 
-  # Publication, à part : seule cette étape a le droit d'écrire sur le dépôt
+  # Publication, à part : seule cette étape a le droit d'écrire sur le dépôt. La version vX.Y.Z est créée par
+  # macos/release.sh avec le .dmg ; le zip Windows y est joint (remplacé si l'étape est relancée).
   publish:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/windows-v')
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v5
-        with:
-          persist-credentials: false
-
       - uses: actions/download-artifact@v4
         with:
           name: arXivReader-windows
 
-      - name: Publish (pre-release)
+      - name: Attach to the release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
-          version="${TAG#windows-v}"
-          # relancée pour la même étiquette : le zip est remplacé plutôt qu'un échec
-          if gh release view "$TAG" > /dev/null 2>&1; then
-            gh release upload "$TAG" arXivReader-windows.zip --clobber
-          else
-            gh release create "$TAG" arXivReader-windows.zip --prerelease \
-              --title "arXivReader $version for Windows (preview)" --notes-file windows/release-notes.md
-          fi
-          # adresse fixe (README, site) : https://github.com/seldon39/arxivreader/releases/tag/windows-latest
-          { printf 'Latest preview of arXivReader for Windows: **version %s** (same as [%s](https://github.com/seldon39/arxivreader/releases/tag/%s)).\n\n' "$version" "$TAG" "$TAG"
-            cat windows/release-notes.md; } > latest-notes.md
-          gh release delete windows-latest --cleanup-tag --yes > /dev/null 2>&1 || true
-          gh release create windows-latest arXivReader-windows.zip --prerelease --target "$GITHUB_SHA" \
-            --title "arXivReader for Windows — latest preview ($version)" --notes-file latest-notes.md
+          # la version GitHub est créée juste après l'étiquette (construction du .dmg) : attendue au plus 30 min
+          for i in $(seq 1 60); do gh release view "$TAG" > /dev/null 2>&1 && break; sleep 30; done
+          gh release upload "$TAG" arXivReader-windows.zip --clobber
