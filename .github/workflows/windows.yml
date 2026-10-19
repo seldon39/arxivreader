@@ -1,6 +1,6 @@
 # Version Windows : construite et essayée sur une machine Windows de GitHub à chaque poussée sur main (tests, serveur,
 # import d'un article, fenêtre de l'application, captures d'écran). Pour une étiquette vX.Y.Z (macos/release.sh, même
-# numéro que app/version.py), le zip est joint à la version GitHub vX.Y.Z, à côté du .dmg du Mac.
+# numéro que app/version.py), l'installateur et le zip sont joints à la version GitHub vX.Y.Z, à côté du .dmg du Mac.
 name: Windows
 
 on:
@@ -70,6 +70,18 @@ jobs:
           Compress-Archive -Path dist/arXivReader -DestinationPath arXivReader-windows.zip
           "{0:N0} Mo" -f ((Get-Item arXivReader-windows.zip).Length / 1MB)
 
+      # Installateur (Inno Setup) : le même dossier, installé dans %LOCALAPPDATA%\Programs, avec raccourcis
+      - name: Installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          $version = (Select-String -Path app/version.py -Pattern 'VERSION = "(.+)"').Matches[0].Groups[1].Value
+          & $iscc /Qp "/DAppVersion=$version" windows/installer.iss
+          if ($LASTEXITCODE) { throw "ISCC failed" }
+          Move-Item dist/arXivReader-setup.exe arXivReader-setup.exe
+          "{0:N0} Mo" -f ((Get-Item arXivReader-setup.exe).Length / 1MB)
+
       - name: Smoke test
         shell: pwsh
         run: windows/smoke.ps1
@@ -81,6 +93,7 @@ jobs:
           retention-days: 14
           path: |
             arXivReader-windows.zip
+            arXivReader-setup.exe
             shots/
             smoke-library/server.log
 
@@ -105,4 +118,4 @@ jobs:
         run: |
           # la version GitHub est créée juste après l'étiquette (construction du .dmg) : attendue au plus 30 min
           for i in $(seq 1 60); do gh release view "$TAG" > /dev/null 2>&1 && break; sleep 30; done
-          gh release upload "$TAG" arXivReader-windows.zip --clobber
+          gh release upload "$TAG" arXivReader-setup.exe arXivReader-windows.zip --clobber

@@ -1300,9 +1300,11 @@ export const MAC = /mac/i.test(PLATFORM);
 export const WINDOWS = /win/i.test(PLATFORM);
 const WINDOWS_STRINGS = {
   fr: {
+    "updates.howTo.installer": "Téléchargez l'installateur et lancez-le : il met arXivReader à jour sur place (et le ferme au besoin). Votre bibliothèque est conservée.",
     "updates.howTo": "Quittez arXivReader, décompressez le .zip téléchargé et remplacez l'ancien dossier arXivReader par le nouveau : votre bibliothèque est conservée (elle est ailleurs, dans %LOCALAPPDATA%\\arXivReader).",
   },
   en: {
+    "updates.howTo.installer": "Download the installer and run it: it updates arXivReader in place (closing it if needed). Your library is kept.",
     "updates.howTo": "Quit arXivReader, unzip the downloaded .zip and replace the old arXivReader folder with the new one: your library is kept (it lives elsewhere, in %LOCALAPPDATA%\\arXivReader).",
   },
 };

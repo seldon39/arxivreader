@@ -7,9 +7,9 @@ Privacy & Security → Open Anyway**, and confirm.
 Details: [README → If macOS refuses to open the app](https://github.com/seldon39/arxivreader#if-macos-refuses-to-open-the-app)
 · en français : [README.fr](https://github.com/seldon39/arxivreader/blob/main/README.fr.md#si-macos-refuse-douvrir-lapplication).
 
-**Windows** (10 or 11, 64-bit): right-click `arXivReader-windows.zip` → **Extract All…** and double-click
-`arXivReader.exe` in the `arXivReader` folder; to update, replace that folder with the new one (your library is
-kept). If Windows says "Windows protected your PC": **More info**, then **Run anyway**. The zip is built
-automatically and appears here a few minutes after the Mac app.
+**Windows** (10 or 11, 64-bit): run `arXivReader-setup.exe` (installs for your account, no administrator rights;
+running a newer one updates the app in place), or unzip `arXivReader-windows.zip` for a portable copy. If Windows
+says "Windows protected your PC": **More info**, then **Run anyway**. Both are built automatically and appear here a
+few minutes after the Mac app; your library is never touched.
 
 **Linux**: from the source code, see [README → Linux](https://github.com/seldon39/arxivreader#linux).

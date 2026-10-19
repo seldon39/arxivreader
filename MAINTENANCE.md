@@ -126,9 +126,10 @@ Captures dans `shots/` (artefact de l'exécution, gardé 14 jours, avec le zip).
 
 Publier : une seule version GitHub par numéro. `macos/release.sh` crée l'étiquette `vX.Y.Z` et la version avec le
 `.dmg` ; l'étiquette déclenche le workflow Windows, qui vérifie que X.Y.Z est celui de `app/version.py`, construit et
-essaie l'application, puis **joint `arXivReader-windows.zip` à la version `vX.Y.Z`** (étape à part, seule à pouvoir
+essaie l'application (et l'installateur Inno Setup, `windows/installer.iss` : installation silencieuse, raccourci,
+désinstallation), puis **joint `arXivReader-setup.exe` et `arXivReader-windows.zip` à la version `vX.Y.Z`** (étape à part, seule à pouvoir
 écrire sur le dépôt ; relancée, elle remplace le zip). Les deux applications lisent « latest » : le Mac y prend le
-`.dmg`, Windows le `.zip` (pas encore joint : rien d'annoncé, la vérification suivante le verra). Les anciennes
+`.dmg`, Windows l'installateur s'il a été installé ainsi (`unins000.exe` à côté), sinon le `.zip` (pas encore joint : rien d'annoncé, la vérification suivante le verra). Les anciennes
 préversions `windows-v1.9.15`… `windows-v1.9.21` et `windows-latest` restent de l'histoire : les versions Windows
 1.9.21 et antérieures ne voient pas les versions unifiées, il faut les mettre à jour une fois à la main.
 

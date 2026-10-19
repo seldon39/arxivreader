@@ -19,7 +19,7 @@ Tout reste sur votre ordinateur : le serveur n'écoute que sur 127.0.0.1.
 | Système | Téléchargement | Configuration |
 |---|---|---|
 | macOS | `arXivReader.dmg` dans la [dernière version](https://github.com/seldon39/arxivreader/releases/latest) | Mac Apple Silicon, macOS 13 ou plus |
-| Windows | `arXivReader-windows.zip` dans la [dernière version](https://github.com/seldon39/arxivreader/releases/latest) | Windows 10 ou 11, 64 bits |
+| Windows | `arXivReader-setup.exe` (installateur) ou `arXivReader-windows.zip` (portable) dans la [dernière version](https://github.com/seldon39/arxivreader/releases/latest) | Windows 10 ou 11, 64 bits |
 | Linux | depuis le code source : voir [Linux](#linux) | Python 3.12 ou plus |
 
 Les applications sont autonomes (Python et ses paquets sont inclus) : rien d'autre à installer. Elles vérifient une
@@ -60,9 +60,14 @@ Rendre cette étape inutile est dans la [feuille de route](https://github.com/se
 
 ### Windows
 
-Clic droit sur `arXivReader-windows.zip` → **Extraire tout…**, placer le dossier `arXivReader` où vous voulez (par
-exemple dans Documents) et double-cliquer sur `arXivReader.exe` à l'intérieur. L'application s'ouvre dans sa propre
-fenêtre, avec des onglets comme sur le Mac (Ctrl+T, Ctrl-clic sur un lien, le **+** de la barre d'onglets) ; les liens
+Lancer **`arXivReader-setup.exe`** : il installe arXivReader pour votre compte (sans droits d'administrateur),
+l'ajoute au menu Démarrer (et au bureau si vous cochez la case) et le fait apparaître dans **Paramètres →
+Applications**, avec un bouton **Désinstaller**. Pour mettre à jour, lancer le nouvel installateur : il met
+l'application à jour sur place. Vous préférez ne rien installer (sur une clé USB, par exemple) ? Prenez
+**`arXivReader-windows.zip`** : clic droit → **Extraire tout…**, puis double-cliquer sur `arXivReader.exe` dans le
+dossier `arXivReader` ; pour mettre à jour, remplacer ce dossier.
+
+L'application s'ouvre dans sa propre fenêtre, avec des onglets comme sur le Mac (Ctrl+T, Ctrl-clic sur un lien, le **+** de la barre d'onglets) ; les liens
 vers d'autres sites s'ouvrent dans votre navigateur habituel. La bibliothèque est gardée dans
 `%LOCALAPPDATA%\arXivReader`.
 
@@ -70,8 +75,7 @@ vers d'autres sites s'ouvrent dans votre navigateur habituel. La bibliothèque e
   même** (l'application est libre mais pas signée). L'antivirus peut aussi demander confirmation la première fois.
 - L'application s'appuie sur WebView2, le moteur d'Edge inclus dans Windows 10 et 11 (s'il manque, sur un Windows
   allégé, l'application indique où l'installer).
-- Pour mettre à jour, quitter arXivReader et remplacer le dossier `arXivReader` par le nouveau : la bibliothèque est
-  ailleurs, elle est conservée.
+- Une mise à jour ou une désinstallation ne touche jamais à la bibliothèque, rangée ailleurs.
 
 ### Linux
 

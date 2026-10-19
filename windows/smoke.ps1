@@ -99,3 +99,26 @@ finally {
 }
 if ($failure) { throw $failure }
 if ($left -ne 0) { throw "server still running after the window closed" }
+
+# L'installateur : installation silencieuse (sans droits d'administrateur), raccourci du menu Démarrer, application
+# installée qui se reconnaît comme telle, puis désinstallation (dossier retiré, bibliothèque intacte)
+$installed = "$env:LOCALAPPDATA\Programs\arXivReader"
+Start-Process (Join-Path $PWD "arXivReader-setup.exe") -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
+if (-not (Test-Path "$installed\arXivReader.exe")) { throw "the installer did not install the app" }
+if (-not (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\arXivReader.lnk")) { throw "no Start menu shortcut" }
+Remove-Item "$library/server.port" -ErrorAction SilentlyContinue
+$env:ARXIVREADER_NO_BROWSER = "1"
+$server = Start-Process "$installed\server\arXivReader-server.exe" -PassThru
+try {
+    for ($i = 0; $i -lt 90 -and -not (Test-Path "$library/server.port"); $i++) { Start-Sleep 1 }
+    $port = (Get-Content "$library/server.port").Trim()
+    $install = (Invoke-RestMethod "http://127.0.0.1:$port/api/updates").install
+    Write-Host "installed app: install = $install"
+    if ($install -ne "windows-installer") { throw "the installed app does not know it was installed" }
+}
+finally { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue; Start-Sleep 2 }
+Start-Process "$installed\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
+for ($i = 0; $i -lt 20 -and (Test-Path "$installed\arXivReader.exe"); $i++) { Start-Sleep 1 }  # désinstalleur relancé à part
+if (Test-Path "$installed\arXivReader.exe") { throw "the uninstaller left the app" }
+if (-not (Test-Path "$library/arxivreader.db")) { throw "the uninstaller touched the library" }
+Write-Host "installer: install, shortcut, uninstall OK; library kept"

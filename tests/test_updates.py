@@ -18,7 +18,7 @@ class Updates(unittest.TestCase):
         db.init()
         self.calls = 0
 
-        def fake(windows=False):
+        def fake(windows=False, installer=False):
             self.calls += 1
             return {"version": "1.2.0", "url": "https://github.com/x/releases/tag/v1.2.0", "download": "https://x/arXivReader.dmg",
                     "notes": "", "published": None}
@@ -62,6 +62,12 @@ class Install(unittest.TestCase):
         self.assertEqual(updates.install_kind("/Applications/arXivReader.app/Contents/Resources/arxivreader", False), "mac-app")
         self.assertEqual(updates.install_kind(r"C:\arXivReader\server\_internal", True), "windows")
         self.assertEqual(updates.install_kind("/home/me/arxivreader", False), "source")
+        installed = pathlib.Path(tempfile.mkdtemp())
+        (installed / "server").mkdir()
+        server = installed / "server" / "arXivReader-server.exe"
+        self.assertEqual(updates.install_kind("x", True, server), "windows")  # zip : dossier « portable »
+        (installed / "unins000.exe").write_bytes(b"")
+        self.assertEqual(updates.install_kind("x", True, server), "windows-installer")
 
     def test_source_install_gets_no_download(self):
         saved = (db.DB_PATH, db.LIBRARY, updates.fetch, updates.VERSION, updates.INSTALL)
@@ -69,7 +75,7 @@ class Install(unittest.TestCase):
         db.DB_PATH, db.LIBRARY = tmp / "test.db", tmp
         db.init()
         asked = []
-        updates.fetch = lambda windows=False: asked.append(windows) or {"version": "9.0.0", "url": "https://x/v9.0.0",
+        updates.fetch = lambda windows=False, installer=False: asked.append(windows) or {"version": "9.0.0", "url": "https://x/v9.0.0",
                                                                         "download": "https://x/arXivReader.dmg", "notes": "", "published": None}
         updates.VERSION, updates.INSTALL = "1.0.0", "source"
         try:
@@ -113,6 +119,10 @@ class Releases(unittest.TestCase):
         latest = updates.fetch(windows=True)
         self.assertEqual((latest["version"], latest["download"]), ("1.9.22", "https://x/arXivReader-windows.zip"))
         self.assertTrue(self.urls[0].endswith("/releases/latest"))
+        self.assertIsNone(updates.fetch(windows=True, installer=True))  # pas d'installateur dans cette version
+        self.answer({**release, "assets": release["assets"] + [
+            {"name": "arXivReader-setup.exe", "browser_download_url": "https://x/arXivReader-setup.exe"}]})
+        self.assertEqual(updates.fetch(windows=True, installer=True)["download"], "https://x/arXivReader-setup.exe")
         self.answer({**release, "assets": release["assets"][:1]})  # zip pas encore joint : rien d'annoncé pour l'instant
         self.assertIsNone(updates.fetch(windows=True))
         self.assertEqual(updates.fetch(windows=False)["download"], "https://x/arXivReader.dmg")  # le Mac, déjà oui

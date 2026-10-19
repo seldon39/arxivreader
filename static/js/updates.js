@@ -36,7 +36,7 @@ export function updatesSection() {
     if (state?.available) {
       parts.push(h("div", { class: "notice update-notice" },
         h("strong", {}, t("updates.available", { version: latest.version })),
-        h("p", {}, t(state.install === "source" ? "updates.howTo.source" : "updates.howTo")),
+        h("p", {}, t(state.install === "source" ? "updates.howTo.source" : state.install === "windows-installer" ? "updates.howTo.installer" : "updates.howTo")),
         h("div", { class: "ai-setup-actions" },
           state.install !== "source" && h("a", { class: "button small-button primary", href: latest.download || latest.url, target: "_blank",
             rel: "noopener noreferrer" }, t("updates.download")),

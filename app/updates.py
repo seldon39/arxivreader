@@ -6,6 +6,7 @@ rien n'est envoyé d'autre que la requête elle-même. Le résultat est gardé d
 
 import re
 import sys
+from pathlib import Path
 import threading
 import time
 
@@ -22,12 +23,14 @@ RELEASES = f"https://github.com/{REPOSITORY}/releases"
 WINDOWS = sys.platform == "win32"
 
 
-def install_kind(root=ROOT, frozen=None):
-    """Comment arXivReader est installé : application Windows (empaquetée), application Mac (dans un .app), ou code
-    source (./arxivreader, sous Linux ou sur un Mac de développement) — mis à jour par « git pull »."""
+def install_kind(root=ROOT, frozen=None, executable=None):
+    """Comment arXivReader est installé : sous Windows, par l'installateur (désinstalleur unins000.exe à côté de
+    l'application) ou depuis le zip (dossier « portable ») ; application Mac (dans un .app) ; ou code source
+    (./arxivreader, sous Linux ou sur un Mac de développement) — mis à jour par « git pull »."""
     frozen = getattr(sys, "frozen", False) if frozen is None else frozen
     if frozen:
-        return "windows"
+        app_folder = Path(executable or sys.executable).resolve().parent.parent  # <app>\server\arXivReader-server.exe
+        return "windows-installer" if (app_folder / "unins000.exe").exists() else "windows"
     return "mac-app" if ".app/Contents/" in str(root) else "source"
 
 
@@ -47,7 +50,7 @@ def newer(latest, current=None):
     return bool(parse(latest) and parse(current) and parse(latest) > parse(current))
 
 
-def fetch(windows=WINDOWS):
+def fetch(windows=WINDOWS, installer=False):
     response = httpx.get(LATEST, timeout=10, follow_redirects=True,
                          headers={"Accept": "application/vnd.github+json", "User-Agent": USER_AGENT})
     if response.status_code == 404:  # aucune version publiée
@@ -56,10 +59,10 @@ def fetch(windows=WINDOWS):
     release = response.json()
     if not re.match(r"v\d", release.get("tag_name") or ""):
         return None  # pas une version vX.Y.Z
-    suffix = ".zip" if windows else ".dmg"
+    suffix = ("-setup.exe" if installer else ".zip") if windows else ".dmg"
     package = next((a["browser_download_url"] for a in release.get("assets", []) if a.get("name", "").endswith(suffix)), None)
     if windows and package is None:
-        return None  # zip pas encore joint (construit après le .dmg) : annoncée à la vérification suivante
+        return None  # zip ou installateur pas encore joint (construits après le .dmg) : à la vérification suivante
     return {"version": release["tag_name"][1:], "url": release.get("html_url") or RELEASES,
             "download": package, "notes": (release.get("body") or "")[:4000], "published": release.get("published_at")}
 
@@ -74,7 +77,8 @@ def state(force=False):
         error = None
         if force or (enabled and due):
             try:
-                latest = fetch(windows=INSTALL == "windows")  # code source : mêmes numéros que la version Mac
+                latest = fetch(windows=INSTALL.startswith("windows"), installer=INSTALL == "windows-installer")
+                # code source : mêmes numéros que la version Mac
                 db.save_settings({"updates.latest": latest, "updates.checked": time.time()})
             except (httpx.HTTPError, ValueError, KeyError, TypeError) as failure:
                 latest = settings.get("updates.latest")

@@ -19,7 +19,7 @@ on your computer: the server only listens on 127.0.0.1.
 | System | Download | Requirements |
 |---|---|---|
 | macOS | `arXivReader.dmg` from the [latest release](https://github.com/seldon39/arxivreader/releases/latest) | Apple Silicon Mac, macOS 13 or later |
-| Windows | `arXivReader-windows.zip` from the [latest release](https://github.com/seldon39/arxivreader/releases/latest) | Windows 10 or 11, 64-bit |
+| Windows | `arXivReader-setup.exe` (installer) or `arXivReader-windows.zip` (portable) from the [latest release](https://github.com/seldon39/arxivreader/releases/latest) | Windows 10 or 11, 64-bit |
 | Linux | from the source code: see [Linux](#linux) | Python 3.12 or later |
 
 The apps are self-contained (Python and its packages are included): there is nothing else to install. They check
@@ -57,8 +57,13 @@ Making this unnecessary is on the [roadmap](https://github.com/seldon39/arxivrea
 
 ### Windows
 
-Right-click `arXivReader-windows.zip` → **Extract All…**, put the `arXivReader` folder wherever you like (e.g. in
-Documents) and double-click `arXivReader.exe` inside it. The app opens in its own window with tabs, as on the Mac
+Run **`arXivReader-setup.exe`**: it installs arXivReader for your user account (no administrator rights needed), adds
+it to the Start menu (and to the desktop if you tick the box), and lists it in **Settings → Apps** with an
+**Uninstall** button. To update, run the new installer: it updates the app in place. Prefer no installation (e.g. on
+a USB stick)? Use **`arXivReader-windows.zip`** instead: right-click → **Extract All…**, then double-click
+`arXivReader.exe` in the `arXivReader` folder; to update, replace that folder.
+
+The app opens in its own window with tabs, as on the Mac
 (Ctrl+T, Ctrl-click a link, the **+** of the tab bar); links to other sites open in your usual browser. Your library
 is kept in `%LOCALAPPDATA%\arXivReader`.
 
@@ -66,8 +71,7 @@ is kept in `%LOCALAPPDATA%\arXivReader`.
   not signed. Your antivirus may also ask for confirmation the first time.
 - The app relies on WebView2, the Edge engine included in Windows 10 and 11 (if a stripped-down Windows lacks it,
   the app says where to install it).
-- To update, quit arXivReader and replace the `arXivReader` folder with the new one: your library lives elsewhere
-  and is kept.
+- Updating or uninstalling never touches your library, which lives elsewhere.
 
 ### Linux
 
