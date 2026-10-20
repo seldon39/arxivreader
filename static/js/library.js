@@ -884,6 +884,16 @@ function card(paper, refreshList, context = null) {
         "aria-label": t("related.fromCard"), html: icons.graph }),
       paper.arxiv_id && h("a", { class: "icon-button", href: `https://arxiv.org/abs/${paper.arxiv_id}`, target: "_blank", rel: "noopener noreferrer",
         title: "arXiv", "aria-label": "arXiv", html: icons.external }),
+      // PDF importé : titre et auteurs corrigés sans ouvrir l'article
+      paper.source === "local-pdf" && action(icons.edit, t("reader.editMeta"), async () => {
+        const edited = await metaDialog({ title: paper.title, authors: paper.authors });
+        if (!edited) return;
+        try {
+          await api.updateMeta(paper.id, edited.title, edited.authors);
+          toast(t("reader.metaSaved"));
+          refreshList();
+        } catch (error) { toastError(error); }
+      }),
       paper.arxiv_id && action(icons.refresh, t("library.refresh"), async (button) => {
         button.disabled = true;
         button.classList.add("spinning");
