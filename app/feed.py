@@ -487,7 +487,8 @@ def known_days():
 
 def _positive_negative():
     with db.connect() as connection:
-        library = [r["arxiv_id"] for r in connection.execute("SELECT arxiv_id FROM papers WHERE in_library = 1 ORDER BY added_at DESC")]
+        library = [r["arxiv_id"] for r in connection.execute("SELECT arxiv_id FROM papers WHERE in_library = 1 ORDER BY added_at DESC")
+                   if r["arxiv_id"]]  # PDF importés : pas d'identifiant arXiv
         rows = connection.execute(
             "SELECT s.key, s.status, f.arxiv_id FROM feed_status s LEFT JOIN feed_items f ON f.key = s.key"
         ).fetchall()

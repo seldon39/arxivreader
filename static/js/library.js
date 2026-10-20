@@ -43,7 +43,7 @@ function passes(paper, state) {
   if (state.categories.size && !paper.categories.some((c) => state.categories.has(c))) return false;
   if (state.folders.size && !folderList.some((f) => state.folders.has(f.id) && f.papers.includes(paper.id))) return false;
   if (state.years.size && !state.years.has((paper.published || "").slice(0, 4))) return false;
-  const pdf = paper.source === "none" || paper.source === "tex"; // lu dans le PDF (énoncés tirés du TeX ou non)
+  const pdf = paper.source === "none" || paper.source === "tex" || paper.source === "local-pdf"; // lu dans le PDF
   if (state.source === "html" && pdf) return false;
   if (state.source === "pdf" && !pdf) return false;
   if (state.publication === "journal" && !paper.publishedIn) return false;
@@ -117,7 +117,12 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
   });
   const submit = h("button", { class: "button", type: "submit" }, t("library.import"));
   const status = h("div", { class: "busy", hidden: true }, h("span", { class: "spinner" }), t("library.importing"));
-  const form = h("form", { class: "import-box" }, input, submit);
+  // PDF de l'ordinateur (hors arXiv) : à côté d'« Importer » ; aussi par glisser-déposer sur la bibliothèque
+  const pdfInput = h("input", { type: "file", accept: "application/pdf,.pdf", multiple: true, hidden: true });
+  const pdfButton = h("button", { class: "button", type: "button", title: t("library.importPdfHint"), onclick: () => pdfInput.click() },
+    t("library.importPdf"));
+  pdfInput.addEventListener("change", () => { importPdfs([...pdfInput.files]); pdfInput.value = ""; });
+  const form = h("form", { class: "import-box" }, input, submit, pdfButton, pdfInput);
   const list = h("div", {});
   const heading = h("h2", {});
   const search = h("input", {
@@ -156,6 +161,32 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
       status.hidden = true;
     }
   });
+  // PDF importés un par un ; version arXiv trouvée : proposée (toutes les fonctions : HTML, énoncés, dépendances)
+  async function importPdfs(files) {
+    const pdfs = files.filter((file) => file.type === "application/pdf" || /\.pdf$/i.test(file.name));
+    if (!pdfs.length) return;
+    status.hidden = false;
+    try {
+      for (const file of pdfs) {
+        const { paper, arxiv } = await api.uploadPdf(file);
+        if (arxiv?.arxivId) {
+          toast(t("library.pdfOnArxiv", { id: arxiv.arxivId }), { duration: 15000, action: { label: t("library.pdfOpenArxiv"), icon: icons.external, onClick: async () => {
+            try {
+              const imported = await api.importPaper(arxiv.arxivId);
+              location.hash = `#/paper/${encodeURIComponent(imported.id)}`;
+            } catch (error) { toastError(error); }
+          } } });
+        } else {
+          toast(t("library.pdfImported", { title: paper.title }));
+        }
+      }
+      await refreshList();
+    } catch (error) {
+      toastError(error);
+    } finally {
+      status.hidden = true;
+    }
+  }
   search.addEventListener("input", debounce(() => { view.search = search.value; refreshList(false); }, 120));
 
   let papers = [];
@@ -499,8 +530,9 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
   // Article déposé sur la liste générale (« Autres articles ») : ajouté à la bibliothèque, hors dossier.
   // Déjà dans la bibliothèque (une carte glissée sur sa propre liste) : rien à faire, sans message.
   function libraryDropTarget(element) {
+    const files = (event) => [...(event.dataTransfer?.types || [])].includes("Files");  // PDF glissés depuis l'ordinateur
     element.addEventListener("dragover", (event) => {
-      if (!mayBePaper(event)) return;
+      if (!mayBePaper(event) && !files(event)) return;
       // carte de la bibliothèque glissée (vers un dossier) : la liste n'est pas une cible
       if (localDrag?.every((item) => papers.some((p) => p.id === item.paperId || p.arxiv_id === item.arxivId))) return;
       event.preventDefault();
@@ -511,6 +543,7 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
     element.addEventListener("drop", async (event) => {
       event.preventDefault();
       list.classList.remove("drop-target");
+      if (event.dataTransfer.files?.length) { importPdfs([...event.dataTransfer.files]); return; }
       const dropped = droppedPapers(event.dataTransfer);
       if (!dropped.length) { toast(t("library.drop.notPaper"), { error: true }); return; }
       try {
@@ -793,8 +826,9 @@ function card(paper, refreshList, context = null) {
     readingLine(paper),
     h("div", { class: "card-meta" },
       paper.primary_category && h("span", { class: "chip category" }, paper.primary_category),
-      h("span", { class: "chip" }, `arXiv:${paper.arxiv_id}v${paper.version}`),
-      h("span", { class: "chip" }, formatDate(paper.published)),
+      paper.arxiv_id && h("span", { class: "chip" }, `arXiv:${paper.arxiv_id}v${paper.version}`),
+      paper.published && h("span", { class: "chip" }, formatDate(paper.published)),
+      paper.source === "local-pdf" && h("span", { class: "chip", title: paper.comment || "" }, t("library.localPdf")),
       paper.source === "none" && h("span", { class: "chip" }, t("library.pdfOnly")),
       paper.source === "tex" && h("span", { class: "chip", title: t("library.pdfTexHint") }, t("library.pdfTex")),
       journalChip(paper.publishedIn),
@@ -803,11 +837,11 @@ function card(paper, refreshList, context = null) {
     h("div", { class: "card-actions" },
       selectButton({ arxivId: paper.arxiv_id, paperId: paper.id, title: paper.title }),
       context && action(icons.folder, t("library.folder.file"), (button) => context.openFileMenu(paper, button), "folder-action"),
-      h("a", { class: "icon-button", href: `#/related/${encodeURIComponent(paper.arxiv_id)}`, title: t("related.fromCard"),
+      paper.arxiv_id && h("a", { class: "icon-button", href: `#/related/${encodeURIComponent(paper.arxiv_id)}`, title: t("related.fromCard"),
         "aria-label": t("related.fromCard"), html: icons.graph }),
-      h("a", { class: "icon-button", href: `https://arxiv.org/abs/${paper.arxiv_id}`, target: "_blank", rel: "noopener noreferrer",
+      paper.arxiv_id && h("a", { class: "icon-button", href: `https://arxiv.org/abs/${paper.arxiv_id}`, target: "_blank", rel: "noopener noreferrer",
         title: "arXiv", "aria-label": "arXiv", html: icons.external }),
-      action(icons.refresh, t("library.refresh"), async (button) => {
+      paper.arxiv_id && action(icons.refresh, t("library.refresh"), async (button) => {
         button.disabled = true;
         button.classList.add("spinning");
         try {

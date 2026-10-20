@@ -18,7 +18,7 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup, Comment, NavigableString, Tag
 
-from . import db, library, providers
+from . import localpdf, db, library, providers
 from .config import LIBRARY
 
 TASKS = ("explain", "detail", "audit", "annotate", "passage", "ask", "summary", "review")
@@ -106,6 +106,8 @@ def _load(paper_id):
     global _cached
     path = library.paper_dir(paper_id) / "content.html"
     if not path.exists():
+        if (library.paper_dir(paper_id) / "text.json").exists():  # PDF importé : texte extrait, page par page
+            return None, {}, localpdf.text(paper_id)
         tex = library.paper_dir(paper_id) / "source.tex"  # article lu dans le PDF : texte de sa source TeX
         if tex.exists():
             return None, {}, _tex_text(tex.read_text(encoding="utf-8"))
@@ -271,7 +273,8 @@ def build_prompt(paper, structure, task, target=None, quote=None, question=None,
     if task == "ask" and not question:
         raise AIError("No question")
 
-    parts = [f'<paper title="{paper["title"]}" arxiv="{paper["arxiv_id"]}v{paper["version"]}">\n{text}\n</paper>']
+    origin = f' arxiv="{paper["arxiv_id"]}v{paper["version"]}"' if paper.get("arxiv_id") else ' source="PDF importé par l\'utilisateur"'
+    parts = [f'<paper title="{paper["title"]}"{origin}>\n{text}\n</paper>']
     if node is not None:
         parts.append(_node_text(soup, index, structure, node))
     if quote:
@@ -332,7 +335,7 @@ def share_text(paper, language="fr"):
         text = text[:PAPER_LIMIT] + "\n[…]"
     return "\n\n".join(part for part in [
         SHARE_INTRO.get(language, SHARE_INTRO["en"]),
-        f"**{paper['title']}** — {', '.join(paper['authors'])}\nhttps://arxiv.org/abs/{paper['arxiv_id']}v{paper['version']}",
+        f"**{paper['title']}** — {', '.join(paper['authors'])}" + (f"\nhttps://arxiv.org/abs/{paper['arxiv_id']}v{paper['version']}" if paper.get("arxiv_id") else ""),
         text] if part)
 
 
@@ -347,8 +350,8 @@ def export_text(exchange, paper, structure, language="fr"):
             break
         chain.insert(0, parent)
     parts = [EXPORT_INTRO.get(language, EXPORT_INTRO["en"]),
-             f"**{paper['title']}** — {', '.join(paper['authors'])}\n"
-             f"https://arxiv.org/abs/{paper['arxiv_id']}v{paper['version']}"]
+             f"**{paper['title']}** — {', '.join(paper['authors'])}"
+             + (f"\nhttps://arxiv.org/abs/{paper['arxiv_id']}v{paper['version']}" if paper.get("arxiv_id") else "")]
     target = next((item["target"] for item in chain if item.get("target")), None)  # suite d'un échange : son énoncé
     node = next((n for n in structure.get("nodes", []) if n["id"] == target), None)
     if node is not None and soup is not None:

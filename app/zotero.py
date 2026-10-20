@@ -177,7 +177,7 @@ def new_item(paper, collections):
 
 def _local():
     """Articles de la bibliothèque et leurs places : {id d'article: {"library", id de dossier…}}."""
-    places = {p["id"]: {LIBRARY} for p in db.list_papers()}
+    places = {p["id"]: {LIBRARY} for p in db.list_papers() if p["arxiv_id"]}  # PDF importés : pas dans Zotero
     with db.connect() as connection:
         for row in connection.execute("SELECT folder_id, paper_id FROM folder_papers"):
             if row["paper_id"] in places:

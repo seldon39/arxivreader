@@ -297,6 +297,17 @@ lecture est gardée aussi en lisant le PDF. Les scripts contenus dans les PDF ne
 énoncés et 97 % des liens retrouvés. Un article importé avant cette version : bouton « Mettre à jour
 depuis arXiv » de sa carte dans la bibliothèque.
 
+## PDF de l'ordinateur
+
+Les articles absents d'arXiv (versions publiées, thèses, notes) peuvent rejoindre la bibliothèque : bouton
+« Importer un PDF… » à côté d'« Importer », ou glisser des fichiers PDF sur la bibliothèque. Titre et auteurs
+viennent du PDF (ses métadonnées, sinon sa première page) et se corrigent depuis le lecteur (« Modifier titre
+et auteurs »). Le PDF se lit dans le lecteur avec surlignages, notes et Claude (questions sur un passage
+sélectionné, ou sur tout l'article à partir de son texte extrait). Pas d'énoncés, de dépendances ni de
+bibliographie (pas de source TeX). Si l'article est sur arXiv (mention « arXiv:… » sur sa première page,
+sinon son DOI ou son titre sur Semantic Scholar), l'application propose d'ouvrir la version arXiv, qui offre
+toutes les fonctions. Le fichier reste sur l'ordinateur, dans le dossier de la bibliothèque.
+
 ## Citations de vos articles
 
 Une fois par jour, Semantic Scholar donne les articles qui citent ceux du profil (« Mes articles ») ; les
@@ -315,6 +326,8 @@ il suffit de la fermer et d'aller dans le feed.
 
 - **Surligner** : sélectionner un passage (formules comprises) ; une barre propose 4 couleurs et
   « ajouter une note ». Un clic sur un surlignage permet de changer sa couleur, sa note, ou de le supprimer.
+- **Dans le PDF** (articles lus dans leur PDF, PDF importés) : la même barre sur un passage sélectionné, plus
+  « Demander à Claude » et « Copier le texte » ; ces surlignages figurent dans l'onglet Notes avec leur page.
 - **Énoncés et preuves** : l'icône de note en marge (au survol) ouvre une note et, pour un énoncé,
   l'état de lecture *compris / à revoir / vérifié* (affiché dans le titre et la liste des énoncés).
 - **Onglet Notes** du panneau : progression de lecture, fiche de lecture de l'article, toutes les
@@ -419,6 +432,7 @@ app/            serveur Python (FastAPI)
   crossrefs.py  références qui sont des articles lus ici ; citations.py : articles qui citent les vôtres
   texstructure.py  structure tirée de la source TeX et pages du PDF (articles sans version HTML)
   providers.py  autres assistants : Codex (en ligne de commande), Gemini (API), modèle local (Ollama, LM Studio)
+  localpdf.py   PDF importés de l'ordinateur (texte, titre, version arXiv)
   library.py    import d'un article ; db.py : base SQLite ; main.py : routes web
 macos/          application Mac : main.swift (fenêtre, onglets, serveur), icon.swift, build.sh, release.sh
 windows/        application Windows : shell/ (fenêtre à onglets en C#, WebView2), launcher.py (serveur, construit

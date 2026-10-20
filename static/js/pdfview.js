@@ -24,8 +24,9 @@ document.addEventListener("webviewerloaded", (event) => {
   })) options.set(name, value);
 });
 
-// Boutons de pdf.js sans objet ici (ouvrir un fichier, imprimer, enregistrer, lien vers la vue)
-const HIDDEN = "#secondaryOpenFile, #printButton, #secondaryPrint, #downloadButton, #secondaryDownload, #viewBookmark, #editorModeButtons";
+// Ajouts au lecteur (boutons sans objet masqués, surlignages) : une feuille de style en fichier, seule forme que la
+// politique de sécurité de pdf.js accepte (une balise <style> ajoutée par script y serait ignorée)
+const EXTRA_CSS = "/static/css/pdfjs-extra.css";
 
 export class PdfView {
   constructor(pdfUrl, title) {
@@ -34,10 +35,9 @@ export class PdfView {
     this.frame.className = "pdf-frame";
     this.frame.title = title;
     this.frame.addEventListener("load", () => {
-      const style = this.frame.contentDocument?.createElement("style");
-      if (!style) return;
-      style.textContent = `${HIDDEN} { display: none !important; }`;
-      this.frame.contentDocument.head.append(style);
+      const doc = this.frame.contentDocument;
+      if (!doc) return;
+      doc.head.append(Object.assign(doc.createElement("link"), { rel: "stylesheet", href: EXTRA_CSS }));
     });
   }
 

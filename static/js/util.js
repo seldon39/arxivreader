@@ -75,7 +75,7 @@ export function toast(message, { error = false, duration = 3500, action = null }
   const el = document.getElementById("toast");
   el.replaceChildren(h("span", {}, message));
   if (action) {
-    const button = h("button", { class: "toast-action", type: "button" }, h("span", { html: icons.undo }), action.label);
+    const button = h("button", { class: "toast-action", type: "button" }, h("span", { html: action.icon || icons.undo }), action.label);
     button.addEventListener("click", () => { el.classList.remove("visible"); action.onClick(); });
     el.append(button);
   }
@@ -206,15 +206,17 @@ export let localDrag = null;
 // texte (résumé du feed). Bibliothèque : le lien du titre couvre toute la carte.
 // `group(info)` : articles emportés (la sélection, si l'article saisi en fait partie)
 export function draggablePaper(element, { arxivId, paperId = null, version = null, title = "" }, group = (info) => [info], onEnd = null) {
-  if (!arxivId) return element;
+  if (!arxivId && !paperId) return element; // PDF importé : glissé par son identifiant dans la bibliothèque
   element.addEventListener("dragstart", (event) => {
     if (!event.target.closest?.("a")) return; // texte sélectionné glissé ailleurs dans la carte : rien de spécial
     const papers = group({ arxivId, paperId, title });
     localDrag = papers;
-    const urls = papers.map((p) => `https://arxiv.org/abs/${p.arxivId}${p.arxivId === arxivId && version ? `v${version}` : ""}`);
-    event.dataTransfer.setData(PAPER_DRAG, JSON.stringify(papers.map((p) => ({ arxivId: p.arxivId, paperId: p.paperId || null, title: p.title || "" }))));
-    event.dataTransfer.setData("text/uri-list", urls.join("\r\n"));
-    event.dataTransfer.setData("text/plain", urls.join("\n"));
+    const urls = papers.filter((p) => p.arxivId).map((p) => `https://arxiv.org/abs/${p.arxivId}${p.arxivId === arxivId && version ? `v${version}` : ""}`);
+    event.dataTransfer.setData(PAPER_DRAG, JSON.stringify(papers.map((p) => ({ arxivId: p.arxivId || "", paperId: p.paperId || null, title: p.title || "" }))));
+    if (urls.length) {  // vers une autre application : liens arXiv (un PDF importé n'en a pas)
+      event.dataTransfer.setData("text/uri-list", urls.join("\r\n"));
+      event.dataTransfer.setData("text/plain", urls.join("\n"));
+    }
     event.dataTransfer.effectAllowed = "copyLink";
     element.classList.add("dragging");
   });
@@ -228,8 +230,9 @@ export function droppedPapers(dataTransfer) {
   try {
     const own = dataTransfer.getData(PAPER_DRAG);
     if (own) {
-      const data = [JSON.parse(own)].flat().filter((p) => typeof p?.arxivId === "string")
-        .map((p) => ({ arxivId: p.arxivId, paperId: typeof p.paperId === "string" ? p.paperId : null, title: typeof p.title === "string" ? p.title : "" }));
+      const data = [JSON.parse(own)].flat().filter((p) => typeof p?.arxivId === "string" || typeof p?.paperId === "string")
+        .map((p) => ({ arxivId: typeof p.arxivId === "string" ? p.arxivId : "", paperId: typeof p.paperId === "string" ? p.paperId : null,
+          title: typeof p.title === "string" ? p.title : "" }));
       if (data.length) return data;
     }
   } catch { /* données d'une autre application : on regarde les liens */ }

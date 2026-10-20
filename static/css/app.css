@@ -1411,3 +1411,13 @@ body.related-expanded { overflow: hidden; }
   .related-list { max-height: 320px; }
   .related-input { flex-wrap: wrap; }
 }
+
+/* PDF importé : bouton « Modifier titre et auteurs » et sa fenêtre */
+.chip-button { cursor: pointer; font: inherit; }
+.chip-button:hover { background: var(--surface-hover); }
+.meta-dialog { border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface); color: var(--text); padding: 18px; }
+.meta-dialog::backdrop { background: rgba(0, 0, 0, .3); }
+.meta-dialog form { display: grid; gap: 12px; min-width: min(480px, 80vw); }
+.meta-dialog label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.meta-dialog input { font: inherit; font-size: 15px; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg); color: var(--text); }
+.meta-dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }

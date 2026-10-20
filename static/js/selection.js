@@ -66,16 +66,21 @@ export function onSelectionChange(listener) {
   return () => listeners.delete(listener);
 }
 
+// Un article : son identifiant arXiv, ou pour un PDF importé (sans identifiant arXiv) celui de la bibliothèque
+export const paperKey = (item) => item.arxivId || item.paperId;
+const unique = (items) => items.filter((item, i) => items.findIndex((other) => paperKey(other) === paperKey(item)) === i);
+
 // Bouton « sélectionner » d'une carte (avec les autres boutons de la carte) ; la carte est marquée sélectionnée
 export function selectButton(info) {
-  if (!info.arxivId) return null;
-  const on = selected.has(info.arxivId);
-  const button = h("button", { class: "icon-button select-toggle", type: "button", html: icons.check, dataset: { select: info.arxivId },
+  const key = paperKey(info);
+  if (!key) return null;
+  const on = selected.has(key);
+  const button = h("button", { class: "icon-button select-toggle", type: "button", html: icons.check, dataset: { select: key },
     "aria-pressed": String(on), title: t(on ? "select.remove" : "select.add"), "aria-label": t(on ? "select.remove" : "select.add") });
   button.addEventListener("click", (event) => {
     event.preventDefault();
-    if (selected.has(info.arxivId)) selected.delete(info.arxivId);
-    else selected.set(info.arxivId, { arxivId: info.arxivId, paperId: info.paperId || null, title: info.title || "" });
+    if (selected.has(key)) selected.delete(key);
+    else selected.set(key, { arxivId: info.arxivId || "", paperId: info.paperId || null, title: info.title || "" });
     notify();
   });
   return button;
@@ -84,14 +89,16 @@ export function selectButton(info) {
 // Ranger des articles dans un dossier : ceux qui ne sont pas encore dans la bibliothèque y sont importés
 export async function fileInFolder(items, folder, libraryPapers = null) {
   const papers = libraryPapers || await api.papers();
-  items = items.filter((item, i) => items.findIndex((other) => other.arxivId === item.arxivId) === i); // sans doublons
-  const missing = items.filter((item) => !papers.some((p) => p.id === item.paperId || p.arxiv_id === item.arxivId)).length;
+  items = unique(items); // sans doublons
+  const known = (item) => papers.find((p) => p.id === item.paperId) || (item.arxivId && papers.find((p) => p.arxiv_id === item.arxivId));
+  const missing = items.filter((item) => !known(item)).length;
   let added = 0;
   let already = 0;
   let imported = 0;
   try {
     for (const item of items) {
-      let paper = papers.find((p) => p.id === item.paperId) || papers.find((p) => p.arxiv_id === item.arxivId);
+      let paper = known(item);
+      if (!paper && !item.arxivId) continue; // PDF importé retiré entre-temps : rien à réimporter
       if (!paper) {
         imported++;
         if (missing > 3) toast(t("select.importing", { k: imported, n: missing }), { duration: 60000 });
@@ -123,8 +130,8 @@ export async function fileInFolder(items, folder, libraryPapers = null) {
 // Ajouter des articles à la bibliothèque (hors dossier) : ceux qui n'y sont pas encore y sont importés
 // (déposés sur « Autres articles »). Renvoie le nombre d'articles ajoutés.
 export async function addToLibrary(items, libraryPapers) {
-  items = items.filter((item, i) => items.findIndex((other) => other.arxivId === item.arxivId) === i);
-  const missing = items.filter((item) => !libraryPapers.some((p) => p.id === item.paperId || p.arxiv_id === item.arxivId));
+  items = unique(items);
+  const missing = items.filter((item) => item.arxivId && !libraryPapers.some((p) => p.id === item.paperId || p.arxiv_id === item.arxivId));
   let added = 0;
   try {
     for (const item of missing) {

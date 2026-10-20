@@ -9,6 +9,7 @@ import signal
 import threading
 import time
 from contextlib import asynccontextmanager
+from urllib.parse import unquote
 from datetime import date, datetime, timezone
 
 import httpx
@@ -18,7 +19,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Res
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import (ai, alerts, annotations, citations, crossrefs, db, export, feed, folders, journals, library, onboarding, profile, providers, related,
+from . import (ai, alerts, annotations, citations, crossrefs, db, export, feed, folders, journals, library, localpdf, onboarding, profile, providers, related,
                relevance, search, updates, zotero)
 from .arxiv import ArxivError, fetch_metadata, parse_arxiv_id
 from .config import HOST, PORT, STATIC
@@ -106,7 +107,9 @@ async def local_only(request: Request, call_next):
         if origin is not None and origin not in ALLOWED_ORIGINS:
             return PlainTextResponse("Forbidden origin", status_code=403)
         content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
-        if request.method != "DELETE" and content_type != "application/json":
+        # seule exception au JSON : l'envoi d'un PDF de l'ordinateur, sur sa seule adresse
+        pdf_upload = request.method == "POST" and request.url.path == "/api/papers/pdf" and content_type == "application/pdf"
+        if request.method != "DELETE" and content_type != "application/json" and not pdf_upload:
             return PlainTextResponse("JSON expected", status_code=415)
     response = await call_next(request)
     # le PDF d'un article s'affiche dans un cadre de la page du lecteur (même origine)
@@ -644,10 +647,45 @@ def save_position(paper_id: str, body: PositionRequest):
     return {"ok": True}
 
 
+@app.post("/api/papers/pdf")
+async def import_local_pdf(request: Request):
+    """PDF de l'ordinateur (corps : le fichier, en application/pdf ; nom dans l'en-tête X-Filename) : article de la
+    bibliothèque ; et sa version arXiv si elle existe (proposée par la page)."""
+    if int(request.headers.get("content-length") or 0) > localpdf.MAX_BYTES:
+        raise HTTPException(413, "PDF too large")
+    data = await request.body()
+    filename = unquote(request.headers.get("x-filename", ""))[:300]
+    try:
+        paper = await run_in_threadpool(localpdf.import_pdf, data, filename)
+    except localpdf.PdfError as error:
+        raise HTTPException(400, f"PDF: {error}")
+    try:
+        match = await run_in_threadpool(localpdf.arxiv_match, paper, db.get_settings().get("s2ApiKey") or None)
+    except (httpx.HTTPError, ValueError, KeyError, TypeError):
+        match = None  # réseau, Semantic Scholar : l'article est importé quand même
+    return {"paper": paper, "arxiv": match}
+
+
+class PaperMeta(BaseModel):
+    title: str
+    authors: list[str] = []
+
+
+@app.put("/api/papers/{paper_id}/meta")
+def paper_meta(paper_id: str, body: PaperMeta):
+    """Titre et auteurs d'un PDF importé (lus dans le fichier, parfois mal : corrigés à la main)."""
+    checked_paper(paper_id)
+    try:
+        return localpdf.update_meta(paper_id, body.title, body.authors)
+    except localpdf.PdfError as error:
+        raise HTTPException(400, str(error))
+
+
 @app.post("/api/papers/{paper_id}/refresh")
 def refresh(paper_id: str):
     """Mise à jour (dernière version d'arXiv) en arrière-plan ; la page suit GET …/importing jusqu'à la fin."""
-    checked_paper(paper_id)
+    if localpdf.is_local(checked_paper(paper_id)):
+        raise HTTPException(400, "Imported PDF: nothing to update from arXiv")
     library.update_in_background(paper_id)  # un article seulement lu le reste (place gardée)
     return {"started": True}
 

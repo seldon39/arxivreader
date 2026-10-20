@@ -119,7 +119,7 @@ def prefill(owner, api_key=None):
     for paper in papers:
         authors = json.loads(paper["authors"] or "[]")
         is_mine = owner_key and any(author_key(a) == owner_key for a in authors)
-        add_item("mine" if is_mine else "paper", paper["title"], ref=paper["arxiv_id"], authors=authors,
+        add_item("mine" if is_mine else "paper", paper["title"], ref=paper["arxiv_id"] or None, authors=authors,
                  text=paper["abstract"], source="suggested")
         if not is_mine:
             continue

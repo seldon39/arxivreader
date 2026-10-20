@@ -364,6 +364,8 @@ def ensure_pdf(paper):
     path = paper_dir(paper["id"]) / "paper.pdf"
     with paper_lock(paper["id"]):
         if not path.exists():
+            if not paper.get("arxiv_id"):  # PDF importé dont le fichier a disparu : rien à télécharger
+                return None
             data = fetch_pdf(paper["arxiv_id"], paper["version"])
             if not data:
                 return None

@@ -1,0 +1,225 @@
+// Surlignages, notes et questions à l'assistant sur un passage du PDF (pdf.js, dans un cadre de même origine).
+// Un passage est repéré par sa page et sa position dans le texte de la page (couche de texte de pdf.js) :
+// {pdf: {page, start, endPage, end}}, indépendant du zoom. Les surlignages sont redessinés à chaque rendu d'une
+// page (défilement, zoom) dans une couche placée sous le texte ; ils figurent dans l'onglet Notes avec les autres.
+
+import { api } from "./api.js";
+import { COLORS } from "./annotations.js";
+import { t } from "./i18n.js";
+import { h, icons, toast } from "./util.js";
+
+
+const isPdf = (annotation) => annotation.kind === "highlight" && annotation.target?.pdf;
+
+export class PdfNotes {
+  // `annotator` : celui du lecteur (mêmes notes, même onglet) ; `view` : le PdfView ; `onAskAI(quote)`
+  constructor({ annotator, view, onAskAI }) {
+    this.annotator = annotator;
+    this.view = view;
+    this.onAskAI = onAskAI;
+    this.toolbar = null;
+    annotator.pdf = this; // l'annotateur nous prévient (couleur changée, passage supprimé) et nous délègue l'accès
+    this.attach();
+  }
+
+  get items() { return this.annotator.items.filter(isPdf); }
+
+  async attach() {
+    const app = await this.view.ready();
+    if (!app || this.destroyed) return;
+    this.app = app;
+    this.doc = this.view.frame.contentDocument;
+    app.eventBus.on("textlayerrendered", ({ pageNumber }) => this.paintPage(pageNumber));
+    this.doc.querySelectorAll(".page[data-page-number]").forEach((page) => this.paintPage(Number(page.dataset.pageNumber)));
+    this.doc.addEventListener("mouseup", (event) => setTimeout(() => this.onUp(event), 0));
+    this.doc.addEventListener("mousedown", (event) => { if (!event.target.closest?.(".arx-hl")) this.hideToolbar(); });
+    this.doc.addEventListener("keydown", (event) => { if (event.key === "Escape") this.hideToolbar(); });
+  }
+
+  // ---- texte d'une page : nœuds de la couche de texte, dans l'ordre ----
+  textNodes(page) {
+    const layer = this.doc.querySelector(`.page[data-page-number="${page}"] .textLayer`);
+    if (!layer) return [];
+    const walker = this.doc.createTreeWalker(layer, NodeFilter.SHOW_TEXT, {
+      acceptNode: (node) => (node.parentElement.closest(".endOfContent") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+    });
+    const nodes = [];
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) nodes.push(node);
+    return nodes;
+  }
+
+  // position (page, décalage dans le texte de la page) d'une extrémité de sélection
+  spot(node, offset) {
+    const element = node.nodeType === 3 ? node.parentElement : node;
+    const pageDiv = element?.closest?.(".page[data-page-number]");
+    if (!pageDiv || !element.closest(".textLayer")) return null;
+    const page = Number(pageDiv.dataset.pageNumber);
+    let total = 0;
+    for (const text of this.textNodes(page)) {
+      if (text === node) return { page, offset: total + offset };
+      if (node.nodeType === 1 && node.contains(text)) return { page, offset: total };
+      total += text.data.length;
+    }
+    return { page, offset: total };
+  }
+
+  // ---- dessin ----
+  paintPage(page) {
+    const pageDiv = this.doc?.querySelector(`.page[data-page-number="${page}"]`);
+    if (!pageDiv) return;
+    pageDiv.querySelector(".arx-hl-layer")?.remove();
+    const here = this.items.filter((a) => a.target.pdf.page <= page && (a.target.pdf.endPage || a.target.pdf.page) >= page);
+    if (!here.length) return;
+    const nodes = this.textNodes(page);
+    if (!nodes.length) return;
+    const layer = this.doc.createElement("div");
+    layer.className = "arx-hl-layer";
+    const box = pageDiv.getBoundingClientRect();
+    const length = nodes.reduce((n, node) => n + node.data.length, 0);
+    for (const annotation of here) {
+      const { page: first, start, endPage = first, end } = annotation.target.pdf;
+      const range = this.rangeOf(nodes, first === page ? start : 0, endPage === page ? end : length);
+      if (!range) continue;
+      for (const rect of range.getClientRects()) {
+        if (rect.width < 1 || rect.height < 1) continue;
+        const mark = this.doc.createElement("div");
+        mark.className = `arx-hl arx-hl-${annotation.color || "yellow"}`;
+        mark.dataset.annotation = annotation.id;
+        Object.assign(mark.style, {
+          left: `${(100 * (rect.left - box.left)) / box.width}%`, top: `${(100 * (rect.top - box.top)) / box.height}%`,
+          width: `${(100 * rect.width) / box.width}%`, height: `${(100 * rect.height) / box.height}%`,
+        });
+        layer.append(mark);
+      }
+    }
+    pageDiv.querySelector(".textLayer")?.before(layer);
+  }
+
+  rangeOf(nodes, start, end) {
+    let total = 0;
+    let from = null;
+    let to = null;
+    for (const node of nodes) {
+      const next = total + node.data.length;
+      if (!from && start < next) from = [node, Math.max(0, start - total)];
+      if (end <= next) { to = [node, Math.max(0, end - total)]; break; }
+      total = next;
+    }
+    if (!from) return null;
+    to ||= [nodes.at(-1), nodes.at(-1).data.length];
+    const range = this.doc.createRange();
+    range.setStart(...from);
+    range.setEnd(...to);
+    return range;
+  }
+
+  // tous les passages (notes chargées après l'ouverture du PDF)
+  repaintAll() {
+    this.doc?.querySelectorAll(".page[data-page-number]").forEach((page) => this.paintPage(Number(page.dataset.pageNumber)));
+  }
+
+  repaint(annotation) {
+    const { page, endPage = page } = annotation.target.pdf;
+    for (let p = page; p <= endPage; p++) this.paintPage(p);
+  }
+
+  // ---- sélection : barre (couleurs, note, assistant, copie), ou clic sur un passage surligné ----
+  onUp(event) {
+    const selection = this.doc.getSelection();
+    if (!selection.rangeCount || selection.isCollapsed) {
+      const hit = this.hitTest(event.clientX, event.clientY);
+      if (hit) this.annotator.openHighlight(hit.id, this.anchor(hit.rect));
+      return;
+    }
+    const range = selection.getRangeAt(0);
+    const first = this.spot(range.startContainer, range.startOffset);
+    const last = this.spot(range.endContainer, range.endOffset);
+    const text = range.toString().replace(/\s+/g, " ").trim();
+    if (!first || !last || !text) return;
+    this.showToolbar(range, { page: first.page, start: first.offset, endPage: last.page, end: last.offset }, text);
+  }
+
+  // passage surligné sous le pointeur (les surlignages ne captent pas les clics : le texte reste sélectionnable)
+  hitTest(x, y) {
+    for (const mark of this.doc.querySelectorAll(".arx-hl")) {
+      const rect = mark.getBoundingClientRect();
+      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return { id: Number(mark.dataset.annotation), rect };
+    }
+    return null;
+  }
+
+  // rectangle du cadre traduit dans la page de l'application (pour placer une barre ou une note)
+  anchor(rect) {
+    const frame = this.view.frame.getBoundingClientRect();
+    const r = { left: rect.left + frame.left, top: rect.top + frame.top, width: rect.width, height: rect.height };
+    r.right = r.left + r.width;
+    r.bottom = r.top + r.height;
+    return { getBoundingClientRect: () => r };
+  }
+
+  showToolbar(range, target, text) {
+    this.hideToolbar();
+    const rect = this.anchor(range.getBoundingClientRect()).getBoundingClientRect();
+    const create = (color, withNote) => this.create(target, text, color, withNote);
+    this.toolbar = h("div", { class: "hl-toolbar", role: "toolbar", "aria-label": t("notes.highlight") },
+      ...COLORS.map((color) => h("button", { type: "button", class: `hl-dot hl-${color}`, title: t(`notes.color.${color}`), "aria-label": t(`notes.color.${color}`),
+        onclick: () => create(color, false) })),
+      h("span", { class: "hl-sep" }),
+      h("button", { type: "button", class: "hl-note-button", title: t("notes.addNote"), "aria-label": t("notes.addNote"), html: icons.note,
+        onclick: () => create("yellow", true) }),
+      this.onAskAI && h("button", { type: "button", class: "hl-note-button", title: t("ai.askPassage"), "aria-label": t("ai.askPassage"), html: icons.sparkle,
+        onclick: () => { this.doc.getSelection().removeAllRanges(); this.hideToolbar(); this.onAskAI(text.slice(0, 12000)); } }),
+      h("button", { type: "button", class: "hl-note-button hl-tex-button", title: t("notes.copyText"), "aria-label": t("notes.copyText"),
+        onclick: async () => { await navigator.clipboard?.writeText(text).catch(() => {}); this.hideToolbar(); toast(t("notes.textCopied")); } }, "Aa"));
+    document.body.append(this.toolbar);
+    const width = this.toolbar.offsetWidth;
+    this.toolbar.style.left = `${Math.max(8, Math.min(innerWidth - width - 8, rect.left + rect.width / 2 - width / 2))}px`;
+    this.toolbar.style.top = `${Math.max(64, rect.top - this.toolbar.offsetHeight - 8)}px`;
+  }
+
+  hideToolbar() { this.toolbar?.remove(); this.toolbar = null; }
+
+  async create(target, text, color, withNote) {
+    this.doc.getSelection().removeAllRanges();
+    this.hideToolbar();
+    try {
+      const annotation = await api.addAnnotation(this.annotator.paperId, { kind: "highlight", target: { pdf: target }, color, quote: text.slice(0, 1500) });
+      this.annotator.items.push(annotation);
+      this.repaint(annotation);
+      this.annotator.onChange();
+      if (withNote) {
+        const mark = this.doc.querySelector(`.arx-hl[data-annotation="${annotation.id}"]`);
+        if (mark) this.annotator.openHighlight(annotation.id, this.anchor(mark.getBoundingClientRect()), true);
+      }
+    } catch (error) {
+      toast(t("error.generic", { message: error.message }), { error: true });
+    }
+  }
+
+  // appelés par l'annotateur
+  recolor(id) { const a = this.annotator.items.find((x) => x.id === id); if (a && isPdf(a)) this.repaint(a); }
+  removed(annotation) { if (isPdf(annotation)) this.repaint(annotation); }
+
+  // onglet Notes : aller au passage (page, puis le passage au centre, brièvement encadré)
+  async reveal(annotation) {
+    const { page } = annotation.target.pdf;
+    await this.view.goTo(page);
+    for (let i = 0; i < 30; i++) {
+      const mark = this.doc?.querySelector(`.arx-hl[data-annotation="${annotation.id}"]`);
+      if (mark) {
+        mark.scrollIntoView({ block: "center" });
+        this.doc.querySelectorAll(`.arx-hl[data-annotation="${annotation.id}"]`).forEach((m) => {
+          m.classList.add("flash");
+          setTimeout(() => m.classList.remove("flash"), 1600);
+        });
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+
+  destroy() {
+    this.destroyed = true;
+    this.hideToolbar();
+  }
+}

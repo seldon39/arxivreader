@@ -85,7 +85,8 @@ def paper_markdown(paper_id, language="fr"):
 
     link = f"https://arxiv.org/abs/{paper['arxiv_id']}v{paper['version']}" if paper.get("version") else f"https://arxiv.org/abs/{paper['arxiv_id']}"
     lines = [f"# {paper['title']}", "", ", ".join(paper.get("authors") or []), "",
-             f"arXiv:{paper['arxiv_id']} · {link}", "", f"*{words['exported'].format(date=time.strftime('%Y-%m-%d'))}*", ""]
+             *([f"arXiv:{paper['arxiv_id']} · {link}", ""] if paper.get("arxiv_id") else []),
+             f"*{words['exported'].format(date=time.strftime('%Y-%m-%d'))}*", ""]
     sheet = next((n for n in notes if n["kind"] == "general" and (n.get("note") or "").strip()), None)
     blocks = [n for n in notes if n["kind"] == "block" and n.get("target") and ((n.get("note") or "").strip() or n.get("state"))]
     highlights = [n for n in notes if n["kind"] == "highlight" and n.get("target")]

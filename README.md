@@ -285,6 +285,17 @@ PDF (hyperref anchors, otherwise a text search). Compared with the HTML version 
 statements and 97 % of the links are found. For a paper imported before this feature: "Update from arXiv"
 button on its card in the library.
 
+## PDFs from your computer
+
+Papers that are not on arXiv (journal versions, theses, notes) can be added to the library: "Import a PDF…"
+button next to "Import", or drag PDF files onto the library. Title and authors come from the PDF (its
+metadata, otherwise its first page) and can be corrected from the reader ("Edit title and authors"). The PDF
+is read in the reader with highlights, notes and Claude (questions on a selected passage, or on the whole
+paper from its extracted text). There are no statements, dependencies or bibliography (no TeX source). If
+the paper is on arXiv (an "arXiv:…" mention on its first page, otherwise its DOI or title on Semantic
+Scholar), the app offers to open the arXiv version, which has every feature. The file stays on the
+computer, in the library folder.
+
 ## Citations of your papers
 
 Once a day, Semantic Scholar gives the papers citing those of your profile ("My papers"); new ones appear
@@ -302,6 +313,8 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
 
 - **Highlight**: select a passage (formulas included); a bar offers 4 colours and "add a note".
   Clicking a highlight lets you change its colour or its note, or delete it.
+- **In the PDF** (papers read in their PDF, imported PDFs): the same bar on a selected passage, plus
+  "Ask Claude" and "Copy text"; these highlights appear in the Notes tab with their page.
 - **Statements and proofs**: the note icon in the margin (on hover) opens a note and, for a statement,
   the reading state *understood / to review / checked* (shown in the title and in the list of statements).
 - **Notes tab** of the panel: reading progress, the paper's reading sheet, all annotations in the order of
@@ -404,6 +417,7 @@ app/            Python server (FastAPI)
   crossrefs.py  references that are papers read here; citations.py: papers citing yours
   texstructure.py  structure from the TeX source and PDF pages (papers without an HTML version)
   providers.py  other assistants: Codex (command line), Gemini (API), local model (Ollama, LM Studio)
+  localpdf.py   PDFs imported from the computer (text, title, arXiv version)
   library.py    importing a paper; db.py: SQLite database; main.py: web routes
 macos/          Mac app: main.swift (window, tabs, server), icon.swift, build.sh, release.sh
 windows/        Windows app: shell/ (C# window with tabs, WebView2), launcher.py (server, built with PyInstaller),

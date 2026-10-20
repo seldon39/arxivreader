@@ -1,0 +1,11 @@
+/* Ajouts d'arXivReader au lecteur pdf.js (chargé par un <link> : la politique de sécurité de pdf.js refuse les
+   feuilles de style écrites par script). Boutons sans objet ici, et surlignages (static/js/pdfnotes.js). */
+#secondaryOpenFile, #printButton, #secondaryPrint, #downloadButton, #secondaryDownload, #viewBookmark, #editorModeButtons { display: none !important; }
+
+.arx-hl-layer { position: absolute; inset: 0; pointer-events: none; z-index: 0; mix-blend-mode: multiply; }
+.arx-hl { position: absolute; border-radius: 2px; }
+.arx-hl-yellow { background: #ffe76a; }
+.arx-hl-green { background: #b5e8bf; }
+.arx-hl-blue { background: #bcd6ff; }
+.arx-hl-pink { background: #ffc2d9; }
+.arx-hl.flash { outline: 2px solid #b31b1b; }

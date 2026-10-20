@@ -416,7 +416,8 @@ export class Annotator {
 
   // Après la mise en page (formules et figures) : surlignages, boutons de note, états
   apply() {
-    this.items.filter((a) => a.kind === "highlight").forEach((a) => { a.orphan = !paint(this.content, a); });
+    // passages du HTML ; ceux du PDF ({pdf: …}) sont dessinés dans le PDF (pdfnotes.js)
+    this.items.filter((a) => a.kind === "highlight" && !a.target?.pdf).forEach((a) => { a.orphan = !paint(this.content, a); });
     this.addBlockButtons();
     this.refreshBadges();
     this.bind();
@@ -673,7 +674,9 @@ export class Annotator {
   async removeHighlight(id) {
     await api.deleteAnnotation(id);
     unpaint(this.content, id);
+    const removed = this.items.find((a) => a.id === id);
     this.items = this.items.filter((a) => a.id !== id);
+    if (removed) this.pdf?.removed(removed);
     this.onChange();
   }
 
@@ -688,6 +691,7 @@ export class Annotator {
         try { updated = await api.updateAnnotation(id, { color }); } catch (error) { toastError(error); return; }
         Object.assign(annotation, updated);
         this.content.querySelectorAll(`mark.hl[data-annotation="${id}"]`).forEach((m) => { m.className = `hl hl-${color}`; });
+        this.pdf?.recolor(id);
         colors.querySelectorAll(".hl-dot").forEach((b) => b.setAttribute("aria-pressed", String(b.classList.contains(`hl-${color}`))));
         this.onChange();
       });
@@ -698,6 +702,7 @@ export class Annotator {
       try { await api.deleteAnnotation(id); } catch (error) { toastError(error); return; }
       unpaint(this.content, id);
       this.items = this.items.filter((a) => a.id !== id);
+      this.pdf?.removed(annotation);
       this.closePopover();
       this.onChange();
     });
@@ -733,7 +738,7 @@ export class Annotator {
     const done = counts.understood + counts.verified;
     const bar = h("div", { class: "progress-bar", role: "img", "aria-label": t("notes.progress", { done, total: statements.length }) },
       ["verified", "understood", "review"].map((s) => h("span", { class: `state-${s}`, style: `width: ${statements.length ? (100 * counts[s]) / statements.length : 0}%` })));
-    body.append(h("div", { class: "panel-section" },
+    if (statements.length) body.append(h("div", { class: "panel-section" },  // sans énoncés (PDF importé) : sans objet
       h("h3", {}, t("notes.progressTitle")),
       h("p", { class: "small notes-progress" }, t("notes.progress", { done, total: statements.length })),
       bar,
@@ -753,7 +758,13 @@ export class Annotator {
         : this.content.querySelector(`[id="${CSS.escape(a.target?.id || "")}"]`);
       return { a, element };
     });
-    located.sort((x, y) => (!x.element ? 1 : !y.element ? -1 : x.element.compareDocumentPosition(y.element) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+    // ordre de l'article ; passages du PDF ensuite, par page et position
+    const pdfSpot = (a) => (a.target?.pdf ? a.target.pdf.page * 1e7 + a.target.pdf.start : null);
+    located.sort((x, y) => {
+      const [px, py] = [pdfSpot(x.a), pdfSpot(y.a)];
+      if (px !== null || py !== null) return px === null ? -1 : py === null ? 1 : px - py;
+      return !x.element ? 1 : !y.element ? -1 : x.element.compareDocumentPosition(y.element) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
+    });
     const list = h("div", { class: "notes-list" }, located.length ? located.map(({ a, element }) => this.noteCard(a, element))
       : h("p", { class: "hint" }, t("notes.none")));
     body.append(h("div", { class: "panel-section" }, h("h3", {}, t("notes.annotations", { n: located.length })), list,
@@ -768,7 +779,9 @@ export class Annotator {
   }
 
   noteCard(annotation, element) {
+    const inPdf = Boolean(annotation.target?.pdf);
     const go = () => {
+      if (inPdf) { this.pdf?.reveal(annotation); return; }
       if (!element) return;
       if (annotation.kind === "highlight") this.navigate(element);
       else this.navigate(element.id);
@@ -786,9 +799,11 @@ export class Annotator {
     }
     const note = h("div", { class: "markdown note-body" });
     if (annotation.note) note.innerHTML = markdownToHtml(annotation.note);
-    return h("div", { class: `note-card${element ? "" : " orphan"}`, role: "button", tabindex: 0, onclick: go,
-      onkeydown: (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); go(); } }, title: element ? t("panel.showInText") : t("notes.orphan") },
-      head, annotation.note && note, authorBadge(annotation), !element && h("span", { class: "badge warn" }, t("notes.orphan")));
+    const found = element || inPdf;
+    return h("div", { class: `note-card${found ? "" : " orphan"}`, role: "button", tabindex: 0, onclick: go,
+      onkeydown: (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); go(); } }, title: found ? t("panel.showInText") : t("notes.orphan") },
+      head, inPdf && h("span", { class: "badge" }, t("notes.pdfPage", { page: annotation.target.pdf.page })),
+      annotation.note && note, authorBadge(annotation), !found && h("span", { class: "badge warn" }, t("notes.orphan")));
   }
 
   destroy() {

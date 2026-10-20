@@ -9,6 +9,7 @@ import { currentModel } from "./aiproviders.js";
 import { emptyPictures, layoutFigures, openFigure, prepareFigures } from "./figures.js";
 import { findBar, setFindHandler } from "./find.js";
 import { PdfView } from "./pdfview.js";
+import { PdfNotes } from "./pdfnotes.js";
 import { htmlToPdf, htmlWords, pdfToHtml, wordTop } from "./pdfsync.js";
 import { defineMacros, statementElement, statementsContainer } from "./texview.js";
 import { typesetFragment, typesetMath, typesetTex } from "./math.js";
@@ -36,7 +37,7 @@ export async function renderReader(view, paperId, at, isCurrent = () => true) {
     view.replaceChildren(h("div", { class: "library" }, h("div", { class: "busy" }, h("span", { class: "spinner" }), t("reader.preparing"))));
     ({ paper, structure } = await api.paper(paperId));
   }
-  const html = paper.source === "none" || paper.source === "tex" ? "" : await api.content(paperId);
+  const html = ["none", "tex", "local-pdf"].includes(paper.source) ? "" : await api.content(paperId);
   if (!isCurrent()) return () => {}; // page déjà quittée pendant le chargement : rien n'est affiché
   document.title = plainTitle(paper.title); // titre de l'onglet
   const reader = new Reader(view, paper, structure || { toc: [], nodes: [], bibliography: [], hiddenText: 0 }, html, at);
@@ -70,7 +71,7 @@ class Reader {
   constructor(view, paper, structure, html, at = null) {
     this.paper = paper;
     this.startAt = at;
-    this.texOnly = paper.source === "tex"; // pas de version HTML : toujours dans le PDF
+    this.texOnly = paper.source === "tex" || paper.source === "local-pdf"; // pas de version HTML : toujours dans le PDF
     this.pdfMode = this.texOnly;
     this.structure = structure;
     this.nodes = structure.nodes;
@@ -106,6 +107,7 @@ class Reader {
       aiActions: (id) => this.assistant.actionsFor(id, { compact: true }),
       onAskAI: (quote) => this.assistant.setPassage(quote),
     });
+    if (this.pdf) this.pdfNotes = new PdfNotes({ annotator: this.annotator, view: this.pdf, onAskAI: this.annotator.onAskAI });
     this.assistant = new Assistant({
       paper, structure: this.structure, find: (id) => this.find(id), annotator: this.annotator,
       navigate: (id) => this.navigate(id),
@@ -139,6 +141,7 @@ class Reader {
     await Promise.all([this.annotator.load(), this.assistant.load()]);
     if (this.destroyed) return;
     this.annotator.apply();
+    this.pdfNotes?.repaintAll(); // passages surlignés dans le PDF, connus seulement maintenant
     this.renderPanel(); // avec les états de lecture, chargés seulement maintenant
     this.anchors = null;
     if (this.texOnly) {
@@ -242,6 +245,7 @@ class Reader {
       this.root.dataset.view = "pdf";
       if (!this.pdf) {
         this.pdf = new PdfView(`/api/papers/${encodeURIComponent(this.paper.id)}/pdf`, this.paper.title);
+        this.pdfNotes = new PdfNotes({ annotator: this.annotator, view: this.pdf, onAskAI: this.annotator.onAskAI });
         this.pdfView = h("div", { class: "paper pdf-mode pdf-view" }, this.pdf.frame);
         this.scroller.append(this.pdfView);
         this.followPdf();
@@ -358,7 +362,7 @@ class Reader {
     const wide = innerWidth >= WIDE;
     const medium = innerWidth >= MEDIUM;
     this.root = h("div", {
-      class: `reader${this.paper.source === "tex" ? " tex-only" : ""}`, // sans version HTML : taille du texte sans objet
+      class: `reader${this.texOnly ? " tex-only" : ""}`, // sans version HTML : taille du texte sans objet
       dataset: {
         toc: wide && settings.tocOpen ? "open" : "closed",
         panel: medium && settings.panelOpen ? "open" : "closed",
@@ -387,14 +391,15 @@ class Reader {
       this.widerButton = button(icons.wider, "reader.wider", () => this.changeWidth(1), { class: "wide-only html-only" }),
       this.foldButton,
       // choix HTML / PDF après les réglages du texte HTML (masqués dans le PDF) : il ne bouge pas quand on change
-      this.viewSwitch = paper.source !== "tex" && paper.source !== "none" && h("div", { class: "view-switch", role: "group", "aria-label": t("reader.view") },
+      this.viewSwitch = !this.texOnly && paper.source !== "none" && h("div", { class: "view-switch", role: "group", "aria-label": t("reader.view") },
         [["html", "HTML"], ["pdf", "PDF"]].map(([view, label]) => h("button", { type: "button", dataset: { view }, "aria-pressed": String(view === "html"),
           title: t(`reader.view.${view}`), onclick: () => this.setView(view) }, label))),
       // pas de version HTML : à la place du choix HTML / PDF, une petite mention (explication au survol)
       paper.source === "tex" && h("span", { class: "no-html-badge", title: t("reader.pdfMode") }, "No HTML"),
+      paper.source === "local-pdf" && h("span", { class: "no-html-badge", title: t("reader.localPdf") }, "PDF"),
       h("span", { class: "sep wide-only" }),
       this.libraryToggle(),
-      link(icons.external, "arXiv", `https://arxiv.org/abs/${paper.arxiv_id}v${paper.version}`),
+      paper.arxiv_id && link(icons.external, "arXiv", `https://arxiv.org/abs/${paper.arxiv_id}v${paper.version}`),
 
       this.panelButton,
     );
@@ -411,8 +416,10 @@ class Reader {
     const meta = h("div", { class: "paper-meta" },
       paper.primary_category && h("span", { class: "chip category" }, paper.primary_category),
       ...paper.categories.filter((c) => c !== paper.primary_category).map((c) => h("span", { class: "chip" }, c)),
-      h("span", { class: "chip" }, `arXiv:${paper.arxiv_id} · ${t("reader.version", { v: paper.version })}`),
-      h("span", { class: "chip" }, formatDate(paper.updated || paper.published)),
+      paper.arxiv_id && h("span", { class: "chip" }, `arXiv:${paper.arxiv_id} · ${t("reader.version", { v: paper.version })}`),
+      (paper.updated || paper.published) && h("span", { class: "chip" }, formatDate(paper.updated || paper.published)),
+      paper.source === "local-pdf" && paper.comment && h("span", { class: "chip", title: t("reader.localPdf") }, paper.comment),
+      paper.source === "local-pdf" && h("button", { class: "chip chip-button", type: "button", onclick: () => this.editMeta() }, t("reader.editMeta")),
       paper.source !== "none" && h("span", { class: "chip" }, t(`reader.source.${paper.source}`)),
       paper.doi && h("a", { class: "chip", href: `https://doi.org/${paper.doi}`, target: "_blank", rel: "noopener noreferrer" }, `DOI ${paper.doi}`),
     );
@@ -427,8 +434,8 @@ class Reader {
       this.article.append(h("div", { class: "notice" }, h("span", { class: "reason-icon", html: icons.warning }), t("reader.hiddenText", { n: this.structure.hiddenText }), toggle));
     }
 
-    if (paper.source === "tex") {
-      // Pas de version HTML : lecture dans le PDF ; énoncés (rendus depuis la source TeX) pour le panneau
+    if (this.texOnly) {
+      // Pas de version HTML : lecture dans le PDF ; énoncés (rendus depuis la source TeX, aucun pour un PDF importé)
       this.pdf = new PdfView(`/api/papers/${encodeURIComponent(paper.id)}/pdf`, paper.title);
       const spot = this.startAt ? this.pdfSpot(this.startAt) : null;
       this.pdf.load(spot?.page || 1, spot?.top ?? null);
@@ -1716,10 +1723,41 @@ class Reader {
     this.cleanups.push(() => document.removeEventListener("keydown", onKey), () => removeEventListener("resize", onResize), unsubscribe);
   }
 
+  // PDF importé : titre et auteurs (lus dans le fichier, parfois mal), corrigés à la main
+  editMeta() {
+    const title = h("input", { type: "text", value: this.paper.title, "aria-label": t("reader.metaTitle") });
+    const authors = h("input", { type: "text", value: this.paper.authors.join(", "), "aria-label": t("reader.metaAuthors") });
+    const dialog = h("dialog", { class: "meta-dialog" },
+      h("form", { method: "dialog" },
+        h("label", {}, t("reader.metaTitle"), title),
+        h("label", {}, t("reader.metaAuthors"), authors),
+        h("div", { class: "dialog-actions" },
+          h("button", { class: "button", value: "cancel", formnovalidate: true }, t("library.folder.cancel")),
+          h("button", { class: "button primary", value: "save" }, t("library.folder.save")))));
+    dialog.addEventListener("close", async () => {
+      dialog.remove();
+      if (dialog.returnValue !== "save") return;
+      try {
+        const paper = await api.updateMeta(this.paper.id, title.value, authors.value.split(/\s*[,;]\s*/));
+        Object.assign(this.paper, paper);
+        this.toolbarTitle.replaceChildren(titleTex(paper.title));
+        this.toolbarTitle.title = paper.title;
+        document.title = plainTitle(paper.title);
+        toast(t("reader.metaSaved"));
+      } catch (error) {
+        toast(error.message, { error: true });
+      }
+    });
+    document.body.append(dialog);
+    dialog.showModal();
+    title.select();
+  }
+
   destroy() {
     this.destroyed = true;
     document.body.classList.remove("reading");
     this.annotator?.destroy();
+    this.pdfNotes?.destroy();
     this.assistant?.destroy();
     this.stopPick();
     this.hidePreview();

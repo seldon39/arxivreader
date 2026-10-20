@@ -164,7 +164,7 @@ problème ; journal `~/Library/Logs/arXivReader-check.log`, résultat `check.jso
 | RSS `rss.arxiv.org` | `feed.py` (`parse_rss`) | format des annonces (types new/cross/replace) | OAI-PMH, puis API de recherche |
 | OAI-PMH `oaipmh.arxiv.org/oai` | `feed.py` (jours passés) | lent au-delà d'une semaine | API de recherche (fenêtre de dépôt 14 h New York) |
 | Flux d'auteur `arxiv.org/a/<id>.atom2` | `onboarding.py` | format, ORCID non lié | recherche par nom |
-| Semantic Scholar (graph, batch, recommendations) | `related.py`, `relevance.py`, `journals.py`, `citations.py`, `feed.py`, `onboarding.py` | quota partagé sans clé (429), champs | attente et nouvel essai ; fonctions dégradées sans lui |
+| Semantic Scholar (graph, batch, recommendations) | `related.py`, `relevance.py`, `journals.py`, `citations.py`, `feed.py`, `onboarding.py`, `localpdf.py` (version arXiv d'un PDF importé) | quota partagé sans clé (429), champs | attente et nouvel essai ; fonctions dégradées sans lui |
 | Zotero web API v3 | `zotero.py` | en-têtes (`Total-Results`, `Last-Modified-Version`, `Backoff`), écritures multiples (`successful`/`failed`), `since`/`/deleted` | garde-fous : écriture refusée réessayée, retraits massifs en attente |
 | Claude (SDK Agent et son CLI) | `ai.py` | options du SDK, liste des modèles (`get_server_info`), connexion | message de connexion dans les réglages |
 | Codex CLI, API Gemini, modèle local | `providers.py` | options du CLI (`-m`, `model_reasoning_effort`), `~/.codex/models_cache.json`, `thinkingLevel` de Gemini | — (la CLI Gemini n'accepte plus les comptes Google gratuits : API par clé) |
@@ -191,6 +191,9 @@ main, dans l'application installée :
 - couleurs SVG (le graphe des papiers liés met les couleurs en `style`, car WebKit refuse `var()` dans
   l'attribut `fill`), `color-mix`, `<dialog>` et `inert`, `ResizeObserver` ;
 - le lecteur PDF (pdf.js figé dans `static/vendor/pdfjs`) et les formules (MathJax figé dans `static/vendor/mathjax`) ;
+  le visualiseur de pdf.js interdit les styles écrits par script (CSP `style-src 'self'`) : nos ajouts passent par
+  `static/css/pdfjs-extra.css` (boutons masqués, surlignages) ; les surlignages du PDF (`pdfnotes.js`) se repèrent
+  dans la couche de texte (`.textLayer`, événement `textlayerrendered`) : à revérifier à chaque mise à jour de pdf.js ;
 - les téléchargements (export des notes : dossier Téléchargements, `WKDownloadDelegate`).
 Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à comparer.
 
