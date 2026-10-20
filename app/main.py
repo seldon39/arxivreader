@@ -660,11 +660,14 @@ async def import_local_pdf(request: Request):
             raise HTTPException(413, "PDF too large")
         chunks.append(chunk)
     filename = unquote(request.headers.get("x-filename", ""))[:300]
+    check = request.query_params.get("check") == "1"  # PDF d'arXiv : la page propose d'abord la version arXiv
     try:
-        paper = await run_in_threadpool(localpdf.import_pdf, b"".join(chunks), filename)
+        found = await run_in_threadpool(localpdf.import_pdf, b"".join(chunks), filename, check)
     except localpdf.PdfError as error:
         raise HTTPException(400, f"PDF: {error}")
-    return {"paper": paper}
+    if "arxivId" in found:
+        return {"paper": None, "arxiv": found}
+    return {"paper": found}
 
 
 @app.get("/api/papers/{paper_id}/arxiv-match")

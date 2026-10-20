@@ -126,13 +126,32 @@ def read_pdf(data, filename=""):
             "pages": pages}
 
 
-def import_pdf(data, filename=""):
-    """Article de la bibliothèque à partir d'un PDF ; déjà importé (même fichier) : celui-là, remis en bibliothèque."""
+def arxiv_stamp(data):
+    """Identifiant arXiv imprimé sur les deux premières pages (prépublication téléchargée d'arXiv), ou None."""
+    from pypdf import PdfReader
+    try:
+        reader = PdfReader(io.BytesIO(data))
+        if reader.is_encrypted and not reader.decrypt(""):
+            return None
+        found = ARXIV_STAMP.search("\n".join(_page_text(page) for page in reader.pages[:2]))
+    except Exception:  # fichier illisible : l'import dira pourquoi
+        return None
+    return found.group(1) if found else None
+
+
+def import_pdf(data, filename="", check=False):
+    """Article de la bibliothèque à partir d'un PDF ; déjà importé (même fichier) : celui-là, remis en bibliothèque.
+    `check` : PDF venu d'arXiv (mention « arXiv:… ») et pas encore importé → rien n'est importé, l'identifiant est
+    rendu ({"arxivId"}) pour que la page propose la version arXiv à la place (pas de double import)."""
     if len(data) > MAX_BYTES:
         raise PdfError("too large")
     if b"%PDF-" not in data[:1024]:  # la norme admet quelques octets avant l'en-tête
         raise PdfError("not a PDF")
     pid = paper_id(data)
+    if check and not db.get_paper(pid):
+        stamp = arxiv_stamp(data)
+        if stamp:
+            return {"arxivId": stamp}
     with paper_lock(pid):
         return _import(pid, data, filename)
 

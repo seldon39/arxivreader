@@ -131,3 +131,15 @@ class LocalPdf(unittest.TestCase):
         prompt = ai.build_prompt(db.get_paper(first["id"]), localpdf.EMPTY_STRUCTURE, "summary")
         self.assertIn('title="Evil&quot;&gt;&lt;paper title=&quot;x"', prompt[1])
         self.assertIn('source="PDF imported by the user"', prompt[1])
+
+    def test_arxiv_pdf_offered_before_import(self):
+        stamped = make_pdf(["Some preprint", "arXiv:2305.12345v2 [math.DG] 3 Jun 2023"])
+        checked = self.client.post("/api/papers/pdf?check=1", content=stamped, headers={"Content-Type": "application/pdf"}).json()
+        self.assertEqual(checked, {"paper": None, "arxiv": {"arxivId": "2305.12345"}})
+        self.assertIsNone(db.get_paper(localpdf.paper_id(stamped)))  # rien d'importé : la page propose arXiv
+        kept = self.upload(stamped).json()["paper"]  # « Garder le PDF » : import sans vérification
+        self.assertEqual(kept["source"], "local-pdf")
+        again = self.client.post("/api/papers/pdf?check=1", content=stamped, headers={"Content-Type": "application/pdf"}).json()
+        self.assertEqual(again["paper"]["id"], kept["id"])  # déjà importé : plus de question
+        plain = self.client.post("/api/papers/pdf?check=1", content=self.pdf, headers={"Content-Type": "application/pdf"}).json()
+        self.assertEqual(plain["paper"]["source"], "local-pdf")  # sans mention arXiv : importé directement

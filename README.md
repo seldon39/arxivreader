@@ -291,10 +291,11 @@ Papers that are not on arXiv (journal versions, theses, notes) can be added to t
 button next to "Import", or drag PDF files onto the library. Title and authors come from the PDF (its
 metadata, otherwise its first page) and can be corrected from the reader ("Edit title and authors"). The PDF
 is read in the reader with highlights, notes and Claude (questions on a selected passage, or on the whole
-paper from its extracted text). There are no statements, dependencies or bibliography (no TeX source). If
-the paper is on arXiv (an "arXiv:…" mention on its first page, otherwise its DOI or title on Semantic
-Scholar), the app offers to open the arXiv version, which has every feature. The file stays on the
-computer, in the library folder.
+paper from its extracted text). There are no statements, dependencies or bibliography (no TeX source).
+A PDF downloaded from arXiv (an "arXiv:…" mention on its first page) is not imported straight away: the app
+first offers to import its arXiv version instead, which has every feature (no duplicate). Otherwise, if its
+DOI or title is found on arXiv (Semantic Scholar), the app offers to open the arXiv version after the import.
+The file stays on the computer, in the library folder.
 
 ## Citations of your papers
 

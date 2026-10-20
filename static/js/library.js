@@ -162,24 +162,55 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
     }
   });
   // PDF importés un par un ; version arXiv trouvée : proposée (toutes les fonctions : HTML, énoncés, dépendances)
+  // PDF téléchargé d'arXiv (mention « arXiv:… ») : importer la version arXiv à la place ? → "arxiv" | "pdf" | ""
+  function askArxivFirst(name, arxivId) {
+    return new Promise((resolve) => {
+      const dialog = h("dialog", { class: "meta-dialog arxiv-first" },
+        h("form", { method: "dialog" },
+          h("h3", {}, t("library.arxivFirstTitle")),
+          h("p", {}, t("library.arxivFirst", { file: name, id: arxivId })),
+          h("div", { class: "dialog-actions" },
+            h("button", { class: "button", value: "pdf" }, t("library.arxivFirstKeep")),
+            h("button", { class: "button primary", value: "arxiv", autofocus: true }, t("library.arxivFirstImport")))));
+      dialog.addEventListener("close", () => { dialog.remove(); resolve(dialog.returnValue); });
+      document.body.append(dialog);
+      dialog.showModal();
+    });
+  }
+
   async function importPdfs(files) {
     const pdfs = files.filter((file) => file.type === "application/pdf" || /\.pdf$/i.test(file.name));
     if (!pdfs.length) return;
     status.hidden = false;
     const imported = [];
+    const fromArxiv = [];  // versions arXiv importées à la place d'un PDF d'arXiv
+    const kept = new Set();  // PDF d'arXiv gardés tels quels : version arXiv pas reproposée après l'import
     let failed = null;
     try {
       for (const file of pdfs) {  // un fichier refusé n'arrête pas les suivants
-        try { imported.push((await api.uploadPdf(file)).paper); } catch (error) { failed = new Error(`${file.name} : ${error.message}`); }
+        try {
+          let result = await api.uploadPdf(file, { check: true });
+          if (!result.paper && result.arxiv?.arxivId) {
+            const choice = await askArxivFirst(file.name, result.arxiv.arxivId);
+            if (choice === "arxiv") { fromArxiv.push(await api.importPaper(result.arxiv.arxivId)); continue; }
+            if (choice !== "pdf") continue;  // fermé (Échap) : rien n'est importé
+            result = await api.uploadPdf(file);
+            kept.add(result.paper.id);
+          }
+          imported.push(result.paper);
+        } catch (error) { failed = new Error(`${file.name} : ${error.message}`); }
       }
     } finally {
       status.hidden = true;
       await refreshList();
     }
     if (failed) { toastError(failed); return; }  // le refus reste affiché (pas remplacé par la proposition arXiv)
-    if (imported.length) toast(imported.length === 1 ? t("library.pdfImported", { title: imported[0].title }) : t("library.pdfsImported", { count: imported.length }));
+    const count = imported.length + fromArxiv.length;
+    if (count > 1) toast(t("library.pdfsImported", { count }));
+    else if (fromArxiv.length) toast(t("library.arxivImported", { id: fromArxiv[0].arxiv_id || fromArxiv[0].id }));
+    else if (imported.length) toast(t("library.pdfImported", { title: imported[0].title }));
     // version arXiv cherchée ensuite (Semantic Scholar peut être lent) ; proposée pour la première trouvée
-    for (const paper of imported) {
+    for (const paper of imported.filter((p) => !kept.has(p.id))) {
       const arxiv = await api.pdfArxivMatch(paper.id).then((r) => r.arxiv).catch(() => null);
       if (!arxiv?.arxivId) continue;
       toast(t("library.pdfOnArxiv", { id: arxiv.arxivId }), { duration: 15000, action: { label: t("library.pdfOpenArxiv"), icon: icons.external, onClick: async () => {

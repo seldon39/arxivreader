@@ -19,8 +19,9 @@ async function request(method, url, body) {
 }
 
 // PDF de l'ordinateur : le fichier tel quel (le seul envoi qui ne soit pas du JSON), son nom dans un en-tête
-async function uploadPdf(file) {
-  const response = await fetch("/api/papers/pdf", { method: "POST", body: file,
+// `check` : un PDF d'arXiv n'est pas importé, la réponse donne son identifiant ({paper: null, arxiv: {arxivId}})
+async function uploadPdf(file, { check = false } = {}) {
+  const response = await fetch(`/api/papers/pdf${check ? "?check=1" : ""}`, { method: "POST", body: file,
     headers: { "Content-Type": "application/pdf", "X-Filename": encodeURIComponent(file.name || "document.pdf") } });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);

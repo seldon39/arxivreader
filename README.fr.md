@@ -304,9 +304,11 @@ Les articles absents d'arXiv (versions publiées, thèses, notes) peuvent rejoin
 viennent du PDF (ses métadonnées, sinon sa première page) et se corrigent depuis le lecteur (« Modifier titre
 et auteurs »). Le PDF se lit dans le lecteur avec surlignages, notes et Claude (questions sur un passage
 sélectionné, ou sur tout l'article à partir de son texte extrait). Pas d'énoncés, de dépendances ni de
-bibliographie (pas de source TeX). Si l'article est sur arXiv (mention « arXiv:… » sur sa première page,
-sinon son DOI ou son titre sur Semantic Scholar), l'application propose d'ouvrir la version arXiv, qui offre
-toutes les fonctions. Le fichier reste sur l'ordinateur, dans le dossier de la bibliothèque.
+bibliographie (pas de source TeX). Un PDF téléchargé d'arXiv (mention « arXiv:… » sur sa première page)
+n'est pas importé d'emblée : l'application propose d'abord d'importer à la place sa version arXiv, qui offre
+toutes les fonctions (pas de doublon). Sinon, si son DOI ou son titre est retrouvé sur arXiv (Semantic
+Scholar), elle propose d'ouvrir la version arXiv après l'import. Le fichier reste sur l'ordinateur, dans le
+dossier de la bibliothèque.
 
 ## Citations de vos articles
 
