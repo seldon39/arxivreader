@@ -96,10 +96,7 @@ export class PdfNotes {
     const length = nodes.reduce((n, node) => n + node.data.length, 0);
     for (const annotation of here) {
       const { page: first, start, endPage = first, end } = annotation.target.pdf;
-      const range = this.rangeOf(nodes, first === page ? start : 0, endPage === page ? end : length);
-      if (!range) continue;
-      for (const rect of range.getClientRects()) {
-        if (rect.width < 1 || rect.height < 1) continue;
+      for (const rect of this.bands(nodes, first === page ? start : 0, endPage === page ? end : length)) {
         const mark = this.doc.createElement("div");
         mark.className = `arx-hl arx-hl-${annotation.color || "yellow"}`;
         mark.dataset.annotation = annotation.id;
@@ -113,22 +110,35 @@ export class PdfNotes {
     pageDiv.querySelector(".textLayer")?.before(layer);
   }
 
-  rangeOf(nodes, start, end) {
+  // rectangles du passage, une bande par ligne : seulement le texte (les cadres des <span> doubleraient la couleur),
+  // morceaux d'une même ligne réunis (formules : indices, exposants et blancs entre morceaux ne font pas de trous)
+  bands(nodes, start, end) {
+    const rects = [];
     let total = 0;
-    let from = null;
-    let to = null;
     for (const node of nodes) {
       const next = total + node.data.length;
-      if (!from && start < next) from = [node, Math.max(0, start - total)];
-      if (end <= next) { to = [node, Math.max(0, end - total)]; break; }
+      if (next > start && total < end) {
+        const range = this.doc.createRange();
+        range.setStart(node, Math.max(0, start - total));
+        range.setEnd(node, Math.min(node.data.length, end - total));
+        for (const r of range.getClientRects()) if (r.width >= 1 && r.height >= 1) rects.push(r);
+      }
       total = next;
+      if (total >= end) break;
     }
-    if (!from) return null;
-    to ||= [nodes.at(-1), nodes.at(-1).data.length];
-    const range = this.doc.createRange();
-    range.setStart(...from);
-    range.setEnd(...to);
-    return range;
+    const lines = [];
+    for (const r of rects.sort((a, b) => a.left - b.left)) {
+      const line = lines.find((l) => Math.min(l.bottom, r.bottom) - Math.max(l.top, r.top) >= 0.5 * Math.min(l.bottom - l.top, r.height)
+        && r.left - l.right < 1.5 * (l.bottom - l.top) && l.left - r.right < 1.5 * (l.bottom - l.top));
+      if (!line) { lines.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom }); continue; }
+      line.left = Math.min(line.left, r.left);
+      line.right = Math.max(line.right, r.right);
+      if (r.height >= 0.7 * (line.bottom - line.top)) {  // indice, exposant : élargit la bande, sans la grandir
+        line.top = Math.min(line.top, r.top);
+        line.bottom = Math.max(line.bottom, r.bottom);
+      }
+    }
+    return lines.map((l) => ({ left: l.left, top: l.top, width: l.right - l.left, height: l.bottom - l.top }));
   }
 
   // tous les passages (notes chargées après l'ouverture du PDF)
