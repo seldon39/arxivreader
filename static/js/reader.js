@@ -107,7 +107,7 @@ class Reader {
       aiActions: (id) => this.assistant.actionsFor(id, { compact: true }),
       onAskAI: (quote) => this.assistant.setPassage(quote),
     });
-    if (this.pdf && !this.pdfNotes) this.pdfNotes = new PdfNotes({ annotator: this.annotator, view: this.pdf, onAskAI: this.annotator.onAskAI });
+    if (this.pdf && !this.pdfNotes) this.pdfNotes = this.makePdfNotes();
     // onglet Notes : passage surligné dans le PDF, lu en HTML → vue PDF d'abord
     this.annotator.revealPdf = async (annotation) => {
       if (!this.pdfMode && !this.texOnly) await this.setView("pdf", { save: false });
@@ -117,6 +117,7 @@ class Reader {
       paper, structure: this.structure, find: (id) => this.find(id), annotator: this.annotator,
       navigate: (id) => this.navigate(id),
       onChange: (options) => this.onAssistantChange(options),
+      inPdf: () => this.pdfMode,
       equationIds: () => [...this.content.querySelectorAll(".ltx_tag_equation")].map((tag) => {
         const row = tag.closest("tr[id], table[id], .ltx_equation[id]");
         return row ? [tag.textContent.trim(), row.id] : null;
@@ -251,7 +252,7 @@ class Reader {
       if (!this.pdf) {
         this.pdf = new PdfView(`/api/papers/${encodeURIComponent(this.paper.id)}/pdf`, this.paper.title);
         // à l'ouverture (vue PDF gardée), l'annotateur n'existe pas encore : PdfNotes créé juste après lui
-        if (this.annotator) this.pdfNotes = new PdfNotes({ annotator: this.annotator, view: this.pdf, onAskAI: this.annotator.onAskAI });
+        if (this.annotator) this.pdfNotes = this.makePdfNotes();
         this.pdfView = h("div", { class: "paper pdf-mode pdf-view" }, this.pdf.frame);
         this.scroller.append(this.pdfView);
         this.followPdf();
@@ -1455,7 +1456,7 @@ class Reader {
 
   renderStatements(body) {
     if (!this.nodes.length) {
-      body.append(h("p", { class: "hint" }, t("panel.noStatements")));
+      body.append(h("p", { class: "hint" }, t(this.paper.source === "local-pdf" ? "panel.noStatementsPdf" : "panel.noStatements")));
       return;
     }
     const search = h("input", { class: "text-input", type: "search", value: this.search, placeholder: t("panel.filter"), "aria-label": t("panel.filter") });
@@ -1730,6 +1731,17 @@ class Reader {
   }
 
   // PDF importé : titre et auteurs (lus dans le fichier, parfois mal), corrigés à la main
+  // surlignages et zones du PDF ; une zone peut partir vers l'assistant s'il lit les images (Claude, Gemini)
+  makePdfNotes() {
+    setTimeout(() => { if (this.assistant && !this.assistant.status) this.assistant.refreshStatus(); }, 0);
+    return new PdfNotes({
+      annotator: this.annotator, view: this.pdf, onAskAI: this.annotator.onAskAI,
+      readsImages: () => Boolean(this.assistant?.readsImages()),
+      onAskZone: (zone) => this.assistant?.setZone(zone),
+      onTranscribe: (zone) => this.assistant?.ask({ task: "transcribe", zone }),
+    });
+  }
+
   editMeta() {
     const title = h("input", { type: "text", value: this.paper.title, "aria-label": t("reader.metaTitle") });
     const authors = h("input", { type: "text", value: this.paper.authors.join(", "), "aria-label": t("reader.metaAuthors") });

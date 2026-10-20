@@ -194,6 +194,10 @@ main, dans l'application installée :
   le visualiseur de pdf.js interdit les styles écrits par script (CSP `style-src 'self'`) : nos ajouts passent par
   `static/css/pdfjs-extra.css` (boutons masqués, surlignages) ; les surlignages du PDF (`pdfnotes.js`) se repèrent
   dans la couche de texte (`.textLayer`, événement `textlayerrendered`) : à revérifier à chaque mise à jour de pdf.js ;
+  la sélection est dessinée par `pdfnotes.js` (`enableSelectionRendering: false` dans `pdfview.js`) ; les zones
+  (⌥ + glisser, bouton `#arxZoneButton` ajouté à `#toolbarViewerMiddle`) sont rendues en image par `page.render` ;
+  images gardées dans `papers/<id>/zones/` (notes) et `papers/<id>/ai-images/` (questions), envoyées seulement aux
+  assistants de `ai.IMAGE_PROVIDERS` (Claude : message à blocs image + texte du SDK ; Gemini : `inline_data`) ;
 - les téléchargements (export des notes : dossier Téléchargements, `WKDownloadDelegate`).
 Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à comparer.
 

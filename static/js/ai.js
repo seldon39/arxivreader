@@ -53,8 +53,10 @@ function runningLine(exchange) {
 }
 
 export class Assistant {
-  constructor({ paper, structure, find, navigate, annotator, onChange, equationIds }) {
+  // `inPdf()` : article lu dans son PDF (la consigne mentionne alors les zones)
+  constructor({ paper, structure, find, navigate, annotator, onChange, equationIds, inPdf = () => false }) {
     this.paper = paper;
+    this.inPdf = inPdf;
     this.equationIds = equationIds;
     this.structure = structure;
     this.byId = new Map(structure.nodes.map((n) => [n.id, n]));
@@ -67,7 +69,7 @@ export class Assistant {
     this.statusToken = 0;
     this.running = null;      // { exchange, controller }
     this.live = null;         // rendu en direct de la réponse en cours
-    this.pending = { quote: null, parent: null, question: "" };
+    this.pending = { quote: null, parent: null, question: "", zone: null };
     this.refs = this.buildRefs();
   }
 
@@ -159,10 +161,21 @@ export class Assistant {
   // Passage sélectionné dans l'article : il accompagne la prochaine question
   setPassage(quote) {
     this.pending.quote = quote;
+    this.pending.zone = null;
     this.onChange({ focus: true });
   }
 
-  async ask({ task, target = null, quote = null, question = null, parent = null }) {
+  // zone du PDF ({image: data URL PNG, page, quote: texte de la couche de texte}) : la question part avec l'image
+  setZone(zone) {
+    this.pending.zone = zone;
+    this.pending.quote = null;
+    this.onChange({ focus: true });
+  }
+
+  // l'assistant choisi lit-il les images ? (zones du PDF)
+  readsImages() { return Boolean(this.status?.images && this.status.loggedIn !== false); }
+
+  async ask({ task, target = null, quote = null, question = null, parent = null, zone = null }) {
     if (this.running) {
       toast(t("ai.busy"));
       return;
@@ -173,11 +186,13 @@ export class Assistant {
       return;
     }
     const controller = new AbortController();
+    if (zone) quote = zone.quote || null;
     const local = { id: `local-${Date.now()}`, startedAt: Date.now(), task, target, quote, question, parent_id: parent?.id ?? null, answer: "", status: "running",
+      imageUrl: zone?.image || null,
       model: this.status?.model || currentModel(), created_at: new Date().toISOString().slice(0, 19).replace("T", " ") };
     this.exchanges.push(local);
     this.running = { exchange: local, controller };
-    this.pending = { quote: null, parent: null, question: "" };
+    this.pending = { quote: null, parent: null, question: "", zone: null };
     this.onChange({ show: true });
     let frame = 0;
     const redraw = () => {
@@ -185,7 +200,8 @@ export class Assistant {
       frame = requestAnimationFrame(() => { frame = 0; this.live?.update(local.answer, false); });
     };
     try {
-      await streamAI(this.paper.id, { task, target, quote, question, parent_id: parent?.id ?? null }, (event) => {
+      const image = zone ? { image: zone.image, page: zone.page } : {};
+      await streamAI(this.paper.id, { task, target, quote, question, parent_id: parent?.id ?? null, ...image }, (event) => {
         if (event.exchange) Object.assign(local, event.exchange, { answer: local.answer });
         if (event.delta) { local.answer += event.delta; redraw(); }
         if (event.error) { local.error = event.error; local.errorCode = event.code; }
@@ -273,6 +289,7 @@ export class Assistant {
     area.addEventListener("input", () => { pending.question = area.value; grow(); });
     const send = () => {
       const question = area.value.trim();
+      if (pending.zone) { this.ask({ task: "zone", zone: pending.zone, question: question || null, parent: pending.parent }); return; }
       if (!question && !pending.quote) { area.focus(); return; }
       if (pending.quote && !question) this.ask({ task: "passage", quote: pending.quote, parent: pending.parent });
       else this.ask({ task: pending.quote ? "passage" : "ask", quote: pending.quote, question, parent: pending.parent });
@@ -287,6 +304,12 @@ export class Assistant {
         h("button", { class: "icon-button small", type: "button", title: t("ai.removePassage"), "aria-label": t("ai.removePassage"), html: icons.close,
           onclick: () => { pending.quote = null; this.onChange({ focus: true }); } }), quote));
     }
+    if (pending.zone) {
+      chips.push(h("div", { class: "ai-chip" }, h("span", { class: "muted small" }, t("ai.zone", { page: pending.zone.page })),
+        h("button", { class: "icon-button small", type: "button", title: t("ai.removePassage"), "aria-label": t("ai.removePassage"), html: icons.close,
+          onclick: () => { pending.zone = null; this.onChange({ focus: true }); } }),
+        h("blockquote", { class: "note-quote ai-quote zone-quote" }, h("img", { src: pending.zone.image, alt: "" }))));
+    }
     if (pending.parent) {
       chips.push(h("div", { class: "ai-chip" }, h("span", { class: "muted small" }, t("ai.followUpOf", { title: this.title(pending.parent) })),
         h("button", { class: "icon-button small", type: "button", title: t("ai.cancelFollowUp"), "aria-label": t("ai.cancelFollowUp"), html: icons.close,
@@ -295,14 +318,14 @@ export class Assistant {
     const running = Boolean(this.running);
     const sendButton = running
       ? h("button", { class: "button", type: "button", onclick: () => this.stop() }, t("ai.stop"))
-      : h("button", { class: "button primary", type: "button", onclick: send }, pending.quote && !pending.question.trim() ? t("ai.explainPassage") : t("ai.send"));
+      : h("button", { class: "button primary", type: "button", onclick: send }, !pending.question.trim() && (pending.zone ? t("ai.explainZone") : pending.quote && t("ai.explainPassage")) || t("ai.send"));
     const paperAction = (task) => h("button", { class: "button small-button", type: "button", disabled: running,
       onclick: () => this.ask({ task }) }, t(`ai.task.${task}`));
     const model = this.modelPicker();
     const box = h("div", { class: "panel-section ai-ask" },
       ...chips, area,
       h("div", { class: "ai-ask-row" }, model || h("span", { class: "muted small" }, modelLabel(currentModel())), h("span", { class: "spacer" }), sendButton),
-      h("p", { class: "hint ai-hint" }, t("ai.hint")),
+      h("p", { class: "hint ai-hint" }, t("ai.hint") + (this.inPdf() && this.readsImages() ? ` ${t("ai.hintZone")}` : "")),
       h("div", { class: "ai-ask-row ai-paper-row" }, h("span", { class: "muted small" }, t("ai.wholePaper")), paperAction("summary"),
         paperAction("review"), this.shareLink()));
     requestAnimationFrame(() => { grow(); if (focus) area.focus(); });
@@ -352,7 +375,11 @@ export class Assistant {
     const parent = exchange.parent_id && this.exchanges.find((e) => e.id === exchange.parent_id);
     const context = [];
     if (parent) context.push(h("p", { class: "muted small ai-context" }, t("ai.followUpOf", { title: this.title(parent) })));
-    if (exchange.quote) context.push(h("blockquote", { class: "note-quote ai-quote" }, exchange.quote));
+    const zone = ["zone", "transcribe"].includes(exchange.task);
+    if (zone && (exchange.imageUrl || exchange.image)) {  // zone du PDF : son image (le texte de la couche, souvent faux, n'est pas montré)
+      context.push(h("blockquote", { class: "note-quote ai-quote zone-quote" },
+        h("img", { src: exchange.imageUrl || `/api/ai/${exchange.id}/image`, alt: "" })));
+    } else if (exchange.quote && !zone) context.push(h("blockquote", { class: "note-quote ai-quote" }, exchange.quote));
     if (exchange.question) context.push(h("p", { class: "ai-asked" }, exchange.question));
     if (context.length) typesetTex(context).catch(() => {});
 
@@ -376,7 +403,10 @@ export class Assistant {
         foot.push(h("div", { class: "notice small" }, t(ERROR_KEYS[exchange.errorCode] || "ai.error.other",
           { message: exchange.error || "" })));
       }
+      const latex = zone && exchange.answer && latexOf(exchange.answer);
       const actions = h("div", { class: "ai-card-actions" },
+        latex && h("button", { class: "button small-button", type: "button",
+          onclick: () => navigator.clipboard.writeText(latex).then(() => toast(t("ai.latexCopied")), toastError) }, t("ai.copyLatex")),
         exchange.answer && h("button", { class: "button small-button", type: "button", onclick: () => this.saveToNotes(exchange) },
           h("span", { class: "ai-icon", html: icons.note }), t("ai.saveToNotes")),
         exchange.answer && h("button", { class: "button small-button", type: "button",
@@ -635,3 +665,10 @@ function splitBlocks(text) {
   return blocks;
 }
 
+// transcription LaTeX d'une réponse sur une zone : le premier bloc $$…$$ (ou \[…\], ou bloc de code), sinon tout le
+// texte s'il est court (texte courant transcrit avec ses $…$)
+function latexOf(answer) {
+  const display = answer.match(/\$\$([\s\S]+?)\$\$/) || answer.match(/\\\[([\s\S]+?)\\\]/) || answer.match(/```(?:latex|tex)?\n([\s\S]+?)```/);
+  if (display) return display[1].trim();
+  return answer.length < 2000 ? answer.trim() : "";
+}

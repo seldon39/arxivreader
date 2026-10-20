@@ -167,6 +167,7 @@ class AnnotationRequest(BaseModel):
     note: str | None = None
     state: str | None = None
     author: str | None = None  # « claude » : proposée par Claude, acceptée par vous
+    image: str | None = None  # zone du PDF : son image (PNG en base64), pour l'onglet Notes
 
 
 class SetupRequest(BaseModel):
@@ -198,6 +199,8 @@ class AIRequest(BaseModel):
     quote: str | None = None
     question: str | None = None
     parent_id: int | None = None
+    image: str | None = None  # zone du PDF (PNG en base64) : tâches « zone » et « transcribe »
+    page: int | None = None
 
 
 class FindArxivRequest(BaseModel):
@@ -504,9 +507,19 @@ def add_annotation(paper_id: str, body: AnnotationRequest):
     checked_paper(paper_id)
     try:
         return annotations.create(paper_id, body.kind, body.target, body.color, (body.quote or "")[:5000] or None,
-                                  (body.note or "")[:100000] if body.note is not None else None, body.state, body.author)
+                                  (body.note or "")[:100000] if body.note is not None else None, body.state, body.author,
+                                  annotations.png_bytes(body.image))
     except ValueError:
         raise HTTPException(400, "Bad annotation")
+
+
+@app.get("/api/annotations/{annotation_id}/image")
+def annotation_image(annotation_id: int):
+    """Image d'une zone du PDF (vignette de l'onglet Notes)."""
+    item = annotations.get(annotation_id)
+    if not item or not annotations.zone_of(item["target"]) or not annotations.image_path(item).exists():
+        raise HTTPException(404, "No image")
+    return FileResponse(annotations.image_path(item), media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
 @app.put("/api/annotations/{annotation_id}")
@@ -591,19 +604,26 @@ async def ask_ai(paper_id: str, body: AIRequest):
     question = (body.question or "")[:20000] or None
     target = (body.target or "")[:200] or None
     try:
+        image = annotations.png_bytes(body.image)
+    except ValueError:
+        return JSONResponse({"error": "Bad image"}, status_code=400)
+    zone = {"page": max(1, body.page or 1)} if image else None
+    try:
         model = ai.current_model(settings)
+        if image and not ai.reads_images(model):
+            raise ai.AIError("This assistant cannot read images")
         system, prompt = await run_in_threadpool(ai.build_prompt, paper, structure, body.task, target, quote, question,
-                                                 parent, settings.get("language", "fr"), ai.paper_limit(model))
+                                                 parent, settings.get("language", "fr"), ai.paper_limit(model), zone)
     except ai.AIError as error:
         return JSONResponse({"error": str(error)}, status_code=400)
-    exchange = ai.create(paper_id, body.task, target, quote, question, parent["id"] if parent else None, model)
+    exchange = ai.create(paper_id, body.task, target, quote, question, parent["id"] if parent else None, model, image)
 
     async def lines():
         answer = []
         status = "stopped"  # si la page interrompt la réponse
         try:
             yield json.dumps({"exchange": exchange}) + "\n"
-            async for text in ai.stream_answer(system, prompt, model):
+            async for text in ai.stream_answer(system, prompt, model, image):
                 answer.append(text)
                 yield json.dumps({"delta": text}) + "\n"
             status = "done"
@@ -632,6 +652,15 @@ def set_applied(exchange_id: int, body: AppliedRequest):
     if not ai.get(exchange_id):
         raise HTTPException(404, "Unknown exchange")
     return ai.set_applied(exchange_id, body.applied)
+
+
+@app.get("/api/ai/{exchange_id}/image")
+def ai_image(exchange_id: int):
+    """Image de la zone du PDF sur laquelle portait une question."""
+    exchange = ai.get(exchange_id)
+    if not exchange or not ai.image_path(exchange).exists():
+        raise HTTPException(404, "No image")
+    return FileResponse(ai.image_path(exchange), media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
 @app.delete("/api/ai/{exchange_id}")

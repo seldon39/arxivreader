@@ -6,6 +6,7 @@ Autres assistants possibles (réglages) : Codex, Gemini, modèle local, voir pro
 """
 
 import asyncio
+import base64
 import contextlib
 import html
 import re
@@ -22,7 +23,8 @@ from bs4 import BeautifulSoup, Comment, NavigableString, Tag
 from . import localpdf, db, library, providers
 from .config import LIBRARY
 
-TASKS = ("explain", "detail", "audit", "annotate", "passage", "ask", "summary", "review")
+TASKS = ("explain", "detail", "audit", "annotate", "passage", "ask", "summary", "review", "zone", "transcribe")
+IMAGE_PROVIDERS = ("claude", "gemini")  # assistants qui lisent une image (zone du PDF)
 PAPER_LIMIT = 400_000  # caractères (~110 000 jetons) ; au-delà, l'article est tronqué (l'énoncé visé reste entier)
 
 BLOCKS = {"p", "div", "section", "article", "li", "ul", "ol", "dl", "dt", "dd", "table", "tr", "figure",
@@ -193,6 +195,10 @@ Before the annotations block, write only a few lines describing what you marked.
     "passage": "Explain the passage below: what it says, the notation it uses, and why it holds or why it matters \
 here. Unpack any computation it contains.",
     "ask": "Answer the question below.",
+    "zone": "Start with an exact transcription of the region in LaTeX (a formula as one $$…$$ block), then explain \
+it: what it says, the notation it uses, and its role in the paper.",
+    "transcribe": "Transcribe the region exactly in LaTeX: a formula as one $$…$$ block, running text with $…$ for \
+its formulas. Write only the transcription, nothing else.",
     "summary": """Give a structured summary of the paper:
 ### Problem and setting
 ### Main results
@@ -252,12 +258,22 @@ def _node_text(soup, index, structure, node):
     return "\n\n".join(parts)
 
 
+def reads_images(model):
+    return providers.provider_of(model) in IMAGE_PROVIDERS
+
+
 def build_prompt(paper, structure, task, target=None, quote=None, question=None, parent=None, language="fr",
-                 limit=PAPER_LIMIT):
+                 limit=PAPER_LIMIT, zone=None):
+    """`zone` ({"page"}) : question sur une zone du PDF, dont l'image accompagne le texte ; `quote` y est alors le
+    texte que la couche de texte du PDF donne pour cette zone (souvent faux ou absent pour une formule numérisée)."""
     if task not in TASKS:
         raise AIError("Unknown task")
+    if task in ("zone", "transcribe") and not zone:
+        raise AIError("No image")
     soup, index, text = _load(paper["id"])
-    if not text:  # pas de version HTML : titre et résumé seulement
+    if task == "transcribe":  # transcription d'une image : l'article n'y sert pas (réponse rapide, peu coûteuse)
+        text = f"# {paper['title']}"
+    elif not text:  # pas de version HTML : titre et résumé seulement
         text = f"# {paper['title']}\n\n{', '.join(paper['authors'])}\n\nAbstract. {paper.get('abstract') or ''}"
     if len(text) > limit:
         text = text[:limit] + "\n\n[… the rest of the paper is cut: too long …]"
@@ -279,7 +295,12 @@ def build_prompt(paper, structure, task, target=None, quote=None, question=None,
     parts = [f'<paper title="{title}"{origin}>\n{text}\n</paper>']
     if node is not None:
         parts.append(_node_text(soup, index, structure, node))
-    if quote:
+    if zone:
+        found = html.escape(quote or "", quote=False) or "(none)"
+        parts.append(f'<zone page="{zone["page"]}">\nThe reader selected a region of page {zone["page"]} of the PDF; '
+                     f"its image is attached. Text that the PDF's text layer gives for this region (often wrong or "
+                     f"missing for formulas in a scanned paper): {found}\n</zone>")
+    elif quote:
         parts.append(f"<passage>\n{quote}\n</passage>")
     if parent:
         parts.append(f"<previous_exchange>\n<question>{_describe(parent, structure)}</question>\n"
@@ -299,10 +320,12 @@ def build_prompt(paper, structure, task, target=None, quote=None, question=None,
 DESCRIBE = {
     "en": {"explain": "Explain {label}", "detail": "Detail the proof of {label}", "audit": "Audit the proof of {label}",
            "annotate": "Annotate {label}", "passage": "Explain a passage", "summary": "Summarise the paper",
-           "review": "Review the paper"},
+           "review": "Review the paper", "zone": "Explain a region of the PDF (image)",
+           "transcribe": "Transcribe a region of the PDF (image) in LaTeX"},
     "fr": {"explain": "Explique {label}", "detail": "Détaille la preuve de {label}", "audit": "Audite la preuve de {label}",
            "annotate": "Annote {label}", "passage": "Explique ce passage", "summary": "Résume l'article",
-           "review": "Fais une relecture critique de l'article"},
+           "review": "Fais une relecture critique de l'article", "zone": "Explique une zone du PDF (image)",
+           "transcribe": "Transcris en LaTeX une zone du PDF (image)"},
 }
 
 
@@ -472,7 +495,7 @@ def status(settings):
     if provider == "claude" and info.get("loggedIn"):
         choices = claude_models()
         info.update(choices=choices, chosen=model, effort=providers._effort(settings, "aiClaudeEffort", choices, model))
-    return {**info, "provider": provider, "model": model}
+    return {**info, "provider": provider, "model": model, "images": provider in IMAGE_PROVIDERS}
 
 
 def _claude_status():
@@ -489,14 +512,16 @@ def _claude_status():
             "subscription": info.get("subscriptionType")}
 
 
-async def stream_answer(system, prompt, model):
-    """Morceaux de texte de la réponse, au fil de l'eau."""
+async def stream_answer(system, prompt, model, image=None):
+    """Morceaux de texte de la réponse, au fil de l'eau. `image` (PNG) : zone du PDF, jointe à la question."""
     provider = providers.provider_of(model)
+    if image and provider not in IMAGE_PROVIDERS:
+        raise AIError("This assistant cannot read images")
     settings = db.get_settings()
     # modèle et niveau : ceux que la page affiche (un niveau que le modèle ne propose pas : celui par défaut)
     if provider == "claude":
         effort = providers._effort(settings, "aiClaudeEffort", await asyncio.to_thread(claude_models), model)
-        stream = _stream_claude(system, prompt, model, effort)
+        stream = _stream_claude(system, prompt, model, effort, image)
     elif provider == "codex":
         _, codex_model, effort = await asyncio.to_thread(providers.codex_choice, settings)
         stream = providers.stream_codex(system, prompt, codex_model or None, effort)
@@ -505,7 +530,7 @@ async def stream_answer(system, prompt, model):
         model_name = settings.get("aiGeminiModel") if providers.valid_gemini_model(settings.get("aiGeminiModel")) \
             else providers.GEMINI_DEFAULT[0]
         effort = settings.get("aiGeminiEffort") if settings.get("aiGeminiEffort") in providers.GEMINI_EFFORTS else ""
-        stream = providers.stream_gemini(system, prompt, model_name, key, effort)
+        stream = providers.stream_gemini(system, prompt, model_name, key, effort, image)
     else:
         url = settings.get("aiLocalUrl") or providers.LOCAL_URL
         stream = providers.stream_local(system, prompt, model.split(":", 1)[1], url)
@@ -517,7 +542,14 @@ async def stream_answer(system, prompt, model):
         raise AIError(str(error), error.code)
 
 
-async def _stream_claude(system, prompt, model, effort=""):
+async def _image_prompt(prompt, image):
+    """Question avec image (mode « streaming » du SDK : un message aux blocs image puis texte)."""
+    yield {"type": "user", "session_id": "", "parent_tool_use_id": None, "message": {"role": "user", "content": [
+        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": base64.b64encode(image).decode()}},
+        {"type": "text", "text": prompt}]}}
+
+
+async def _stream_claude(system, prompt, model, effort="", image=None):
     try:
         from claude_agent_sdk import ClaudeAgentOptions, query
         from claude_agent_sdk.types import AssistantMessage, ResultMessage, StreamEvent, TextBlock
@@ -542,7 +574,7 @@ async def _stream_claude(system, prompt, model, effort=""):
     streamed = False
     pending = []  # texte reçu d'un bloc (sans flux) : gardé jusqu'au résultat, car il peut s'agir d'une erreur
     try:
-        async with contextlib.aclosing(query(prompt=prompt, options=options)) as messages:
+        async with contextlib.aclosing(query(prompt=_image_prompt(prompt, image) if image else prompt, options=options)) as messages:
             async for message in messages:
                 if isinstance(message, StreamEvent):
                     event = message.event
@@ -577,23 +609,39 @@ def _code(message):
 def list_for(paper_id):
     with db.connect() as connection:
         rows = connection.execute("SELECT * FROM ai_exchanges WHERE paper_id = ? ORDER BY id", (paper_id,)).fetchall()
-    return [dict(r) for r in rows]
+    return [_with_image(dict(r)) for r in rows]
+
+
+def _with_image(exchange):
+    if exchange["task"] in ("zone", "transcribe"):
+        exchange["image"] = image_path(exchange).exists()
+    return exchange
 
 
 def get(exchange_id):
     with db.connect() as connection:
         row = connection.execute("SELECT * FROM ai_exchanges WHERE id = ?", (exchange_id,)).fetchone()
-    return dict(row) if row else None
+    return _with_image(dict(row)) if row else None
 
 
-def create(paper_id, task, target, quote, question, parent_id, model):
+def image_path(exchange):
+    return library.paper_dir(exchange["paper_id"]) / "ai-images" / f"{exchange['id']}.png"
+
+
+def create(paper_id, task, target, quote, question, parent_id, model, image=None):
     with db.connect() as connection:
         cursor = connection.execute(
             "INSERT INTO ai_exchanges (paper_id, task, target, quote, question, parent_id, model, answer, status) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, '', 'running')",
             (paper_id, task, target, quote, question, parent_id, model))
         exchange_id = cursor.lastrowid
-    return get(exchange_id)
+    exchange = get(exchange_id)
+    if image:  # zone du PDF : gardée avec l'échange (montrée au-dessus de la réponse)
+        path = image_path(exchange)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        library.write_atomic_bytes(path, image)
+        exchange["image"] = True
+    return exchange
 
 
 def finish(exchange_id, answer, status):
@@ -615,6 +663,9 @@ def stop_running():
 
 
 def delete(exchange_id):
+    exchange = get(exchange_id)
+    if exchange:
+        image_path(exchange).unlink(missing_ok=True)
     with db.connect() as connection:
         connection.execute("DELETE FROM ai_exchanges WHERE id = ?", (exchange_id,))
 

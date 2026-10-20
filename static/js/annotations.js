@@ -759,7 +759,8 @@ export class Annotator {
       return { a, element };
     });
     // ordre de l'article ; passages du PDF ensuite, par page et position
-    const pdfSpot = (a) => (a.target?.pdf ? a.target.pdf.page * 1e7 + a.target.pdf.start : null);
+    // passage du PDF : page puis position dans son texte ; zone : page puis hauteur (≈ position du texte voisin)
+    const pdfSpot = (a) => (a.target?.pdf ? a.target.pdf.page * 1e7 + (a.target.pdf.start ?? Math.round((a.target.pdf.rect?.[1] || 0) * 4000)) : null);
     located.sort((x, y) => {
       const [px, py] = [pdfSpot(x.a), pdfSpot(y.a)];
       if (px !== null || py !== null) return px === null ? -1 : py === null ? 1 : px - py;
@@ -787,7 +788,10 @@ export class Annotator {
       else this.navigate(element.id);
     };
     let head;
-    if (annotation.kind === "highlight") {
+    if (annotation.kind === "highlight" && annotation.target?.pdf?.rect) {  // zone du PDF : sa vignette
+      head = h("blockquote", { class: `note-quote zone-quote hl-border-${annotation.color || "yellow"}` },
+        annotation.image ? h("img", { src: `/api/annotations/${annotation.id}/image`, alt: t("notes.zone") }) : t("notes.zone"));
+    } else if (annotation.kind === "highlight") {
       head = h("blockquote", { class: `note-quote hl-border-${annotation.color || "yellow"}` }, annotation.quote || "");
     } else {
       const node = this.byId.get(annotation.target?.id);

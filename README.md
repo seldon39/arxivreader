@@ -316,6 +316,10 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   Clicking a highlight lets you change its colour or its note, or delete it.
 - **In the PDF** (papers read in their PDF, imported PDFs): the same bar on a selected passage, plus
   "Ask Claude" and "Copy text"; these highlights appear in the Notes tab with their page.
+- **Regions of a PDF** (formulas, figures, scanned papers whose formulas have no selectable text): ⌥ + drag
+  (Alt + drag on Windows), or the region button of the PDF toolbar, then the same bar: highlight and note
+  (shown in the Notes tab as a thumbnail), "Ask Claude" with the image of the region, or "Copy as LaTeX"
+  (Claude transcribes it). The last two only with an assistant that reads images (Claude, Gemini).
 - **Statements and proofs**: the note icon in the margin (on hover) opens a note and, for a statement,
   the reading state *understood / to review / checked* (shown in the title and in the list of statements).
 - **Notes tab** of the panel: reading progress, the paper's reading sheet, all annotations in the order of

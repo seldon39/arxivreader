@@ -852,6 +852,8 @@ mark.hl.hl-display > mjx-container[display="true"] { margin: .2em 0 !important; 
 .note-card:hover { border-color: var(--border-strong); background: var(--surface-soft); }
 .note-card.orphan { opacity: .75; cursor: default; }
 .note-quote { margin: 0; padding: 2px 0 2px 10px; border-left: 4px solid; font: italic 14.5px/1.45 var(--paper-font); color: var(--text); }
+/* zone du PDF (formule, figure) : son image, sur fond de page */
+.zone-quote img { display: block; max-width: 100%; max-height: 180px; object-fit: contain; object-position: left; background: #fff; border-radius: 3px; }
 .hl-border-yellow { border-left-color: #e6c200; }
 .hl-border-green { border-left-color: #3fae5f; }
 .hl-border-blue { border-left-color: #4a86e8; }

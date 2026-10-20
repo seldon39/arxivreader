@@ -1,5 +1,6 @@
 """Annotations d'un article : surlignages, notes d'énoncés et de preuves, fiche de lecture, état de lecture."""
 
+import base64
 import json
 
 from . import db
@@ -8,6 +9,41 @@ KINDS = ("highlight", "block", "general")  # + « proof » : emplacement de preu
 PROOF_MODES = ("section", "passage", "immediate", "admitted")
 COLORS = ("yellow", "green", "blue", "pink")
 STATES = ("understood", "review", "verified")
+MAX_IMAGE = 4_000_000  # image d'une zone du PDF (PNG)
+
+
+def png_bytes(value):
+    """Image PNG envoyée par la page (base64, ou « data:image/png;base64,… ») ; None si absente. ValueError si ce
+    n'est pas un PNG ou s'il est trop gros."""
+    if not value:
+        return None
+    data = value.split(",", 1)[1] if value.startswith("data:") else value
+    try:
+        raw = base64.b64decode(data, validate=True)
+    except ValueError:
+        raise ValueError("bad image")
+    if len(raw) > MAX_IMAGE or not raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise ValueError("bad image")
+    return raw
+
+
+def zone_of(target):
+    """Zone d'une page du PDF ({"pdf": {"page", "rect": [x0, y0, x1, y1]}}, fractions de la page) ou None."""
+    pdf = (target or {}).get("pdf") or {}
+    return pdf if "rect" in pdf else None
+
+
+def _check_zone(zone):
+    rect = zone.get("rect")
+    ok = isinstance(zone.get("page"), int) and zone["page"] >= 1 and isinstance(rect, list) and len(rect) == 4 \
+        and all(isinstance(v, (int, float)) and 0 <= v <= 1 for v in rect) and rect[0] < rect[2] and rect[1] < rect[3]
+    if not ok:
+        raise ValueError("bad zone")
+
+
+def image_path(annotation):
+    from .library import paper_dir  # (library importe ce module)
+    return paper_dir(annotation["paper_id"]) / "zones" / f"{annotation['id']}.png"
 
 
 def _row(row):
@@ -19,7 +55,11 @@ def _row(row):
 def list_for(paper_id):
     with db.connect() as connection:
         rows = connection.execute("SELECT * FROM annotations WHERE paper_id = ? ORDER BY id", (paper_id,)).fetchall()
-    return [_row(r) for r in rows]
+    items = [_row(r) for r in rows]
+    for item in items:
+        if zone_of(item["target"]):
+            item["image"] = image_path(item).exists()
+    return items
 
 
 def get(annotation_id):
@@ -31,10 +71,15 @@ def get(annotation_id):
 AUTHORS = (None, "claude", "codex", "gemini", "local")  # annotation proposée par l'IA, acceptée
 
 
-def create(paper_id, kind, target=None, color=None, quote=None, note=None, state=None, author=None):
-    """Nouvelle annotation ; pour un énoncé, une preuve ou la fiche de lecture, met à jour l'existante."""
+def create(paper_id, kind, target=None, color=None, quote=None, note=None, state=None, author=None, image=None):
+    """Nouvelle annotation ; pour un énoncé, une preuve ou la fiche de lecture, met à jour l'existante. `image` (PNG) :
+    celle d'une zone du PDF, montrée dans l'onglet Notes."""
     if kind not in KINDS or (color and color not in COLORS) or (state and state not in STATES):
         raise ValueError("bad annotation")
+    if zone_of(target):
+        _check_zone(zone_of(target))
+    elif image:
+        raise ValueError("image without zone")
     if author not in AUTHORS:
         raise ValueError("bad author")
     if kind != "highlight":
@@ -56,7 +101,14 @@ def create(paper_id, kind, target=None, color=None, quote=None, note=None, state
                 (paper_id, kind, json.dumps(target) if target else None, color, quote, note, state, author))
             created = cursor.lastrowid
     if not existing:
-        return get(created)  # relu après l'enregistrement (fin du bloc « with »)
+        item = get(created)  # relu après l'enregistrement (fin du bloc « with »)
+        if image:
+            from .library import write_atomic_bytes
+            path = image_path(item)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            write_atomic_bytes(path, image)
+            item["image"] = True
+        return item
     return update(existing["id"], color=color, note=note, state=state)
 
 
@@ -81,6 +133,9 @@ def update(annotation_id, color=None, note=None, state=None, clear_state=False):
 
 
 def delete(annotation_id):
+    item = get(annotation_id)
+    if item and zone_of(item["target"]):
+        image_path(item).unlink(missing_ok=True)
     with db.connect() as connection:
         connection.execute("DELETE FROM annotations WHERE id = ?", (annotation_id,))
 

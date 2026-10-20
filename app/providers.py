@@ -10,6 +10,7 @@ Comme pour Claude, chacun ne reçoit que le texte de l'article et la demande, et
 """
 
 import asyncio
+import base64
 import contextlib
 import glob
 import json
@@ -468,14 +469,16 @@ def gemini_model(settings, models):
         or (models[0] if models else GEMINI_DEFAULT[0])
 
 
-async def stream_gemini(system, prompt, model, key, effort=""):
+async def stream_gemini(system, prompt, model, key, effort="", image=None):
     if not key:
         raise ProviderError("No Gemini API key (Settings → AI)", "missing")
     if not valid_gemini_model(model):
         raise ProviderError("Unknown Gemini model")
     # aucun outil déclaré : Gemini ne peut que répondre par du texte
     body = {"systemInstruction": {"parts": [{"text": system}]},
-            "contents": [{"role": "user", "parts": [{"text": prompt}]}]}
+            "contents": [{"role": "user", "parts": ([{"inline_data": {"mime_type": "image/png",
+                                                                       "data": base64.b64encode(image).decode()}}] if image else [])
+                          + [{"text": prompt}]}]}
     if effort in GEMINI_EFFORTS:
         body["generationConfig"] = {"thinkingConfig": {"thinkingLevel": effort}}
     received = False

@@ -14,3 +14,9 @@
    morceau par morceau (trous entre les mots, cadres décalés dans les PDF numérisés), est masquée */
 .textLayer.arx-selecting ::selection { background: transparent; }
 .arx-sel { position: absolute; border-radius: 2px; background: #b4d5fe; }
+
+/* zones (pdfnotes.js) : bouton « Zone » de la barre, curseur, rectangle en cours, zone surlignée */
+#arxZoneButton::before { -webkit-mask-image: url("zone-icon.svg"); mask-image: url("zone-icon.svg"); }
+.arx-zone-mode .page, .arx-zone-mode .textLayer, .arx-zone-mode .textLayer span { cursor: crosshair; }
+.arx-zone-draft { position: absolute; z-index: 5; pointer-events: none; border: 1.5px dashed #b31b1b; background: rgba(179, 27, 27, .06); border-radius: 3px; }
+.arx-hl.arx-zone { border-radius: 3px; }

@@ -19,10 +19,10 @@ ID = re.compile(r"""\sid=["']([^"']+)["']""")
 STATES = {"fr": {"understood": "compris", "review": "à revoir", "verified": "vérifié"},
           "en": {"understood": "understood", "review": "to review", "verified": "verified"}}
 WORDS = {"fr": {"sheet": "Fiche de lecture", "statements": "Énoncés et preuves", "highlights": "Passages surlignés",
-                "proof": "Preuve de {label}", "exported": "Notes exportées d'arXivReader le {date}", "other": "Autres passages", "pdfPage": "PDF, page {page}",
+                "proof": "Preuve de {label}", "exported": "Notes exportées d'arXivReader le {date}", "other": "Autres passages", "pdfPage": "PDF, page {page}", "zone": "Zone de la page (image)",
                 "empty": "Aucune note sur cet article.", "ai": "proposée par {who}, acceptée", "local": "un modèle local"},
          "en": {"sheet": "Reading notes", "statements": "Statements and proofs", "highlights": "Highlighted passages",
-                "proof": "Proof of {label}", "exported": "Notes exported from arXivReader on {date}", "other": "Other passages", "pdfPage": "PDF, page {page}",
+                "proof": "Proof of {label}", "exported": "Notes exported from arXivReader on {date}", "other": "Other passages", "pdfPage": "PDF, page {page}", "zone": "Region of the page (image)",
                 "empty": "No notes on this paper.", "ai": "suggested by {who}, accepted", "local": "a local model"}}
 AUTHORS = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini"}
 
@@ -122,7 +122,8 @@ def paper_markdown(paper_id, language="fr"):
             if current is None or key != current:
                 lines += [f"### {heading}", ""]
                 current = key
-            lines += [_quote(note.get("quote")), ""]
+            # zone du PDF (formule, figure) : pas de texte sûr, seulement sa mention
+            lines += [f"*{words['zone']}*" if "rect" in (pdf_of(note) or {}) else _quote(note.get("quote")), ""]
             if (note.get("note") or "").strip():
                 lines += [note["note"].strip() + _who(note, words), ""]
     return "\n".join(lines)

@@ -1,5 +1,6 @@
 """Claude : texte transmis, consignes, historique et flux de réponse (Claude simulé, base temporaire)."""
 
+import base64
 import json
 import pathlib
 import tempfile
@@ -7,7 +8,7 @@ import unittest
 
 from fastapi.testclient import TestClient
 
-from app import ai, db, library, main
+from app import ai, annotations, db, library, main
 
 HTML = """<article>
 <h1 class="ltx_title">On kernels</h1>
@@ -94,7 +95,7 @@ class AI(unittest.TestCase):
         self.assertEqual(client.get("/api/papers/unknown/text").status_code, 404)
 
     def test_stream_endpoint(self):
-        async def fake(system, prompt, model):
+        async def fake(system, prompt, model, image=None):
             yield "Le lemme "
             yield "est $1=1$."
         ai.stream_answer = fake
@@ -110,7 +111,7 @@ class AI(unittest.TestCase):
         self.assertEqual(client.get("/api/papers/p1/ai").json(), [])
 
     def test_stream_error(self):
-        async def failing(system, prompt, model):
+        async def failing(system, prompt, model, image=None):
             raise ai.AIError("Not logged in · Please run /login", "login")
             yield ""
         ai.stream_answer = failing
@@ -123,3 +124,48 @@ class AI(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+PNG = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"\x00" * 32).decode()
+
+
+class Zones(unittest.TestCase):
+    """Zone du PDF : image jointe à la question (Claude, Gemini), gardée avec l'échange ; annotation avec vignette."""
+    setUp, tearDown = AI.setUp, AI.tearDown
+
+    def test_zone_question(self):
+        seen = {}
+
+        async def fake(system, prompt, model, image=None):
+            seen.update(prompt=prompt, image=image)
+            yield "$$x$$"
+        ai.stream_answer = fake
+        client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
+        events = [json.loads(line) for line in client.post("/api/papers/p1/ai", json={
+            "task": "transcribe", "image": PNG, "page": 3, "quote": "U (0.6)"}).text.splitlines()]
+        exchange = events[-1]["exchange"]
+        self.assertTrue(exchange["image"] and seen["image"].startswith(b"\x89PNG"))
+        self.assertIn('<zone page="3">', seen["prompt"])
+        self.assertIn("U (0.6)", seen["prompt"])
+        self.assertNotIn("Lemma", seen["prompt"])  # transcription : sans le texte de l'article
+        self.assertEqual(client.get(f"/api/ai/{exchange['id']}/image").status_code, 200)
+        client.delete(f"/api/ai/{exchange['id']}")
+        self.assertFalse(ai.image_path(exchange).exists())  # image effacée avec l'échange
+        # sans image : refusé ; image qui n'est pas un PNG : refusée ; assistant sans images : refusé
+        self.assertEqual(client.post("/api/papers/p1/ai", json={"task": "zone"}).status_code, 400)
+        self.assertEqual(client.post("/api/papers/p1/ai", json={"task": "zone", "image": "aGVsbG8="}).status_code, 400)
+        self.assertFalse(ai.reads_images("local:llama") or ai.reads_images("codex"))
+        self.assertTrue(ai.reads_images("opus") and ai.reads_images("gemini"))
+
+    def test_zone_annotation(self):
+        client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
+        zone = {"pdf": {"page": 2, "rect": [0.1, 0.2, 0.5, 0.3]}}
+        created = client.post("/api/papers/p1/annotations", json={"kind": "highlight", "target": zone, "color": "yellow", "image": PNG}).json()
+        self.assertTrue(created["image"])
+        self.assertEqual(client.get(f"/api/annotations/{created['id']}/image").status_code, 200)
+        self.assertTrue(client.get("/api/papers/p1/annotations").json()[0]["image"])
+        bad = {"pdf": {"page": 2, "rect": [0.5, 0.2, 0.1, 0.3]}}  # x0 > x1
+        self.assertEqual(client.post("/api/papers/p1/annotations", json={"kind": "highlight", "target": bad}).status_code, 400)
+        self.assertEqual(client.post("/api/papers/p1/annotations", json={"kind": "highlight", "target": {"id": "S1"}, "image": PNG}).status_code, 400)
+        client.delete(f"/api/annotations/{created['id']}")
+        self.assertFalse(annotations.image_path(created).exists())

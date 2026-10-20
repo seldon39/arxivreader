@@ -2,6 +2,9 @@
 // Un passage est repéré par sa page et sa position dans le texte de la page (couche de texte de pdf.js) :
 // {pdf: {page, start, endPage, end}}, indépendant du zoom. Les surlignages sont redessinés à chaque rendu d'une
 // page (défilement, zoom) dans une couche placée sous le texte ; ils figurent dans l'onglet Notes avec les autres.
+// Zone (⌥ + glisser, ou bouton « Zone ») : un rectangle de la page, {pdf: {page, rect: [x0, y0, x1, y1]}} en
+// fractions de la page, pour ce que la couche de texte n'a pas (formules d'un PDF numérisé, figures) ; son image
+// accompagne la note (vignette) ou la question à l'assistant, s'il lit les images.
 
 import { api } from "./api.js";
 import { COLORS } from "./annotations.js";
@@ -12,11 +15,18 @@ import { h, icons, toast } from "./util.js";
 const isPdf = (annotation) => annotation.kind === "highlight" && annotation.target?.pdf;
 
 export class PdfNotes {
-  // `annotator` : celui du lecteur (mêmes notes, même onglet) ; `view` : le PdfView ; `onAskAI(quote)`
-  constructor({ annotator, view, onAskAI }) {
+  // `annotator` : celui du lecteur (mêmes notes, même onglet) ; `view` : le PdfView ; `onAskAI(quote)` ;
+  // zones : `readsImages()` (l'assistant lit-il les images ?), `onAskZone(zone)`, `onTranscribe(zone)`
+  constructor({ annotator, view, onAskAI, readsImages = () => false, onAskZone = null, onTranscribe = null }) {
     this.annotator = annotator;
     this.view = view;
     this.onAskAI = onAskAI;
+    this.readsImages = readsImages;
+    this.onAskZone = onAskZone;
+    this.onTranscribe = onTranscribe;
+    this.zoneMode = false;
+    this.drawing = null;
+    this.draft = null;
     this.toolbar = null;
     annotator.pdf = this; // l'annotateur nous prévient (couleur changée, passage supprimé) et nous délègue l'accès
     this.attach();
@@ -30,13 +40,20 @@ export class PdfNotes {
     this.app = app;
     this.doc = this.view.frame.contentDocument;
     app.eventBus.on("textlayerrendered", ({ pageNumber }) => this.paintPage(pageNumber));
+    app.eventBus.on("pagerendered", ({ pageNumber }) => this.paintPage(pageNumber));  // zones : même sans texte
+    this.addZoneButton();
+    this.doc.addEventListener("mousedown", (event) => this.zoneStart(event), true);
+    this.doc.addEventListener("mousemove", (event) => this.zoneMove(event), true);
+    this.doc.addEventListener("mouseup", (event) => this.zoneEnd(event), true);
     this.doc.querySelectorAll(".page[data-page-number]").forEach((page) => this.paintPage(Number(page.dataset.pageNumber)));
     this.doc.addEventListener("mouseup", (event) => setTimeout(() => this.onUp(event), 0));
     this.doc.addEventListener("selectionchange", () => this.paintSelection());
     // la barre et la note ouverte sont dans la page de l'application : fermées par un clic ou Échap dans le PDF
     // (l'annotateur n'écoute que sa page), et la barre au défilement du PDF ou à un clic ailleurs dans l'application
     this.doc.addEventListener("mousedown", () => { this.hideToolbar(); this.annotator.closePopover(); });
-    this.doc.addEventListener("keydown", (event) => { if (event.key === "Escape") { this.hideToolbar(); this.annotator.closePopover(); } });
+    this.doc.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") { this.hideToolbar(); this.annotator.closePopover(); this.setZoneMode(false); }
+    });
     this.doc.getElementById("viewerContainer")?.addEventListener("scroll", () => this.hideToolbar(), { passive: true });
     this.onParentDown = (event) => { if (this.toolbar && !this.toolbar.contains(event.target)) this.hideToolbar(); };
     document.addEventListener("mousedown", this.onParentDown);
@@ -88,14 +105,28 @@ export class PdfNotes {
     const here = this.items.filter((a) => a.target.pdf.page <= page && (a.target.pdf.endPage || a.target.pdf.page) >= page);
     if (!here.length) return;
     const nodes = this.textNodes(page);
-    if (!nodes.length) return;
+    if (!nodes.length && !here.some((a) => a.target.pdf.rect)) return;
     const length = nodes.reduce((n, node) => n + node.data.length, 0);
+    const box = this.boxOf(pageDiv);
     const rects = here.flatMap((annotation) => {
-      const { page: first, start, endPage = first, end } = annotation.target.pdf;
+      const className = `arx-hl arx-hl-${annotation.color || "yellow"}`;
+      const { page: first, start, endPage = first, end, rect } = annotation.target.pdf;
+      if (rect) {  // zone : le rectangle tel quel
+        return [{ left: box.left + rect[0] * box.width, top: box.top + rect[1] * box.height, width: (rect[2] - rect[0]) * box.width,
+          height: (rect[3] - rect[1]) * box.height, className: `${className} arx-zone`, id: annotation.id }];
+      }
       return this.bands(nodes, first === page ? start : 0, endPage === page ? end : length)
-        .map((rect) => ({ ...rect, className: `arx-hl arx-hl-${annotation.color || "yellow"}`, id: annotation.id }));
+        .map((r) => ({ ...r, className, id: annotation.id }));
     });
-    pageDiv.querySelector(".textLayer")?.before(this.layerFor(pageDiv, "arx-hl-layer", rects));
+    const layer = this.layerFor(pageDiv, "arx-hl-layer", rects);
+    const textLayer = pageDiv.querySelector(".textLayer");
+    if (textLayer) textLayer.before(layer); else pageDiv.append(layer);
+  }
+
+  // boîte de la page sans sa bordure (celle de la couche de texte), en coordonnées du cadre
+  boxOf(pageDiv) {
+    const outer = pageDiv.getBoundingClientRect();
+    return { left: outer.left + pageDiv.clientLeft, top: outer.top + pageDiv.clientTop, width: pageDiv.clientWidth, height: pageDiv.clientHeight };
   }
 
   // rectangles du passage, une bande par ligne : seulement le texte (les cadres des <span> doubleraient la couleur),
@@ -155,9 +186,7 @@ export class PdfNotes {
   // couche de rectangles ({left, top, width, height, className, id?}), en % de la page, bordure exclue (comme la
   // couche de texte de pdf.js) : suit le zoom
   layerFor(pageDiv, className, rects) {
-    const outer = pageDiv.getBoundingClientRect();
-    const box = { left: outer.left + pageDiv.clientLeft, top: outer.top + pageDiv.clientTop,
-      width: pageDiv.clientWidth, height: pageDiv.clientHeight };
+    const box = this.boxOf(pageDiv);
     const layer = this.doc.createElement("div");
     layer.className = className;
     for (const rect of rects) {
@@ -238,7 +267,160 @@ export class PdfNotes {
     this.toolbar.style.top = `${Math.max(64, rect.top - this.toolbar.offsetHeight - 8)}px`;
   }
 
-  hideToolbar() { this.toolbar?.remove(); this.toolbar = null; }
+  hideToolbar() {
+    this.toolbar?.remove();
+    this.toolbar = null;
+    this.draft?.remove();  // zone tracée sans suite
+    this.draft = null;
+  }
+
+  // ---- zones : ⌥ + glisser, ou bouton « Zone » de la barre (une zone, puis retour au texte) ----
+  addZoneButton() {
+    const middle = this.doc.getElementById("toolbarViewerMiddle");
+    if (!middle || this.doc.getElementById("arxZoneButton")) return;
+    this.zoneButton = this.doc.createElement("button");
+    Object.assign(this.zoneButton, { id: "arxZoneButton", className: "toolbarButton", type: "button", title: t("pdf.zone") });
+    this.zoneButton.setAttribute("aria-label", t("pdf.zone"));
+    this.zoneButton.setAttribute("aria-pressed", "false");
+    this.zoneButton.addEventListener("click", () => this.setZoneMode(!this.zoneMode));
+    middle.append(this.zoneButton);
+  }
+
+  setZoneMode(on) {
+    this.zoneMode = on;
+    this.zoneButton?.classList.toggle("toggled", on);
+    this.zoneButton?.setAttribute("aria-pressed", String(on));
+    this.doc?.body.classList.toggle("arx-zone-mode", on);
+  }
+
+  zoneStart(event) {
+    if (event.button !== 0 || !(event.altKey || this.zoneMode)) return;
+    const pageDiv = event.target.closest?.(".page[data-page-number]");
+    if (!pageDiv) return;
+    event.preventDefault();  // pas de sélection de texte, ni les clics de pdf.js
+    event.stopPropagation();
+    this.hideToolbar();
+    this.annotator.closePopover();
+    this.doc.getSelection().removeAllRanges();
+    const box = this.boxOf(pageDiv);
+    const at = [(event.clientX - box.left) / box.width, (event.clientY - box.top) / box.height].map((v) => Math.min(1, Math.max(0, v)));
+    this.draft = this.doc.createElement("div");
+    this.draft.className = "arx-zone-draft";
+    pageDiv.append(this.draft);
+    this.drawing = { pageDiv, page: Number(pageDiv.dataset.pageNumber), from: at, to: at };
+    this.drawDraft();
+  }
+
+  zoneMove(event) {
+    if (!this.drawing) return;
+    event.preventDefault();
+    const box = this.boxOf(this.drawing.pageDiv);
+    this.drawing.to = [(event.clientX - box.left) / box.width, (event.clientY - box.top) / box.height].map((v) => Math.min(1, Math.max(0, v)));
+    this.drawDraft();
+  }
+
+  drawDraft() {
+    const { from, to } = this.drawing;
+    Object.assign(this.draft.style, {
+      left: `${100 * Math.min(from[0], to[0])}%`, top: `${100 * Math.min(from[1], to[1])}%`,
+      width: `${100 * Math.abs(to[0] - from[0])}%`, height: `${100 * Math.abs(to[1] - from[1])}%`,
+    });
+  }
+
+  zoneEnd(event) {
+    if (!this.drawing) return;
+    event.preventDefault();
+    event.stopPropagation();  // pas de sélection ni de clic sur un surlignage (mouseup ordinaire)
+    const { pageDiv, page, from, to } = this.drawing;
+    this.drawing = null;
+    this.setZoneMode(false);
+    const rect = [Math.min(from[0], to[0]), Math.min(from[1], to[1]), Math.max(from[0], to[0]), Math.max(from[1], to[1])];
+    const box = this.boxOf(pageDiv);
+    if ((rect[2] - rect[0]) * box.width < 8 || (rect[3] - rect[1]) * box.height < 8) { this.hideToolbar(); return; }  // simple clic
+    this.showZoneToolbar({ page, rect });
+  }
+
+  showZoneToolbar(zone) {
+    const draft = this.draft;
+    this.toolbar?.remove();
+    const create = (color, withNote) => this.createZone(zone, color, withNote);
+    const withImage = (handler) => async () => {
+      const image = await this.zoneImage(zone).catch(() => null);
+      this.hideToolbar();
+      if (image) handler({ image, page: zone.page, quote: this.zoneText(zone) });
+      else toast(t("error.generic", { message: "image" }), { error: true });
+    };
+    const ai = this.readsImages() && this.onAskZone;
+    this.toolbar = h("div", { class: "hl-toolbar", role: "toolbar", "aria-label": t("notes.highlight") },
+      ...COLORS.map((color) => h("button", { type: "button", class: `hl-dot hl-${color}`, title: t(`notes.color.${color}`), "aria-label": t(`notes.color.${color}`),
+        onclick: () => create(color, false) })),
+      h("span", { class: "hl-sep" }),
+      h("button", { type: "button", class: "hl-note-button", title: t("notes.addNote"), "aria-label": t("notes.addNote"), html: icons.note,
+        onclick: () => create("yellow", true) }),
+      ai && h("button", { type: "button", class: "hl-note-button", title: t("ai.askPassage"), "aria-label": t("ai.askPassage"), html: icons.sparkle,
+        onclick: withImage(this.onAskZone) }),
+      ai && this.onTranscribe && h("button", { type: "button", class: "hl-note-button hl-tex-button", title: t("ai.transcribe"), "aria-label": t("ai.transcribe"),
+        onclick: withImage(this.onTranscribe) }, "TeX"));
+    this.draft = draft;  // gardée affichée tant que la barre l'est
+    document.body.append(this.toolbar);
+    const rect = this.anchor(draft.getBoundingClientRect()).getBoundingClientRect();
+    const width = this.toolbar.offsetWidth;
+    this.toolbar.style.left = `${Math.max(8, Math.min(innerWidth - width - 8, rect.left + rect.width / 2 - width / 2))}px`;
+    this.toolbar.style.top = `${Math.max(64, rect.top - this.toolbar.offsetHeight - 8)}px`;
+  }
+
+  // image de la zone, rendue par pdf.js à une résolution lisible (formules : ~1200 px de large au plus)
+  async zoneImage(zone) {
+    const page = await this.app.pdfDocument.getPage(zone.page);
+    const rotation = (page.rotate + (this.app.pdfViewer.pagesRotation || 0)) % 360;
+    const [x0, y0, x1, y1] = zone.rect;
+    const base = page.getViewport({ scale: 1, rotation });
+    const scale = Math.min(4, Math.max(1.5, 1200 / ((x1 - x0) * base.width)), 3000 / ((y1 - y0) * base.height));
+    const viewport = page.getViewport({ scale, rotation });
+    const canvas = this.doc.createElement("canvas");
+    canvas.width = Math.max(1, Math.round((x1 - x0) * viewport.width));
+    canvas.height = Math.max(1, Math.round((y1 - y0) * viewport.height));
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#fff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: context, viewport, annotationMode: 0,
+      transform: [1, 0, 0, 1, -x0 * viewport.width, -y0 * viewport.height] }).promise;
+    return canvas.toDataURL("image/png");
+  }
+
+  // texte que la couche de texte donne dans la zone (souvent faux ou absent pour une formule numérisée)
+  zoneText(zone) {
+    const pageDiv = this.doc.querySelector(`.page[data-page-number="${zone.page}"]`);
+    if (!pageDiv) return "";
+    const box = this.boxOf(pageDiv);
+    const [x0, y0, x1, y1] = zone.rect;
+    const inside = (r) => {
+      const x = (r.left + r.width / 2 - box.left) / box.width, y = (r.top + r.height / 2 - box.top) / box.height;
+      return x >= x0 && x <= x1 && y >= y0 && y <= y1;
+    };
+    return this.textNodes(zone.page).filter((node) => inside(node.parentElement.getBoundingClientRect()))
+      .map((node) => node.data).join(" ").replace(/\s+/g, " ").trim().slice(0, 1500);
+  }
+
+  async createZone(zone, color, withNote) {
+    try {
+      const image = await this.zoneImage(zone).catch(() => null);
+      const quote = this.zoneText(zone);
+      this.hideToolbar();
+      const annotation = await api.addAnnotation(this.annotator.paperId, { kind: "highlight", target: { pdf: zone }, color,
+        quote: quote || null, image });
+      this.annotator.items.push(annotation);
+      this.repaint(annotation);
+      this.annotator.onChange();
+      if (withNote) {
+        const mark = this.doc.querySelector(`.arx-hl[data-annotation="${annotation.id}"]`);
+        if (mark) this.annotator.openHighlight(annotation.id, this.anchor(mark.getBoundingClientRect()), true);
+      }
+    } catch (error) {
+      this.hideToolbar();
+      toast(t("error.generic", { message: error.message }), { error: true });
+    }
+  }
 
   async create(target, text, color, withNote) {
     this.doc.getSelection().removeAllRanges();
