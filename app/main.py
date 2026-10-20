@@ -181,6 +181,8 @@ class AppliedRequest(BaseModel):
 
 
 class AnnotationUpdate(BaseModel):
+    quote: str | None = None  # nom d'un marque-page
+    version: int | None = None  # marque-page vérifié sur cette version de l'article
     color: str | None = None
     note: str | None = None
     state: str | None = None
@@ -529,7 +531,8 @@ def edit_annotation(annotation_id: int, body: AnnotationUpdate):
         raise HTTPException(404, "Unknown annotation")
     try:
         return annotations.update(annotation_id, body.color, body.note[:100000] if body.note is not None else None,
-                                  body.state, clear_state=body.clear_state)
+                                  body.state, clear_state=body.clear_state,
+                                  quote=body.quote[:300] if body.quote is not None else None, version=body.version)
     except ValueError:
         raise HTTPException(400, "Bad annotation")
 

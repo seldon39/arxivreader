@@ -618,19 +618,25 @@ export class Annotator {
     if (range && math && !range.intersectsNode(math)) range = null; // clic sur une formule hors de la sélection
     const single = !range && math; // une formule seule (pas de sélection) : son TeX nu, comme le ⌥-clic
     if (single) { range = document.createRange(); range.selectNode(math); }
-    if (!range || event.target.closest("a[href], img, .figure-card")) return;
+    if (event.target.closest("a[href], img, .figure-card")) return;
+    // marque-page : le paragraphe (ou l'énoncé) cliqué ; sans sélection, c'est la seule entrée du menu
+    // (dans un énoncé : l'énoncé entier, son ruban sous le bouton de note)
+    const spot = this.onBookmarkAt && (event.target.closest?.(".ltx_theorem[id]") || event.target.closest?.(".ltx_para[id], .ltx_abstract[id], section[id]"));
+    const bookmark = spot && (() => this.onBookmarkAt(spot, { left: event.clientX, top: event.clientY, width: 0, height: 0, bottom: event.clientY }));
+    if (!range && !bookmark) return;
     event.preventDefault();
     this.hideToolbar();
     this.hideContextMenu();
     const item = (label, action) => h("button", { type: "button", class: "context-menu-item", role: "menuitem",
       onclick: () => { this.hideContextMenu(); action(); } }, label);
-    const tex = hasMath(range);
+    const tex = range && hasMath(range);
     const menu = this.contextMenuElement = h("div", { class: "context-menu", role: "menu" },
-      item(t("notes.highlight"), () => this.createFrom(range, "yellow", false)),
+      range && [item(t("notes.highlight"), () => this.createFrom(range, "yellow", false)),
       item(t("notes.addNote"), () => this.createFrom(range, "yellow", true)),
       tex && item(t("notes.copyTexShort"), async () => { await copyText(single ? texOf(math).trim() : rangeTex(range)); toast(t("notes.texCopied")); }),
       item(t("notes.copyText"), async () => { await copyText(range.toString()); toast(t("notes.textCopied")); }),
-      this.onAskAI && item(t("ai.askPassage"), () => { const quote = quoteOf(range, 12000); getSelection().removeAllRanges(); this.onAskAI(quote); }));
+      this.onAskAI && item(t("ai.askPassage"), () => { const quote = quoteOf(range, 12000); getSelection().removeAllRanges(); this.onAskAI(quote); })],
+      bookmark && item(t("bookmarks.addHereMenu"), bookmark));
     document.body.append(menu);
     // à l'endroit du clic, dans la fenêtre
     menu.style.left = `${Math.max(8, Math.min(event.clientX, innerWidth - menu.offsetWidth - 8))}px`;
@@ -733,6 +739,8 @@ export class Annotator {
 
   // ---- onglet « Notes » du panneau ----
   renderPanel(body) {
+    const bookmarks = this.renderBookmarks?.();  // marque-pages en tête (bookmarks.js, branché par le lecteur)
+    if (bookmarks) body.append(bookmarks);
     const statements = this.nodes.filter((n) => !["remark", "example", "notation"].includes(n.kind));
     const counts = Object.fromEntries(STATES.map((s) => [s, statements.filter((n) => this.stateOf(n.id) === s).length]));
     const done = counts.understood + counts.verified;
@@ -752,7 +760,7 @@ export class Annotator {
         } })));
 
     // annotations, dans l'ordre de l'article
-    const located = this.items.filter((a) => a.kind !== "general" && (a.kind === "highlight" || a.note || a.state)).map((a) => {
+    const located = this.items.filter((a) => !["general", "bookmark"].includes(a.kind) && (a.kind === "highlight" || a.note || a.state)).map((a) => {
       const element = a.kind === "highlight"
         ? this.content.querySelector(`mark.hl[data-annotation="${a.id}"]`)
         : this.content.querySelector(`[id="${CSS.escape(a.target?.id || "")}"]`);
@@ -771,7 +779,7 @@ export class Annotator {
     body.append(h("div", { class: "panel-section" }, h("h3", {}, t("notes.annotations", { n: located.length })), list,
       h("p", { class: "hint" }, t("notes.howTo"))));
     // export : fiche, énoncés et preuves, passages, en Markdown (dossier Téléchargements)
-    if (located.length || (this.general?.note || "").trim()) {
+    if (located.length || (this.general?.note || "").trim() || this.items.some((a) => a.kind === "bookmark")) {
       body.append(h("div", { class: "panel-section" }, h("a", { class: "button small-button", download: "",
         href: `/api/papers/${encodeURIComponent(this.paperId)}/notes.md?lang=${document.documentElement.lang || "fr"}` }, t("notes.export")),
         h("p", { class: "hint" }, t("notes.exportHint"))));

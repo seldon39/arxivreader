@@ -10,6 +10,7 @@ import { emptyPictures, layoutFigures, openFigure, prepareFigures } from "./figu
 import { findBar, setFindHandler } from "./find.js";
 import { PdfView } from "./pdfview.js";
 import { PdfNotes } from "./pdfnotes.js";
+import { bookmarkBox, bookmarkSection, contextMenuAt, inPdf as bookmarkInPdf, staleVersion } from "./bookmarks.js";
 import { htmlToPdf, htmlWords, pdfToHtml, wordTop } from "./pdfsync.js";
 import { defineMacros, statementElement, statementsContainer } from "./texview.js";
 import { typesetFragment, typesetMath, typesetTex } from "./math.js";
@@ -109,6 +110,13 @@ class Reader {
     });
     if (this.pdf && !this.pdfNotes) this.pdfNotes = this.makePdfNotes();
     // onglet Notes : passage surligné dans le PDF, lu en HTML → vue PDF d'abord
+    // clic droit dans l'article : marque-page sur le paragraphe cliqué
+    this.annotator.onBookmarkAt = (element, rect) => this.addBookmark({ element, rect });
+    // onglet Notes : marque-pages en tête
+    this.annotator.renderBookmarks = () => bookmarkSection(this.annotator.items, {
+      paper: this.paper, find: (id) => this.find(id), go: (annotation) => this.goToBookmark(annotation),
+      where: (annotation, element) => (bookmarkInPdf(annotation) ? t("bookmarks.pageShort", { page: annotation.target.pdf.page }) : this.sectionTag(element)),
+    });
     this.annotator.revealPdf = async (annotation) => {
       if (!this.pdfMode && !this.texOnly) await this.setView("pdf", { save: false });
       if (!this.destroyed) this.pdfNotes?.reveal(annotation);
@@ -147,6 +155,7 @@ class Reader {
     await Promise.all([this.annotator.load(), this.assistant.load()]);
     if (this.destroyed) return;
     this.annotator.apply();
+    this.paintBookmarks();
     this.pdfNotes?.repaintAll(); // passages surlignés dans le PDF, connus seulement maintenant
     this.renderPanel(); // avec les états de lecture, chargés seulement maintenant
     this.anchors = null;
@@ -1693,6 +1702,10 @@ class Reader {
     const onKey = (event) => {
       if (event.target.closest?.("input, textarea, select, [contenteditable]")) return;
       if (event.key === "Escape") { this.hidePreview(); this.closeDrawers(); }
+      if (event.key.toLowerCase() === "d" && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey) {
+        event.preventDefault();  // ⌘D : marque-page ici (pas le signet du navigateur)
+        this.addBookmark();
+      }
     };
     const layout = () => (innerWidth >= WIDE ? "wide" : innerWidth >= MEDIUM ? "medium" : "narrow");
     let currentLayout = layout();
@@ -1739,7 +1752,115 @@ class Reader {
       readsImages: () => Boolean(this.assistant?.readsImages()),
       onAskZone: (zone) => this.assistant?.setZone(zone),
       onTranscribe: (zone) => this.assistant?.ask({ task: "transcribe", zone }),
+      onAddBookmark: (at) => this.addBookmark(at),
+      onBookmark: (annotation, rect) => this.editBookmark(annotation, rect),
+      onContextMenu: (point, label, action) => contextMenuAt(point, [[label, action]]),
     });
+  }
+
+  // ---------- Marque-pages (bookmarks.js) ----------
+
+  // `at` : endroit d'un clic droit ({element} en HTML, {pdf: {page, top}} dans le PDF, et `rect` du clic) ; sinon
+  // (⌘D, bouton de la barre du PDF) l'endroit lu : paragraphe en haut de l'article, page et hauteur dans le PDF
+  async addBookmark(at = null) {
+    const paper = this.paper;
+    let target, name, rect = at?.rect;
+    if (at?.pdf || (!at && this.pdfMode)) {
+      const spot = at?.pdf || this.pdf?.location();
+      if (!spot) return;
+      target = { pdf: { page: spot.page, top: spot.top } };
+      name = t("bookmarks.page", { page: spot.page });
+      rect ||= this.pdfNotes?.bookmarkButtonRect() || this.toolbar.getBoundingClientRect();
+    } else {
+      const read = this.currentAnchor();
+      const anchor = at?.element || read?.closest(".ltx_theorem[id]") || read;  // dans un énoncé : l'énoncé
+      if (!anchor) return;
+      target = { id: anchor.id };
+      name = this.bookmarkName(anchor);
+      if (!rect) {  // ⌘D : la fenêtre du nom sous le haut du paragraphe (visible même s'il est long)
+        const box = anchor.getBoundingClientRect();
+        const top = Math.max(box.top, this.viewTop());
+        rect = { left: box.left, width: box.width, top, bottom: top + 24 };
+      }
+    }
+    bookmarkBox({ heading: t("bookmarks.new"), value: name, rect, onSave: async (label) => {
+      try {
+        const annotation = await api.addAnnotation(paper.id, { kind: "bookmark", quote: (label || name).slice(0, 300),
+          target: { ...target, version: paper.version ?? null } });
+        this.annotator.items.push(annotation);
+        this.paintBookmarks();
+        this.annotator.onChange();
+        toast(t("bookmarks.added"));
+      } catch (error) { toast(t("error.generic", { message: error.message }), { error: true }); }
+    } });
+  }
+
+  // clic sur un ruban : renommer ou supprimer
+  // posé sur une version antérieure : l'enregistrer le confirme pour la version actuelle (le signalement disparaît)
+  editBookmark(annotation, rect) {
+    const was = staleVersion(annotation, this.paper);
+    bookmarkBox({ heading: was ? `${t("bookmarks.edit")} · ${t("bookmarks.stale", { was })}` : t("bookmarks.edit"),
+      value: annotation.quote || "", rect, saveLabel: t("library.folder.save"),
+      onSave: async (label) => {
+        try {
+          Object.assign(annotation, await api.updateAnnotation(annotation.id, { quote: label || annotation.quote || t("bookmarks.untitled"),
+            ...(was ? { version: this.paper.version } : {}) }));
+          this.paintBookmarks();
+          this.annotator.onChange();
+        } catch (error) { toast(t("error.generic", { message: error.message }), { error: true }); }
+      },
+      onDelete: async () => {
+        try {
+          await api.deleteAnnotation(annotation.id);
+          this.annotator.items = this.annotator.items.filter((a) => a !== annotation);
+          this.paintBookmarks();
+          this.annotator.onChange();
+        } catch (error) { toast(t("error.generic", { message: error.message }), { error: true }); }
+      } });
+  }
+
+  // rubans : dans la marge de l'article (HTML) et dans celle des pages (PDF)
+  paintBookmarks() {
+    this.content.querySelectorAll(".bm-ribbon").forEach((ribbon) => ribbon.remove());
+    this.content.querySelectorAll(".bm-anchor").forEach((element) => element.classList.remove("bm-anchor"));
+    for (const annotation of this.annotator.items.filter((a) => a.kind === "bookmark" && !bookmarkInPdf(a))) {
+      const element = this.find(annotation.target?.id);
+      if (!element) continue;
+      const label = annotation.quote || t("bookmarks.untitled");
+      const ribbon = h("button", { class: "bm-ribbon", type: "button", title: label, "aria-label": label,
+        onclick: (event) => { event.stopPropagation(); this.editBookmark(annotation, event.currentTarget.getBoundingClientRect()); } });
+      element.classList.add("bm-anchor");
+      element.prepend(ribbon);
+    }
+    this.pdfNotes?.repaintBookmarks();
+  }
+
+  // onglet Notes : y aller, dans la vue où il a été posé
+  async goToBookmark(annotation) {
+    if (bookmarkInPdf(annotation)) {
+      if (!this.pdfMode && !this.texOnly) await this.setView("pdf", { save: false });
+      this.pdf?.goTo(annotation.target.pdf.page, annotation.target.pdf.top ?? null);
+      return;
+    }
+    if (this.pdfMode && !this.texOnly) await this.setView("html", { save: false });
+    const element = this.find(annotation.target.id);
+    if (element) this.navigateElement(element);
+  }
+
+  // nom proposé : l'énoncé (« Theorem 2.3 ») ou la section (« §3 Strongly pseudoconvex domains »)
+  bookmarkName(anchor) {
+    const theorem = anchor.closest(".ltx_theorem[id]");
+    const node = theorem && this.nodes.find((n) => n.id === theorem.id);
+    if (node) return node.label;
+    const title = anchor.closest("section")?.querySelector(":scope > .ltx_title");
+    return title ? title.textContent.replace(/\s+/g, " ").trim().slice(0, 80) : t("bookmarks.untitled");
+  }
+
+  // section d'un paragraphe, en bref (« §3.2 »), pour la liste
+  sectionTag(element) {
+    const tag = element?.closest("section")?.querySelector(":scope > .ltx_title .ltx_tag");
+    const text = tag?.textContent.trim().replace(/[.\s]+$/, "");
+    return text ? (/^\d/.test(text) ? `§${text}` : text) : "";
   }
 
   async editMeta() {

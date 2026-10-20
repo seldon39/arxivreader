@@ -900,7 +900,11 @@ function card(paper, refreshList, context = null) {
         try {
           await api.refresh(paper.id); // en arrière-plan : on suit l'import (aucune longue requête)
           for (let i = 0; i < 200 && (await api.importing(paper.id)).running; i++) await new Promise((r) => setTimeout(r, 1500));
-          toast(t("library.updated"));
+          // nouvelle version : marque-pages et surlignages posés sur l'ancienne sont peut-être déplacés
+          const now = (await api.papers()).find((p) => p.id === paper.id);
+          const marked = now && now.version !== paper.version
+            && (await api.annotations(paper.id)).some((a) => ["bookmark", "highlight", "block"].includes(a.kind));
+          toast(marked ? t("library.updatedMarks", { v: now.version }) : t("library.updated"), marked ? { duration: 12000 } : {});
           refreshList();
         }
         catch (error) { toastError(error); }

@@ -57,3 +57,15 @@ class Annotations(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_bookmarks(self):
+        html = annotations.create("p", "bookmark", {"id": "S3.p2", "version": 1}, quote="Lemme clé")
+        pdf = annotations.create("p", "bookmark", {"pdf": {"page": 4, "top": 512.5}, "version": 1}, quote="Page 4")
+        self.assertNotEqual(html["id"], pdf["id"])  # plusieurs marque-pages : jamais fusionnés
+        self.assertEqual(annotations.update(html["id"], quote="Lemme 3.2")["quote"], "Lemme 3.2")  # renommé
+        self.assertEqual(annotations.update(pdf["id"], version=2)["target"], {"pdf": {"page": 4, "top": 512.5}, "version": 2})
+        for bad in [{}, {"pdf": {"page": 0}}, {"pdf": {"page": "2"}}, {"id": ""}]:
+            with self.assertRaises(ValueError):
+                annotations.create("p", "bookmark", bad, quote="x")
+        stats = annotations.stats()["p"]
+        self.assertEqual((stats["highlights"], stats["notes"]), (0, 0))  # ni passage surligné ni note

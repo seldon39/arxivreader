@@ -126,6 +126,13 @@ if (WINDOWS && !nativeBridge) {
 }
 addEventListener("arxivreader:settings", (event) => openSettingsDialog({ section: event.detail }));
 addEventListener("hashchange", route);
+// Menu du clic droit du navigateur (Précédent, Recharger ; sous Windows aussi Enregistrer, Imprimer…) : sans objet
+// dans l'application. Gardé là où il sert : texte sélectionné (copier), champ de saisie, lien, image.
+document.addEventListener("contextmenu", (event) => {
+  if (event.defaultPrevented || !getSelection().isCollapsed) return;
+  if (event.target.closest?.("input, textarea, select, [contenteditable], a[href], img")) return;
+  event.preventDefault();
+});
 // ⌘-clic ou clic du milieu sur un lien de l'application (article, renvoi) : dans un nouvel onglet
 for (const type of ["click", "auxclick"]) {
   document.addEventListener(type, (event) => {

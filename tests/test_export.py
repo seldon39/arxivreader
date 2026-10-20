@@ -53,6 +53,15 @@ class Export(unittest.TestCase):
         self.assertIn("### Theorem 1.1 (Main) — *understood*", export.paper_markdown(pid, "en"))
         self.assertEqual(export.filename(db.get_paper(pid)), "0806.2370 Toeplitz operators on.md")
 
+    def test_bookmarks(self):
+        pid = "0806.2370"
+        annotations.create(pid, "bookmark", {"pdf": {"page": 7, "top": 300}}, quote="Calcul à vérifier")
+        annotations.create(pid, "bookmark", {"id": "S2.p1"}, quote="Noyau de Bergman")
+        text = export.paper_markdown(pid, "fr")
+        self.assertIn("## Marque-pages", text)
+        self.assertLess(text.index("**Noyau de Bergman** — 2. Bergman kernels"), text.index("**Calcul à vérifier** — PDF, page 7"))
+        self.assertTrue(export.has_notes(annotations.list_for(pid)))
+
     def test_order_within_a_paragraph_and_ai_notes(self):
         pid = "0806.2370"
         annotations.create(pid, "highlight", target={"start": {"id": "S1.p1", "offset": 5}, "end": {"id": "S1.p1", "offset": 9}}, quote="text")

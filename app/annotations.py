@@ -5,7 +5,9 @@ import json
 
 from . import db
 
-KINDS = ("highlight", "block", "general")  # + « proof » : emplacement de preuve indiqué à la main
+KINDS = ("highlight", "block", "general", "bookmark")  # + « proof » : emplacement de preuve indiqué à la main
+# marque-page : nom dans `quote` ; cible {"id": paragraphe du HTML} ou {"pdf": {"page", "top"}} (hauteur en points du
+# PDF), et "version" : celle de l'article quand il a été posé (une nouvelle version peut le déplacer)
 PROOF_MODES = ("section", "passage", "immediate", "admitted")
 COLORS = ("yellow", "green", "blue", "pink")
 STATES = ("understood", "review", "verified")
@@ -39,6 +41,17 @@ def _check_zone(zone):
         and all(isinstance(v, (int, float)) and 0 <= v <= 1 for v in rect) and rect[0] < rect[2] and rect[1] < rect[3]
     if not ok:
         raise ValueError("bad zone")
+
+
+def _check_bookmark(target):
+    pdf = target.get("pdf")
+    if pdf is not None:
+        ok = isinstance(pdf, dict) and isinstance(pdf.get("page"), int) and pdf["page"] >= 1 \
+            and (pdf.get("top") is None or isinstance(pdf["top"], (int, float)))
+    else:
+        ok = isinstance(target.get("id"), str) and 0 < len(target["id"]) <= 200
+    if not ok:
+        raise ValueError("bad bookmark")
 
 
 def image_path(annotation):
@@ -86,6 +99,8 @@ def create(paper_id, kind, target=None, color=None, quote=None, note=None, state
         author = None  # notes d'énoncé et fiche de lecture : ce sont les vôtres, même complétées par Claude
     if kind == "block" and not (target or {}).get("id"):
         raise ValueError("block without target")  # sinon une nouvelle ligne à chaque enregistrement
+    if kind == "bookmark":
+        _check_bookmark(target or {})
     with db.connect() as connection:
         existing = None
         if kind == "general":
@@ -112,8 +127,14 @@ def create(paper_id, kind, target=None, color=None, quote=None, note=None, state
     return update(existing["id"], color=color, note=note, state=state)
 
 
-def update(annotation_id, color=None, note=None, state=None, clear_state=False):
+def update(annotation_id, color=None, note=None, state=None, clear_state=False, quote=None, version=None):
     fields = {}
+    if version is not None:  # marque-page vérifié sur la version actuelle de l'article
+        with db.connect() as connection:
+            connection.execute("UPDATE annotations SET target = json_set(target, '$.version', ?) WHERE id = ? AND kind = 'bookmark'",
+                               (int(version), annotation_id))
+    if quote is not None:  # nom d'un marque-page
+        fields["quote"] = quote
     if color is not None:
         if color not in COLORS:
             raise ValueError("bad color")

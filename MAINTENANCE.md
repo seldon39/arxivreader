@@ -198,6 +198,8 @@ main, dans l'application installée :
   (⌥ + glisser, bouton `#arxZoneButton` ajouté à `#toolbarViewerMiddle`) sont rendues en image par `page.render` ;
   images gardées dans `papers/<id>/zones/` (notes) et `papers/<id>/ai-images/` (questions), envoyées seulement aux
   assistants de `ai.IMAGE_PROVIDERS` (Claude : message à blocs image + texte du SDK ; Gemini : `inline_data`) ;
+- le menu du clic droit du navigateur est supprimé (`app.js`) sauf sur une sélection, un champ, un lien ou une image ;
+  le clic droit de l'article (`annotations.js`) et du PDF (`pdfnotes.js`) propose les marque-pages (`bookmarks.js`) ;
 - les téléchargements (export des notes : dossier Téléchargements, `WKDownloadDelegate`).
 Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à comparer.
 

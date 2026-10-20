@@ -19,10 +19,10 @@ ID = re.compile(r"""\sid=["']([^"']+)["']""")
 STATES = {"fr": {"understood": "compris", "review": "à revoir", "verified": "vérifié"},
           "en": {"understood": "understood", "review": "to review", "verified": "verified"}}
 WORDS = {"fr": {"sheet": "Fiche de lecture", "statements": "Énoncés et preuves", "highlights": "Passages surlignés",
-                "proof": "Preuve de {label}", "exported": "Notes exportées d'arXivReader le {date}", "other": "Autres passages", "pdfPage": "PDF, page {page}", "zone": "Zone de la page (image)",
+                "proof": "Preuve de {label}", "exported": "Notes exportées d'arXivReader le {date}", "other": "Autres passages", "pdfPage": "PDF, page {page}", "zone": "Zone de la page (image)", "bookmarks": "Marque-pages",
                 "empty": "Aucune note sur cet article.", "ai": "proposée par {who}, acceptée", "local": "un modèle local"},
          "en": {"sheet": "Reading notes", "statements": "Statements and proofs", "highlights": "Highlighted passages",
-                "proof": "Proof of {label}", "exported": "Notes exported from arXivReader on {date}", "other": "Other passages", "pdfPage": "PDF, page {page}", "zone": "Region of the page (image)",
+                "proof": "Proof of {label}", "exported": "Notes exported from arXivReader on {date}", "other": "Other passages", "pdfPage": "PDF, page {page}", "zone": "Region of the page (image)", "bookmarks": "Bookmarks",
                 "empty": "No notes on this paper.", "ai": "suggested by {who}, accepted", "local": "a local model"}}
 AUTHORS = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini"}
 
@@ -50,7 +50,7 @@ def _structure(paper_id):
 def has_notes(notes):
     return any((n["kind"] == "general" and (n.get("note") or "").strip())
                or (n["kind"] == "block" and n.get("target") and ((n.get("note") or "").strip() or n.get("state")))
-               or (n["kind"] == "highlight" and n.get("target")) for n in notes)
+               or (n["kind"] in ("highlight", "bookmark") and n.get("target")) for n in notes)
 
 
 def _who(note, words):
@@ -90,10 +90,23 @@ def paper_markdown(paper_id, language="fr"):
     sheet = next((n for n in notes if n["kind"] == "general" and (n.get("note") or "").strip()), None)
     blocks = [n for n in notes if n["kind"] == "block" and n.get("target") and ((n.get("note") or "").strip() or n.get("state"))]
     highlights = [n for n in notes if n["kind"] == "highlight" and n.get("target")]
-    if not (sheet or blocks or highlights):
+    bookmarks = [n for n in notes if n["kind"] == "bookmark" and n.get("target")]
+    if not (sheet or blocks or highlights or bookmarks):
         return "\n".join(lines + [words["empty"], ""])
     if sheet:
         lines += [f"## {words['sheet']}", "", sheet["note"].strip(), ""]
+    if bookmarks:  # HTML dans l'ordre de l'article, puis PDF par page
+        lines += [f"## {words['bookmarks']}", ""]
+        spot = lambda n: (1, n["target"]["pdf"]["page"], -(n["target"]["pdf"].get("top") or 0)) if "pdf" in n["target"] \
+            else (0, rank(n["target"].get("id", "")), 0)  # noqa: E731
+        for note in sorted(bookmarks, key=spot):
+            if "pdf" in note["target"]:
+                where = words["pdfPage"].format(page=note["target"]["pdf"]["page"])
+            else:
+                section = _section_of(note["target"].get("id", ""), toc)
+                where = section["title"] if section else ""
+            lines.append(f"- **{note.get('quote') or ''}**" + (f" — {where}" if where else ""))
+        lines.append("")
     if blocks:
         lines += [f"## {words['statements']}", ""]
         for note in sorted(blocks, key=lambda n: rank(n["target"].get("id", ""))):

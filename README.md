@@ -322,6 +322,10 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   (Claude transcribes it). The last two only with an assistant that reads images (Claude, Gemini).
 - **Statements and proofs**: the note icon in the margin (on hover) opens a note and, for a statement,
   the reading state *understood / to review / checked* (shown in the title and in the list of statements).
+- **Bookmarks**: right-click → "Add bookmark" (or ⌘D; in the PDF also its toolbar button), with a name of your
+  choice. A red ribbon marks the place in the margin; all bookmarks are listed at the top of the Notes tab (a click
+  takes you there, switching between HTML and PDF if needed). A bookmark set on an earlier arXiv version is flagged
+  ("set on v1"); opening and saving it confirms it for the current version.
 - **Notes tab** of the panel: reading progress, the paper's reading sheet, all annotations in the order of
   the paper (a click takes you there).
 - Notes in Markdown (**bold**, *italics*, lists, quotes) with formulas `$…$`, `$$…$$`, saved automatically.

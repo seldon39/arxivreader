@@ -17,13 +17,18 @@ const isPdf = (annotation) => annotation.kind === "highlight" && annotation.targ
 export class PdfNotes {
   // `annotator` : celui du lecteur (mêmes notes, même onglet) ; `view` : le PdfView ; `onAskAI(quote)` ;
   // zones : `readsImages()` (l'assistant lit-il les images ?), `onAskZone(zone)`, `onTranscribe(zone)`
-  constructor({ annotator, view, onAskAI, readsImages = () => false, onAskZone = null, onTranscribe = null }) {
+  // marque-pages : `onAddBookmark()` (bouton, ⌘D), `onBookmark(annotation, rect)` (clic sur un ruban)
+  constructor({ annotator, view, onAskAI, readsImages = () => false, onAskZone = null, onTranscribe = null,
+    onAddBookmark = null, onBookmark = null, onContextMenu = null }) {
     this.annotator = annotator;
     this.view = view;
     this.onAskAI = onAskAI;
     this.readsImages = readsImages;
     this.onAskZone = onAskZone;
     this.onTranscribe = onTranscribe;
+    this.onAddBookmark = onAddBookmark;
+    this.onBookmark = onBookmark;
+    this.onContextMenu = onContextMenu;
     this.zoneMode = false;
     this.drawing = null;
     this.draft = null;
@@ -42,17 +47,24 @@ export class PdfNotes {
     app.eventBus.on("textlayerrendered", ({ pageNumber }) => this.paintPage(pageNumber));
     app.eventBus.on("pagerendered", ({ pageNumber }) => this.paintPage(pageNumber));  // zones : même sans texte
     this.addZoneButton();
+    this.addBookmarkButton();
     this.doc.addEventListener("mousedown", (event) => this.zoneStart(event), true);
     this.doc.addEventListener("mousemove", (event) => this.zoneMove(event), true);
     this.doc.addEventListener("mouseup", (event) => this.zoneEnd(event), true);
     this.doc.querySelectorAll(".page[data-page-number]").forEach((page) => this.paintPage(Number(page.dataset.pageNumber)));
     this.doc.addEventListener("mouseup", (event) => setTimeout(() => this.onUp(event), 0));
     this.doc.addEventListener("selectionchange", () => this.paintSelection());
+    this.doc.addEventListener("contextmenu", (event) => this.bookmarkMenu(event));
     // la barre et la note ouverte sont dans la page de l'application : fermées par un clic ou Échap dans le PDF
     // (l'annotateur n'écoute que sa page), et la barre au défilement du PDF ou à un clic ailleurs dans l'application
     this.doc.addEventListener("mousedown", () => { this.hideToolbar(); this.annotator.closePopover(); });
     this.doc.addEventListener("keydown", (event) => {
       if (event.key === "Escape") { this.hideToolbar(); this.annotator.closePopover(); this.setZoneMode(false); }
+      // ⌘D (Ctrl+D) : marque-page, comme dans le reste du lecteur
+      if (event.key.toLowerCase() === "d" && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && this.onAddBookmark) {
+        event.preventDefault();
+        this.onAddBookmark();
+      }
     });
     this.doc.getElementById("viewerContainer")?.addEventListener("scroll", () => this.hideToolbar(), { passive: true });
     this.onParentDown = (event) => { if (this.toolbar && !this.toolbar.contains(event.target)) this.hideToolbar(); };
@@ -102,6 +114,7 @@ export class PdfNotes {
     const pageDiv = this.doc?.querySelector(`.page[data-page-number="${page}"]`);
     if (!pageDiv) return;
     pageDiv.querySelector(".arx-hl-layer:not(.arx-sel-layer)")?.remove();
+    this.paintBookmarks(pageDiv, page);
     const here = this.items.filter((a) => a.target.pdf.page <= page && (a.target.pdf.endPage || a.target.pdf.page) >= page);
     if (!here.length) return;
     const nodes = this.textNodes(page);
@@ -121,6 +134,59 @@ export class PdfNotes {
     const layer = this.layerFor(pageDiv, "arx-hl-layer", rects);
     const textLayer = pageDiv.querySelector(".textLayer");
     if (textLayer) textLayer.before(layer); else pageDiv.append(layer);
+  }
+
+  // rubans des marque-pages de la page, dans sa marge droite, à leur hauteur (points du PDF → fraction de la page)
+  paintBookmarks(pageDiv, page) {
+    pageDiv.querySelectorAll(".arx-bm").forEach((ribbon) => ribbon.remove());
+    const marks = this.annotator.items.filter((a) => a.kind === "bookmark" && a.target?.pdf?.page === page);
+    const view = marks.length && this.app?.pdfViewer.getPageView(page - 1);
+    if (!view?.viewport) return;
+    for (const annotation of marks) {
+      const [, y] = view.viewport.convertToViewportPoint(0, annotation.target.pdf.top ?? view.viewport.viewBox[3]);
+      const ribbon = this.doc.createElement("button");
+      ribbon.type = "button";
+      ribbon.className = "arx-bm";
+      ribbon.title = annotation.quote || t("bookmarks.untitled");
+      ribbon.setAttribute("aria-label", ribbon.title);
+      ribbon.style.top = `${Math.max(0, Math.min(97, (100 * y) / view.viewport.height))}%`;
+      ribbon.addEventListener("click", () => this.onBookmark?.(annotation, this.anchor(ribbon.getBoundingClientRect()).getBoundingClientRect()));
+      pageDiv.append(ribbon);
+    }
+  }
+
+  repaintBookmarks() {
+    this.doc?.querySelectorAll(".page[data-page-number]").forEach((pageDiv) => this.paintBookmarks(pageDiv, Number(pageDiv.dataset.pageNumber)));
+  }
+
+  // clic droit sur une page, sans sélection (sinon le menu habituel, pour copier) : « Ajouter un marque-page »
+  bookmarkMenu(event) {
+    const pageDiv = event.target.closest?.(".page[data-page-number]");
+    const keep = !this.doc.getSelection().isCollapsed || event.target.closest?.("a, input, select, textarea");
+    if (keep) return;  // copier une sélection, lien, champ (numéro de page, recherche) : menu habituel
+    event.preventDefault();  // ailleurs, pas de menu du navigateur (Précédent, Recharger…), sans objet ici
+    if (!pageDiv || !this.onAddBookmark) return;
+    const page = Number(pageDiv.dataset.pageNumber);
+    const view = this.app.pdfViewer.getPageView(page - 1);
+    const box = this.boxOf(pageDiv);
+    const [, top] = view.viewport.convertToPdfPoint(event.clientX - box.left, Math.max(0, event.clientY - box.top - 8));
+    const point = this.anchor({ left: event.clientX, top: event.clientY, width: 0, height: 0 }).getBoundingClientRect();
+    this.onContextMenu?.(point, t("bookmarks.addHereMenu"), () => this.onAddBookmark({ pdf: { page, top }, rect: point }));
+  }
+
+  addBookmarkButton() {
+    const after = this.doc.getElementById("arxZoneButton");
+    if (!after || !this.onAddBookmark || this.doc.getElementById("arxBookmarkButton")) return;
+    this.bookmarkButton = this.doc.createElement("button");
+    Object.assign(this.bookmarkButton, { id: "arxBookmarkButton", className: "toolbarButton", type: "button", title: t("bookmarks.addHere") });
+    this.bookmarkButton.setAttribute("aria-label", t("bookmarks.addHere"));
+    this.bookmarkButton.addEventListener("click", () => this.onAddBookmark());
+    after.after(this.bookmarkButton);
+  }
+
+  // bouton du marque-page, en coordonnées de la page de l'application (la fenêtre du nom s'ouvre dessous)
+  bookmarkButtonRect() {
+    return this.bookmarkButton ? this.anchor(this.bookmarkButton.getBoundingClientRect()).getBoundingClientRect() : null;
   }
 
   // boîte de la page sans sa bordure (celle de la couche de texte), en coordonnées du cadre
