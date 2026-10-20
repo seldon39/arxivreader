@@ -17,7 +17,7 @@ const isPdf = (annotation) => annotation.kind === "highlight" && annotation.targ
 export class PdfNotes {
   // `annotator` : celui du lecteur (mêmes notes, même onglet) ; `view` : le PdfView ; `onAskAI(quote)` ;
   // zones : `readsImages()` (l'assistant lit-il les images ?), `onAskZone(zone)`, `onTranscribe(zone)`
-  // marque-pages : `onAddBookmark()` (bouton, ⌘D), `onBookmark(annotation, rect)` (clic sur un ruban)
+  // marque-pages : `onAddBookmark(at)` (clic droit, ⌘D), `onBookmark(annotation, rect)` (clic sur un ruban)
   constructor({ annotator, view, onAskAI, readsImages = () => false, onAskZone = null, onTranscribe = null,
     onAddBookmark = null, onBookmark = null, onContextMenu = null }) {
     this.annotator = annotator;
@@ -47,7 +47,6 @@ export class PdfNotes {
     app.eventBus.on("textlayerrendered", ({ pageNumber }) => this.paintPage(pageNumber));
     app.eventBus.on("pagerendered", ({ pageNumber }) => this.paintPage(pageNumber));  // zones : même sans texte
     this.addZoneButton();
-    this.addBookmarkButton();
     this.doc.addEventListener("mousedown", (event) => this.zoneStart(event), true);
     this.doc.addEventListener("mousemove", (event) => this.zoneMove(event), true);
     this.doc.addEventListener("mouseup", (event) => this.zoneEnd(event), true);
@@ -172,21 +171,6 @@ export class PdfNotes {
     const [, top] = view.viewport.convertToPdfPoint(event.clientX - box.left, Math.max(0, event.clientY - box.top - 8));
     const point = this.anchor({ left: event.clientX, top: event.clientY, width: 0, height: 0 }).getBoundingClientRect();
     this.onContextMenu?.(point, t("bookmarks.addHereMenu"), () => this.onAddBookmark({ pdf: { page, top }, rect: point }));
-  }
-
-  addBookmarkButton() {
-    const after = this.doc.getElementById("arxZoneButton");
-    if (!after || !this.onAddBookmark || this.doc.getElementById("arxBookmarkButton")) return;
-    this.bookmarkButton = this.doc.createElement("button");
-    Object.assign(this.bookmarkButton, { id: "arxBookmarkButton", className: "toolbarButton", type: "button", title: t("bookmarks.addHere") });
-    this.bookmarkButton.setAttribute("aria-label", t("bookmarks.addHere"));
-    this.bookmarkButton.addEventListener("click", () => this.onAddBookmark());
-    after.after(this.bookmarkButton);
-  }
-
-  // bouton du marque-page, en coordonnées de la page de l'application (la fenêtre du nom s'ouvre dessous)
-  bookmarkButtonRect() {
-    return this.bookmarkButton ? this.anchor(this.bookmarkButton.getBoundingClientRect()).getBoundingClientRect() : null;
   }
 
   // boîte de la page sans sa bordure (celle de la couche de texte), en coordonnées du cadre

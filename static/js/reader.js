@@ -1761,7 +1761,7 @@ class Reader {
   // ---------- Marque-pages (bookmarks.js) ----------
 
   // `at` : endroit d'un clic droit ({element} en HTML, {pdf: {page, top}} dans le PDF, et `rect` du clic) ; sinon
-  // (⌘D, bouton de la barre du PDF) l'endroit lu : paragraphe en haut de l'article, page et hauteur dans le PDF
+  // (⌘D) l'endroit lu : paragraphe en haut de l'article, page et hauteur dans le PDF
   async addBookmark(at = null) {
     const paper = this.paper;
     let target, name, rect = at?.rect;
@@ -1770,7 +1770,7 @@ class Reader {
       if (!spot) return;
       target = { pdf: { page: spot.page, top: spot.top } };
       name = t("bookmarks.page", { page: spot.page });
-      rect ||= this.pdfNotes?.bookmarkButtonRect() || this.toolbar.getBoundingClientRect();
+      rect ||= this.toolbar.getBoundingClientRect();  // fenêtre du nom sous la barre du lecteur
     } else {
       const read = this.currentAnchor();
       const anchor = at?.element || read?.closest(".ltx_theorem[id]") || read;  // dans un énoncé : l'énoncé
