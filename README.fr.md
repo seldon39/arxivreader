@@ -301,8 +301,8 @@ depuis arXiv » de sa carte dans la bibliothèque.
 
 Les articles absents d'arXiv (versions publiées, thèses, notes) peuvent rejoindre la bibliothèque : bouton
 « Importer un PDF… » à côté d'« Importer », ou glisser des fichiers PDF sur la bibliothèque. Titre et auteurs
-viennent du PDF (ses métadonnées, sinon sa première page) et se corrigent depuis le lecteur (« Modifier titre
-et auteurs »). Le PDF se lit dans le lecteur avec surlignages, notes et Claude (questions sur un passage
+viennent du PDF (ses métadonnées, sinon sa première page), sont proposés à la vérification à l'import, et se
+corrigent ensuite depuis le lecteur ou la carte de l'article (« Modifier titre et auteurs »). Le PDF se lit dans le lecteur avec surlignages, notes et Claude (questions sur un passage
 sélectionné, ou sur tout l'article à partir de son texte extrait). Pas d'énoncés, de dépendances ni de
 bibliographie (pas de source TeX). Un PDF téléchargé d'arXiv (mention « arXiv:… » sur sa première page)
 n'est pas importé d'emblée : l'application propose d'abord d'importer à la place sa version arXiv, qui offre
@@ -332,7 +332,7 @@ il suffit de la fermer et d'aller dans le feed.
   « Demander à Claude » et « Copier le texte » ; ces surlignages figurent dans l'onglet Notes avec leur page.
 - **Zones d'un PDF** (formules, figures, articles numérisés dont les formules n'ont pas de texte sélectionnable) :
   ⌥ + glisser (Alt + glisser sous Windows), ou le bouton zone de la barre du PDF, puis la même barre : surlignage
-  et note (vignette dans l'onglet Notes), « Demander à Claude » avec l'image de la zone, ou « Copier en LaTeX »
+  et note (vignette dans l'onglet Notes), « Demander à Claude » avec l'image de la zone, ou « Copier la formule en LaTeX »
   (Claude la transcrit). Ces deux derniers seulement avec un assistant qui lit les images (Claude, Gemini).
 - **Énoncés et preuves** : l'icône de note en marge (au survol) ouvre une note et, pour un énoncé,
   l'état de lecture *compris / à revoir / vérifié* (affiché dans le titre et la liste des énoncés).

@@ -289,8 +289,8 @@ button on its card in the library.
 
 Papers that are not on arXiv (journal versions, theses, notes) can be added to the library: "Import a PDF…"
 button next to "Import", or drag PDF files onto the library. Title and authors come from the PDF (its
-metadata, otherwise its first page) and can be corrected from the reader ("Edit title and authors"). The PDF
-is read in the reader with highlights, notes and Claude (questions on a selected passage, or on the whole
+metadata, otherwise its first page), shown for checking at import, and can be corrected later from the reader
+or the paper's card ("Edit title and authors"). The PDF is read in the reader with highlights, notes and Claude (questions on a selected passage, or on the whole
 paper from its extracted text). There are no statements, dependencies or bibliography (no TeX source).
 A PDF downloaded from arXiv (an "arXiv:…" mention on its first page) is not imported straight away: the app
 first offers to import its arXiv version instead, which has every feature (no duplicate). Otherwise, if its
@@ -318,7 +318,7 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   "Ask Claude" and "Copy text"; these highlights appear in the Notes tab with their page.
 - **Regions of a PDF** (formulas, figures, scanned papers whose formulas have no selectable text): ⌥ + drag
   (Alt + drag on Windows), or the region button of the PDF toolbar, then the same bar: highlight and note
-  (shown in the Notes tab as a thumbnail), "Ask Claude" with the image of the region, or "Copy as LaTeX"
+  (shown in the Notes tab as a thumbnail), "Ask Claude" with the image of the region, or "Copy formula as LaTeX"
   (Claude transcribes it). The last two only with an assistant that reads images (Claude, Gemini).
 - **Statements and proofs**: the note icon in the margin (on hover) opens a note and, for a statement,
   the reading state *understood / to review / checked* (shown in the title and in the list of statements).
