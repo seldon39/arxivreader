@@ -89,7 +89,9 @@ navDrop('.topnav a[href="#/"]', async (papers) => {
   openRoute("#/", true, true);
 });
 navDrop('.topnav a[href="#/related"]', async (papers) => {
-  for (const paper of papers.slice(0, 3)) openRoute(`#/related/${encodeURIComponent(paper.arxivId)}`, true, paper === papers[0]);
+  // PDF importé (sans identifiant arXiv) : pas de graphe
+  const withId = papers.filter((paper) => paper.arxivId);
+  for (const paper of withId.slice(0, 3)) openRoute(`#/related/${encodeURIComponent(paper.arxivId)}`, true, paper === withId[0]);
 });
 
 // Pastille sur « Feed » : nouveaux articles d'auteurs suivis pas encore vus

@@ -31,7 +31,7 @@ export const isSelected = (arxivId) => selected.has(arxivId);
 
 // articles emportés par un glissement : toute la sélection si l'article saisi en fait partie, sinon lui seul
 export const dragGroup = (info) => {
-  draggingSelection = selected.has(info.arxivId);
+  draggingSelection = selected.has(paperKey(info));
   return draggingSelection ? [...selected.values()] : [info];
 };
 // fin du glissement (dans cette fenêtre ou une autre) : sélection déposée → effacée

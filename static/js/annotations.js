@@ -781,7 +781,7 @@ export class Annotator {
   noteCard(annotation, element) {
     const inPdf = Boolean(annotation.target?.pdf);
     const go = () => {
-      if (inPdf) { this.pdf?.reveal(annotation); return; }
+      if (inPdf) { this.revealPdf?.(annotation); return; }
       if (!element) return;
       if (annotation.kind === "highlight") this.navigate(element);
       else this.navigate(element.id);

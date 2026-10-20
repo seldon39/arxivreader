@@ -107,7 +107,12 @@ class Reader {
       aiActions: (id) => this.assistant.actionsFor(id, { compact: true }),
       onAskAI: (quote) => this.assistant.setPassage(quote),
     });
-    if (this.pdf) this.pdfNotes = new PdfNotes({ annotator: this.annotator, view: this.pdf, onAskAI: this.annotator.onAskAI });
+    if (this.pdf && !this.pdfNotes) this.pdfNotes = new PdfNotes({ annotator: this.annotator, view: this.pdf, onAskAI: this.annotator.onAskAI });
+    // onglet Notes : passage surligné dans le PDF, lu en HTML → vue PDF d'abord
+    this.annotator.revealPdf = async (annotation) => {
+      if (!this.pdfMode && !this.texOnly) await this.setView("pdf", { save: false });
+      if (!this.destroyed) this.pdfNotes?.reveal(annotation);
+    };
     this.assistant = new Assistant({
       paper, structure: this.structure, find: (id) => this.find(id), annotator: this.annotator,
       navigate: (id) => this.navigate(id),
@@ -245,7 +250,8 @@ class Reader {
       this.root.dataset.view = "pdf";
       if (!this.pdf) {
         this.pdf = new PdfView(`/api/papers/${encodeURIComponent(this.paper.id)}/pdf`, this.paper.title);
-        this.pdfNotes = new PdfNotes({ annotator: this.annotator, view: this.pdf, onAskAI: this.annotator.onAskAI });
+        // à l'ouverture (vue PDF gardée), l'annotateur n'existe pas encore : PdfNotes créé juste après lui
+        if (this.annotator) this.pdfNotes = new PdfNotes({ annotator: this.annotator, view: this.pdf, onAskAI: this.annotator.onAskAI });
         this.pdfView = h("div", { class: "paper pdf-mode pdf-view" }, this.pdf.frame);
         this.scroller.append(this.pdfView);
         this.followPdf();
@@ -1732,7 +1738,8 @@ class Reader {
         h("label", {}, t("reader.metaTitle"), title),
         h("label", {}, t("reader.metaAuthors"), authors),
         h("div", { class: "dialog-actions" },
-          h("button", { class: "button", value: "cancel", formnovalidate: true }, t("library.folder.cancel")),
+          // type="button" : Entrée enregistre (sinon le premier bouton, Annuler, servirait d'envoi)
+          h("button", { class: "button", type: "button", onclick: () => dialog.close("cancel") }, t("library.folder.cancel")),
           h("button", { class: "button primary", value: "save" }, t("library.folder.save")))));
     dialog.addEventListener("close", async () => {
       dialog.remove();

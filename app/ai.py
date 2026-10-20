@@ -7,6 +7,7 @@ Autres assistants possibles (réglages) : Codex, Gemini, modèle local, voir pro
 
 import asyncio
 import contextlib
+import html
 import re
 import json
 import os
@@ -273,8 +274,9 @@ def build_prompt(paper, structure, task, target=None, quote=None, question=None,
     if task == "ask" and not question:
         raise AIError("No question")
 
-    origin = f' arxiv="{paper["arxiv_id"]}v{paper["version"]}"' if paper.get("arxiv_id") else ' source="PDF importé par l\'utilisateur"'
-    parts = [f'<paper title="{paper["title"]}"{origin}>\n{text}\n</paper>']
+    origin = f' arxiv="{paper["arxiv_id"]}v{paper["version"]}"' if paper.get("arxiv_id") else ' source="PDF imported by the user"'
+    title = html.escape(paper["title"] or "", quote=True)  # titre d'un PDF importé : écrit par n'importe qui
+    parts = [f'<paper title="{title}"{origin}>\n{text}\n</paper>']
     if node is not None:
         parts.append(_node_text(soup, index, structure, node))
     if quote:

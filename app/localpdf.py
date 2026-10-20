@@ -15,15 +15,22 @@ import logging
 import re
 import unicodedata
 from pathlib import Path
+from urllib.parse import quote
 
-from . import db
-from .library import paper_dir, write_atomic, write_atomic_bytes
+import httpx
+
+from . import db, s2
+from .config import USER_AGENT
+from .library import paper_dir, paper_lock, write_atomic, write_atomic_bytes
 from .structure import STRUCTURE_VERSION
 
 SOURCE = "local-pdf"
 logging.getLogger("pypdf").setLevel(logging.ERROR)  # polices incomplètes, etc. : sans effet sur le texte utile
 MAX_BYTES = 150_000_000
 MAX_PAGES = 2000
+PAGE_CHARS = 200_000   # texte gardé par page, et en tout (l'assistant en lit 400 000) : un PDF piégé (flux énorme)
+TOTAL_CHARS = 800_000  # ne remplit ni la mémoire ni text.json
+S2 = "https://api.semanticscholar.org/graph/v1"
 ARXIV_STAMP = re.compile(r"arXiv:\s*(\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?/\d{7})(?:v\d+)?", re.I)
 DOI = re.compile(r"\b(10\.\d{4,9}/[^\s\"<>]+[^\s\"<>.,;:)\]])")
 LINE_NOISE = re.compile(r"\d{4}|©|doi|arxiv|page|journal|vol\.|issn", re.I)
@@ -53,19 +60,31 @@ def _clean(value):
     return " ".join(str(value or "").replace("\x00", "").split())
 
 
+def _page_text(page):
+    try:
+        return (page.extract_text() or "")[:PAGE_CHARS]
+    except Exception:  # page abîmée, flux trop gros (garde de pypdf) : page sans texte, le reste est gardé
+        return ""
+
+
 def read_pdf(data, filename=""):
     """Titre, auteurs, résumé probable, DOI et texte de chaque page."""
     from pypdf import PdfReader
-    from pypdf.errors import PdfReadError
     try:
         reader = PdfReader(io.BytesIO(data))
         if reader.is_encrypted and not reader.decrypt(""):
             raise PdfError("encrypted")
-        pages = [(page.extract_text() or "") for page in reader.pages[:MAX_PAGES]]
-        info = reader.metadata or {}
+        pages, total = [], 0
+        for page in reader.pages[:MAX_PAGES]:
+            pages.append(_page_text(page) if total < TOTAL_CHARS else "")
+            total += len(pages[-1])
+        try:
+            info = reader.metadata or {}
+        except Exception:
+            info = {}
     except PdfError:
         raise
-    except (PdfReadError, ValueError, KeyError, TypeError, OSError) as error:
+    except Exception as error:  # pypdf lève bien des sortes d'erreurs sur un fichier abîmé ou piégé
         raise PdfError(f"unreadable: {type(error).__name__}") from error
     first = "\n".join(pages[:2])
     lines = [_clean(line) for line in (pages[0] if pages else "").splitlines()]
@@ -111,9 +130,14 @@ def import_pdf(data, filename=""):
     """Article de la bibliothèque à partir d'un PDF ; déjà importé (même fichier) : celui-là, remis en bibliothèque."""
     if len(data) > MAX_BYTES:
         raise PdfError("too large")
-    if not data.lstrip()[:5] == b"%PDF-":
+    if b"%PDF-" not in data[:1024]:  # la norme admet quelques octets avant l'en-tête
         raise PdfError("not a PDF")
     pid = paper_id(data)
+    with paper_lock(pid):
+        return _import(pid, data, filename)
+
+
+def _import(pid, data, filename):
     existing = db.get_paper(pid)
     if existing:
         if not existing.get("in_library"):
@@ -155,6 +179,17 @@ def _norm(title):
     return re.sub(r"[^a-z0-9]+", " ", unicodedata.normalize("NFKD", title or "").encode("ascii", "ignore").decode().lower()).strip()
 
 
+def _s2(path, params, api_key=None):
+    """Une seule demande, courte (pas de nouvel essai) : la page l'attend après l'import."""
+    headers = {"User-Agent": USER_AGENT, **({"x-api-key": api_key} if api_key else {})}
+    with httpx.Client(headers=headers, timeout=10) as client:
+        response = s2.paced(lambda: client.get(f"{S2}{path}", params=params), api_key)()
+    if response.status_code in (404, 429):
+        return None
+    response.raise_for_status()
+    return response.json()
+
+
 def arxiv_match(paper, api_key=None, get_s2=None):
     """Version arXiv du même article : {"arxivId", "title", "via"} ou None. Mention « arXiv:… » imprimée sur la
     première page (préprint), sinon DOI, sinon titre (Semantic Scholar ; titre presque identique exigé)."""
@@ -166,12 +201,11 @@ def arxiv_match(paper, api_key=None, get_s2=None):
     stamp = ARXIV_STAMP.search("\n".join(pages))
     if stamp:
         return {"arxivId": stamp.group(1), "title": paper["title"], "via": "stamp"}
-    if get_s2 is None:
-        from .profile import _get_s2 as get_s2
+    get_s2 = get_s2 or _s2
     fields = {"fields": "externalIds,title"}
     found = None
     if paper.get("doi"):
-        found = get_s2(f"/paper/DOI:{paper['doi']}", fields, api_key)
+        found = get_s2(f"/paper/DOI:{quote(paper['doi'], safe='/')}", fields, api_key)
         via = "doi"
     if not (found and (found.get("externalIds") or {}).get("ArXiv")) and len(_norm(paper["title"]).split()) >= 3:
         candidate = get_s2("/paper/search/match", {"query": paper["title"], **fields}, api_key)

@@ -32,8 +32,13 @@ export class PdfNotes {
     app.eventBus.on("textlayerrendered", ({ pageNumber }) => this.paintPage(pageNumber));
     this.doc.querySelectorAll(".page[data-page-number]").forEach((page) => this.paintPage(Number(page.dataset.pageNumber)));
     this.doc.addEventListener("mouseup", (event) => setTimeout(() => this.onUp(event), 0));
-    this.doc.addEventListener("mousedown", (event) => { if (!event.target.closest?.(".arx-hl")) this.hideToolbar(); });
-    this.doc.addEventListener("keydown", (event) => { if (event.key === "Escape") this.hideToolbar(); });
+    // la barre et la note ouverte sont dans la page de l'application : fermées par un clic ou Échap dans le PDF
+    // (l'annotateur n'écoute que sa page), et la barre au défilement du PDF ou à un clic ailleurs dans l'application
+    this.doc.addEventListener("mousedown", () => { this.hideToolbar(); this.annotator.closePopover(); });
+    this.doc.addEventListener("keydown", (event) => { if (event.key === "Escape") { this.hideToolbar(); this.annotator.closePopover(); } });
+    this.doc.getElementById("viewerContainer")?.addEventListener("scroll", () => this.hideToolbar(), { passive: true });
+    this.onParentDown = (event) => { if (this.toolbar && !this.toolbar.contains(event.target)) this.hideToolbar(); };
+    document.addEventListener("mousedown", this.onParentDown);
   }
 
   // ---- texte d'une page : nœuds de la couche de texte, dans l'ordre ----
@@ -48,16 +53,27 @@ export class PdfNotes {
     return nodes;
   }
 
-  // position (page, décalage dans le texte de la page) d'une extrémité de sélection
+  // position (page, décalage dans le texte de la page) d'une extrémité de sélection ; extrémité sur un élément
+  // (autour des <br> de pdf.js) : `offset` y compte les enfants, la position est avant l'enfant n° offset
   spot(node, offset) {
     const element = node.nodeType === 3 ? node.parentElement : node;
     const pageDiv = element?.closest?.(".page[data-page-number]");
     if (!pageDiv || !element.closest(".textLayer")) return null;
     const page = Number(pageDiv.dataset.pageNumber);
+    const texts = this.textNodes(page);
     let total = 0;
-    for (const text of this.textNodes(page)) {
-      if (text === node) return { page, offset: total + offset };
-      if (node.nodeType === 1 && node.contains(text)) return { page, offset: total };
+    if (node.nodeType === 3) {
+      for (const text of texts) {
+        if (text === node) return { page, offset: total + Math.min(offset, text.data.length) };
+        total += text.data.length;
+      }
+      return { page, offset: total };
+    }
+    const next = node.childNodes[offset] || null;
+    for (const text of texts) {  // dans l'ordre du document : on compte ce qui précède l'extrémité
+      const before = next ? next.compareDocumentPosition(text) & Node.DOCUMENT_POSITION_PRECEDING
+        : node.contains(text) || node.compareDocumentPosition(text) & Node.DOCUMENT_POSITION_PRECEDING;
+      if (!before) break;
       total += text.data.length;
     }
     return { page, offset: total };
@@ -67,14 +83,16 @@ export class PdfNotes {
   paintPage(page) {
     const pageDiv = this.doc?.querySelector(`.page[data-page-number="${page}"]`);
     if (!pageDiv) return;
-    pageDiv.querySelector(".arx-hl-layer")?.remove();
+    pageDiv.querySelector(".arx-hl-layer")?.remove();  // couche et couche de texte : dans la page, bordure exclue
     const here = this.items.filter((a) => a.target.pdf.page <= page && (a.target.pdf.endPage || a.target.pdf.page) >= page);
     if (!here.length) return;
     const nodes = this.textNodes(page);
     if (!nodes.length) return;
     const layer = this.doc.createElement("div");
     layer.className = "arx-hl-layer";
-    const box = pageDiv.getBoundingClientRect();
+    const outer = pageDiv.getBoundingClientRect();
+    const box = { left: outer.left + pageDiv.clientLeft, top: outer.top + pageDiv.clientTop,
+      width: pageDiv.clientWidth, height: pageDiv.clientHeight };
     const length = nodes.reduce((n, node) => n + node.data.length, 0);
     for (const annotation of here) {
       const { page: first, start, endPage = first, end } = annotation.target.pdf;
@@ -127,6 +145,7 @@ export class PdfNotes {
   onUp(event) {
     const selection = this.doc.getSelection();
     if (!selection.rangeCount || selection.isCollapsed) {
+      if (event.target.closest?.("a, .annotationLayer section")) return;  // lien du PDF : suivi, sans ouvrir de note
       const hit = this.hitTest(event.clientX, event.clientY);
       if (hit) this.annotator.openHighlight(hit.id, this.anchor(hit.rect));
       return;
@@ -134,7 +153,7 @@ export class PdfNotes {
     const range = selection.getRangeAt(0);
     const first = this.spot(range.startContainer, range.startOffset);
     const last = this.spot(range.endContainer, range.endOffset);
-    const text = range.toString().replace(/\s+/g, " ").trim();
+    const text = selection.toString().replace(/\s+/g, " ").trim();  // fins de ligne (<br>) comptées comme espaces
     if (!first || !last || !text) return;
     this.showToolbar(range, { page: first.page, start: first.offset, endPage: last.page, end: last.offset }, text);
   }
@@ -221,5 +240,6 @@ export class PdfNotes {
   destroy() {
     this.destroyed = true;
     this.hideToolbar();
+    if (this.onParentDown) document.removeEventListener("mousedown", this.onParentDown);
   }
 }

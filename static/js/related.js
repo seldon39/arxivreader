@@ -130,7 +130,7 @@ export async function renderRelated(root, arxivFromRoute = null) {
   form.addEventListener("drop", (event) => {
     event.preventDefault();
     form.classList.remove("drop-target");
-    const [paper] = droppedPapers(event.dataTransfer);
+    const paper = droppedPapers(event.dataTransfer).find((item) => item.arxivId);  // PDF importé : pas de graphe
     if (paper) load(paper.arxivId); else toast(t("library.drop.notPaper"), { error: true });
   });
   pick.addEventListener("click", () => libraryMenu(pick, form, (arxivId) => load(arxivId)));
@@ -586,7 +586,7 @@ async function libraryMenu(button, anchor, choose) {
   const fold = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   const fill = () => {
     const words = fold(filter.value).split(/\s+/).filter(Boolean);
-    const shown = papers.filter((p) => words.every((w) => fold(`${p.title} ${p.authors.join(" ")}`).includes(w))).slice(0, 60);
+    const shown = papers.filter((p) => p.arxiv_id && words.every((w) => fold(`${p.title} ${p.authors.join(" ")}`).includes(w))).slice(0, 60);
     items.replaceChildren(...(shown.length ? shown.map((p) => h("button", { class: "related-menu-item", type: "button",
       onclick: () => { close(); choose(p.arxiv_id); } }, h("span", {}, plainTitle(p.title)), h("span", { class: "muted small" }, authorLine(p.authors))))
       : [h("p", { class: "muted small" }, t("library.noMatch"))]));

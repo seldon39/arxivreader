@@ -19,10 +19,10 @@ ID = re.compile(r"""\sid=["']([^"']+)["']""")
 STATES = {"fr": {"understood": "compris", "review": "à revoir", "verified": "vérifié"},
           "en": {"understood": "understood", "review": "to review", "verified": "verified"}}
 WORDS = {"fr": {"sheet": "Fiche de lecture", "statements": "Énoncés et preuves", "highlights": "Passages surlignés",
-                "proof": "Preuve de {label}", "exported": "Notes exportées d'arXivReader le {date}", "other": "Autres passages",
+                "proof": "Preuve de {label}", "exported": "Notes exportées d'arXivReader le {date}", "other": "Autres passages", "pdfPage": "PDF, page {page}",
                 "empty": "Aucune note sur cet article.", "ai": "proposée par {who}, acceptée", "local": "un modèle local"},
          "en": {"sheet": "Reading notes", "statements": "Statements and proofs", "highlights": "Highlighted passages",
-                "proof": "Proof of {label}", "exported": "Notes exported from arXivReader on {date}", "other": "Other passages",
+                "proof": "Proof of {label}", "exported": "Notes exported from arXivReader on {date}", "other": "Other passages", "pdfPage": "PDF, page {page}",
                 "empty": "No notes on this paper.", "ai": "suggested by {who}, accepted", "local": "a local model"}}
 AUTHORS = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini"}
 
@@ -109,11 +109,19 @@ def paper_markdown(paper_id, language="fr"):
         lines += [f"## {words['highlights']}", ""]
         current = None  # section du passage précédent (titre répété seulement quand elle change)
         start_of = lambda n: n["target"].get("start") or {}  # noqa: E731
-        for note in sorted(highlights, key=lambda n: (rank(start_of(n).get("id", "")), start_of(n).get("offset") or 0, n["id"])):
-            section = _section_of((note["target"].get("start") or {}).get("id", ""), toc)
-            if current is None or (section or {}).get("id", "") != current:
-                lines += [f"### {section['title'] if section else words['other']}", ""]
-                current = (section or {}).get("id", "")
+        pdf_of = lambda n: n["target"].get("pdf")  # noqa: E731  (passage surligné dans le PDF : page et position)
+        sort_key = lambda n: ((1, pdf_of(n)["page"], pdf_of(n).get("start") or 0, n["id"]) if pdf_of(n)  # noqa: E731
+                              else (0, rank(start_of(n).get("id", "")), start_of(n).get("offset") or 0, n["id"]))
+        for note in sorted(highlights, key=sort_key):
+            if pdf_of(note):
+                heading = words["pdfPage"].format(page=pdf_of(note)["page"])
+                key = f"pdf-{pdf_of(note)['page']}"
+            else:
+                section = _section_of(start_of(note).get("id", ""), toc)
+                heading, key = (section["title"] if section else words["other"]), (section or {}).get("id", "")
+            if current is None or key != current:
+                lines += [f"### {heading}", ""]
+                current = key
             lines += [_quote(note.get("quote")), ""]
             if (note.get("note") or "").strip():
                 lines += [note["note"].strip() + _who(note, words), ""]
@@ -125,7 +133,7 @@ def filename(paper):
     title = re.sub(r"\$[^$]*\$", "", paper.get("title") or "")
     title = re.sub(r"[^\w\s\-]", "", title, flags=re.UNICODE)
     title = " ".join(title.split()[:6])
-    return f"{paper['arxiv_id'].replace('/', '_')} {title}".strip() + ".md"
+    return f"{(paper['arxiv_id'] or paper['id']).replace('/', '_')} {title}".strip() + ".md"  # PDF importé : son id
 
 
 def _with_notes():

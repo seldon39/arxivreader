@@ -650,20 +650,33 @@ def save_position(paper_id: str, body: PositionRequest):
 @app.post("/api/papers/pdf")
 async def import_local_pdf(request: Request):
     """PDF de l'ordinateur (corps : le fichier, en application/pdf ; nom dans l'en-tête X-Filename) : article de la
-    bibliothèque ; et sa version arXiv si elle existe (proposée par la page)."""
+    bibliothèque. Sa version arXiv est cherchée ensuite (GET …/arxiv-match), pour répondre tout de suite."""
     if int(request.headers.get("content-length") or 0) > localpdf.MAX_BYTES:
         raise HTTPException(413, "PDF too large")
-    data = await request.body()
+    chunks, size = [], 0
+    async for chunk in request.stream():  # taille comptée en lisant (un envoi « chunked » n'annonce pas sa longueur)
+        size += len(chunk)
+        if size > localpdf.MAX_BYTES:
+            raise HTTPException(413, "PDF too large")
+        chunks.append(chunk)
     filename = unquote(request.headers.get("x-filename", ""))[:300]
     try:
-        paper = await run_in_threadpool(localpdf.import_pdf, data, filename)
+        paper = await run_in_threadpool(localpdf.import_pdf, b"".join(chunks), filename)
     except localpdf.PdfError as error:
         raise HTTPException(400, f"PDF: {error}")
+    return {"paper": paper}
+
+
+@app.get("/api/papers/{paper_id}/arxiv-match")
+def pdf_arxiv_match(paper_id: str):
+    """Version arXiv d'un PDF importé ({"arxiv": {...}} ou {"arxiv": None}) : la page la propose."""
+    paper = checked_paper(paper_id)
+    if not localpdf.is_local(paper):
+        return {"arxiv": None}
     try:
-        match = await run_in_threadpool(localpdf.arxiv_match, paper, db.get_settings().get("s2ApiKey") or None)
+        return {"arxiv": localpdf.arxiv_match(paper, db.get_settings().get("s2ApiKey") or None)}
     except (httpx.HTTPError, ValueError, KeyError, TypeError):
-        match = None  # réseau, Semantic Scholar : l'article est importé quand même
-    return {"paper": paper, "arxiv": match}
+        return {"arxiv": None}  # réseau, Semantic Scholar : rien à proposer
 
 
 class PaperMeta(BaseModel):

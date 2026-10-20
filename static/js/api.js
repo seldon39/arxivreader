@@ -30,6 +30,7 @@ async function uploadPdf(file) {
 export const api = {
   papers: () => request("GET", "/api/papers"),
   uploadPdf,
+  pdfArxivMatch: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/arxiv-match`),
   updateMeta: (id, title, authors) => request("PUT", `/api/papers/${encodeURIComponent(id)}/meta`, { title, authors }),
   zoteroStatus: () => request("GET", "/api/zotero"),
   zoteroSync: () => request("POST", "/api/zotero/sync", {}),

@@ -166,25 +166,29 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
     const pdfs = files.filter((file) => file.type === "application/pdf" || /\.pdf$/i.test(file.name));
     if (!pdfs.length) return;
     status.hidden = false;
+    const imported = [];
+    let failed = null;
     try {
-      for (const file of pdfs) {
-        const { paper, arxiv } = await api.uploadPdf(file);
-        if (arxiv?.arxivId) {
-          toast(t("library.pdfOnArxiv", { id: arxiv.arxivId }), { duration: 15000, action: { label: t("library.pdfOpenArxiv"), icon: icons.external, onClick: async () => {
-            try {
-              const imported = await api.importPaper(arxiv.arxivId);
-              location.hash = `#/paper/${encodeURIComponent(imported.id)}`;
-            } catch (error) { toastError(error); }
-          } } });
-        } else {
-          toast(t("library.pdfImported", { title: paper.title }));
-        }
+      for (const file of pdfs) {  // un fichier refusé n'arrête pas les suivants
+        try { imported.push((await api.uploadPdf(file)).paper); } catch (error) { failed = new Error(`${file.name} : ${error.message}`); }
       }
-      await refreshList();
-    } catch (error) {
-      toastError(error);
     } finally {
       status.hidden = true;
+      await refreshList();
+    }
+    if (failed) { toastError(failed); return; }  // le refus reste affiché (pas remplacé par la proposition arXiv)
+    if (imported.length) toast(imported.length === 1 ? t("library.pdfImported", { title: imported[0].title }) : t("library.pdfsImported", { count: imported.length }));
+    // version arXiv cherchée ensuite (Semantic Scholar peut être lent) ; proposée pour la première trouvée
+    for (const paper of imported) {
+      const arxiv = await api.pdfArxivMatch(paper.id).then((r) => r.arxiv).catch(() => null);
+      if (!arxiv?.arxivId) continue;
+      toast(t("library.pdfOnArxiv", { id: arxiv.arxivId }), { duration: 15000, action: { label: t("library.pdfOpenArxiv"), icon: icons.external, onClick: async () => {
+        try {
+          const added = await api.importPaper(arxiv.arxivId);
+          location.hash = `#/paper/${encodeURIComponent(added.id)}`;
+        } catch (error) { toastError(error); }
+      } } });
+      break;
     }
   }
   search.addEventListener("input", debounce(() => { view.search = search.value; refreshList(false); }, 120));
