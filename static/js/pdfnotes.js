@@ -32,6 +32,7 @@ export class PdfNotes {
     app.eventBus.on("textlayerrendered", ({ pageNumber }) => this.paintPage(pageNumber));
     this.doc.querySelectorAll(".page[data-page-number]").forEach((page) => this.paintPage(Number(page.dataset.pageNumber)));
     this.doc.addEventListener("mouseup", (event) => setTimeout(() => this.onUp(event), 0));
+    this.doc.addEventListener("selectionchange", () => this.paintSelection());
     // la barre et la note ouverte sont dans la page de l'application : fermées par un clic ou Échap dans le PDF
     // (l'annotateur n'écoute que sa page), et la barre au défilement du PDF ou à un clic ailleurs dans l'application
     this.doc.addEventListener("mousedown", () => { this.hideToolbar(); this.annotator.closePopover(); });
@@ -83,31 +84,18 @@ export class PdfNotes {
   paintPage(page) {
     const pageDiv = this.doc?.querySelector(`.page[data-page-number="${page}"]`);
     if (!pageDiv) return;
-    pageDiv.querySelector(".arx-hl-layer")?.remove();  // couche et couche de texte : dans la page, bordure exclue
+    pageDiv.querySelector(".arx-hl-layer:not(.arx-sel-layer)")?.remove();
     const here = this.items.filter((a) => a.target.pdf.page <= page && (a.target.pdf.endPage || a.target.pdf.page) >= page);
     if (!here.length) return;
     const nodes = this.textNodes(page);
     if (!nodes.length) return;
-    const layer = this.doc.createElement("div");
-    layer.className = "arx-hl-layer";
-    const outer = pageDiv.getBoundingClientRect();
-    const box = { left: outer.left + pageDiv.clientLeft, top: outer.top + pageDiv.clientTop,
-      width: pageDiv.clientWidth, height: pageDiv.clientHeight };
     const length = nodes.reduce((n, node) => n + node.data.length, 0);
-    for (const annotation of here) {
+    const rects = here.flatMap((annotation) => {
       const { page: first, start, endPage = first, end } = annotation.target.pdf;
-      for (const rect of this.bands(nodes, first === page ? start : 0, endPage === page ? end : length)) {
-        const mark = this.doc.createElement("div");
-        mark.className = `arx-hl arx-hl-${annotation.color || "yellow"}`;
-        mark.dataset.annotation = annotation.id;
-        Object.assign(mark.style, {
-          left: `${(100 * (rect.left - box.left)) / box.width}%`, top: `${(100 * (rect.top - box.top)) / box.height}%`,
-          width: `${(100 * rect.width) / box.width}%`, height: `${(100 * rect.height) / box.height}%`,
-        });
-        layer.append(mark);
-      }
-    }
-    pageDiv.querySelector(".textLayer")?.before(layer);
+      return this.bands(nodes, first === page ? start : 0, endPage === page ? end : length)
+        .map((rect) => ({ ...rect, className: `arx-hl arx-hl-${annotation.color || "yellow"}`, id: annotation.id }));
+    });
+    pageDiv.querySelector(".textLayer")?.before(this.layerFor(pageDiv, "arx-hl-layer", rects));
   }
 
   // rectangles du passage, une bande par ligne : seulement le texte (les cadres des <span> doubleraient la couleur),
@@ -139,6 +127,50 @@ export class PdfNotes {
       }
     }
     return lines.map((l) => ({ left: l.left, top: l.top, width: l.right - l.left, height: l.bottom - l.top }));
+  }
+
+  // sélection en cours, dessinée en bandes (même calcul que les surlignages) ; extrémité hors de la couche de
+  // texte : la sélection du navigateur reste visible
+  paintSelection() {
+    this.doc.querySelectorAll(".arx-sel-layer").forEach((layer) => layer.remove());
+    this.doc.querySelectorAll(".textLayer.arx-selecting").forEach((layer) => layer.classList.remove("arx-selecting"));
+    const selection = this.doc.getSelection();
+    if (!selection.rangeCount || selection.isCollapsed) return;
+    const range = selection.getRangeAt(0);
+    const first = this.spot(range.startContainer, range.startOffset);
+    const last = this.spot(range.endContainer, range.endOffset);
+    if (!first || !last) return;
+    for (let page = first.page; page <= last.page; page++) {
+      const pageDiv = this.doc.querySelector(`.page[data-page-number="${page}"]`);
+      const textLayer = pageDiv?.querySelector(".textLayer");
+      const nodes = this.textNodes(page);
+      if (!textLayer || !nodes.length) continue;
+      const length = nodes.reduce((n, node) => n + node.data.length, 0);
+      const rects = this.bands(nodes, page === first.page ? first.offset : 0, page === last.page ? last.offset : length);
+      textLayer.before(this.layerFor(pageDiv, "arx-hl-layer arx-sel-layer", rects.map((rect) => ({ ...rect, className: "arx-sel" }))));
+      textLayer.classList.add("arx-selecting");
+    }
+  }
+
+  // couche de rectangles ({left, top, width, height, className, id?}), en % de la page, bordure exclue (comme la
+  // couche de texte de pdf.js) : suit le zoom
+  layerFor(pageDiv, className, rects) {
+    const outer = pageDiv.getBoundingClientRect();
+    const box = { left: outer.left + pageDiv.clientLeft, top: outer.top + pageDiv.clientTop,
+      width: pageDiv.clientWidth, height: pageDiv.clientHeight };
+    const layer = this.doc.createElement("div");
+    layer.className = className;
+    for (const rect of rects) {
+      const mark = this.doc.createElement("div");
+      mark.className = rect.className;
+      if (rect.id != null) mark.dataset.annotation = rect.id;
+      Object.assign(mark.style, {
+        left: `${(100 * (rect.left - box.left)) / box.width}%`, top: `${(100 * (rect.top - box.top)) / box.height}%`,
+        width: `${(100 * rect.width) / box.width}%`, height: `${(100 * rect.height) / box.height}%`,
+      });
+      layer.append(mark);
+    }
+    return layer;
   }
 
   // tous les passages (notes chargées après l'ouverture du PDF)

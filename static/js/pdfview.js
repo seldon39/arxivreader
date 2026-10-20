@@ -19,6 +19,7 @@ document.addEventListener("webviewerloaded", (event) => {
     disableHistory: true, // l'adresse du cadre ne change pas en lisant
     externalLinkTarget: 2, // liens vers l'extérieur : nouvelle fenêtre
     defaultZoomValue: "page-width",
+    enableSelectionRendering: false, // sélection dessinée par pdfnotes.js (une bande par ligne), pas par pdf.js
     sidebarViewOnLoad: 0,
     viewerCssTheme: theme === "dark" ? 2 : theme === "light" ? 1 : 0, // thème de l'application
   })) options.set(name, value);
