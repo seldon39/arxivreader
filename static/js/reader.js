@@ -17,7 +17,7 @@ import { typesetFragment, typesetMath, typesetTex } from "./math.js";
 const typesetTexSafe = (element) => typesetTex([element]).catch(() => {});
 import { t } from "./i18n.js";
 import { DEFAULT_FONT_SIZE, READING_WIDTHS, onSettingsChange, saveSettings, settings } from "./settings.js";
-import { debounce, formatDate, h, icons, nativeBridge, navigation, openRoute, plainTitle, titleTex, toast, toggleIcon, wantsNewTab, withMath } from "./util.js";
+import { debounce, formatDate, h, icons, metaDialog, nativeBridge, navigation, openRoute, plainTitle, titleTex, toast, toggleIcon, wantsNewTab, withMath } from "./util.js";
 
 const NEEDS_PROOF = new Set(["theorem", "proposition", "lemma", "corollary", "claim"]);
 const WIDE = 1280;
@@ -1742,22 +1742,11 @@ class Reader {
     });
   }
 
-  editMeta() {
-    const title = h("input", { type: "text", value: this.paper.title, "aria-label": t("reader.metaTitle") });
-    const authors = h("input", { type: "text", value: this.paper.authors.join(", "), "aria-label": t("reader.metaAuthors") });
-    const dialog = h("dialog", { class: "meta-dialog" },
-      h("form", { method: "dialog" },
-        h("label", {}, t("reader.metaTitle"), title),
-        h("label", {}, t("reader.metaAuthors"), authors),
-        h("div", { class: "dialog-actions" },
-          // type="button" : Entrée enregistre (sinon le premier bouton, Annuler, servirait d'envoi)
-          h("button", { class: "button", type: "button", onclick: () => dialog.close("cancel") }, t("library.folder.cancel")),
-          h("button", { class: "button primary", value: "save" }, t("library.folder.save")))));
-    dialog.addEventListener("close", async () => {
-      dialog.remove();
-      if (dialog.returnValue !== "save") return;
+  async editMeta() {
+    const edited = await metaDialog({ title: this.paper.title, authors: this.paper.authors });
+    if (edited) {
       try {
-        const paper = await api.updateMeta(this.paper.id, title.value, authors.value.split(/\s*[,;]\s*/));
+        const paper = await api.updateMeta(this.paper.id, edited.title, edited.authors);
         Object.assign(this.paper, paper);
         this.toolbarTitle.replaceChildren(titleTex(paper.title));
         this.toolbarTitle.title = paper.title;
@@ -1766,10 +1755,7 @@ class Reader {
       } catch (error) {
         toast(error.message, { error: true });
       }
-    });
-    document.body.append(dialog);
-    dialog.showModal();
-    title.select();
+    }
   }
 
   destroy() {

@@ -86,6 +86,33 @@ export function toast(message, { error = false, duration = 3500, action = null }
   toastTimer = setTimeout(() => el.classList.remove("visible"), action ? Math.max(duration, 7000) : duration);
 }
 
+// Titre et auteurs d'un PDF importé, modifiables (à l'import, et depuis le lecteur) : {title, authors} ou null
+// (fermé sans enregistrer). `heading`, `note` : en-tête et précision facultatifs ; `cancel` : libellé du refus.
+export function metaDialog({ title, authors, heading = null, note = null, cancel = t("library.folder.cancel") }) {
+  return new Promise((resolve) => {
+    const titleInput = h("input", { type: "text", value: title, "aria-label": t("reader.metaTitle") });
+    const authorsInput = h("input", { type: "text", value: authors.join(", "), "aria-label": t("reader.metaAuthors") });
+    const dialog = h("dialog", { class: "meta-dialog" },
+      h("form", { method: "dialog" },
+        heading && h("h3", { class: "meta-heading" }, heading),
+        note && h("p", { class: "muted small meta-note" }, note),
+        h("label", {}, t("reader.metaTitle"), titleInput),
+        h("label", {}, t("reader.metaAuthors"), authorsInput),
+        h("div", { class: "dialog-actions" },
+          // type="button" : Entrée enregistre (sinon le premier bouton servirait d'envoi)
+          h("button", { class: "button", type: "button", onclick: () => dialog.close("cancel") }, cancel),
+          h("button", { class: "button primary", value: "save" }, t("library.folder.save")))));
+    dialog.addEventListener("close", () => {
+      dialog.remove();
+      resolve(dialog.returnValue === "save"
+        ? { title: titleInput.value.trim(), authors: authorsInput.value.split(/\s*[,;]\s*/).filter(Boolean) } : null);
+    });
+    document.body.append(dialog);
+    dialog.showModal();
+    titleInput.select();
+  });
+}
+
 export function toastError(error) {
   toast(t("error.generic", { message: error?.message || String(error) }), { error: true, duration: 6000 });
 }

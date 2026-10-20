@@ -691,13 +691,15 @@ async def import_local_pdf(request: Request):
         chunks.append(chunk)
     filename = unquote(request.headers.get("x-filename", ""))[:300]
     check = request.query_params.get("check") == "1"  # PDF d'arXiv : la page propose d'abord la version arXiv
+    data = b"".join(chunks)
+    known = db.get_paper(localpdf.paper_id(data)) is not None
     try:
-        found = await run_in_threadpool(localpdf.import_pdf, b"".join(chunks), filename, check)
+        found = await run_in_threadpool(localpdf.import_pdf, data, filename, check)
     except localpdf.PdfError as error:
         raise HTTPException(400, f"PDF: {error}")
     if "arxivId" in found:
         return {"paper": None, "arxiv": found}
-    return {"paper": found}
+    return {"paper": found, "created": not known}  # nouveau : la page fait vérifier titre et auteurs
 
 
 @app.get("/api/papers/{paper_id}/arxiv-match")

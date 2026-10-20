@@ -1423,6 +1423,8 @@ body.related-expanded { overflow: hidden; }
 .meta-dialog label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
 .meta-dialog input { font: inherit; font-size: 15px; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg); color: var(--text); }
 .meta-dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.meta-dialog .meta-heading { margin: 0; font-size: 17px; }
+.meta-dialog .meta-note { margin: -8px 0 0; overflow-wrap: anywhere; }
 .arxiv-first form { max-width: 480px; }
 .arxiv-first h3 { margin: 0; font-size: 17px; }
 .arxiv-first p { margin: 0; line-height: 1.45; }

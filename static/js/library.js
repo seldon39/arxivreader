@@ -3,7 +3,7 @@
 import { setFindHandler } from "./find.js";
 import { api } from "./api.js";
 import { t, tn } from "./i18n.js";
-import { debounce, draggablePaper, droppedPapers, formatDate, h, icons, journalChip, localDrag, mayBePaper, tidyTitle, timeAgo, toast, toastError, withMath } from "./util.js";
+import { debounce, draggablePaper, droppedPapers, formatDate, h, icons, journalChip, localDrag, mayBePaper, metaDialog, tidyTitle, timeAgo, toast, toastError, withMath } from "./util.js";
 import { addToLibrary, dragEnded, dragGroup, fileInFolder, forgetSelected, selectButton, selectionDropped, syncSelection, useSelectionBar } from "./selection.js";
 
 // Recherche et filtres, gardés d'une visite à l'autre (le temps de la session)
@@ -196,6 +196,14 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
             if (choice !== "pdf") continue;  // fermé (Échap) : rien n'est importé
             result = await api.uploadPdf(file);
             kept.add(result.paper.id);
+          }
+          // nouveau PDF : titre et auteurs lus dans le fichier, à vérifier (corrigés seulement s'ils changent)
+          if (result.created) {
+            const { title, authors } = result.paper;
+            const edited = await metaDialog({ title, authors, heading: t("library.checkMeta"), note: file.name, cancel: t("library.keepDetected") });
+            if (edited && (edited.title !== title || edited.authors.join("|") !== authors.join("|"))) {
+              result.paper = await api.updateMeta(result.paper.id, edited.title, edited.authors);
+            }
           }
           imported.push(result.paper);
         } catch (error) { failed = new Error(`${file.name} : ${error.message}`); }

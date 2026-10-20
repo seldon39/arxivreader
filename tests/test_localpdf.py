@@ -62,6 +62,8 @@ class LocalPdf(unittest.TestCase):
         self.assertEqual(paper["authors"], ["Ada Lovelace", "Alan Turing"])
         self.assertIn("eigenvalue distribution", paper["abstract"])
         self.assertEqual(paper["comment"], "toeplitz final.pdf")
+        self.assertTrue(answer.json()["created"])  # nouveau : la page fait vérifier titre et auteurs
+        self.assertFalse(self.upload(self.pdf).json()["created"])
         self.assertIn("[page 1]", localpdf.text(paper["id"]))
         self.assertIn("trace formula", ai._load(paper["id"])[2])  # l'assistant lit le texte du PDF
         self.assertEqual(self.client.get(f"/api/papers/{paper['id']}/pdf").status_code, 200)
