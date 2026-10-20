@@ -8,6 +8,7 @@
 
 import { api } from "./api.js";
 import { COLORS } from "./annotations.js";
+import { closeBookmarkUi } from "./bookmarks.js";
 import { t } from "./i18n.js";
 import { h, icons, toast } from "./util.js";
 
@@ -56,16 +57,16 @@ export class PdfNotes {
     this.doc.addEventListener("contextmenu", (event) => this.bookmarkMenu(event));
     // la barre et la note ouverte sont dans la page de l'application : fermées par un clic ou Échap dans le PDF
     // (l'annotateur n'écoute que sa page), et la barre au défilement du PDF ou à un clic ailleurs dans l'application
-    this.doc.addEventListener("mousedown", () => { this.hideToolbar(); this.annotator.closePopover(); });
+    this.doc.addEventListener("mousedown", () => { this.hideToolbar(); this.annotator.closePopover(); closeBookmarkUi(); });
     this.doc.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") { this.hideToolbar(); this.annotator.closePopover(); this.setZoneMode(false); }
+      if (event.key === "Escape") { this.hideToolbar(); this.annotator.closePopover(); this.setZoneMode(false); closeBookmarkUi(); }
       // ⌘D (Ctrl+D) : marque-page, comme dans le reste du lecteur
       if (event.key.toLowerCase() === "d" && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && this.onAddBookmark) {
         event.preventDefault();
         this.onAddBookmark();
       }
     });
-    this.doc.getElementById("viewerContainer")?.addEventListener("scroll", () => this.hideToolbar(), { passive: true });
+    this.doc.getElementById("viewerContainer")?.addEventListener("scroll", () => { this.hideToolbar(); closeBookmarkUi(); }, { passive: true });
     this.onParentDown = (event) => { if (this.toolbar && !this.toolbar.contains(event.target)) this.hideToolbar(); };
     document.addEventListener("mousedown", this.onParentDown);
   }

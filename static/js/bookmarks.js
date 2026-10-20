@@ -49,9 +49,15 @@ export function bookmarkBox({ heading, value, rect, onSave, onDelete = null, sav
 }
 
 // Petit menu à l'endroit d'un clic droit (dans le PDF, où le menu de l'annotateur n'existe pas) : [[libellé, action]]
+let closeMenu = null;
 export function contextMenuAt(point, items) {
-  document.querySelector(".context-menu.bookmark-menu")?.remove();
-  const close = () => { menu.remove(); document.removeEventListener("mousedown", outside, true); };
+  closeMenu?.();
+  const close = () => {
+    menu.remove();
+    document.removeEventListener("mousedown", outside, true);
+    if (closeMenu === close) closeMenu = null;
+  };
+  closeMenu = close;
   const outside = (event) => { if (!menu.contains(event.target)) close(); };
   const menu = h("div", { class: "context-menu bookmark-menu", role: "menu" }, items.map(([label, action]) =>
     h("button", { type: "button", class: "context-menu-item", role: "menuitem", onclick: () => { close(); action(); } }, label)));
@@ -61,6 +67,13 @@ export function contextMenuAt(point, items) {
   menu.style.top = `${Math.max(8, Math.min(point.top, innerHeight - menu.offsetHeight - 8))}px`;
   menu.querySelector("button")?.focus({ preventScroll: true });
   setTimeout(() => document.addEventListener("mousedown", outside, true), 0);
+}
+
+// Clic, défilement ou Échap dans le PDF (un autre document : la page de l'application ne les voit pas) : menu du
+// clic droit et fenêtre du nom fermés
+export function closeBookmarkUi() {
+  closeMenu?.();
+  open?.close();
 }
 
 // Onglet Notes : la liste, HTML dans l'ordre de l'article puis PDF par page. `find(id)` : élément du HTML ;
