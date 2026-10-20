@@ -1,5 +1,6 @@
 """PDF importés depuis l'ordinateur : import, métadonnées, texte pour l'assistant, version arXiv, garde-fous."""
 
+import json
 import pathlib
 import shutil
 import tempfile
@@ -14,7 +15,8 @@ from app import ai, db, export, library, localpdf, main, zotero
 
 def make_pdf(lines, title=None):
     """PDF minimal (une page, Helvetica) contenant ces lignes de texte."""
-    text = "BT /F1 12 Tf 72 720 Td 14 TL " + " ".join(f"({line}) Tj T*" for line in lines) + " ET"
+    escape = lambda line: line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")  # noqa: E731
+    text = "BT /F1 12 Tf 72 720 Td 14 TL " + " ".join(f"({escape(line)}) Tj T*" for line in lines) + " ET"
     objects = ["<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
                f"<< /Length {len(text)} >>\nstream\n{text}\nendstream", "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
@@ -143,3 +145,44 @@ class LocalPdf(unittest.TestCase):
         self.assertEqual(again["paper"]["id"], kept["id"])  # déjà importé : plus de question
         plain = self.client.post("/api/papers/pdf?check=1", content=self.pdf, headers={"Content-Type": "application/pdf"}).json()
         self.assertEqual(plain["paper"]["source"], "local-pdf")  # sans mention arXiv : importé directement
+
+    def test_title_and_author_layouts(self):
+        """Mises en page réelles (Bismut–Gillet–Soulé 1988, Ma–Zhang, Gromov, Bayraktar et al.) : titre et auteurs."""
+        cases = [
+            (["Communications in", "Commun. Math. Phys. 115, 49-78 (1988)", "Physics Springer-Verlag 1988",
+              "Analytic Torsion and Holomorphic Determinant Bundles", "I. Bott-Chern Forms and Analytic Torsion",
+              "J.-M. Bismut1, H. Gillet2 and C. Soule3", "Abstract. We attach secondary invariants."],
+             "Analytic Torsion and Holomorphic Determinant Bundles I. Bott-Chern Forms and Analytic Torsion",
+             ["J.-M. Bismut", "H. Gillet", "C. Soule"]),
+            (["Hamiltonian manifolds and geometric quantizations", "Xiaonan Ma and Weiping Zhang", "February 14, 2021"],
+             "Hamiltonian manifolds and geometric quantizations", ["Xiaonan Ma", "Weiping Zhang"]),
+            (["101 Questions, Problems and Conjectures", "around Scalar Curvature. (Incomplete and", "Unedited Version)*",
+              "Misha Gromov", "October 1, 2017"],
+             "101 Questions, Problems and Conjectures around Scalar Curvature. (Incomplete and Unedited Version)", ["Misha Gromov"]),
+            (["arXiv:2404.08116v1 [math.CV] 11 Apr 2024", "ZEROS OF RANDOM HOLOMORPHIC SECTIONS OF BIG LINE BUNDLES WITH",
+              "CONTINUOUS METRICS", "TURGAY BAYRAKTAR, DAN COMAN, GEORGE MARINESCU, AND VIET-ANH NGUYEN"],
+             "ZEROS OF RANDOM HOLOMORPHIC SECTIONS OF BIG LINE BUNDLES WITH CONTINUOUS METRICS",
+             ["Turgay Bayraktar", "Dan Coman", "George Marinescu", "Viet-Anh Nguyen"]),
+        ]
+        for lines, title, authors in cases:
+            found = localpdf.read_pdf(make_pdf(lines))
+            self.assertEqual((found["title"], found["authors"]), (title, authors))
+        # titre des métadonnées : la ligne des auteurs est cherchée sous sa ligne
+        found = localpdf.read_pdf(make_pdf(["Some journal", "On kernels of Toeplitz type", "Ada Lovelace and Alan Turing"],
+                                           title="On kernels of Toeplitz type"))
+        self.assertEqual(found["authors"], ["Ada Lovelace", "Alan Turing"])  # métadonnées /Author d'abord (make_pdf)
+
+    def test_redetect_old_imports(self):
+        pdf = make_pdf(["Hamiltonian manifolds and geometric quantizations", "Xiaonan Ma and Weiping Zhang"])
+        paper = self.upload(pdf).json()["paper"]
+        folder = library.paper_dir(paper["id"])
+        stored = json.loads((folder / "text.json").read_text(encoding="utf-8"))
+        (folder / "text.json").write_text(json.dumps({"pages": stored["pages"]}), encoding="utf-8")  # import d'avant
+        db.update_paper(paper["id"], authors="[]")
+        localpdf.redetect_all()
+        self.assertEqual(db.get_paper(paper["id"])["authors"], ["Xiaonan Ma", "Weiping Zhang"])
+        localpdf.redetect_all()  # déjà relu : rien
+        self.client.put(f"/api/papers/{paper['id']}/meta", json={"title": "Mine", "authors": ["Me"]})
+        (folder / "text.json").write_text(json.dumps({"pages": stored["pages"]}), encoding="utf-8")
+        localpdf.redetect_all()  # corrigé à la main : jamais écrasé
+        self.assertEqual((db.get_paper(paper["id"])["title"], db.get_paper(paper["id"])["authors"]), ("Mine", ["Me"]))

@@ -34,7 +34,11 @@ S2 = "https://api.semanticscholar.org/graph/v1"
 ARXIV_STAMP = re.compile(r"arXiv:\s*(\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?/\d{7})(?:v\d+)?", re.I)
 DOI = re.compile(r"\b(10\.\d{4,9}/[^\s\"<>]+[^\s\"<>.,;:)\]])")
 LINE_NOISE = re.compile(r"\d{4}|©|doi|arxiv|page|journal|vol\.|issn", re.I)
-NAMES = re.compile(r"(?:[A-Z][\w'’-]*\.?(?:\s+|$)){2,5}(?:(?:,|\s+and|\s+&)\s+(?:[A-Z][\w'’-]*\.?(?:\s+|$)){2,5})*")
+FOOTNOTE = re.compile(r"(?<=[^\W\d_.])\d+|[∗*†‡§¶¹²³⁴⁵⁶⁷⁸⁹⁰]+")  # appels de note collés aux noms (« Bismut1 », « Gromov∗ »)
+PARTICLES = {"de", "van", "von", "der", "den", "di", "da", "du", "le", "la", "dos", "del", "des", "ter", "zu", "y", "e"}
+CONTINUES = re.compile(r"\b(?:and|of|in|the|for|on|with|to|a|an|from|over|at|via|by)$|[(,:–-]$", re.I)  # titre coupé
+SUBTITLE = re.compile(r"(?:[IVX]+\.|Part\s+[IVX\d]+\b)\s")  # « I. Bott-Chern Forms… » : sous-titre de série
+META_VERSION = 2  # repérage du titre et des auteurs : un PDF importé avant une amélioration est relu (redetect_all)
 DATE_LINE = re.compile(r"\b(19|20)\d{2}\b|january|february|march|april|may|june|july|august|september|october|november|december", re.I)
 NOISY_TITLE = re.compile(r"(\.(pdf|dvi|tex|docx?)$)|^(microsoft word|untitled|document\d*)\b|^\s*$", re.I)
 
@@ -67,6 +71,54 @@ def _page_text(page):
         return ""
 
 
+def _names(line):
+    """Auteurs d'une ligne (« J.-M. Bismut1, H. Gillet2 and C. Soule3 », « XIAONAN MA AND WEIPING ZHANG »), ou []."""
+    text = FOOTNOTE.sub("", line).strip(" ,;")
+    # accents détachés par l'extraction (« VI ˆET -ANH NGUYˆEN » pour Việt-Anh Nguyễn) : retirés, mot recollé
+    text = re.sub(r"\s+-", "-", re.sub(r"\s?[\u02c6\u02dc\u00a8\u00b4\u02d8\u02c7`]", "", text))
+    if not text or len(text) > 200 or re.search(r"[\d@:()\[\]/]", text):
+        return []
+    parts = [part.strip() for part in re.split(r"\s*(?:,|;|&|\band\b)\s*", text, flags=re.I) if part.strip()]
+    if not 1 <= len(parts) <= 12:
+        return []
+    names = []
+    for part in parts:
+        tokens = part.split()
+        if not 2 <= len(tokens) <= 5:
+            return []
+        for token in tokens:
+            letter = next((c for c in token if c.lower() != c.upper()), "")  # première lettre à casse
+            if token.lower() not in PARTICLES and not letter.isupper():
+                return []
+        names.append(part.title() if part.isupper() else part)
+    return names
+
+
+def _title_block(lines, hint=""):
+    """(titre, indice de la ligne qui le suit) : la ligne du titre (celle qui commence comme `hint`, titre des
+    métadonnées, sinon la première qui ne ressemble ni à un en-tête de revue, ni à une date) et ses lignes de suite :
+    titre coupé (« … of » / « …, » / parenthèse ouverte / suite en minuscule), sous-titre de série (« I. … »), titre
+    en capitales sur deux lignes. S'arrête à la ligne des auteurs."""
+    key = _norm(hint)[:25]
+    if len(key) >= 8:
+        start = next((i for i, line in enumerate(lines) if len(_norm(line)) >= 8 and key.startswith(_norm(line)[:25])), None)
+    else:
+        start = next((i for i, line in enumerate(lines) if len(line.split()) >= 3 and not LINE_NOISE.search(line)), None)
+    if start is None:
+        return "", None
+    block, i = [lines[start]], start + 1
+    while i < len(lines) and len(block) < 4 and len(lines[i]) <= 120:
+        cur, nxt = block[-1], lines[i]
+        if not (re.match(r"[a-z0-9(]", nxt) or CONTINUES.search(cur) or cur.count("(") > cur.count(")") or SUBTITLE.match(nxt)):
+            # sinon, seule suite possible : titre en capitales coupé (pas une ligne de plusieurs auteurs)
+            caps = cur.isupper() and nxt.isupper() and len(cur) > 40
+            if not (caps and len(_names(nxt)) <= 1):
+                break
+        block.append(nxt)
+        i += 1
+    return FOOTNOTE.sub("", " ".join(block)).strip(), i
+
+
 def read_pdf(data, filename=""):
     """Titre, auteurs, résumé probable, DOI et texte de chaque page."""
     from pypdf import PdfReader
@@ -90,22 +142,19 @@ def read_pdf(data, filename=""):
     lines = [_clean(line) for line in (pages[0] if pages else "").splitlines()]
     lines = [line for line in lines if line]
     title = _clean(info.get("/Title"))
-    start = None
-    if NOISY_TITLE.search(title) or len(title) < 4:
-        # première ligne qui ressemble à un titre (pas un en-tête de revue, une date, un numéro de page), et ses
-        # lignes de suite (« The sphere packing problem in » / « dimension 8 »)
-        start = next((i for i, line in enumerate(lines) if len(line.split()) >= 3 and not LINE_NOISE.search(line)), None)
-        title = ""
-        if start is not None:
-            title, end = lines[start], start + 1
-            while end < len(lines) and len(lines[end]) < 70 and re.match(r"[a-z0-9(]", lines[end]):
-                title, end = f"{title} {lines[end]}", end + 1
-            start = end
+    usable = not (NOISY_TITLE.search(title) or len(title) < 4)
+    # titre de la première page (sauf titre des métadonnées utilisable : il sert alors à retrouver sa ligne)
+    found, start = _title_block(lines, title if usable else "")
+    if not usable:
+        title = found
     title = title or Path(filename or "document.pdf").stem.replace("_", " ")
     authors = [a for a in re.split(r"\s*(?:;|,| and | & )\s*", _clean(info.get("/Author"))) if a]
-    if not authors and start is not None and start < len(lines) and NAMES.fullmatch(lines[start]):
-        authors = [a for a in re.split(r"\s*(?:,| and | & )\s*", lines[start]) if a]  # ligne des auteurs, sous le titre
-        start += 1
+    # ligne des auteurs, sous le titre (une ligne plus bas au plus : date, mention de dédicace…)
+    for index in ([start, start + 1] if start is not None else []):
+        names = _names(lines[index]) if index < len(lines) else []
+        if names:
+            authors, start = authors or names, index + 1
+            break
     abstract = ""
     found = re.search(r"\bAbstract[.:\s—-]*(.{80,2500}?)(?=\n\s*(?:1\.?\s+Introduction|Introduction|Keywords|Contents)\b|\Z)",
                       first, re.I | re.S)
@@ -166,7 +215,7 @@ def _import(pid, data, filename):
     folder = paper_dir(pid)
     folder.mkdir(parents=True, exist_ok=True)
     write_atomic_bytes(folder / "paper.pdf", data)
-    write_atomic(folder / "text.json", json.dumps({"pages": found["pages"]}, ensure_ascii=False))
+    write_atomic(folder / "text.json", json.dumps({"pages": found["pages"], "metaVersion": META_VERSION}, ensure_ascii=False))
     write_atomic(folder / "structure.json", json.dumps(EMPTY_STRUCTURE))
     db.save_paper({"id": pid, "arxiv_id": "", "version": None, "title": found["title"], "authors": found["authors"],
                    "abstract": found["abstract"], "categories": [], "primary_category": "", "published": None,
@@ -189,9 +238,32 @@ def update_meta(pid, title, authors):
     paper = db.get_paper(pid)
     if not is_local(paper):
         raise PdfError("not an imported PDF")
+    (paper_dir(pid) / "meta-edited").touch()  # corrigés à la main : jamais relus du PDF (redetect_all)
     db.update_paper(pid, title=_clean(title)[:300] or paper["title"],
                     authors=json.dumps([_clean(a) for a in authors if _clean(a)][:30], ensure_ascii=False))
     return db.get_paper(pid)
+
+
+def redetect_all():
+    """Au démarrage : titre et auteurs des PDF importés avant la dernière amélioration du repérage, relus du PDF
+    (sauf ceux corrigés à la main). Résumé repris seulement s'il manquait."""
+    with db.connect() as connection:
+        rows = connection.execute("SELECT id FROM papers WHERE source = ?", (SOURCE,)).fetchall()
+    for row in rows:
+        folder = paper_dir(row["id"])
+        try:
+            stored = json.loads((folder / "text.json").read_text(encoding="utf-8"))
+            if stored.get("metaVersion", 1) >= META_VERSION or (folder / "meta-edited").exists():
+                continue
+            paper = db.get_paper(row["id"])
+            found = read_pdf((folder / "paper.pdf").read_bytes(), paper.get("comment") or "")
+        except (OSError, ValueError, PdfError):
+            continue
+        fields = {"title": found["title"][:300], "authors": json.dumps(found["authors"], ensure_ascii=False)}
+        if not paper.get("abstract") and found["abstract"]:
+            fields["abstract"] = found["abstract"]
+        db.update_paper(row["id"], **fields)
+        write_atomic(folder / "text.json", json.dumps({**stored, "metaVersion": META_VERSION}, ensure_ascii=False))
 
 
 def _norm(title):

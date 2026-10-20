@@ -58,6 +58,7 @@ async def lifespan(_app):
     db.init()
     ai.stop_running()
     library.clean_cache()
+    threading.Thread(target=localpdf.redetect_all, daemon=True).start()  # PDF importés : titre et auteurs relus
     # vérification périodique des auteurs suivis (ARXIVREADER_NO_ALERTS=1 pour la couper, par ex. en test)
     alerts.stop.clear()
     task = None if os.environ.get("ARXIVREADER_NO_ALERTS") else asyncio.create_task(alerts.loop())
