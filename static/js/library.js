@@ -46,6 +46,7 @@ function passes(paper, state) {
   const pdf = paper.source === "none" || paper.source === "tex" || paper.source === "local-pdf"; // lu dans le PDF
   if (state.source === "html" && pdf) return false;
   if (state.source === "pdf" && !pdf) return false;
+  if (state.source === "local" && paper.source !== "local-pdf") return false;  // hors arXiv : PDF importés
   if (state.publication === "journal" && !paper.publishedIn) return false;
   if (state.publication === "none" && paper.publishedIn) return false;
   if (state.reading.size) {
@@ -278,7 +279,7 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
         years.length > 1 && section("years", t("library.filters.years"), h("div", { class: "filter-chips" },
           years.map((y) => chip(y, state.years.has(y), toggleIn(state.years, y), `year:${y}`, after)))),
         section("source", t("library.filters.source"), choice("source",
-          [["any", t("library.source.any")], ["html", t("library.source.html")], ["pdf", t("library.source.pdf")]], state.source, (v) => { state.source = v; }, after)),
+          [["any", t("library.source.any")], ["html", t("library.source.html")], ["pdf", t("library.source.pdf")], ["local", t("library.source.local")]], state.source, (v) => { state.source = v; }, after)),
         section("publication", t("journal.filter"), choice("publication",
           [["any", t("journal.any")], ["journal", t("journal.yesShort")], ["none", t("journal.noShort")]], state.publication, (v) => { state.publication = v; }, after)),
         h("p", { class: "hint filter-hint" }, t("journal.filterHint"))),
