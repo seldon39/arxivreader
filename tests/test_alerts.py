@@ -112,6 +112,7 @@ class Alerts(unittest.TestCase):
 
     def test_who(self):
         self.assertEqual(alerts._who(paper("x", "X. Ma")), "X. Ma")  # forme abrégée reconnue
+        self.assertIsNone(alerts._who(paper("y", "Xin Ma")))  # homonyme de même initiale : pas Xiaonan Ma
         self.assertIn('\\"', alerts._quote('Title with "quotes"'))
 
 

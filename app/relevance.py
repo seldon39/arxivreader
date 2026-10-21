@@ -82,6 +82,24 @@ def author_key(name):
     return (parts[-1], parts[0][0] if len(parts) > 1 else "")
 
 
+def _plain(name):
+    return " ".join(re.sub(r"[^a-z\s]", " ", unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()).split())
+
+
+def same_person(name, other):
+    """Même auteur : même nom complet, ou mêmes nom et initiale quand l'un des deux n'a que l'initiale du prénom
+    (« A. Martin » et « Alice Martin », mais pas « Albert Martin » ; « X. Ma » et « Xiaonan Ma », pas « Xin Ma »)."""
+    a, b = _plain(name).split(), _plain(other).split()
+    if a == b:
+        return True
+    if not a or not b or author_key(name) != author_key(other):
+        return False
+    if len(a) > 1 and len(b) > 1 and a[0] == b[0]:
+        return True  # même prénom et même nom, une initiale au milieu en plus ou en moins (« George M. Marinescu »)
+    first = lambda words: words[0] if len(words) > 1 else ""  # noqa: E731
+    return len(first(a)) <= 1 or len(first(b)) <= 1
+
+
 # ---------- Vecteurs SPECTER (Semantic Scholar) ----------
 
 # Identifiant arXiv nouveau (2606.24503) ou ancien (math/0601001, math.DG/0601001)
@@ -196,7 +214,7 @@ def profile_documents():
             positives.append(dict(document, via="liked"))
         elif item["status"] == "disliked":
             negatives.append(document)
-    authors = {author_key(i["label"]): i["label"] for i in profile if i["kind"] == "author" and author_key(i["label"])}
+    authors = [i["label"] for i in profile if i["kind"] == "author" and author_key(i["label"])]
     keywords = [i["label"] for i in profile if i["kind"] == "keyword"]
     return positives, negatives, authors, keywords
 
@@ -267,8 +285,8 @@ def score_items(items, skip_self=False):
             reasons.append({"kind": "similar", "label": best["label"], "value": round(positive, 2),
                             "via": "reference" if best.get("reference") else best.get("via", "profile")})
 
-        names = {author_key(a): a for a in item.get("authors") or []}
-        followed = [authors[k] for k in names if k in authors]
+        # auteur suivi : même personne (pas seulement mêmes nom et initiale : Xin Ma n'est pas Xiaonan Ma)
+        followed = [label for label in authors if any(same_person(a, label) for a in item.get("authors") or [])]
         if followed:
             score += 0.6
             reasons.insert(0, {"kind": "author", "label": ", ".join(followed)})

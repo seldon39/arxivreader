@@ -6,7 +6,6 @@ import re
 import threading
 import time
 import logging
-import unicodedata
 import xml.etree.ElementTree as ET
 from collections import Counter
 
@@ -15,7 +14,7 @@ import httpx
 from . import db, library, profile, s2, search, zotero
 from .arxiv import with_retry
 from .config import USER_AGENT
-from .relevance import author_key
+from .relevance import author_key, same_person
 
 ORCID = re.compile(r"\b(\d{4}-\d{4}-\d{4}-\d{3}[\dX])\b", re.I)
 FEED_OWNER = re.compile(r"<title>\s*(.+?)['’]s articles on arXiv\s*</title>")
@@ -41,22 +40,6 @@ def identifier(text):
     return None
 
 
-def _plain(name):
-    return " ".join(re.sub(r"[^a-z\s]", " ", unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()).split())
-
-
-def same_person(name, other):
-    """Même auteur : même nom complet, ou mêmes nom et initiale quand l'un des deux n'a que l'initiale du prénom
-    (« A. Martin » et « Alice Martin », mais pas « Albert Martin »)."""
-    a, b = _plain(name).split(), _plain(other).split()
-    if a == b:
-        return True
-    if not a or not b or author_key(name) != author_key(other):
-        return False
-    if len(a) > 1 and len(b) > 1 and a[0] == b[0]:
-        return True  # même prénom et même nom, une initiale au milieu en plus ou en moins (« George M. Marinescu »)
-    first = lambda words: words[0] if len(words) > 1 else ""  # noqa: E731
-    return len(first(a)) <= 1 or len(first(b)) <= 1
 
 
 def find(name="", ident=""):

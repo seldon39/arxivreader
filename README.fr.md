@@ -332,7 +332,7 @@ il suffit de la fermer et d'aller dans le feed.
   « Demander à Claude » et « Copier le texte » ; ces surlignages figurent dans l'onglet Notes avec leur page.
 - **Zones d'un PDF** (formules, figures, articles numérisés dont les formules n'ont pas de texte sélectionnable) :
   ⌥ + glisser (Alt + glisser sous Windows), ou le bouton zone de la barre du PDF, puis la même barre : surlignage
-  et note (vignette dans l'onglet Notes), « Demander à Claude » avec l'image de la zone, ou « Copier la formule en LaTeX »
+  et note (vignette dans l'onglet Notes), « Demander à Claude » avec l'image de la zone, ou « Copier la zone en LaTeX »
   (Claude la transcrit). Ces deux derniers seulement avec un assistant qui lit les images (Claude, Gemini).
 - **Énoncés et preuves** : l'icône de note en marge (au survol) ouvre une note et, pour un énoncé,
   l'état de lecture *compris / à revoir / vérifié* (affiché dans le titre et la liste des énoncés).

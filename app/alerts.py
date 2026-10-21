@@ -18,7 +18,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from . import db, feed, profile
 from .config import FEED_CATEGORIES
-from .relevance import author_key
+from .relevance import same_person
 
 CHECK_EVERY = 3 * 3600
 NOTIFY_DAYS = 7  # un article plus ancien (auteur tout juste suivi…) est retenu sans notification
@@ -43,10 +43,10 @@ def _followed_names():
 
 def _who(item, names=None):
     """Auteur suivi parmi les auteurs de l'article, tel qu'écrit dans l'article (ou None)."""
-    keys = {author_key(name): name for name in item.get("authors", [])}
     for name in names if names is not None else _followed_names():
-        if author_key(name) in keys:
-            return keys[author_key(name)]
+        for written in item.get("authors", []):
+            if same_person(written, name):  # pas un homonyme de même initiale (Xin Ma pour Xiaonan Ma)
+                return written
     return None
 
 

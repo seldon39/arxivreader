@@ -79,6 +79,8 @@ class Onboarding(unittest.TestCase):
         self.assertTrue(onboarding.same_person("George Marinescu", "George M. Marinescu"))
         self.assertTrue(onboarding.same_person("G. Marinescu", "George Marinescu"))
         self.assertFalse(onboarding.same_person("Albert Martin", "Alice Martin"))
+        self.assertFalse(onboarding.same_person("Xin Ma", "Xiaonan Ma"))
+        self.assertTrue(onboarding.same_person("J.-M. Bismut", "Jean-Michel Bismut"))
         self.assertEqual(onboarding.identifier("0000-0002-1825-009x"), "0000-0002-1825-009X")
         # identifiant sans nom dans le flux : à égalité (un directeur sur tous les articles), le nom donné, sinon rien
         papers = [{"authors": ["Bob Advisor", "Alice Martin"]}] * 3

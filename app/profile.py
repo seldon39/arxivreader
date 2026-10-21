@@ -18,7 +18,7 @@ from . import db, s2
 from .arxiv import ATOM, ArxivError, fetch_metadata, parse_arxiv_id, with_retry
 from .config import USER_AGENT
 from .library import paper_dir
-from .relevance import STOPWORDS, _ascii, author_key
+from .relevance import STOPWORDS, _ascii, author_key, same_person
 
 KINDS = ("mine", "paper", "book", "author", "keyword")
 S2 = "https://api.semanticscholar.org/graph/v1"
@@ -118,7 +118,7 @@ def prefill(owner, api_key=None):
     mine, cited_authors, author_labels, books, keywords = [], Counter(), {}, {}, []
     for paper in papers:
         authors = json.loads(paper["authors"] or "[]")
-        is_mine = owner_key and any(author_key(a) == owner_key for a in authors)
+        is_mine = owner_key and any(same_person(a, owner) for a in authors)
         add_item("mine" if is_mine else "paper", paper["title"], ref=paper["arxiv_id"] or None, authors=authors,
                  text=paper["abstract"], source="suggested")
         if not is_mine:
@@ -273,7 +273,6 @@ def followed_author_papers(categories, per_author=30, days=60, stop=None):
                 "max_results": per_author}))
             if response.status_code != 200:
                 continue
-            wanted = author_key(author)
             full_name = _ascii(author).lower() if len(author.split()) > 1 and not re.match(r"^\w\.", author) else None
             for entry in ET.fromstring(response.text).findall(f"{ATOM}entry"):
                 published = (entry.findtext(f"{ATOM}published") or "")[:10]
@@ -283,7 +282,7 @@ def followed_author_papers(categories, per_author=30, days=60, stop=None):
                 if full_name:
                     matched = any(_ascii(n).lower() == full_name for n in names)
                 else:
-                    matched = any(author_key(n) == wanted for n in names)
+                    matched = any(same_person(n, author) for n in names)
                 categories_here = [c.get("term") for c in entry.findall(f"{ATOM}category")]
                 if not matched or (not full_name and not any(c in categories for c in categories_here)):
                     continue

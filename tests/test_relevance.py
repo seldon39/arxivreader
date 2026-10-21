@@ -87,3 +87,20 @@ class FollowedAuthors(unittest.TestCase):
              mock.patch.object(profile.httpx, "Client", return_value=client):
             physics = profile.followed_author_papers(["math-ph"])  # feed de physique mathématique seule
         self.assertEqual(sorted(p["arxiv_id"] for p in physics), ["2610.00001", "2610.00002", "2610.00003"])
+
+
+class FollowedAuthorReason(unittest.TestCase):
+    """Raison « auteur suivi » du feed : la même personne, pas un homonyme de même initiale."""
+
+    def test_same_initial_homonym(self):
+        from unittest import mock
+        from app import relevance
+        items = [{"key": "a", "arxiv_id": "2610.28478", "title": "Single generation of C*-algebras", "abstract": "",
+                  "authors": ["Xin Ma"]},
+                 {"key": "b", "arxiv_id": "2610.28479", "title": "Toeplitz operators", "abstract": "",
+                  "authors": ["X. Ma", "G. Marinescu"]}]
+        with mock.patch.object(relevance, "profile_documents", return_value=([], [], ["Xiaonan Ma"], [])), \
+             mock.patch.object(relevance, "cached_embeddings", return_value={}):
+            relevance.score_items(items)
+        reasons = {i["key"]: [r["label"] for r in i["reasons"] if r["kind"] == "author"] for i in items}
+        self.assertEqual(reasons, {"a": [], "b": ["Xiaonan Ma"]})
