@@ -342,8 +342,9 @@ function folderRow() {
     html: icons.close, hidden: true });
   const show = () => {
     // fin du chemin (le dossier et son parent), le chemin entier au survol
+    const separator = exportFolder.path.includes("\\") ? "\\" : "/";  // Windows : « …\\A\\B »
     const parts = exportFolder.path.split(/[\\/]/).filter(Boolean);
-    label.textContent = exportFolder.path ? `${parts.length > 2 ? "…/" : ""}${parts.slice(-2).join("/")}` : t("settings.notesFolderDownloads");
+    label.textContent = exportFolder.path ? `${parts.length > 2 ? `…${separator}` : ""}${parts.slice(-2).join(separator)}` : t("settings.notesFolderDownloads");
     label.title = exportFolder.path;
     clear.hidden = !exportFolder.path;
   };
@@ -352,6 +353,7 @@ function folderRow() {
     catch (error) { toast(t("error.generic", { message: error.message }), { error: true }); }
   };
   clear.addEventListener("click", () => save(""));
+  exportFolder.path = "";  // jusqu'à la réponse du serveur : pas l'état d'une ouverture précédente des réglages
   api.notesDevice().then(({ folder }) => { exportFolder.path = folder || ""; show(); }).catch(() => {});
   show();
   return h("div", { class: "row folder-row" }, h("span", {}, t("settings.notesFolder")),
@@ -390,7 +392,7 @@ async function importNotes(list) {
     const unknown = Object.entries(report.untrusted || {});
     if (unknown.length) {  // notes d'un autre ordinateur : l'accepter une fois, ses fichiers passent ensuite
       if (!(await trustDialog(unknown))) return;
-      report = await api.importNotes(files, unknown.map(([fingerprint]) => fingerprint));
+      report = await api.importNotes(files, unknown.map(([key]) => key));
     }
     const parts = [t("settings.notesImported", { added: report.added, updated: report.updated })];
     if (report.papers) parts.push(t("settings.notesImportedPapers", { n: report.papers }));
@@ -409,7 +411,7 @@ function trustDialog(devices) {
       h("form", { method: "dialog" },
         h("h3", { class: "meta-heading" }, t("settings.notesTrustTitle")),
         h("p", {}, t("settings.notesTrustText")),
-        h("ul", {}, devices.map(([fingerprint, device]) => h("li", {}, h("strong", {}, device || "?"), " ", h("span", { class: "muted small" }, fingerprint)))),
+        h("ul", {}, devices.map(([, { device, fingerprint }]) => h("li", {}, h("strong", {}, device || "?"), " ", h("span", { class: "muted small" }, fingerprint)))),
         h("p", { class: "muted small" }, t("settings.notesTrustHint")),
         h("div", { class: "dialog-actions" },
           h("button", { class: "button", type: "button", onclick: () => dialog.close("no") }, t("library.folder.cancel")),

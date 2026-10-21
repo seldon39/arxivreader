@@ -284,7 +284,8 @@ namespace ArxivReader
         {
             // {"action":"openTab","route":"#/paper/…","front":false} ; route vérifiée, comme sur le Mac
             var action = Regex.Match(json, "\"action\"\\s*:\\s*\"([a-zA-Z]+)\"").Groups[1].Value;
-            if (action == "chooseFolder") { ChooseFolder(sender); return; }
+            // fenêtre du système hors du gestionnaire de WebView2 (une boucle de messages imbriquée y est déconseillée)
+            if (action == "chooseFolder") { BeginInvoke(new Action(() => ChooseFolder(sender))); return; }
             var route = Regex.Match(json, "\"route\"\\s*:\\s*\"([^\"\\\\]*)\"").Groups[1].Value;
             bool front = Regex.IsMatch(json, "\"front\"\\s*:\\s*true");
             if (action == "openTab" && Route.IsMatch(route)) _ = OpenTab(route, front);

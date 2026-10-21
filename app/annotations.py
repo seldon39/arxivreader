@@ -2,6 +2,7 @@
 
 import base64
 import json
+import re
 import uuid
 
 from . import db
@@ -232,8 +233,10 @@ def import_one(paper_id, item):
     target = item.get("target") if isinstance(item.get("target"), dict) else None
     if kind not in KINDS + ("proof",) or not isinstance(item.get("uid"), str) or not 8 <= len(item["uid"]) <= 64:
         return "unchanged"
-    if kind == "proof" and (not target or not target.get("id")):
-        return "unchanged"
+    if kind in ("proof", "block") and not isinstance((target or {}).get("id"), str):
+        return "unchanged"  # (anciennes notes d'énoncé sans cible : rien à quoi les rattacher)
+    if not re.fullmatch(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d", str(item.get("updated_at") or "")):
+        return "unchanged"  # date au format de la base, sinon une entrée pourrait l'emporter sur toutes les suivantes
     try:
         if zone_of(target):
             _check_zone(zone_of(target))

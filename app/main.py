@@ -9,6 +9,8 @@ import re
 import signal
 import threading
 import time
+import zipfile
+import zlib
 from pathlib import Path
 from contextlib import asynccontextmanager
 from urllib.parse import unquote
@@ -1084,8 +1086,8 @@ def import_notes(body: NotesImport):
     try:
         files = [{"name": f.name[:300], "data": base64.b64decode(f.data, validate=True)} for f in body.files[:500]]
         return notesync.import_files(files, set(body.accept[:50]))
-    except (ValueError, notesync.ImportError_) as error:
-        raise HTTPException(400, f"Notes: {error}")
+    except (ValueError, notesync.ImportError_, zipfile.BadZipFile, zlib.error, EOFError, RuntimeError, NotImplementedError) as error:
+        raise HTTPException(400, f"Notes: {type(error).__name__}: {error}")  # archive abîmée, chiffrée…
 
 
 @app.get("/api/notes/device")
@@ -1118,7 +1120,10 @@ def export_notes_to_folder(lang: str = "fr"):
     if not folder or not Path(folder).is_dir():
         raise HTTPException(400, "No export folder")
     target = Path(folder) / "arXivReader notes.zip"
-    library.write_atomic_bytes(target, export.library_zip(lang))  # remplacé : un seul fichier à synchroniser
+    try:
+        library.write_atomic_bytes(target, export.library_zip(lang))  # remplacé : un seul fichier à synchroniser
+    except OSError as error:  # fichier tenu par le service de synchronisation, dossier devenu inaccessible…
+        raise HTTPException(400, f"{type(error).__name__}: {error}")
     return {"path": str(target)}
 
 

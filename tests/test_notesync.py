@@ -89,7 +89,7 @@ class NotesSync(unittest.TestCase):
         setup_library(self)
         with db.connect() as connection:
             connection.execute("DELETE FROM papers")
-        notesync.trust({notesync.fingerprint(__import__("base64").b64decode(
+        notesync.trust({notesync.key_id(__import__("base64").b64decode(
             json.loads(notesync.DATA.search(self.markdown).group(1))["signer"]["key"])): "Mac"})
         added = []
 
@@ -133,7 +133,7 @@ class LibraryExport(unittest.TestCase):
         setup_library(self)  # autre ordinateur, bibliothèque vide, appareil déjà accepté
         with db.connect() as connection:
             connection.execute("DELETE FROM papers")
-        notesync.trust({notesync.fingerprint(__import__("base64").b64decode(signer)): "Mac"})
+        notesync.trust({notesync.key_id(__import__("base64").b64decode(signer)): "Mac"})
 
         def quick_add(arxiv_id, known, in_library):
             db.save_paper({"id": arxiv_id, "arxiv_id": arxiv_id, "version": None, "title": known["title"],
@@ -171,3 +171,52 @@ class ExportFolder(unittest.TestCase):
         client.post("/api/notes/export-folder", json={})  # même nom : remplacée
         self.assertEqual([p.name for p in target.iterdir()], ["arXivReader notes.zip"])
         self.assertEqual(client.put("/api/notes/folder", json={"path": ""}).json()["folder"], "")
+
+
+class AuditCases(unittest.TestCase):
+    """Cas relevés par l'audit : fichiers abîmés ou inattendus, clé abîmée ou créée deux fois à la fois."""
+
+    def setUp(self):
+        saved = (db.DB_PATH, db.LIBRARY, library.PAPERS)
+        self.addCleanup(lambda: setattr(db, "DB_PATH", saved[0]) or setattr(db, "LIBRARY", saved[1]) or setattr(library, "PAPERS", saved[2]))
+        self.root = setup_library(self)
+
+    def test_marker_quoted_in_a_note(self):
+        annotations.create("0806.2370", "general", note="Le bloc commence par <!-- arxivreader-data { …")
+        text = export.paper_markdown("0806.2370")
+        self.assertEqual(notesync.import_files([{"name": "a.md", "data": text.encode()}])["rejected"], [])
+
+    def test_key_created_once_and_repaired(self):
+        import threading
+        found = []
+        threads = [threading.Thread(target=lambda: found.append(notesync.own_fingerprint())) for _ in range(8)]
+        [t.start() for t in threads]
+        [t.join() for t in threads]
+        self.assertEqual(len(set(found)), 1)
+        (self.root / "notes-signing.key").write_bytes(b"corrupted key")
+        self.assertTrue(export.paper_markdown("0806.2370") is not None and notesync.own_fingerprint())  # remplacée
+        self.assertTrue(any(p.name.startswith("notes-signing.key.bad-") for p in self.root.iterdir()))
+
+    def test_bad_entries_do_not_stop_the_import(self):
+        signed = lambda payload: notesync._signed(payload).encode()  # noqa: E731
+        items = [{"uid": "a" * 32, "kind": "block", "target": None, "updated_at": "2026-01-01 00:00:00"},  # ancienne note sans cible
+                 {"uid": "b" * 32, "kind": "general", "note": "x", "updated_at": "9999"},  # date hors format
+                 {"uid": "c" * 32, "kind": "general", "note": "Fiche", "updated_at": "2026-01-01 00:00:00"}]
+        data = signed({"paper": {"id": "0806.2370", "arxiv_id": "0806.2370"}, "annotations": items})
+        bad_paper = signed({"paper": {"id": "x", "arxiv_id": "pas un identifiant", "authors": {"a": 1}}, "annotations": []})
+        report = notesync.import_files([{"name": "a.md", "data": data}, {"name": "b.md", "data": bad_paper}])
+        self.assertEqual((report["added"], report["unchanged"], report["missing"]), (1, 2, ["x"]))
+
+    def test_read_only_paper_stays_out_of_the_library(self):
+        db.update_paper("0806.2370", in_library=0)
+        annotations.create("0806.2370", "general", note="Lu seulement")
+        text = export.paper_markdown("0806.2370")
+        notesync.import_files([{"name": "a.md", "data": text.encode()}])
+        self.assertFalse(db.get_paper("0806.2370")["in_library"])
+
+    def test_broken_zip_is_a_400(self):
+        from fastapi.testclient import TestClient
+        from app import main
+        client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
+        broken = __import__("base64").b64encode(b"PK\x03\x04" + b"\x00" * 40).decode()
+        self.assertEqual(client.post("/api/notes/import", json={"files": [{"name": "x.zip", "data": broken}]}).status_code, 400)

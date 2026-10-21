@@ -431,6 +431,11 @@ export class Annotator {
       this.openBlock(element.id, element.querySelector(":scope > .block-note") || { getBoundingClientRect: () => anchor });
       return;
     }
+    const existing = this.items.find((a) => a.kind === "note" && a.target?.id === element.id);
+    if (existing) {  // une note par paragraphe : la sienne est rouverte (sinon les icônes se superposeraient)
+      this.openNote(existing.id, this.content.querySelector(`.free-note[data-annotation="${existing.id}"]`) || { getBoundingClientRect: () => anchor });
+      return;
+    }
     await this.createFreeNote({ id: element.id }, { getBoundingClientRect: () => anchor });
   }
 
@@ -461,7 +466,7 @@ export class Annotator {
   // fenêtre d'une note libre : son texte, « Supprimer » ; laissée vide, elle disparaît en se fermant
   openNote(id, anchor, focus = false) {
     const annotation = this.items.find((a) => a.id === id);
-    if (!annotation) return;
+    if (!annotation || (this.popover && this.popoverNote === id)) return;  // déjà ouverte (clic sur son icône)
     const remove = async () => {
       try { await api.deleteAnnotation(id); } catch (error) { toastError(error); return; }
       this.items = this.items.filter((a) => a.id !== id);
@@ -471,12 +476,19 @@ export class Annotator {
     };
     const button = h("button", { class: "button small-button danger", type: "button" }, t("notes.deleteNote"));
     button.addEventListener("click", () => { this.popoverClosed = null; this.closePopover(); remove(); });
+    const editor = noteEditor({ value: annotation.note || "", placeholder: t("notes.placeholderFree"), autofocus: focus,
+      onSave: async (note) => { Object.assign(annotation, await api.updateAnnotation(id, { note })); this.onChange(); } });
     this.openPopover(anchor, [
       h("div", { class: "popover-head" }, h("span", { class: "popover-title" }, t("notes.freeNote")), h("span", { class: "spacer" }), button),
-      noteEditor({ value: annotation.note || "", placeholder: t("notes.placeholderFree"), autofocus: focus,
-        onSave: async (note) => { Object.assign(annotation, await api.updateAnnotation(id, { note })); this.onChange(); } }),
+      editor,
     ]);
-    this.popoverClosed = () => { if (!(annotation.note || "").trim()) remove(); };
+    this.popoverNote = id;
+    // vide à la fermeture : supprimée ; le texte de l'éditeur fait foi (l'enregistrement, différé, n'est peut-être
+    // pas encore revenu : une note tapée puis fermée aussitôt ne doit pas disparaître)
+    this.popoverClosed = () => {
+      const text = editor.querySelector("textarea")?.value ?? annotation.note ?? "";
+      if (!text.trim()) remove();
+    };
   }
 
   block(id) { return this.items.find((a) => a.kind === "block" && a.target?.id === id); }
@@ -680,7 +692,9 @@ export class Annotator {
     const spot = this.onBookmarkAt && (event.target.closest?.(".ltx_theorem[id]") || event.target.closest?.(".ltx_para[id], .ltx_abstract[id], section[id]"));
     const point = { left: event.clientX, top: event.clientY, width: 0, height: 0, bottom: event.clientY };
     const bookmark = spot && (() => this.onBookmarkAt(spot, point));
-    const freeNote = !range && spot && (() => this.openFreeNote(spot, point));  // sans sélection : note sur le paragraphe
+    // sans sélection : note sur le paragraphe (dans un énoncé ou une preuve : la sienne)
+    const noteSpot = spot && (event.target.closest?.(".ltx_theorem[id], .ltx_proof[id]") || spot);
+    const freeNote = !range && noteSpot && (() => this.openFreeNote(noteSpot, point));
     if (!range && !bookmark) return;
     event.preventDefault();
     this.hideToolbar();
@@ -797,6 +811,7 @@ export class Annotator {
     this.popover = null;
     const closed = this.popoverClosed;  // note libre laissée vide : supprimée
     this.popoverClosed = null;
+    this.popoverNote = null;
     if (closed) setTimeout(closed, 0);
   }
 

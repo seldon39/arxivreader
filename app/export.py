@@ -94,7 +94,8 @@ def paper_markdown(paper_id, language="fr"):
     highlights = [n for n in notes if n.get("target") and (n["kind"] == "highlight" or n["kind"] == "note" and (n.get("note") or "").strip())]
     bookmarks = [n for n in notes if n["kind"] == "bookmark" and n.get("target")]
     if not (sheet or blocks or highlights or bookmarks):
-        return "\n".join(lines + [words["empty"], ""])
+        # rien de lisible (emplacements de preuve seulement) : les données restent, pour l'import
+        return "\n".join(lines + [words["empty"], ""] + (["", notesync.data_block(paper, notes), ""] if notes else []))
     if sheet:
         lines += [f"## {words['sheet']}", "", sheet["note"].strip(), ""]
     if bookmarks:  # HTML dans l'ordre de l'article, puis PDF par page
@@ -125,7 +126,8 @@ def paper_markdown(paper_id, language="fr"):
         current = None  # section du passage précédent (titre répété seulement quand elle change)
         start_of = lambda n: n["target"].get("start") or ({"id": n["target"]["id"]} if n["target"].get("id") else {})  # noqa: E731
         pdf_of = lambda n: n["target"].get("pdf")  # noqa: E731  (passage surligné dans le PDF : page et position)
-        sort_key = lambda n: ((1, pdf_of(n)["page"], pdf_of(n).get("start") or -(pdf_of(n).get("top") or 0), n["id"]) if pdf_of(n)  # noqa: E731
+        # PDF : page, puis passages dans l'ordre du texte, puis notes libres de haut en bas (après les passages de la page)
+        sort_key = lambda n: ((1, pdf_of(n)["page"], pdf_of(n)["start"] if "start" in pdf_of(n) else 10 ** 6 - (pdf_of(n).get("top") or 0), n["id"]) if pdf_of(n)  # noqa: E731
                               else (0, rank(start_of(n).get("id", "")), start_of(n).get("offset") or 0, n["id"]))
         for note in sorted(highlights, key=sort_key):
             if pdf_of(note):
@@ -196,6 +198,9 @@ def library_zip(language="fr"):
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(LIBRARY_FILE, library_markdown(language))
-        for paper in _with_notes():
-            archive.writestr(filename(paper), paper_markdown(paper["id"], language))
+        # articles qui ont de vraies notes, ou des emplacements de preuve indiqués à la main (à garder à l'import)
+        for paper_id in sorted(annotations.annotated_papers()):
+            paper, notes = db.get_paper(paper_id), annotations.list_for(paper_id)
+            if paper and (has_notes(notes) or any(n["kind"] == "proof" for n in notes)):
+                archive.writestr(filename(paper), paper_markdown(paper_id, language))
     return buffer.getvalue()

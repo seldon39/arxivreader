@@ -10,8 +10,11 @@ import base64
 import hashlib
 import io
 import json
+import os
 import platform
 import re
+import threading
+import time
 import zipfile
 
 from cryptography.exceptions import InvalidSignature
@@ -26,6 +29,7 @@ DATA = re.compile(r"<!-- " + MARK + r"\s*(\{.*?\})\s*-->", re.S)
 MAX_FILES = 5000
 MAX_TEXT = 20_000_000
 FIELDS = ("uid", "kind", "target", "color", "quote", "note", "state", "author", "created_at", "updated_at")
+_key_lock = threading.Lock()
 
 
 # ---------- Clé de l'installation, appareils acceptés ----------
@@ -39,23 +43,35 @@ def _trusted_path():
 
 
 def _private_key():
+    """Clé de l'installation : créée une fois (un seul fil à la fois, fichier réservé à l'utilisateur) ; illisible
+    (fichier abîmé) : mise de côté et remplacée, l'export ne reste pas bloqué."""
     path = _key_path()
-    if path.exists():
-        return serialization.load_pem_private_key(path.read_bytes(), password=None)
-    key = Ed25519PrivateKey.generate()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
-    path.chmod(0o600)
-    return key
+    with _key_lock:
+        if path.exists():
+            try:
+                return serialization.load_pem_private_key(path.read_bytes(), password=None)
+            except (ValueError, TypeError):
+                path.replace(path.with_name(f"{path.name}.bad-{int(time.time())}"))
+        key = Ed25519PrivateKey.generate()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(handle, "wb") as file:
+            file.write(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+        return key
 
 
 def _raw(public_key):
     return public_key.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
 
 
+def key_id(raw):
+    """Identifiant complet d'une clé publique (SHA-256) : celui de la liste des appareils acceptés."""
+    return hashlib.sha256(raw).hexdigest()
+
+
 def fingerprint(raw):
     """Empreinte lisible d'une clé publique (« 3F2A-9C1B-… »), pour la reconnaître d'un appareil à l'autre."""
-    digest = hashlib.sha256(raw).hexdigest()[:16].upper()
+    digest = key_id(raw)[:16].upper()
     return "-".join(digest[i:i + 4] for i in range(0, 16, 4))
 
 
@@ -64,7 +80,7 @@ def own_fingerprint():
 
 
 def trusted():
-    """Appareils acceptés : {empreinte: nom}."""
+    """Appareils acceptés : {identifiant complet de la clé: nom}."""
     try:
         return json.loads(_trusted_path().read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -89,12 +105,13 @@ def _signed(payload):
                "signer": {"key": base64.b64encode(_raw(_private_key().public_key())).decode(),
                           "device": re.sub(r"\.(local|lan|home)$", "", platform.node()) or "arXivReader"}}
     payload["signature"] = base64.b64encode(_private_key().sign(_canonical(payload))).decode()
-    # « > » échappé : le bloc ne peut pas fermer le commentaire HTML avant sa fin (texte d'une note)
-    text = json.dumps(payload, ensure_ascii=False).replace(">", "\\u003e")
+    # « < » et « > » échappés : le texte d'une note ne peut ni fermer le commentaire HTML avant sa fin, ni y faire
+    # apparaître le marqueur du bloc (le dernier marqueur du fichier est toujours celui du bloc)
+    text = json.dumps(payload, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e")
     return f"<!-- {MARK}\n{text}\n-->"
 
 
-PAPER_FIELDS = ("id", "arxiv_id", "version", "title", "authors", "source", "doi")
+PAPER_FIELDS = ("id", "arxiv_id", "version", "title", "authors", "source", "doi", "in_library")
 
 
 def data_block(paper, notes):
@@ -139,8 +156,10 @@ def _texts(files):
 
 
 def _verify(text):
-    """Bloc de données vérifié : (payload, empreinte du signataire, appareil) ; ImportError_ sinon."""
-    found = DATA.search(text)
+    """Bloc de données vérifié : (payload, identifiant de la clé du signataire, appareil, empreinte) ; ImportError_
+    sinon. Le bloc lu est le dernier du fichier (celui qu'ajoute l'export : une note peut citer le marqueur)."""
+    start = text.rfind("<!-- " + MARK)
+    found = DATA.search(text, start) if start >= 0 else None
     if not found:
         raise ImportError_("unsigned")
     try:
@@ -152,20 +171,20 @@ def _verify(text):
         raise ImportError_("invalid")
     if payload.get("format") != FORMAT:
         raise ImportError_("format")
-    return payload, fingerprint(raw), str(payload["signer"].get("device") or "")[:100]
+    return payload, key_id(raw), str(payload["signer"].get("device") or "")[:100], fingerprint(raw)
 
 
 def import_files(files, accept=()):
-    """Importe des notes exportées. `accept` : empreintes d'appareils que l'utilisateur vient d'accepter. Renvoie le
-    bilan ; `untrusted` y liste les appareils inconnus (rien n'est importé de leurs fichiers tant qu'ils ne sont pas
-    acceptés)."""
-    own = own_fingerprint()
+    """Importe des notes exportées. `accept` : identifiants de clés d'appareils que l'utilisateur vient d'accepter.
+    Renvoie le bilan ; `untrusted` y liste les appareils inconnus, {identifiant: {device, fingerprint}} (rien n'est
+    importé de leurs fichiers tant qu'ils ne sont pas acceptés)."""
+    own = key_id(_raw(_private_key().public_key()))
     known = trusted()
     report = {"papers": 0, "folders": 0, "added": 0, "updated": 0, "unchanged": 0, "missing": [], "rejected": [], "untrusted": {}}
     verified = []
     for name, text in _texts(files):
         try:
-            payload, signer, device = _verify(text)
+            payload, signer, device, short = _verify(text)
         except ImportError_ as error:
             report["rejected"].append({"file": name, "reason": str(error)})
             continue
@@ -174,7 +193,7 @@ def import_files(files, accept=()):
                 trust({signer: device})
                 known[signer] = device
             else:
-                report["untrusted"][signer] = device
+                report["untrusted"][signer] = {"device": device, "fingerprint": short}
                 continue
         verified.append(payload)
     if report["untrusted"]:
@@ -194,22 +213,30 @@ def import_files(files, accept=()):
 
 
 def _ensure_paper(paper, report):
-    """Article de la bibliothèque exportée : présent ici (remis en bibliothèque au besoin), sinon importé d'arXiv ;
-    PDF importé absent : signalé (il faut le fichier). Renvoie son identifiant ici, ou None."""
+    """Article exporté : présent ici (remis en bibliothèque s'il y était là-bas), sinon importé d'arXiv ; PDF importé
+    absent : signalé (il faut le fichier). Un article seulement lu là-bas le reste ici. Renvoie son identifiant ici,
+    ou None (entrée inutilisable : ignorée, le reste de l'import continue)."""
+    from .arxiv import ArxivError
     paper_id = paper.get("id") if isinstance(paper, dict) else None
     if not isinstance(paper_id, str) or not paper_id:
         return None
+    wanted = paper.get("in_library", 1) not in (0, False)
     here = db.get_paper(paper_id)
     if here:
-        if not here.get("in_library"):
+        if wanted and not here.get("in_library"):
             library.set_in_library(paper_id, True)
         return paper_id
     if not paper.get("arxiv_id"):  # PDF importé : il faut le fichier, qui n'est pas dans les notes
         if paper.get("title") not in report["missing"]:
             report["missing"].append(paper.get("title") or paper_id)
         return None
-    known = {"title": str(paper.get("title") or "")[:1000], "authors": [str(a)[:200] for a in (paper.get("authors") or [])[:500]]}
-    added = library.quick_add(str(paper["arxiv_id"]), known, True)
+    authors = paper.get("authors") if isinstance(paper.get("authors"), list) else []
+    known = {"title": str(paper.get("title") or "")[:1000], "authors": [str(a)[:200] for a in authors[:500]]}
+    try:
+        added = library.quick_add(str(paper["arxiv_id"]), known, wanted)
+    except (ArxivError, ValueError):  # identifiant arXiv invalide
+        report["missing"].append(known["title"] or paper_id)
+        return None
     report["papers"] += 1
     return added["id"]
 

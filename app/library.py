@@ -43,16 +43,23 @@ def paper_lock(paper_id):
 
 
 def write_atomic_bytes(path, data):
-    temporary = path.with_name(f".{path.name}.tmp")
-    temporary.write_bytes(data)
-    os.replace(temporary, path)
+    """Écrit à côté puis remplace : un lecteur voit l'ancien fichier ou le nouveau, jamais un fichier à moitié écrit.
+    Fichier temporaire au nom unique (deux écritures simultanées ne se gênent pas ; jamais un lien existant suivi)."""
+    handle, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(handle, "wb") as file:
+            file.write(data)
+        os.replace(temporary, path)
+    except BaseException:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
 
 
 def write_atomic(path, text):
-    """Écrit à côté puis remplace : un lecteur voit l'ancien fichier ou le nouveau, jamais un fichier à moitié écrit."""
-    part = path.with_name(path.name + ".part")
-    part.write_text(text, encoding="utf-8")
-    os.replace(part, path)
+    write_atomic_bytes(path, text.encode("utf-8"))
 
 
 def import_paper(query, add_to_library=True):
@@ -208,6 +215,9 @@ def quick_add(arxiv_id, known=None, in_library=True):
     return db.get_paper(paper_id)
 
 
+_import_slots = threading.BoundedSemaphore(3)
+
+
 def _start_import(arxiv_id, paper_id):
     with _imports_guard:
         if paper_id in _imports:
@@ -216,7 +226,8 @@ def _start_import(arxiv_id, paper_id):
 
     def run():
         try:
-            import_paper(arxiv_id, add_to_library=False)  # garde la place dans la bibliothèque telle qu'elle est alors
+            with _import_slots:  # quelques imports à la fois (import de notes : des centaines d'articles d'un coup)
+                import_paper(arxiv_id, add_to_library=False)  # garde la place dans la bibliothèque telle qu'elle est alors
         except Exception as error:
             log.warning("import de %s en arrière-plan impossible : %s", arxiv_id, error)
         finally:
