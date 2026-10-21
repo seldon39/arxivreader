@@ -195,13 +195,16 @@ export function openSettingsDialog({ section = null } = {}) {
             if (event.currentTarget.dataset.checked) return;
             event.preventDefault();
             const link = event.currentTarget;
-            const { papers } = await api.notesCount().catch(() => ({ papers: 1 }));
-            if (!papers) { toast(t("notes.exportNone")); return; }
+            // archive : la bibliothèque (même sans notes) et les notes ; vide seulement sans l'un ni l'autre
+            const { papers, library } = await api.notesCount().catch(() => ({ papers: 1, library: 1 }));
+            if (!papers && !library) { toast(t("notes.exportNone")); return; }
             link.dataset.checked = "1";
             link.click();
             delete link.dataset.checked;
-          } }, t("settings.notesExportButton")))),
+          } }, t("settings.notesExportButton")),
+          " ", importNotesButton())),
       h("p", { class: "hint" }, t("settings.notesExportHint")),
+      deviceLine(),
     ]],
     ["ai", t("settings.ai"), [
       h("div", { class: "row" }, h("span", { id: "setting-aiProvider" }, t("settings.aiProvider")),
@@ -318,4 +321,64 @@ export function openSettingsDialog({ section = null } = {}) {
   applyStatic(dialog);
   if (!dialog.open) dialog.showModal();
 
+}
+
+// ---------- Import des notes (fichiers exportés par arXivReader, signés : app/notesync.py) ----------
+
+// empreinte de la clé qui signe les notes exportées ici : à comparer quand un autre ordinateur demande confiance
+function deviceLine() {
+  const line = h("p", { class: "hint muted small" });
+  api.notesDevice().then(({ fingerprint }) => { line.textContent = t("settings.notesDevice", { fingerprint }); }).catch(() => line.remove());
+  return line;
+}
+
+function importNotesButton() {
+  const input = h("input", { type: "file", accept: ".md,.zip,text/markdown,application/zip", multiple: true, hidden: true });
+  input.addEventListener("change", () => { importNotes([...input.files]); input.value = ""; });
+  return h("span", {}, h("button", { class: "button small-button", type: "button", onclick: () => input.click() }, t("settings.notesImportButton")), input);
+}
+
+const asBase64 = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve({ name: file.name, data: String(reader.result).split(",", 2)[1] || "" });
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(file);
+});
+
+async function importNotes(list) {
+  if (!list.length) return;
+  try {
+    const files = await Promise.all(list.map(asBase64));
+    let report = await api.importNotes(files);
+    const unknown = Object.entries(report.untrusted || {});
+    if (unknown.length) {  // notes d'un autre ordinateur : l'accepter une fois, ses fichiers passent ensuite
+      if (!(await trustDialog(unknown))) return;
+      report = await api.importNotes(files, unknown.map(([fingerprint]) => fingerprint));
+    }
+    const parts = [t("settings.notesImported", { added: report.added, updated: report.updated })];
+    if (report.papers) parts.push(t("settings.notesImportedPapers", { n: report.papers }));
+    if (report.folders) parts.push(t("settings.notesImportedFolders", { n: report.folders }));
+    if (report.rejected.length) parts.push(t("settings.notesImportRejected", { n: report.rejected.length }));
+    if (report.missing.length) parts.push(t("settings.notesImportMissing", { n: report.missing.length }));
+    toast(parts.join(" "), { duration: 9000, error: !report.added && !report.updated && report.rejected.length > 0 });
+  } catch (error) {
+    toast(t("error.generic", { message: error.message }), { error: true });
+  }
+}
+
+function trustDialog(devices) {
+  return new Promise((resolve) => {
+    const dialog = h("dialog", { class: "meta-dialog" },
+      h("form", { method: "dialog" },
+        h("h3", { class: "meta-heading" }, t("settings.notesTrustTitle")),
+        h("p", {}, t("settings.notesTrustText")),
+        h("ul", {}, devices.map(([fingerprint, device]) => h("li", {}, h("strong", {}, device || "?"), " ", h("span", { class: "muted small" }, fingerprint)))),
+        h("p", { class: "muted small" }, t("settings.notesTrustHint")),
+        h("div", { class: "dialog-actions" },
+          h("button", { class: "button", type: "button", onclick: () => dialog.close("no") }, t("library.folder.cancel")),
+          h("button", { class: "button primary", value: "yes" }, t("settings.notesTrustAccept")))));
+    dialog.addEventListener("close", () => { dialog.remove(); resolve(dialog.returnValue === "yes"); });
+    document.body.append(dialog);
+    dialog.showModal();
+  });
 }

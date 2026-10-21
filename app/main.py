@@ -1,6 +1,7 @@
 """Serveur web local d'arXivReader (127.0.0.1 uniquement)."""
 
 import asyncio
+import base64
 import json
 import mimetypes
 import os
@@ -19,7 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Res
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import (ai, alerts, annotations, citations, crossrefs, db, export, feed, folders, journals, library, localpdf, onboarding, profile, providers, related,
+from . import (ai, alerts, annotations, notesync, citations, crossrefs, db, export, feed, folders, journals, library, localpdf, onboarding, profile, providers, related,
                relevance, search, updates, zotero)
 from .arxiv import ArxivError, fetch_metadata, parse_arxiv_id
 from .config import HOST, PORT, STATIC
@@ -1057,12 +1058,39 @@ def paper_notes(paper_id: str, lang: str = "fr"):
 
 @app.get("/api/notes")
 def notes_count():
-    return {"papers": export.annotated_count()}
+    return {"papers": export.annotated_count(), "library": len(db.list_papers())}
 
 
 @app.get("/api/notes.zip")
 def all_notes(lang: str = "fr"):
     return _download(export.library_zip(lang), "arXivReader notes.zip", "application/zip")
+
+
+class NotesFile(BaseModel):
+    name: str
+    data: str  # contenu en base64 (Markdown, ou archive .zip de l'export complet)
+
+
+class NotesImport(BaseModel):
+    files: list[NotesFile]
+    accept: list[str] = []  # empreintes d'appareils que l'utilisateur vient d'accepter
+
+
+@app.post("/api/notes/import")
+def import_notes(body: NotesImport):
+    """Notes exportées par arXivReader (signées) : recréées ici ; articles absents importés d'arXiv. Appareil inconnu :
+    bilan avec `untrusted`, rien d'importé tant que l'utilisateur ne l'a pas accepté."""
+    try:
+        files = [{"name": f.name[:300], "data": base64.b64decode(f.data, validate=True)} for f in body.files[:500]]
+        return notesync.import_files(files, set(body.accept[:50]))
+    except (ValueError, notesync.ImportError_) as error:
+        raise HTTPException(400, f"Notes: {error}")
+
+
+@app.get("/api/notes/device")
+def notes_device():
+    """Empreinte de la clé qui signe les notes exportées ici (pour la reconnaître sur un autre ordinateur)."""
+    return {"fingerprint": notesync.own_fingerprint()}
 
 
 @app.get("/api/zotero")

@@ -2,6 +2,7 @@
 
 import base64
 import json
+import uuid
 
 from . import db
 
@@ -113,8 +114,8 @@ def create(paper_id, kind, target=None, color=None, quote=None, note=None, state
                 (paper_id, (target or {}).get("id"))).fetchone()
         if not existing:
             cursor = connection.execute(
-                "INSERT INTO annotations (paper_id, kind, target, color, quote, note, state, author) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (paper_id, kind, json.dumps(target) if target else None, color, quote, note, state, author))
+                "INSERT INTO annotations (paper_id, kind, target, color, quote, note, state, author, uid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (paper_id, kind, json.dumps(target) if target else None, color, quote, note, state, author, uuid.uuid4().hex))
             created = cursor.lastrowid
     if not existing:
         item = get(created)  # relu après l'enregistrement (fin du bloc « with »)
@@ -194,8 +195,8 @@ def set_proof(paper_id, node_id, mode, ref=None, start=None, end=None):
             connection.execute("UPDATE annotations SET target = ?, updated_at = datetime('now') WHERE id = ?",
                                (json.dumps(target), existing["id"]))
         else:
-            connection.execute("INSERT INTO annotations (paper_id, kind, target) VALUES (?, 'proof', ?)",
-                               (paper_id, json.dumps(target)))
+            connection.execute("INSERT INTO annotations (paper_id, kind, target, uid) VALUES (?, 'proof', ?, ?)",
+                               (paper_id, json.dumps(target), uuid.uuid4().hex))
 
 
 def clear_proof(paper_id, node_id):
@@ -219,3 +220,51 @@ def stats():
             "SUM(note IS NOT NULL AND TRIM(note) != '') AS notes, "
             "SUM(state IN ('understood', 'verified')) AS done FROM annotations GROUP BY paper_id").fetchall()
     return {r["paper_id"]: {"highlights": r["highlights"], "notes": r["notes"], "done": r["done"]} for r in rows}
+
+
+# ---- Import (notes exportées par arXivReader, bloc de données signé : notesync.py) ----
+
+def import_one(paper_id, item):
+    """Annotation importée : ajoutée, remplacée si elle est plus récente que la nôtre, sinon laissée. Rapprochement
+    par identifiant stable ; énoncé, preuve, fiche de lecture et emplacement de preuve : par leur cible (un seul par
+    article). Renvoie "added", "updated" ou "unchanged"."""
+    kind = item.get("kind")
+    target = item.get("target") if isinstance(item.get("target"), dict) else None
+    if kind not in KINDS + ("proof",) or not isinstance(item.get("uid"), str) or not 8 <= len(item["uid"]) <= 64:
+        return "unchanged"
+    if kind == "proof" and (not target or not target.get("id")):
+        return "unchanged"
+    try:
+        if zone_of(target):
+            _check_zone(zone_of(target))
+        if kind in ("bookmark", "note"):
+            _check_bookmark(target or {})
+    except ValueError:
+        return "unchanged"
+    clean = lambda value, size: value[:size] if isinstance(value, str) else None  # noqa: E731
+    values = {"target": json.dumps(target) if target else None,
+              "color": item.get("color") if item.get("color") in COLORS else None,
+              "quote": clean(item.get("quote"), 5000), "note": clean(item.get("note"), 100000),
+              "state": item.get("state") if item.get("state") in STATES else None,
+              "author": item.get("author") if item.get("author") in AUTHORS else None,
+              "updated_at": clean(item.get("updated_at"), 30) or "1970-01-01 00:00:00"}
+    with db.connect() as connection:
+        existing = connection.execute("SELECT id, updated_at FROM annotations WHERE uid = ?", (item["uid"],)).fetchone()
+        if not existing and kind == "general":
+            existing = connection.execute("SELECT id, updated_at FROM annotations WHERE paper_id = ? AND kind = 'general'",
+                                          (paper_id,)).fetchone()
+        elif not existing and kind in ("block", "proof"):
+            existing = connection.execute(
+                "SELECT id, updated_at FROM annotations WHERE paper_id = ? AND kind = ? AND json_extract(target, '$.id') = ?",
+                (paper_id, kind, target["id"])).fetchone()
+        if existing:
+            if values["updated_at"] <= (existing["updated_at"] or ""):
+                return "unchanged"
+            assignments = ", ".join(f"{k} = ?" for k in values)
+            connection.execute(f"UPDATE annotations SET {assignments} WHERE id = ?", (*values.values(), existing["id"]))
+            return "updated"
+        connection.execute(
+            "INSERT INTO annotations (paper_id, kind, uid, created_at, target, color, quote, note, state, author, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (paper_id, kind, item["uid"], clean(item.get("created_at"), 30) or values["updated_at"], *values.values()))
+        return "added"

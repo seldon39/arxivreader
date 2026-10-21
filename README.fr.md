@@ -345,6 +345,12 @@ il suffit de la fermer et d'aller dans le feed.
   annotations dans l'ordre de l'article (un clic y ramène).
 - Notes en Markdown (**gras**, *italique*, listes, citations) avec formules `$…$`, `$$…$$`,
   enregistrées automatiquement. Un article annoté n'est jamais effacé du cache.
+- **Import** : Réglages > Lecture > « Importer des notes… » relit les fichiers exportés par arXivReader (un `.md` ou le
+  `.zip`, qui liste aussi toute la bibliothèque et ses dossiers), sur cet ordinateur ou un autre : les articles et
+  dossiers absents sont ajoutés, et une note déjà présente
+  n'est remplacée que par une version plus récente. Chaque export est signé par l'ordinateur qui l'a fait : un fichier
+  qui ne vient pas d'arXivReader, ou modifié depuis, est refusé ; un autre ordinateur est accepté une fois (son
+  empreinte est dans ses réglages).
 - **Export** : « Exporter les notes (Markdown) » en bas de l'onglet Notes (fiche de lecture, énoncés et preuves
   avec leur état, passages surlignés par section, formules en LaTeX) ; Réglages > Lecture : toutes les notes,
   un fichier par article, dans une archive .zip (dossier Téléchargements).

@@ -5,3 +5,4 @@ beautifulsoup4>=4.12
 claude-agent-sdk>=0.2.165
 pypdf>=6.0
 truststore>=0.10  # certificats du système (réseaux qui inspectent les connexions)
+cryptography>=42  # signature des notes exportées (notesync.py)

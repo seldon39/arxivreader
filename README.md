@@ -331,6 +331,12 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   the paper (a click takes you there).
 - Notes in Markdown (**bold**, *italics*, lists, quotes) with formulas `$…$`, `$$…$$`, saved automatically.
   An annotated paper is never removed from the cache.
+- **Import**: Settings > Reading > "Import notes…" reads back files exported by arXivReader (one `.md` or the
+  `.zip`, which also lists the whole library and its folders), on this computer or another one: missing papers and
+  folders are added, and a note already present is
+  replaced only by a newer version. Each export is signed by the computer that made it: files not exported by
+  arXivReader, or modified since, are refused; another computer is accepted once (its fingerprint is shown in its
+  settings).
 - **Export**: "Export notes (Markdown)" at the bottom of the Notes tab (reading sheet, statements and proofs with
   their state, highlighted passages by section, formulas in LaTeX); Settings > Reading: all notes, one file per
   paper, in a .zip archive (Downloads folder).

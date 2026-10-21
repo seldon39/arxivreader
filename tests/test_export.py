@@ -89,7 +89,8 @@ class Export(unittest.TestCase):
         with mock.patch.object(annotations, "annotated_papers", return_value={"0806.2370", "1003.2523"}):
             data = export.library_zip()
         names = zipfile.ZipFile(io.BytesIO(data)).namelist()
-        self.assertEqual(names, ["0806.2370 Toeplitz operators on.md"])
+        # la bibliothèque entière (liste et dossiers), puis seulement les articles qui ont de vraies notes
+        self.assertEqual(names, [export.LIBRARY_FILE, "0806.2370 Toeplitz operators on.md"])
         self.assertEqual(export.annotated_count(), 1)
 
 

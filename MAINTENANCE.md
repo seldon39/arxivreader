@@ -198,6 +198,9 @@ main, dans l'application installée :
   (⌥ + glisser, bouton `#arxZoneButton` ajouté à `#toolbarViewerMiddle`) sont rendues en image par `page.render` ;
   images gardées dans `papers/<id>/zones/` (notes) et `papers/<id>/ai-images/` (questions), envoyées seulement aux
   assistants de `ai.IMAGE_PROVIDERS` (Claude : message à blocs image + texte du SDK ; Gemini : `inline_data`) ;
+- notes exportées : bloc de données signé en fin de fichier (`notesync.py`, Ed25519 de `cryptography`), clé de
+  l'installation dans `notes-signing.key` (dossier de la bibliothèque, jamais exportée), appareils acceptés dans
+  `notes-trusted.json` ; tout changement du contenu du bloc passe par `FORMAT` (les anciens fichiers restent lisibles) ;
 - le menu du clic droit du navigateur est supprimé (`app.js`) sauf sur une sélection, un champ, un lien ou une image ;
   le clic droit de l'article (`annotations.js`) et du PDF (`pdfnotes.js`) propose les marque-pages (`bookmarks.js`) ;
 - les téléchargements (export des notes : dossier Téléchargements, `WKDownloadDelegate`).

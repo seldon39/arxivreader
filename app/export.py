@@ -11,7 +11,7 @@ import re
 import time
 import zipfile
 
-from . import annotations, db
+from . import annotations, db, notesync
 from .library import paper_dir
 
 ID = re.compile(r"""\sid=["']([^"']+)["']""")
@@ -19,10 +19,10 @@ ID = re.compile(r"""\sid=["']([^"']+)["']""")
 STATES = {"fr": {"understood": "compris", "review": "à revoir", "verified": "vérifié"},
           "en": {"understood": "understood", "review": "to review", "verified": "verified"}}
 WORDS = {"fr": {"sheet": "Fiche de lecture", "statements": "Énoncés et preuves", "highlights": "Passages surlignés",
-                "proof": "Preuve de {label}", "exported": "Notes exportées d'arXivReader le {date}", "other": "Autres passages", "pdfPage": "PDF, page {page}", "zone": "Zone de la page (image)", "bookmarks": "Marque-pages",
+                "proof": "Preuve de {label}", "exported": "Notes exportées d'arXivReader le {date}", "other": "Autres passages", "pdfPage": "PDF, page {page}", "zone": "Zone de la page (image)", "bookmarks": "Marque-pages", "library": "Bibliothèque", "folders": "Dossiers", "localPdf": "PDF importé",
                 "empty": "Aucune note sur cet article.", "ai": "proposée par {who}, acceptée", "local": "un modèle local"},
          "en": {"sheet": "Reading notes", "statements": "Statements and proofs", "highlights": "Highlighted passages",
-                "proof": "Proof of {label}", "exported": "Notes exported from arXivReader on {date}", "other": "Other passages", "pdfPage": "PDF, page {page}", "zone": "Region of the page (image)", "bookmarks": "Bookmarks",
+                "proof": "Proof of {label}", "exported": "Notes exported from arXivReader on {date}", "other": "Other passages", "pdfPage": "PDF, page {page}", "zone": "Region of the page (image)", "bookmarks": "Bookmarks", "library": "Library", "folders": "Folders", "localPdf": "Imported PDF",
                 "empty": "No notes on this paper.", "ai": "suggested by {who}, accepted", "local": "a local model"}}
 AUTHORS = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini"}
 
@@ -142,6 +142,8 @@ def paper_markdown(paper_id, language="fr"):
                 lines += [f"*{words['zone']}*" if "rect" in (pdf_of(note) or {}) else _quote(note.get("quote")), ""]
             if (note.get("note") or "").strip():
                 lines += [note["note"].strip() + _who(note, words), ""]
+    # données de toutes les annotations, signées : l'import les recrée à l'identique (notesync.py)
+    lines += ["", notesync.data_block(paper, notes), ""]
     return "\n".join(lines)
 
 
@@ -167,10 +169,33 @@ def annotated_count():
     return len(_with_notes())
 
 
+LIBRARY_FILE = "arXivReader library.md"
+
+
+def library_markdown(language="fr"):
+    """Toute la bibliothèque, annotée ou non, et ses dossiers : liste lisible, puis bloc de données signé (l'import
+    rajoute les articles absents et recrée les dossiers)."""
+    from . import folders
+    words = WORDS.get(language, WORDS["en"])
+    papers = db.list_papers()
+    folder_list = folders.list_folders()
+    by_id = {p["id"]: p for p in papers}
+    line = lambda p: (f"- **{p['title']}** — {', '.join(p.get('authors') or [])}"  # noqa: E731
+                      + (f" · arXiv:{p['arxiv_id']}" if p.get("arxiv_id") else f" · {words['localPdf']}"))
+    lines = [f"# arXivReader — {words['library']}", "", f"*{words['exported'].format(date=time.strftime('%Y-%m-%d'))}*", ""]
+    if folder_list:
+        lines += [f"## {words['folders']}", ""]
+        for folder in folder_list:
+            lines += [f"### {folder['name']}", ""] + [line(by_id[i]) for i in folder["papers"] if i in by_id] + [""]
+    lines += [f"## {words['library']} ({len(papers)})", ""] + [line(p) for p in papers] + ["", notesync.library_block(papers, folder_list), ""]
+    return "\n".join(lines)
+
+
 def library_zip(language="fr"):
-    """Archive des notes de tous les articles annotés (bibliothèque ou seulement lus)."""
+    """Archive : la bibliothèque entière et ses dossiers, puis les notes de chaque article annoté."""
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(LIBRARY_FILE, library_markdown(language))
         for paper in _with_notes():
             archive.writestr(filename(paper), paper_markdown(paper["id"], language))
     return buffer.getvalue()

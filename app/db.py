@@ -138,6 +138,10 @@ def init():
         columns = {row["name"] for row in db.execute("PRAGMA table_info(annotations)")}
         if "author" not in columns:  # « claude » : annotation proposée par Claude et acceptée
             db.execute("ALTER TABLE annotations ADD COLUMN author TEXT")
+        if "uid" not in columns:  # identifiant stable (export / import des notes, d'un ordinateur à l'autre)
+            db.execute("ALTER TABLE annotations ADD COLUMN uid TEXT")
+        db.execute("UPDATE annotations SET uid = lower(hex(randomblob(16))) WHERE uid IS NULL")
+        db.execute("CREATE UNIQUE INDEX IF NOT EXISTS annotations_uid ON annotations (uid)")
         columns = {row["name"] for row in db.execute("PRAGMA table_info(ai_exchanges)")}
         if "applied" not in columns:  # annotations proposées par la réponse déjà appliquées à l'article
             db.execute("ALTER TABLE ai_exchanges ADD COLUMN applied INTEGER DEFAULT 0")
