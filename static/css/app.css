@@ -1431,7 +1431,10 @@ body.related-expanded { overflow: hidden; }
 .bookmark-box .text-input { height: 34px; width: 100%; box-sizing: border-box; }
 .bookmark-box-actions { display: flex; align-items: center; gap: 8px; }
 .bookmark-box-actions .spacer { flex: 1; }
-.bm-anchor { position: relative; }
+.bm-anchor, .fn-anchor { position: relative; }
+/* note libre d'un paragraphe : icône de note dans la marge (le ruban d'un marque-page passe dessous) */
+.free-note { top: 0; }
+.fn-anchor > .bm-ribbon { top: 32px; right: -24px; }
 .bm-ribbon { position: absolute; top: 2px; right: -28px; width: 14px; height: 24px; padding: 0; border: 0; cursor: pointer; z-index: 2;
   background: var(--accent); clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 74%, 0 100%); }
 .bm-ribbon:hover { filter: brightness(1.15); }

@@ -420,7 +420,63 @@ export class Annotator {
     this.items.filter((a) => a.kind === "highlight" && !a.target?.pdf).forEach((a) => { a.orphan = !paint(this.content, a); });
     this.addBlockButtons();
     this.refreshBadges();
+    this.paintFreeNotes();
     this.bind();
+  }
+
+  // ---- notes libres (sans passage sélectionné) : sur un paragraphe du HTML, ou à un point d'une page du PDF ----
+  // énoncé ou preuve : leur note existante ; ailleurs, nouvelle note sur le paragraphe (supprimée si laissée vide)
+  async openFreeNote(element, anchor) {
+    if (element.matches(".ltx_theorem[id], .ltx_proof[id]")) {
+      this.openBlock(element.id, element.querySelector(":scope > .block-note") || { getBoundingClientRect: () => anchor });
+      return;
+    }
+    await this.createFreeNote({ id: element.id }, { getBoundingClientRect: () => anchor });
+  }
+
+  async createFreeNote(target, anchor) {
+    try {
+      const annotation = await api.addAnnotation(this.paperId, { kind: "note", note: "", target: { ...target, version: this.version ?? null } });
+      this.items.push(annotation);
+      this.paintFreeNotes();
+      if (target.pdf) this.pdf?.repaint(annotation);
+      this.openNote(annotation.id, anchor, true);
+    } catch (error) { toastError(error); }
+  }
+
+  paintFreeNotes() {
+    this.content.querySelectorAll(".free-note").forEach((button) => button.remove());
+    this.content.querySelectorAll(".fn-anchor").forEach((element) => element.classList.remove("fn-anchor"));
+    for (const annotation of this.items.filter((a) => a.kind === "note" && a.target?.id)) {
+      const element = this.content.querySelector(`[id="${CSS.escape(annotation.target.id)}"]`);
+      if (!element) continue;
+      const button = h("button", { class: "block-note has-note free-note", type: "button", title: t("notes.freeNote"), "aria-label": t("notes.freeNote"),
+        html: icons.note, dataset: { annotation: annotation.id } });
+      button.addEventListener("click", (event) => { event.stopPropagation(); this.openNote(annotation.id, button); });
+      element.classList.add("fn-anchor");
+      element.prepend(button);
+    }
+  }
+
+  // fenêtre d'une note libre : son texte, « Supprimer » ; laissée vide, elle disparaît en se fermant
+  openNote(id, anchor, focus = false) {
+    const annotation = this.items.find((a) => a.id === id);
+    if (!annotation) return;
+    const remove = async () => {
+      try { await api.deleteAnnotation(id); } catch (error) { toastError(error); return; }
+      this.items = this.items.filter((a) => a.id !== id);
+      this.paintFreeNotes();
+      this.pdf?.removed(annotation);
+      this.onChange();
+    };
+    const button = h("button", { class: "button small-button danger", type: "button" }, t("notes.deleteNote"));
+    button.addEventListener("click", () => { this.popoverClosed = null; this.closePopover(); remove(); });
+    this.openPopover(anchor, [
+      h("div", { class: "popover-head" }, h("span", { class: "popover-title" }, t("notes.freeNote")), h("span", { class: "spacer" }), button),
+      noteEditor({ value: annotation.note || "", placeholder: t("notes.placeholderFree"), autofocus: focus,
+        onSave: async (note) => { Object.assign(annotation, await api.updateAnnotation(id, { note })); this.onChange(); } }),
+    ]);
+    this.popoverClosed = () => { if (!(annotation.note || "").trim()) remove(); };
   }
 
   block(id) { return this.items.find((a) => a.kind === "block" && a.target?.id === id); }
@@ -622,7 +678,9 @@ export class Annotator {
     // marque-page : le paragraphe (ou l'énoncé) cliqué ; sans sélection, c'est la seule entrée du menu
     // (dans un énoncé : l'énoncé entier, son ruban sous le bouton de note)
     const spot = this.onBookmarkAt && (event.target.closest?.(".ltx_theorem[id]") || event.target.closest?.(".ltx_para[id], .ltx_abstract[id], section[id]"));
-    const bookmark = spot && (() => this.onBookmarkAt(spot, { left: event.clientX, top: event.clientY, width: 0, height: 0, bottom: event.clientY }));
+    const point = { left: event.clientX, top: event.clientY, width: 0, height: 0, bottom: event.clientY };
+    const bookmark = spot && (() => this.onBookmarkAt(spot, point));
+    const freeNote = !range && spot && (() => this.openFreeNote(spot, point));  // sans sélection : note sur le paragraphe
     if (!range && !bookmark) return;
     event.preventDefault();
     this.hideToolbar();
@@ -636,6 +694,7 @@ export class Annotator {
       tex && item(t("notes.copyTexShort"), async () => { await copyText(single ? texOf(math).trim() : rangeTex(range)); toast(t("notes.texCopied")); }),
       item(t("notes.copyText"), async () => { await copyText(range.toString()); toast(t("notes.textCopied")); }),
       this.onAskAI && item(t("ai.askPassage"), () => { const quote = quoteOf(range, 12000); getSelection().removeAllRanges(); this.onAskAI(quote); })],
+      freeNote && item(t("notes.addFreeNote"), freeNote),
       bookmark && item(t("bookmarks.addHereMenu"), bookmark));
     document.body.append(menu);
     // à l'endroit du clic, dans la fenêtre
@@ -689,6 +748,7 @@ export class Annotator {
   openHighlight(id, anchor, focus = false) {
     const annotation = this.items.find((a) => a.id === id);
     if (!annotation) return;
+    if (annotation.kind === "note") { this.openNote(id, anchor, focus); return; }  // note libre du PDF (clic sur son icône)
     const colors = h("div", { class: "popover-colors" }, COLORS.map((color) => {
       const button = h("button", { type: "button", class: `hl-dot hl-${color}`, "aria-pressed": String(annotation.color === color),
         title: t(`notes.color.${color}`), "aria-label": t(`notes.color.${color}`) });
@@ -735,6 +795,9 @@ export class Annotator {
     this.popover?.querySelectorAll(".note-editor").forEach((editor) => editor.flush?.());
     this.popover?.remove();
     this.popover = null;
+    const closed = this.popoverClosed;  // note libre laissée vide : supprimée
+    this.popoverClosed = null;
+    if (closed) setTimeout(closed, 0);
   }
 
   // ---- onglet « Notes » du panneau ----
@@ -768,7 +831,8 @@ export class Annotator {
     });
     // ordre de l'article ; passages du PDF ensuite, par page et position
     // passage du PDF : page puis position dans son texte ; zone : page puis hauteur (≈ position du texte voisin)
-    const pdfSpot = (a) => (a.target?.pdf ? a.target.pdf.page * 1e7 + (a.target.pdf.start ?? Math.round((a.target.pdf.rect?.[1] || 0) * 4000)) : null);
+    const pdfSpot = (a) => (a.target?.pdf ? a.target.pdf.page * 1e7 + (a.target.pdf.start ?? (a.target.pdf.rect
+      ? Math.round(a.target.pdf.rect[1] * 4000) : Math.round(4000 - 4 * (a.target.pdf.top || 0)))) : null);  // note libre : hauteur
     located.sort((x, y) => {
       const [px, py] = [pdfSpot(x.a), pdfSpot(y.a)];
       if (px !== null || py !== null) return px === null ? -1 : py === null ? 1 : px - py;
@@ -801,6 +865,8 @@ export class Annotator {
         annotation.image ? h("img", { src: `/api/annotations/${annotation.id}/image`, alt: t("notes.zone") }) : t("notes.zone"));
     } else if (annotation.kind === "highlight") {
       head = h("blockquote", { class: `note-quote hl-border-${annotation.color || "yellow"}` }, annotation.quote || "");
+    } else if (annotation.kind === "note") {
+      head = h("div", { class: "note-block-title" }, h("span", { class: "label" }, t("notes.freeNote")));
     } else {
       const node = this.byId.get(annotation.target?.id);
       const proof = element?.matches?.(".ltx_proof");

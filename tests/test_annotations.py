@@ -69,3 +69,11 @@ if __name__ == "__main__":
                 annotations.create("p", "bookmark", bad, quote="x")
         stats = annotations.stats()["p"]
         self.assertEqual((stats["highlights"], stats["notes"]), (0, 0))  # ni passage surligné ni note
+
+    def test_free_notes(self):
+        html = annotations.create("p", "note", {"id": "S2.p3", "version": 1}, note="À comparer avec [BGS2].")
+        pdf = annotations.create("p", "note", {"pdf": {"page": 3, "top": 600.5, "left": 72}}, note="Signe ?")
+        self.assertNotEqual(html["id"], pdf["id"])
+        with self.assertRaises(ValueError):
+            annotations.create("p", "note", {"pdf": {"page": 3, "left": "x"}}, note="?")
+        self.assertEqual(annotations.stats()["p"]["notes"], 2)

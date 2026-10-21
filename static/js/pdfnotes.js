@@ -13,7 +13,8 @@ import { t } from "./i18n.js";
 import { h, icons, toast } from "./util.js";
 
 
-const isPdf = (annotation) => annotation.kind === "highlight" && annotation.target?.pdf;
+// dessinés dans le PDF : passages et zones surlignés, notes libres (icône à l'endroit du clic droit)
+const isPdf = (annotation) => (annotation.kind === "highlight" || annotation.kind === "note") && annotation.target?.pdf;
 
 export class PdfNotes {
   // `annotator` : celui du lecteur (mêmes notes, même onglet) ; `view` : le PdfView ; `onAskAI(quote)` ;
@@ -118,12 +119,19 @@ export class PdfNotes {
     const here = this.items.filter((a) => a.target.pdf.page <= page && (a.target.pdf.endPage || a.target.pdf.page) >= page);
     if (!here.length) return;
     const nodes = this.textNodes(page);
-    if (!nodes.length && !here.some((a) => a.target.pdf.rect)) return;
+    if (!nodes.length && !here.some((a) => a.target.pdf.rect || a.kind === "note")) return;
     const length = nodes.reduce((n, node) => n + node.data.length, 0);
     const box = this.boxOf(pageDiv);
     const rects = here.flatMap((annotation) => {
       const className = `arx-hl arx-hl-${annotation.color || "yellow"}`;
       const { page: first, start, endPage = first, end, rect } = annotation.target.pdf;
+      if (annotation.kind === "note") {  // note libre : son icône dans la marge droite, à la hauteur du clic
+        const view = this.app?.pdfViewer.getPageView(page - 1);
+        if (!view?.viewport) return [];
+        const [, y] = view.viewport.convertToViewportPoint(annotation.target.pdf.left ?? 0, annotation.target.pdf.top ?? 0);
+        return [{ left: box.left + box.width - 40, top: box.top + y * (box.height / view.viewport.height), width: 20, height: 20,
+          className: "arx-hl arx-pin", id: annotation.id }];
+      }
       if (rect) {  // zone : le rectangle tel quel
         return [{ left: box.left + rect[0] * box.width, top: box.top + rect[1] * box.height, width: (rect[2] - rect[0]) * box.width,
           height: (rect[3] - rect[1]) * box.height, className: `${className} arx-zone`, id: annotation.id }];
@@ -170,8 +178,12 @@ export class PdfNotes {
     const view = this.app.pdfViewer.getPageView(page - 1);
     const box = this.boxOf(pageDiv);
     const [, top] = view.viewport.convertToPdfPoint(event.clientX - box.left, Math.max(0, event.clientY - box.top - 8));
+    const [left, at] = view.viewport.convertToPdfPoint(event.clientX - box.left - 10, event.clientY - box.top - 10);
     const point = this.anchor({ left: event.clientX, top: event.clientY, width: 0, height: 0 }).getBoundingClientRect();
-    this.onContextMenu?.(point, t("bookmarks.addHereMenu"), () => this.onAddBookmark({ pdf: { page, top }, rect: point }));
+    this.onContextMenu?.(point, [
+      [t("notes.addFreeNote"), () => this.annotator.createFreeNote({ pdf: { page, top: at, left } }, { getBoundingClientRect: () => point })],
+      [t("bookmarks.addHereMenu"), () => this.onAddBookmark({ pdf: { page, top }, rect: point })],
+    ]);
   }
 
   // boîte de la page sans sa bordure (celle de la couche de texte), en coordonnées du cadre

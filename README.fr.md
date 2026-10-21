@@ -336,6 +336,8 @@ il suffit de la fermer et d'aller dans le feed.
   (Claude la transcrit). Ces deux derniers seulement avec un assistant qui lit les images (Claude, Gemini).
 - **Énoncés et preuves** : l'icône de note en marge (au survol) ouvre une note et, pour un énoncé,
   l'état de lecture *compris / à revoir / vérifié* (affiché dans le titre et la liste des énoncés).
+- **Notes sans passage** : clic droit → « Ajouter une note », en HTML (sur le paragraphe ; dans un énoncé ou une
+  preuve, sa note) ou dans le PDF (une icône dans la marge de la page, à cette hauteur) ; une note laissée vide disparaît.
 - **Marque-pages** : clic droit → « Ajouter un marque-page » (ou ⌘D), avec un nom au choix. Un ruban rouge marque l'endroit dans la marge ; tous sont listés en tête de l'onglet Notes
   (un clic y ramène, en passant du HTML au PDF au besoin). Un marque-page posé sur une version arXiv antérieure est
   signalé (« posé sur la v1 ») ; l'ouvrir et l'enregistrer le confirme pour la version actuelle.

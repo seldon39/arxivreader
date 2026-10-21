@@ -110,6 +110,7 @@ class Reader {
     });
     if (this.pdf && !this.pdfNotes) this.pdfNotes = this.makePdfNotes();
     // onglet Notes : passage surligné dans le PDF, lu en HTML → vue PDF d'abord
+    this.annotator.version = paper.version;  // notes libres : version de l'article où elles sont posées
     // clic droit dans l'article : marque-page sur le paragraphe cliqué
     this.annotator.onBookmarkAt = (element, rect) => this.addBookmark({ element, rect });
     // onglet Notes : marque-pages en tête
@@ -1754,7 +1755,7 @@ class Reader {
       onTranscribe: (zone) => this.assistant?.ask({ task: "transcribe", zone }),
       onAddBookmark: (at) => this.addBookmark(at),
       onBookmark: (annotation, rect) => this.editBookmark(annotation, rect),
-      onContextMenu: (point, label, action) => contextMenuAt(point, [[label, action]]),
+      onContextMenu: (point, items) => contextMenuAt(point, items),
     });
   }
 

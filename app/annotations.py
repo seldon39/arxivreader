@@ -5,9 +5,10 @@ import json
 
 from . import db
 
-KINDS = ("highlight", "block", "general", "bookmark")  # + « proof » : emplacement de preuve indiqué à la main
+KINDS = ("highlight", "block", "general", "bookmark", "note")  # + « proof » : emplacement de preuve indiqué à la main
 # marque-page : nom dans `quote` ; cible {"id": paragraphe du HTML} ou {"pdf": {"page", "top"}} (hauteur en points du
 # PDF), et "version" : celle de l'article quand il a été posé (une nouvelle version peut le déplacer)
+# note libre (sans passage sélectionné) : texte dans `note` ; cible {"id": paragraphe} ou {"pdf": {"page", "top", "left"}}
 PROOF_MODES = ("section", "passage", "immediate", "admitted")
 COLORS = ("yellow", "green", "blue", "pink")
 STATES = ("understood", "review", "verified")
@@ -47,7 +48,7 @@ def _check_bookmark(target):
     pdf = target.get("pdf")
     if pdf is not None:
         ok = isinstance(pdf, dict) and isinstance(pdf.get("page"), int) and pdf["page"] >= 1 \
-            and (pdf.get("top") is None or isinstance(pdf["top"], (int, float)))
+            and all(pdf.get(k) is None or isinstance(pdf[k], (int, float)) for k in ("top", "left"))
     else:
         ok = isinstance(target.get("id"), str) and 0 < len(target["id"]) <= 200
     if not ok:
@@ -99,7 +100,7 @@ def create(paper_id, kind, target=None, color=None, quote=None, note=None, state
         author = None  # notes d'énoncé et fiche de lecture : ce sont les vôtres, même complétées par Claude
     if kind == "block" and not (target or {}).get("id"):
         raise ValueError("block without target")  # sinon une nouvelle ligne à chaque enregistrement
-    if kind == "bookmark":
+    if kind in ("bookmark", "note"):
         _check_bookmark(target or {})
     with db.connect() as connection:
         existing = None

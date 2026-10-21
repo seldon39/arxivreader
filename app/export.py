@@ -50,7 +50,8 @@ def _structure(paper_id):
 def has_notes(notes):
     return any((n["kind"] == "general" and (n.get("note") or "").strip())
                or (n["kind"] == "block" and n.get("target") and ((n.get("note") or "").strip() or n.get("state")))
-               or (n["kind"] in ("highlight", "bookmark") and n.get("target")) for n in notes)
+               or (n["kind"] in ("highlight", "bookmark") and n.get("target"))
+        or (n["kind"] == "note" and (n.get("note") or "").strip()) for n in notes)
 
 
 def _who(note, words):
@@ -89,7 +90,8 @@ def paper_markdown(paper_id, language="fr"):
              f"*{words['exported'].format(date=time.strftime('%Y-%m-%d'))}*", ""]
     sheet = next((n for n in notes if n["kind"] == "general" and (n.get("note") or "").strip()), None)
     blocks = [n for n in notes if n["kind"] == "block" and n.get("target") and ((n.get("note") or "").strip() or n.get("state"))]
-    highlights = [n for n in notes if n["kind"] == "highlight" and n.get("target")]
+    # passages surlignés, et notes libres (sans passage : à leur paragraphe, ou à leur page du PDF)
+    highlights = [n for n in notes if n.get("target") and (n["kind"] == "highlight" or n["kind"] == "note" and (n.get("note") or "").strip())]
     bookmarks = [n for n in notes if n["kind"] == "bookmark" and n.get("target")]
     if not (sheet or blocks or highlights or bookmarks):
         return "\n".join(lines + [words["empty"], ""])
@@ -121,9 +123,9 @@ def paper_markdown(paper_id, language="fr"):
     if highlights:
         lines += [f"## {words['highlights']}", ""]
         current = None  # section du passage précédent (titre répété seulement quand elle change)
-        start_of = lambda n: n["target"].get("start") or {}  # noqa: E731
+        start_of = lambda n: n["target"].get("start") or ({"id": n["target"]["id"]} if n["target"].get("id") else {})  # noqa: E731
         pdf_of = lambda n: n["target"].get("pdf")  # noqa: E731  (passage surligné dans le PDF : page et position)
-        sort_key = lambda n: ((1, pdf_of(n)["page"], pdf_of(n).get("start") or 0, n["id"]) if pdf_of(n)  # noqa: E731
+        sort_key = lambda n: ((1, pdf_of(n)["page"], pdf_of(n).get("start") or -(pdf_of(n).get("top") or 0), n["id"]) if pdf_of(n)  # noqa: E731
                               else (0, rank(start_of(n).get("id", "")), start_of(n).get("offset") or 0, n["id"]))
         for note in sorted(highlights, key=sort_key):
             if pdf_of(note):
@@ -136,7 +138,8 @@ def paper_markdown(paper_id, language="fr"):
                 lines += [f"### {heading}", ""]
                 current = key
             # zone du PDF (formule, figure) : pas de texte sûr, seulement sa mention
-            lines += [f"*{words['zone']}*" if "rect" in (pdf_of(note) or {}) else _quote(note.get("quote")), ""]
+            if note["kind"] != "note":  # note libre : pas de passage cité, seulement la note
+                lines += [f"*{words['zone']}*" if "rect" in (pdf_of(note) or {}) else _quote(note.get("quote")), ""]
             if (note.get("note") or "").strip():
                 lines += [note["note"].strip() + _who(note, words), ""]
     return "\n".join(lines)

@@ -62,6 +62,16 @@ class Export(unittest.TestCase):
         self.assertLess(text.index("**Noyau de Bergman** — 2. Bergman kernels"), text.index("**Calcul à vérifier** — PDF, page 7"))
         self.assertTrue(export.has_notes(annotations.list_for(pid)))
 
+    def test_free_notes(self):
+        pid = "0806.2370"
+        annotations.create(pid, "note", {"id": "S2.p1"}, note="Comparer avec Dai–Liu–Ma.")
+        annotations.create(pid, "note", {"pdf": {"page": 3, "top": 500, "left": 80}}, note="Signe à vérifier.")
+        annotations.create(pid, "note", {"id": "S1.p1"}, note="")  # laissée vide : pas exportée
+        text = export.paper_markdown(pid, "fr")
+        self.assertIn("### 2. Bergman kernels\n\nComparer avec Dai–Liu–Ma.", text)
+        self.assertIn("### PDF, page 3\n\nSigne à vérifier.", text)
+        self.assertNotIn("### 1. Introduction", text)
+
     def test_order_within_a_paragraph_and_ai_notes(self):
         pid = "0806.2370"
         annotations.create(pid, "highlight", target={"start": {"id": "S1.p1", "offset": 5}, "end": {"id": "S1.p1", "offset": 9}}, quote="text")
