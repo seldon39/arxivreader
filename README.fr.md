@@ -348,7 +348,9 @@ il suffit de la fermer et d'aller dans le feed.
 - **Import** : Réglages > Lecture > « Importer des notes… » relit les fichiers exportés par arXivReader (un `.md` ou le
   `.zip`, qui liste aussi toute la bibliothèque et ses dossiers), sur cet ordinateur ou un autre : les articles et
   dossiers absents sont ajoutés, et une note déjà présente
-  n'est remplacée que par une version plus récente. Chaque export est signé par l'ordinateur qui l'a fait : un fichier
+  n'est remplacée que par une version plus récente. Le dossier d'export peut être changé (Réglages > Lecture > Dossier
+  d'export), par exemple pour un dossier synchronisé par iCloud Drive ou Dropbox : l'archive y est alors écrite, en
+  remplaçant la précédente. Chaque export est signé par l'ordinateur qui l'a fait : un fichier
   qui ne vient pas d'arXivReader, ou modifié depuis, est refusé ; un autre ordinateur est accepté une fois (son
   empreinte est dans ses réglages).
 - **Export** : « Exporter les notes (Markdown) » en bas de l'onglet Notes (fiche de lecture, énoncés et preuves

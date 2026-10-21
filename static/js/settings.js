@@ -5,7 +5,7 @@ import { api } from "./api.js";
 import { applyStatic, setAIName, setLanguage, t } from "./i18n.js";
 import { updatesSection } from "./updates.js";
 import { ZOTERO_KEY, zoteroSection } from "./zotero.js";
-import { h, icons, toast } from "./util.js";
+import { chooseFolder, h, icons, toast } from "./util.js";
 
 export const DEFAULT_FONT_SIZE = 18;
 export const DEFAULT_AI_FONT_SIZE = 15; // réponses de l'IA
@@ -198,11 +198,19 @@ export function openSettingsDialog({ section = null } = {}) {
             // archive : la bibliothèque (même sans notes) et les notes ; vide seulement sans l'un ni l'autre
             const { papers, library } = await api.notesCount().catch(() => ({ papers: 1, library: 1 }));
             if (!papers && !library) { toast(t("notes.exportNone")); return; }
+            if (exportFolder.path) {  // dossier choisi : écrite là (remplace la précédente), pas téléchargée
+              try {
+                const { path } = await api.exportNotesToFolder(settings.language || "fr");
+                toast(t("settings.notesExportedTo", { path }), { duration: 7000 });
+              } catch (error) { toast(t("error.generic", { message: error.message }), { error: true }); }
+              return;
+            }
             link.dataset.checked = "1";
             link.click();
             delete link.dataset.checked;
           } }, t("settings.notesExportButton")),
           " ", importNotesButton())),
+      folderRow(),
       h("p", { class: "hint" }, t("settings.notesExportHint")),
       deviceLine(),
     ]],
@@ -324,6 +332,35 @@ export function openSettingsDialog({ section = null } = {}) {
 }
 
 // ---------- Import des notes (fichiers exportés par arXivReader, signés : app/notesync.py) ----------
+
+// Dossier d'export : Téléchargements par défaut ; un dossier choisi (synchronisé, par exemple) reçoit l'archive
+const exportFolder = { path: "" };
+
+function folderRow() {
+  const label = h("span", { class: "muted small folder-path" });
+  const clear = h("button", { class: "icon-button small", type: "button", title: t("settings.notesFolderReset"), "aria-label": t("settings.notesFolderReset"),
+    html: icons.close, hidden: true });
+  const show = () => {
+    // fin du chemin (le dossier et son parent), le chemin entier au survol
+    const parts = exportFolder.path.split(/[\\/]/).filter(Boolean);
+    label.textContent = exportFolder.path ? `${parts.length > 2 ? "…/" : ""}${parts.slice(-2).join("/")}` : t("settings.notesFolderDownloads");
+    label.title = exportFolder.path;
+    clear.hidden = !exportFolder.path;
+  };
+  const save = async (path) => {
+    try { exportFolder.path = (await api.setNotesFolder(path)).folder; show(); }
+    catch (error) { toast(t("error.generic", { message: error.message }), { error: true }); }
+  };
+  clear.addEventListener("click", () => save(""));
+  api.notesDevice().then(({ folder }) => { exportFolder.path = folder || ""; show(); }).catch(() => {});
+  show();
+  return h("div", { class: "row folder-row" }, h("span", {}, t("settings.notesFolder")),
+    h("div", { class: "folder-choice" }, label, clear,
+      h("button", { class: "button small-button", type: "button", onclick: async () => {
+        const path = await chooseFolder(t("settings.notesFolderPrompt"));
+        if (path) save(path);
+      } }, t("settings.notesFolderChoose"))));
+}
 
 // empreinte de la clé qui signe les notes exportées ici : à comparer quand un autre ordinateur demande confiance
 function deviceLine() {

@@ -77,6 +77,8 @@ export const api = {
   notesCount: () => request("GET", "/api/notes"),
   importNotes: (files, accept = []) => request("POST", "/api/notes/import", { files, accept }),
   notesDevice: () => request("GET", "/api/notes/device"),
+  setNotesFolder: (path) => request("PUT", "/api/notes/folder", { path }),
+  exportNotesToFolder: (lang) => request("POST", `/api/notes/export-folder?lang=${encodeURIComponent(lang)}`, {}),
   figures: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/figures`),
   annotations: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/annotations`),
   addAnnotation: (id, body) => request("POST", `/api/papers/${encodeURIComponent(id)}/annotations`, body),

@@ -528,11 +528,29 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
     }
 
     func received(_ message: WKScriptMessage) {
+        if (message.body as? [String: Any])?["action"] as? String == "chooseFolder" { chooseFolder(); return }
         guard let body = message.body as? [String: Any], body["action"] as? String == "openTab",
               let route = body["route"] as? String,
               route.range(of: "^#/[A-Za-z0-9/._%~-]*$", options: .regularExpression) != nil else { return }
         // comme Safari : nouvel onglet en arrière-plan (⇧ en plus : affiché aussitôt)
         app.openTab(route, beside: window, front: body["front"] as? Bool ?? false)
+    }
+
+    // dossier d'export des notes (Réglages > Lecture) : choisi ici, rendu à la page (évènement arxivreader:folder,
+    // chemin, ou null si la fenêtre est annulée)
+    func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = tr("Choisir", "Choose")
+        panel.message = tr("Dossier où exporter la bibliothèque et les notes", "Folder to export the library and notes to")
+        panel.beginSheetModal(for: window) { [weak self] response in
+            let path: Any = response == .OK ? (panel.url?.path ?? NSNull()) : NSNull()
+            guard let data = try? JSONSerialization.data(withJSONObject: [path]),
+                  let json = String(data: data, encoding: .utf8) else { return }
+            self?.webView.evaluateJavaScript("window.dispatchEvent(new CustomEvent('arxivreader:folder', { detail: \(json)[0] }))")
+        }
     }
 
     func windowDidBecomeKey(_ notification: Notification) { app.showTabBar(window) }

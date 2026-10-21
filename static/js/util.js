@@ -308,6 +308,29 @@ export function openRoute(hash, newTab = false, front = false) {
   else if (bridge) bridge.postMessage({ action: "openTab", route: hash, front });
   else window.open(`${location.pathname}${hash}`, "_blank", "noopener");
 }
+// Dossier choisi dans la fenêtre du système (application Mac ou Windows) ; dans un navigateur, chemin tapé.
+// Renvoie le chemin, ou null (annulé).
+export function chooseFolder(promptText) {
+  if (window.webkit?.messageHandlers?.arxivreader) {
+    return new Promise((resolve) => {
+      addEventListener("arxivreader:folder", (event) => resolve(event.detail || null), { once: true });
+      window.webkit.messageHandlers.arxivreader.postMessage({ action: "chooseFolder" });
+    });
+  }
+  if (window.chrome?.webview) {
+    return new Promise((resolve) => {
+      const onMessage = (event) => {
+        if (event.data?.action !== "folder") return;
+        window.chrome.webview.removeEventListener("message", onMessage);
+        resolve(event.data.path || null);
+      };
+      window.chrome.webview.addEventListener("message", onMessage);
+      window.chrome.webview.postMessage({ action: "chooseFolder" });
+    });
+  }
+  return Promise.resolve((prompt(promptText) || "").trim() || null);
+}
+
 export const wantsNewTab = (event) => Boolean(event.metaKey || event.ctrlKey || event.button === 1);
 
 // Bouton à bascule à la YouTube (contour au repos, plein une fois activé)

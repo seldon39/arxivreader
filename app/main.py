@@ -9,6 +9,7 @@ import re
 import signal
 import threading
 import time
+from pathlib import Path
 from contextlib import asynccontextmanager
 from urllib.parse import unquote
 from datetime import date, datetime, timezone
@@ -1089,8 +1090,36 @@ def import_notes(body: NotesImport):
 
 @app.get("/api/notes/device")
 def notes_device():
-    """Empreinte de la clé qui signe les notes exportées ici (pour la reconnaître sur un autre ordinateur)."""
-    return {"fingerprint": notesync.own_fingerprint()}
+    """Empreinte de la clé qui signe les notes exportées ici (pour la reconnaître sur un autre ordinateur), et dossier
+    d'export choisi (vide : téléchargement)."""
+    return {"fingerprint": notesync.own_fingerprint(), "folder": db.get_settings().get("notesFolder") or ""}
+
+
+class NotesFolder(BaseModel):
+    path: str = ""  # vide : retour au téléchargement
+
+
+@app.put("/api/notes/folder")
+def set_notes_folder(body: NotesFolder):
+    """Dossier où l'export écrit « arXivReader notes.zip » (par ex. un dossier synchronisé : iCloud Drive, Dropbox)."""
+    path = body.path.strip()
+    if path:
+        folder = Path(path).expanduser()
+        if not folder.is_absolute() or not folder.is_dir() or not os.access(folder, os.W_OK):
+            raise HTTPException(400, "Folder not found or not writable")
+        path = str(folder.resolve())
+    db.save_settings({"notesFolder": path})
+    return {"folder": path}
+
+
+@app.post("/api/notes/export-folder")
+def export_notes_to_folder(lang: str = "fr"):
+    folder = db.get_settings().get("notesFolder") or ""
+    if not folder or not Path(folder).is_dir():
+        raise HTTPException(400, "No export folder")
+    target = Path(folder) / "arXivReader notes.zip"
+    library.write_atomic_bytes(target, export.library_zip(lang))  # remplacé : un seul fichier à synchroniser
+    return {"path": str(target)}
 
 
 @app.get("/api/zotero")

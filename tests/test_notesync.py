@@ -146,3 +146,28 @@ class LibraryExport(unittest.TestCase):
         self.assertEqual(folders.list_folders()[0]["papers"], ["0806.2370", "1203.4201"])
         again = notesync.import_files([{"name": "notes.zip", "data": exported}])
         self.assertEqual((again["papers"], again["folders"], again["added"]), (0, 0, 0))  # rien en double
+
+
+class ExportFolder(unittest.TestCase):
+    """Dossier d'export choisi (synchronisé, par ex.) : l'archive y est écrite, et remplacée à chaque export."""
+
+    def test_folder(self):
+        from fastapi.testclient import TestClient
+        from app import main
+        saved = (db.DB_PATH, db.LIBRARY, library.PAPERS)
+        self.addCleanup(lambda: setattr(db, "DB_PATH", saved[0]) or setattr(db, "LIBRARY", saved[1]) or setattr(library, "PAPERS", saved[2]))
+        setup_library(self)
+        client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
+        target = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, target, ignore_errors=True)
+        self.assertEqual(client.post("/api/notes/export-folder", json={}).status_code, 400)  # aucun dossier choisi
+        self.assertEqual(client.put("/api/notes/folder", json={"path": str(target / "absent")}).status_code, 400)
+        self.assertEqual(client.put("/api/notes/folder", json={"path": "relative/path"}).status_code, 400)
+        self.assertEqual(client.put("/api/notes/folder", json={"path": str(target)}).json()["folder"], str(target.resolve()))
+        self.assertEqual(client.get("/api/notes/device").json()["folder"], str(target.resolve()))
+        written = pathlib.Path(client.post("/api/notes/export-folder", json={}).json()["path"])
+        self.assertEqual(written.name, "arXivReader notes.zip")
+        self.assertIn(export.LIBRARY_FILE, zipfile.ZipFile(written).namelist())
+        client.post("/api/notes/export-folder", json={})  # même nom : remplacée
+        self.assertEqual([p.name for p in target.iterdir()], ["arXivReader notes.zip"])
+        self.assertEqual(client.put("/api/notes/folder", json={"path": ""}).json()["folder"], "")

@@ -194,7 +194,7 @@ namespace ArxivReader
             core.WebMessageReceived += (s, e) =>
             {
                 // seulement les pages de l'application (pas un contenu data:, blob: ou un cadre d'ailleurs)
-                if (Uri.TryCreate(e.Source, UriKind.Absolute, out var from) && IsApp(from)) Received(e.WebMessageAsJson);
+                if (Uri.TryCreate(e.Source, UriKind.Absolute, out var from) && IsApp(from)) Received(e.WebMessageAsJson, core);
             };
             core.ProcessFailed += (s, e) =>
             {
@@ -280,13 +280,28 @@ namespace ArxivReader
             catch (Exception) { }
         }
 
-        void Received(string json)
+        void Received(string json, CoreWebView2 sender)
         {
             // {"action":"openTab","route":"#/paper/…","front":false} ; route vérifiée, comme sur le Mac
             var action = Regex.Match(json, "\"action\"\\s*:\\s*\"([a-zA-Z]+)\"").Groups[1].Value;
+            if (action == "chooseFolder") { ChooseFolder(sender); return; }
             var route = Regex.Match(json, "\"route\"\\s*:\\s*\"([^\"\\\\]*)\"").Groups[1].Value;
             bool front = Regex.IsMatch(json, "\"front\"\\s*:\\s*true");
             if (action == "openTab" && Route.IsMatch(route)) _ = OpenTab(route, front);
+        }
+
+        // Dossier d'export des notes (Réglages > Lecture) : choisi ici, rendu à la page ({"action":"folder","path":…},
+        // path null si la fenêtre est annulée)
+        void ChooseFolder(CoreWebView2 sender)
+        {
+            string path = null;
+            using (var dialog = new FolderBrowserDialog { ShowNewFolderButton = true,
+                Description = Program.Tr("Dossier où exporter la bibliothèque et les notes", "Folder to export the library and notes to") })
+            {
+                if (dialog.ShowDialog(this) == DialogResult.OK) path = dialog.SelectedPath;
+            }
+            var json = path == null ? "null" : "\"" + path.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+            try { sender.PostWebMessageAsJson("{\"action\":\"folder\",\"path\":" + json + "}"); } catch (Exception) { }
         }
 
         // Raccourcis des onglets (Ctrl+T, Ctrl+W, Ctrl+Tab, Ctrl+1…9) ; le reste va à la page

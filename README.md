@@ -334,7 +334,8 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
 - **Import**: Settings > Reading > "Import notes…" reads back files exported by arXivReader (one `.md` or the
   `.zip`, which also lists the whole library and its folders), on this computer or another one: missing papers and
   folders are added, and a note already present is
-  replaced only by a newer version. Each export is signed by the computer that made it: files not exported by
+  replaced only by a newer version. The export folder can be changed (Settings > Reading > Export folder), for
+  example to a folder synced by iCloud Drive or Dropbox: the archive is then written there, replacing the previous one. Each export is signed by the computer that made it: files not exported by
   arXivReader, or modified since, are refused; another computer is accepted once (its fingerprint is shown in its
   settings).
 - **Export**: "Export notes (Markdown)" at the bottom of the Notes tab (reading sheet, statements and proofs with

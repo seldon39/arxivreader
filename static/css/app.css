@@ -1424,6 +1424,9 @@ body.related-expanded { overflow: hidden; }
 .meta-dialog input { font: inherit; font-size: 15px; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg); color: var(--text); }
 .meta-dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .meta-dialog .meta-heading { margin: 0; font-size: 17px; }
+/* Réglages > Lecture : dossier d'export des notes */
+.folder-choice { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.folder-path { min-width: 0; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* marque-pages (bookmarks.js) : fenêtre de nom ajustée à son contenu, ruban dans la marge, liste de l'onglet Notes */
 .bookmark-box { position: fixed; z-index: 60; width: 330px; max-width: calc(100vw - 16px); display: grid; gap: 8px; padding: 12px;
   background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); }
