@@ -233,7 +233,10 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   `viewBox` (`add_viewboxes`), paquets KOMA sans équivalent qui vident la bibliographie (`LAYOUT_ONLY`, paquets vides
   écrits dans le dossier de la conversion). Bibliographie : le `.bib` quand tous sont trouvés (un `.bbl` amsrefs lui
   échappe), sinon le `.bbl` (`nobibtex`). Dépendances implicites (« the above lemma », phrase de justification,
-  équations du texte courant, corollaire qui suit un énoncé) : `structure.py` et `texstructure.implicit_dependencies`. LaTeXML est lancé dans le dossier du document
+  équations du texte courant, corollaire qui suit un énoncé) : `structure.py` et `texstructure.implicit_dependencies`.
+  Étiquettes de listes inconnues de LaTeXML (« (enumi) », ex. `\greek*` de moreenum) : refaites par `relabelLists`
+  (amsfix.js) d'après la source (`texsource._label_format`), renvois et infobulles compris. Texte non imprimé :
+  `strip_hidden` retire aussi l'argument d'une macro vide (`\newcommand{\comment}[1]{}`). LaTeXML est lancé dans le dossier du document
   sur un chemin relatif (les espaces dans les chemins le gênent), sortie dans un dossier temporaire ; bibliographie par
   le `.bbl` de la compilation (`nobibtex`). Faite pour un état de la source (`state.json` : `compiledAt` ou version
   arXiv, `STRUCTURE_VERSION`) : sinon « stale », refaite au clic.

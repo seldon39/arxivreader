@@ -44,8 +44,14 @@ export function alignNumberColumns(content) {
 
 const ROMAN = [[1000, "m"], [900, "cm"], [500, "d"], [400, "cd"], [100, "c"], [90, "xc"], [50, "l"], [40, "xl"], [10, "x"], [9, "ix"], [5, "v"], [4, "iv"], [1, "i"]];
 
+const GREEK = "αβγδεζηθικλμνξοπρστυφχψω";
+
 function counter(kind, n) {
   if (kind === "1") return String(n);
+  if (kind === "α" || kind === "Α") {  // moreenum : \greek*, \Greek*
+    const letter = GREEK[(n - 1) % GREEK.length];
+    return kind === "Α" ? letter.toUpperCase() : letter;
+  }
   if (kind === "a" || kind === "A") {
     const letter = String.fromCharCode(96 + ((n - 1) % 26) + 1);
     return kind === "A" ? letter.toUpperCase() : letter;
@@ -67,7 +73,16 @@ export function relabelLists(content, formats) {
     const [before, kind, after] = format;
     [...list.children].filter((li) => li.classList.contains("ltx_item")).forEach((item, k) => {
       const tag = item.querySelector(":scope > .ltx_tag");
-      if (tag) tag.textContent = `${before}${counter(kind, k + 1)}${after}`;
+      if (!tag) return;
+      const old = tag.textContent;
+      tag.textContent = `${before}${counter(kind, k + 1)}${after}`;
+      // renvois vers cet item (\ref) : même étiquette (LaTeXML y écrit l'ancienne, parfois « (enumi) »)
+      if (item.id && old !== tag.textContent) {
+        for (const link of content.querySelectorAll(`a[href="#${CSS.escape(item.id)}"]`)) {
+          if (link.textContent.trim() === old.trim() || /enum[iv]+/.test(link.textContent)) link.textContent = tag.textContent;
+          if (link.title) link.title = link.title.replace(/^item [^‣]*/, `item ${tag.textContent} `);  // infobulle
+        }
+      }
     });
   });
 }

@@ -78,7 +78,9 @@ def plain(text):
     text = re.sub(r"\\(?:[,;:!> ]|quad|qquad|newline|\\)", " ", text)
     text = re.sub(r"\\(?:em|bf|it|rm|sc|sf|tt|normalfont|upshape|bfseries|itshape)\b", "", text)
     text = re.sub(r"\\([&%$#_{}])", r"\1", text)
-    text = text.replace("~", " ").replace("``", "“").replace("''", "”").replace("--", "–")
+    text = text.replace("~", " ").replace("``", "“").replace("''", "”").replace("---", "—").replace("--", "–")
+    text = re.sub(r"\\textendash\b\s*(?:\{\})?", "–", text)
+    text = re.sub(r"\\textemdash\b\s*(?:\{\})?", "—", text)
     # accents courants : \'e → é…
     accents = {"'": "\u0301", "`": "\u0300", "^": "\u0302", '"': "\u0308", "~": "\u0303", "c": "\u0327", "v": "\u030c"}
     text = re.sub(r"\\(['`^\"~cv])\s*\{?([A-Za-z])\}?", lambda m: m.group(2) + accents[m.group(1)], text)
@@ -204,8 +206,20 @@ def _letter(n):
 
 
 def strip_hidden(text):
-    """Passages que LaTeX n'imprime pas : \\begin{comment}…\\end{comment}, \\iffalse…\\fi."""
+    """Passages que LaTeX n'imprime pas : \\begin{comment}…\\end{comment}, \\iffalse…\\fi, argument d'une macro
+    qui ne l'imprime pas (« \\newcommand{\\comment}[1]{} »)."""
     text = re.sub(r"\\begin\s*\{comment\}.*?\\end\s*\{comment\}", " ", text, flags=re.S)
+    for name in set(re.findall(r"\\(?:re)?newcommand\*?\s*\{?\\([A-Za-z]+)\}?\s*\[1\]\s*\{\s*\}", text)):
+        out, pos = [], 0
+        for match in re.finditer(r"\\" + name + r"\s*(?=\{)", text):
+            if match.start() < pos:
+                continue
+            group = _group(text, match.end(), "{")
+            if group is None:
+                continue
+            out.append(text[pos:match.start()])
+            pos = group[1]
+        text = "".join(out) + text[pos:]
     out, pos = [], 0
     for match in re.finditer(r"\\iffalse\b", text):
         if match.start() < pos:

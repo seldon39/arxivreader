@@ -106,7 +106,8 @@ def _label_format(option):
         text = label.group(1).strip()
         if text.startswith("{") and text.endswith("}"):
             text = text[1:-1]
-        kinds = {"\\roman*": "i", "\\Roman*": "I", "\\alph*": "a", "\\Alph*": "A", "\\arabic*": "1"}
+        kinds = {"\\roman*": "i", "\\Roman*": "I", "\\alph*": "a", "\\Alph*": "A", "\\arabic*": "1",
+                 "\\greek*": "α", "\\Greek*": "Α"}  # moreenum
         for macro, kind in kinds.items():
             if macro in text:
                 before, after = text.split(macro, 1)

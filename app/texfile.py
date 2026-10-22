@@ -151,13 +151,15 @@ def _meta(text, fallback):
             value = value[:found.start()] + (value[group[1]:] if group else value[found.end():])
         return value
 
-    title = texstructure.plain(without_notes(argument("title"))) or fallback
+    # second titre après un saut vertical (« \\bigbreak \\Large \\textit{titre français} ») : le premier seulement
+    title = re.split(r"\\(?:bigbreak|medbreak|smallbreak|vspace\*?|vskip)\b", argument("title"))[0]
+    title = texstructure.plain(without_notes(title)) or fallback
     authors = []
     for found in re.finditer(r"\\author\s*(?:\[[^\]]*\])?\s*(?=\{)", text):  # amsart : un \author par auteur
         group = texstructure._group(text, found.end(), "{")
         for name in re.split(r"\\and\b|\\\\|,|\band\b", without_notes(group[0]) if group else ""):
             name = texstructure.plain(name)
-            if name and len(name) < 120:
+            if name and len(name) < 120 and name not in authors:
                 authors.append(name)
     abstract = re.search(r"\\begin\s*\{abstract\}(.*?)\\end\s*\{abstract\}", text, re.S)
     return title[:300], authors[:30], texstructure.plain(abstract.group(1))[:2000] if abstract else ""
@@ -550,7 +552,7 @@ def _build(pid, settings):
     write_atomic(folder / "source.tex", source)
     write_atomic(folder / "structure.json", json.dumps(structure, ensure_ascii=False))
     write_atomic(folder / "texfile.json", json.dumps(settings, ensure_ascii=False))
-    title, authors, abstract = _meta(text, main.stem.replace("_", " "))
+    title, authors, abstract = _meta(texstructure.strip_hidden(text), main.stem.replace("_", " "))
     if previous and (folder / "meta-edited").exists():  # titre et auteurs corrigés à la main : gardés
         db.update_paper(pid, abstract=abstract)
     elif previous:

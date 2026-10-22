@@ -302,5 +302,19 @@ From \eqref{eq:b} and the above lemma, we get
         self.assertIn(ids[nodes["Lemma 1.4"]["id"]], [ids[u] for u in nodes["Theorem 1.6"]["weakUses"]])
 
 
+    def test_bilingual_title_void_macro_and_greek_labels(self):
+        from app.texsource import analyze_text
+        source = r"""\documentclass{article}\newcommand{\comment}[1]{}
+\title{Fubini\textendash Study forms \bigbreak \Large \textit{Formes de Fubini\textendash Study}}
+\author{A. One, B. Two}
+\comment{\author{A. One}\begin{theorem}Hidden.\end{theorem}}
+\newtheorem{theorem}{Theorem}
+\begin{document}\begin{enumerate}[label = (\greek*)]\item x\end{enumerate}\end{document}"""
+        title, authors, _ = texfile._meta(texstructure.strip_hidden(source), "x")
+        self.assertEqual((title, authors), ("Fubini–Study forms", ["A. One", "B. Two"]))
+        self.assertEqual(texstructure.extract(source)["nodes"], [])  # énoncé dans \comment{…} : pas imprimé
+        self.assertEqual(analyze_text(source)["enumerate"], [["(", "α", ")"]])
+
+
 if __name__ == "__main__":
     unittest.main()
