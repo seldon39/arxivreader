@@ -540,7 +540,8 @@ def _build(pid, settings):
     rep["pdf"] = True
     rep["pages"] = _pages(pdf)
     rep["statements"] = len(structure["nodes"])
-    rep["withoutProof"] = sum(1 for n in structure["nodes"] if n["kind"] in NEEDS_PROOF and not n["proofs"] and not n["cited"])
+    rep["withoutProof"] = sum(1 for n in structure["nodes"] if n["kind"] in NEEDS_PROOF and not n["proofs"] and not n["cited"]
+                              and not n.get("justifiedBy"))
     rep["book"] = structure.get("book", False)
     settings["report"] = rep
     folder = paper_dir(pid)

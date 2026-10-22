@@ -229,7 +229,11 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   (`structure.json`, source « tex ») servent aux deux vues ; emplacement de preuve indiqué à la main en vue HTML :
   `latexml.reanalyze`. Fichier principal d'une source d'arXiv : `texsource.choose_main` (00README.json, sinon le
   plus long), le même pour l'analyse et pour LaTeXML. Conversion et compilation d'un même document : l'une à la fois
-  (409). LaTeXML est lancé dans le dossier du document
+  (409). Défauts de LaTeXML 0.8.8 (Homebrew) contournés, que corrige la version de développement d'arXiv : dessins sans
+  `viewBox` (`add_viewboxes`), paquets KOMA sans équivalent qui vident la bibliographie (`LAYOUT_ONLY`, paquets vides
+  écrits dans le dossier de la conversion). Bibliographie : le `.bib` quand tous sont trouvés (un `.bbl` amsrefs lui
+  échappe), sinon le `.bbl` (`nobibtex`). Dépendances implicites (« the above lemma », phrase de justification,
+  équations du texte courant, corollaire qui suit un énoncé) : `structure.py` et `texstructure.implicit_dependencies`. LaTeXML est lancé dans le dossier du document
   sur un chemin relatif (les espaces dans les chemins le gênent), sortie dans un dossier temporaire ; bibliographie par
   le `.bbl` de la compilation (`nobibtex`). Faite pour un état de la source (`state.json` : `compiledAt` ou version
   arXiv, `STRUCTURE_VERSION`) : sinon « stale », refaite au clic.

@@ -269,5 +269,38 @@ class TexFile(unittest.TestCase):
             self.assertLess(markdown.index("on the lemma"), markdown.index("on the theorem"))  # ordre du document
 
 
+    def test_implicit_dependencies(self):
+        # les quatre tournures d'un vrai article : phrase qui précède un corollaire sans preuve, « by applying the
+        # above », « the above lemma » dans le texte courant qui obtient une équation, corollaire juste après un lemme
+        source = r"""\documentclass{amsart}\newtheorem{lemma}{Lemma}[section]\newtheorem{corollary}[lemma]{Corollary}
+\newtheorem{theorem}[lemma]{Theorem}
+\begin{document}\section{A}
+\begin{lemma}We have \begin{equation}\label{eq:a} a = 1. \end{equation}\end{lemma}
+\begin{proof}Clear.\end{proof}
+The following corollary is a consequence of~\eqref{eq:a}.
+\begin{corollary}\label{cor:a}So $a^2 = 1$.\end{corollary}
+\begin{lemma}A general kernel identity.\end{lemma}
+\begin{proof}Compute.\end{proof}
+By applying the above to $P$ we get
+\begin{equation}\label{eq:b} P = Q. \end{equation}
+\begin{lemma}A Taylor identity.\end{lemma}
+
+\begin{corollary}[{\cite[Corollary 2.7]{F}}]A consequence.\end{corollary}
+From \eqref{eq:b} and the above lemma, we get
+\begin{equation}\label{eq:c} R = S. \end{equation}
+\begin{theorem}Main.\end{theorem}
+\begin{proof}By \eqref{eq:b} and \eqref{eq:c}.\end{proof}
+\end{document}"""
+        structure = texstructure.extract(source)
+        nodes = {n["label"]: n for n in structure["nodes"]}
+        ids = {n["id"]: n["label"] for n in structure["nodes"]}
+        used = lambda label: sorted(ids[u] for u in nodes[label]["usedBy"])  # noqa: E731
+        self.assertEqual(used("Lemma 1.1"), ["Corollary 1.2"])
+        self.assertTrue(nodes["Corollary 1.2"]["justifiedBy"])     # plus « preuve non trouvée »
+        self.assertEqual(used("Lemma 1.3"), ["Theorem 1.6"])         # « by applying the above »
+        self.assertEqual(used("Lemma 1.4"), ["Corollary 1.5", "Theorem 1.6"])  # corollaire qui suit ; « the above lemma »
+        self.assertIn(ids[nodes["Lemma 1.4"]["id"]], [ids[u] for u in nodes["Theorem 1.6"]["weakUses"]])
+
+
 if __name__ == "__main__":
     unittest.main()

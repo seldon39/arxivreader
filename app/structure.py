@@ -7,7 +7,7 @@ from bs4 import NavigableString, Tag
 
 from .arxiv import ID_RE, extract_ids
 
-STRUCTURE_VERSION = 10  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
+STRUCTURE_VERSION = 11  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
 
 SECTION_LEVELS = {
     "ltx_part": 0, "ltx_chapter": 0, "ltx_section": 1, "ltx_appendix": 1,
@@ -44,6 +44,8 @@ PROVING = re.compile(r"(proof\s+of|prove|proving|show|preuve\s+d[eu]|démontrer|
 # Renvoi implicite à l'énoncé qui précède : « the above lemma », « the previous theorem », « le lemme précédent »
 IMPLICIT_REF = re.compile(
     r"\b(?:the|this)\s+(?:above|previous|preceding|last|former)\s+(lemma|proposition|theorem|corollary|claim)\b"
+    # « By applying the above to P, we get » : l'énoncé qui précède, quel qu'il soit (pas « the above formula »)
+    r"|\b(?:apply|applying|by|from|using)\s+the\s+above(?=\s*(?:to|we|one|,|\.|;|and|with|for)\b|\s*[,.;])"
     r"|\bthe\s+(lemma|proposition|theorem|corollary)\s+above\b"
     r"|\b(?:le|la|du|de\s+la)\s+(lemme|proposition|théorème|corollaire)\s+(?:précédente?|ci-dessus)\b", re.I)
 # Phrase juste après l'énoncé (« This follows from Lemma 2.1. »)
@@ -449,9 +451,10 @@ def extract_structure(fragment, overrides=None):
         found = []
         for para in paragraphs(container):
             for match in IMPLICIT_REF.finditer(squash(plain(para))):
-                kind = classify(next(g for g in match.groups() if g), [])
+                words = [g for g in match.groups() if g]
+                kind = classify(words[0], []) if words else None  # « the above » : l'énoncé qui précède
                 i = bisect.bisect_left(starts, position.get(id(para), 0)) - 1
-                while i >= 0 and nodes[statements[i][1]]["kind"] != kind:
+                while i >= 0 and kind is not None and nodes[statements[i][1]]["kind"] != kind:
                     i -= 1
                 if i >= 0:
                     _add(found, statements[i][1])
@@ -536,6 +539,17 @@ def extract_structure(fragment, overrides=None):
                 for inner in container.select(".ltx_theorem[id]"):
                     if inner["id"] in nodes and inner["id"] != node_id:
                         _add(node["uses"], inner["id"])
+
+    # Corollaire placé juste après un énoncé (ou sa preuve), sans rien entre les deux : il en découle
+    for node_id in order:
+        node = nodes[node_id]
+        if node["kind"] != "corollary":
+            continue
+        previous = by_id(node_id).find_previous_sibling(True)
+        if previous is not None and has_class(previous, "ltx_proof") and previous.get("data-proof-of"):
+            previous = by_id(previous["data-proof-of"])
+        if previous is not None and has_class(previous, "ltx_theorem") and previous.get("id") in nodes and previous["id"] != node_id:
+            _add(node["uses"], previous["id"])
 
     # Liens faibles (par une équation du texte courant) : seulement s'ils ne créent pas de cycle
     def reaches(start, goal):

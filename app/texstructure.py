@@ -15,7 +15,8 @@ import re
 import unicodedata
 
 from .arxiv import extract_ids
-from .structure import NEEDS_PROOF, PROOF_HEADING, STRUCTURE_VERSION, classify
+from .structure import (ANNOUNCES_PROOF_BELOW, IMPLICIT_REF, JUSTIFICATION, JUSTIFIES_NEXT, JUSTIFIES_PREVIOUS, NEEDS_PROOF,
+                        PROOF_HEADING, PROVING, STRUCTURE_VERSION, classify)
 from .texsource import DOCUMENTCLASS, _expand, _read_archive, _strip_comments, choose_main
 
 SECTIONS = {"part": 0, "chapter": 0, "section": 1, "subsection": 2, "subsubsection": 3}
@@ -236,6 +237,8 @@ def extract(text, bbl=""):
     counters, sections = {}, [0, 0, 0, 0]
     appendix = False
     labels = {}              # clé \label → ("theorem", id) ou ("equation", id d'énoncé ou None)
+    spans = {}               # énoncé → [début, fin] dans le texte (« \begin{lemma} » … « \end{lemma} »)
+    text_equations = {}      # équation étiquetée du texte courant → position
     refs = []                # (clés, contexte) contexte = ("node", id) | ("proof", id) | ("text", id de section)
     cites = []
     stack = []               # cadres ouverts : {"type": theorem|proof|equation, "id", "start"}
@@ -372,6 +375,7 @@ def extract(text, bbl=""):
                     if optional:  # « Theorem 3.2 ([12, Theorem 4.3]) »
                         nodes[node_id]["cited"] = [f"bib.{k.strip()}" for m in re.finditer(r"\\cite[a-z]*\*?(?:\[[^\]]*\])?\{([^}]*)\}", optional[0]) for k in m.group(1).split(",")]
                     order.append(node_id)
+                    spans[node_id] = [match.start(), len(body)]
                     stack.append({"type": "theorem", "id": node_id, "start": start})
                     if not inside_proof:
                         if nodes[node_id]["kind"] in NEEDS_PROOF:
@@ -398,6 +402,7 @@ def extract(text, bbl=""):
                             target = order[-1]
                     proofs[proof_id] = {"id": proof_id, "of": target, "keys": keys, "start": start,
                                         "section": current_section(), "title": plain(optional[0]) if optional else ""}
+                    proofs[proof_id]["span"] = [match.start(), len(body)]
                     stack.append({"type": "proof", "id": proof_id, "start": start})
                 elif base in EQUATION_ENVS:
                     stack.append({"type": "equation", "id": None, "start": after})
@@ -409,8 +414,10 @@ def extract(text, bbl=""):
                         del stack[index:]
                         if kind == "theorem":
                             nodes[frame["id"]]["tex"] = body[frame["start"]:match.start()].strip()[:MAX_TEX]
+                            spans[frame["id"]][1] = after  # après « \end{lemma} »
                         elif kind == "proof":
                             proof = proofs[frame["id"]]
+                            proof["span"][1] = after
                             proof["tex"] = body[frame["start"]:match.start()].strip()
                             if proof["of"] and proof["of"] == candidate:
                                 candidate = None
@@ -429,13 +436,15 @@ def extract(text, bbl=""):
             if inner and inner["type"] == "equation" or any(f["type"] == "equation" for f in stack):
                 proof = next((f["id"] for f in reversed(stack) if f["type"] == "proof"), None)
                 labels.setdefault(key, ("equation", owner, proof))
+                if owner is None and proof is None:
+                    text_equations.setdefault(key, match.start())  # équation du texte courant
             elif owner:
                 labels.setdefault(key, ("theorem", owner))
             continue
         if command in REF_COMMANDS or command == "hyperref":
             group = _group(body, pos, "[" if command == "hyperref" else "{")
             if group:
-                refs.append(([k.strip() for k in group[0].split(",") if k.strip()], context()))
+                refs.append(([k.strip() for k in group[0].split(",") if k.strip()], context(), match.start()))
             continue
         if command in CITE_COMMANDS:
             values, _ = _args(body, pos, "[[{")
@@ -478,20 +487,24 @@ def extract(text, bbl=""):
         if value and value not in lst:
             lst.append(value)
 
-    for keys, ctx in refs:
+    def use(owner, key):
+        found = labels.get(key)
+        if not found:
+            return
+        if found[0] == "theorem" and found[1] != owner:
+            add(nodes[owner]["uses"], found[1])
+        elif found[0] == "equation":
+            _, statement, proof = found
+            add(nodes[owner]["usesEquations"], key)
+            holder = statement or (proofs.get(proof, {}).get("of") if proof else None)
+            if holder and holder != owner:
+                add(nodes[owner]["uses"], holder)
+
+    for keys, ctx, _ in refs:
         for owner in owners(ctx):
             for key in keys:
-                found = labels.get(key)
-                if not found:
-                    continue
-                if found[0] == "theorem" and found[1] != owner:
-                    add(nodes[owner]["uses"], found[1])
-                elif found[0] == "equation":
-                    _, statement, proof = found
-                    add(nodes[owner]["usesEquations"], key)
-                    holder = statement or (proofs.get(proof, {}).get("of") if proof else None)
-                    if holder and holder != owner:
-                        add(nodes[owner]["uses"], holder)
+                use(owner, key)
+    implicit_dependencies(body, nodes, order, proofs, spans, refs, labels, text_equations, use, add)
     for keys, ctx in cites:
         for owner in owners(ctx):
             for key in keys:
@@ -518,6 +531,113 @@ def extract(text, bbl=""):
         "proofBlocks": [{"id": p["id"], "of": p["of"], "anchors": []} for p in proofs.values()],
         "equations": equations, "bibliography": bibliography(body + "\n" + bbl), "hiddenText": 0,
     }
+
+
+def implicit_dependencies(body, nodes, order, proofs, spans, refs, labels, text_equations, use, add):
+    """Dépendances que les \\ref ne disent pas, comme l'analyse de la version HTML (structure.py) :
+    - renvoi implicite dans un énoncé ou sa preuve : « the above lemma », « by applying the above to … » ;
+    - énoncé sans preuve justifié par la phrase juste avant (« The following corollary is a consequence of (2.5) »)
+      ou juste après (« This follows from … ») : ses renvois sont ceux de l'énoncé ;
+    - équation obtenue dans le texte courant à partir d'énoncés (« From (3.30) and the above lemma, we get (3.33) ») :
+      un énoncé qui la cite dépend (faiblement, sans créer de cycle) de ces énoncés ;
+    - corollaire placé juste après un énoncé (rien entre les deux) : il en découle."""
+    starts = sorted((spans[n][0], n) for n in order if n in spans)
+    blocks = sorted([tuple(spans[n]) for n in order if n in spans] + [tuple(p["span"]) for p in proofs.values() if p.get("span")])
+
+    def before(pos, kind=None, exclude=None):
+        """Dernier énoncé commencé avant `pos` (de ce type)."""
+        for start, node_id in reversed(starts):
+            if start < pos and node_id != exclude and (kind is None or nodes[node_id]["kind"] == kind):
+                return node_id
+        return None
+
+    def implicit(a, b):
+        found = []
+        for match in IMPLICIT_REF.finditer(body, a, b):
+            words = [g for g in match.groups() if g]
+            node_id = before(match.start(), classify(words[0], []) if words else None)
+            if node_id:
+                found.append((match.start(), node_id))
+        return found
+
+    def last_end(pos):
+        return max((end for start, end in blocks if end <= pos), default=0)
+
+    def refs_in(a, b):
+        return [(at, key) for keys, _, at in refs if a <= at < b for key in keys]
+
+    for node_id in order:  # renvois implicites dans l'énoncé et ses preuves
+        segments = [spans.get(node_id)] + [p.get("span") for p in proofs.values() if p.get("of") == node_id]
+        for segment in filter(None, segments):
+            for _, used in implicit(*segment):
+                if used != node_id:
+                    add(nodes[node_id]["uses"], used)
+
+    sentence_end = re.compile(r"(?<=[.!?])\s+(?=[A-Z\\])")
+    for node_id in order:  # justification en une phrase
+        node = nodes[node_id]
+        if node["proofs"] or node["cited"] or node["kind"] not in NEEDS_PROOF or node_id not in spans:
+            continue
+        start, end = spans[node_id]
+        window_start = max(last_end(start), start - 1500)
+        window = body[window_start:start]
+        cut = [m.end() for m in sentence_end.finditer(window)]
+        sentence_start = window_start + (cut[-1] if cut else 0)
+        last = plain(body[sentence_start:start])
+        span = None
+        if last and JUSTIFIES_NEXT.search(last) and JUSTIFICATION.search(last) and not ANNOUNCES_PROOF_BELOW.search(last):
+            span = (sentence_start, start)
+        else:
+            following_start = min((s for s, _ in starts if s > end), default=len(body))
+            after = body[end:min(following_start, end + 1500)]
+            first = sentence_end.split(after.strip(), 1)[0]
+            if first and JUSTIFIES_PREVIOUS.search(plain(first)):
+                span = (end, end + after.find(first[:20]) + len(first))
+        if span:
+            node["justifiedBy"] = node_id  # lu dans le PDF : pas de paragraphe à désigner, l'énoncé lui-même
+            for _, key in refs_in(*span):
+                use(node_id, key)
+            for _, used in implicit(*span):
+                if used != node_id:
+                    add(node["uses"], used)
+
+    derived = {}  # équation du texte courant → énoncés dont elle est tirée
+    for key, at in text_equations.items():
+        a = max(last_end(at), at - 800)
+        sources = [(pos, labels[k][1]) for pos, k in refs_in(a, at)
+                   if labels.get(k, (None,))[0] == "theorem" and not PROVING.search(plain(body[max(a, pos - 60):pos]))]
+        sources += implicit(a, at)
+        derived[key] = [n for _, n in sources if spans.get(n, [len(body)])[0] < at]
+
+    for node_id in order:  # corollaire juste après un énoncé (ou sa preuve)
+        node = nodes[node_id]
+        if node["kind"] != "corollary" or node["insideProof"] or node_id not in spans:
+            continue
+        previous = before(spans[node_id][0], exclude=node_id)
+        if previous is None:
+            continue
+        gap = body[last_end(spans[node_id][0]):spans[node_id][0]]
+        if last_end(spans[node_id][0]) >= spans[previous][1] and not re.sub(r"\\label\s*\{[^}]*\}|\s", "", gap):
+            add(node["uses"], previous)
+
+    def reaches(start, goal):
+        seen, stack = set(), [start]
+        while stack:
+            current = stack.pop()
+            if current == goal:
+                return True
+            if current not in seen:
+                seen.add(current)
+                stack += nodes[current]["uses"]
+        return False
+
+    for node_id in order:  # liens faibles par une équation du texte courant, sans créer de cycle
+        node = nodes[node_id]
+        for key in list(node["usesEquations"]):
+            for used in derived.get(key, []):
+                if used != node_id and used not in node["uses"] and not reaches(used, node_id):
+                    node["uses"].append(used)
+                    add(node["weakUses"], used)
 
 
 def macros(preamble):

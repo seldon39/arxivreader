@@ -135,5 +135,14 @@ class Latexml(unittest.TestCase):
             self.assertEqual(client.post("/api/papers/tex-c/html", json={}).status_code, 409)
 
 
+    def test_viewbox_and_layout_stubs(self):
+        fragment = BeautifulSoup('<svg class="ltx_picture" width="355" height="315.51"></svg>'
+                                 '<svg class="ltx_picture" width="10" height="5" viewbox="0 0 20 10"></svg>', "html.parser")
+        latexml.add_viewboxes(fragment)
+        self.assertEqual([s.get("viewbox") for s in fragment.find_all("svg")], ["0 0 355 315.51", "0 0 20 10"])
+        folder = latexml._stubs(self.tmp)  # typearea sans équivalent dans LaTeXML 0.8.8 : vide la bibliographie
+        self.assertTrue((folder / "typearea.sty.ltxml").read_text().startswith("package LaTeXML::Package::Pool;"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -118,7 +118,8 @@ export function texChecks(report, nodes, { show, onChooseBib, hasProof }) {
   if (report.undefinedCites.length && !report.missingBibs.length) {
     line("warn", t("tex.undefinedCites", { n: report.undefinedCites.length, keys: report.undefinedCites.slice(0, 3).join(", ") }));
   }
-  const unproved = nodes.filter((n) => NEEDS_PROOF.has(n.kind) && !hasProof(n));
+  // comme le panneau : ni preuve, ni justification dans le texte, ni citation, ni choix à la main
+  const unproved = nodes.filter((n) => NEEDS_PROOF.has(n.kind) && !hasProof(n) && !n.cited?.length && !n.justifiedBy && !n.manual);
   if (unproved.length) line("warn", t("tex.withoutProof", { n: unproved.length }), { label: t("tex.show"), run: () => show(unproved.map((n) => n.id)) });
   const unused = nodes.filter((n) => (n.kind === "lemma" || n.kind === "claim") && !n.usedBy.length);
   if (unused.length) {

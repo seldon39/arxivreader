@@ -134,11 +134,12 @@ def convert(pid):
     stamp = _stamp(paper)
     work = Path(tempfile.mkdtemp(prefix="arxivreader-latexml-"))
     try:
-        cwd, main, paths = _source(paper, work)
+        cwd, main, paths, use_bbl = _source(paper, work)
+        paths = [*paths, _stubs(work)]
         out = work / "out"
         out.mkdir()
         try:
-            html = _run(program, cwd, main, paths, out)
+            html = _run(program, cwd, main, paths, out, use_bbl)
             _store(pid, html, out)
         except LatexmlError as error:
             _save_state(pid, {"ok": False, "stamp": stamp, "error": str(error)[:400]})
@@ -162,21 +163,26 @@ def _source(paper, work):
         main = Path((texfile._settings(paper["id"]) or {}).get("main") or "")
         if not main.is_file():
             raise LatexmlError(f"missing: {main}")
-        # .bbl de la dernière compilation et .bib choisis à la main : dans le dossier de travail de la compilation ;
-        # rien n'est écrit dans le dossier de l'utilisateur (sortie dans un dossier temporaire)
-        paths = [texfile.build_dir(paper["id"])]
-        files = texfile.read_project(main)
-        if not any(PGFPLOTS.search(text) for text in files.values()):
-            return main.parent, main.name, paths
-        # figures pgfplots : copie des fichiers TeX où elles sont remplacées ; images et paquets du dossier par --path
+        # copie des fichiers TeX (figures pgfplots remplacées) avec le .bbl de la dernière compilation : un ancien .bbl
+        # resté dans le dossier (autre style, amsrefs…) passerait avant lui. Images, paquets et .bib du dossier par
+        # --path ; .bib choisis à la main : dossier de travail de la compilation. Rien n'est écrit chez l'utilisateur.
+        build = texfile.build_dir(paper["id"])
         copy = work / "source"
-        for name in files:
+        for name in texfile.read_project(main):
             if ".." in name:
                 continue
             target = copy / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(_without_plots_bytes((main.parent / name).read_bytes()))
-        return copy, main.name, [main.parent, *paths]
+        # tous les .bib trouvés : LaTeXML les lit (un .bbl au format amsrefs, par exemple, lui échappe) ; sinon le
+        # .bbl de la compilation
+        report = texfile.report(paper["id"]) or {}
+        use_bbl = not report.get("bibs") or bool(report.get("missingBibs"))
+        bbl = build / f"{main.stem}.bbl"
+        if use_bbl and bbl.is_file():
+            shutil.copyfile(bbl, copy / bbl.name)
+        bib_dirs = [str(Path(b["path"]).parent) for b in report.get("bibs", [])]
+        return copy, main.name, [main.parent, build, *dict.fromkeys(bib_dirs)], use_bbl
     from .arxiv import fetch_source
     data = fetch_source(paper["arxiv_id"], paper.get("version"))
     if not data:
@@ -189,7 +195,23 @@ def _source(paper, work):
     for path in source.rglob("*"):
         if path.suffix.lower() in (".tex", ".ltx") and path.is_file():
             path.write_bytes(_without_plots_bytes(path.read_bytes()))
-    return source, main, []
+    # .bbl déposé avec la source (le cas habituel sur arXiv) : lui ; sinon le .bib
+    return source, main, [], any(source.rglob("*.bbl"))
+
+
+# Paquets de mise en page (KOMA-Script) que LaTeXML 0.8.8 ne connaît pas : il charge alors le vrai paquet, échoue
+# (\FamilyProcessOptions), et la suite s'en ressent (bibliographie vide). Remplacés par des paquets vides, sans
+# objet en HTML ; écrits dans le dossier de la conversion (rien à installer).
+LAYOUT_ONLY = ("typearea", "scrlayer-scrpage", "scrlayer", "scrextend", "scrbase", "scrkbase")
+
+
+def _stubs(work):
+    folder = work / "stubs"
+    folder.mkdir(exist_ok=True)
+    for name in LAYOUT_ONLY:
+        (folder / f"{name}.sty.ltxml").write_text(
+            "package LaTeXML::Package::Pool;\nuse strict;\nuse LaTeXML::Package;\n1;\n", encoding="utf-8")
+    return folder
 
 
 # Figures pgfplots (courbes, surfaces) : LaTeXML les calcule point par point, des dizaines de minutes pour une seule
@@ -243,14 +265,15 @@ def _extract(data, folder):
     return choose_main(texts, readme.read_text(encoding="utf-8", errors="replace") if readme.is_file() else None)
 
 
-def _run(program, cwd, main, paths, out):
+def _run(program, cwd, main, paths, out, use_bbl=False):
     """LaTeXML lancé dans le dossier du document, sur un chemin relatif (les espaces dans les chemins le gênent) ;
-    renvoie la page produite."""
+    renvoie la page produite. Bibliographie : le .bib (LaTeXML le lit lui-même, comme sur arXiv), sinon le .bbl
+    (`use_bbl`)."""
     kpsewhich = texfile.find_tool("kpsewhich")  # LaTeXML cherche les paquets de TeX par kpsewhich
     env = texfile._env(kpsewhich or program)
     env["PATH"] = os.pathsep.join([str(Path(program).parent), env["PATH"]])
     command = [program, "--quiet", "--format=html5", "--nodefaultresources", "--pmml", "--mathtex", "--timestamp=0",
-               "--preload=[nobibtex]latexml.sty",  # bibliographie : le .bbl déjà produit, comme sur arXiv
+               *(["--preload=[nobibtex]latexml.sty"] if use_bbl else []),
                *(f"--path={p}" for p in paths), f"--dest={out / 'index.html'}", f"--log={out / 'log.txt'}", main]
     try:
         texfile._run(command, str(cwd), env, TIMEOUT)
@@ -269,6 +292,7 @@ def _store(pid, html, out):
         fragment, assets = sanitize_document(html, BASE)
     except ValueError as error:
         raise LatexmlError(str(error))
+    add_viewboxes(fragment)
     tex = json.loads((paper_dir(pid) / "structure.json").read_text(encoding="utf-8"))
     align_ids(fragment, tex)
     structure = extract_structure(fragment, annotations.proof_overrides(pid))
@@ -295,6 +319,19 @@ def _store(pid, html, out):
             item.replace(folder / item.name)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
+
+
+def add_viewboxes(fragment):
+    """Dessins TikZ sans viewBox (LaTeXML d'avant 0.8.9 ; celui d'arXiv l'écrit) : ajouté d'après leur taille, sinon
+    le dessin ne peut pas être mis à l'échelle (rogné dans une colonne étroite, pas agrandi au clic)."""
+    for svg in fragment.select("svg.ltx_picture"):
+        width, height = svg.get("width"), svg.get("height")
+        if svg.get("viewbox") or not width or not height:
+            continue
+        try:
+            svg["viewbox"] = f"0 0 {float(width):g} {float(height):g}"
+        except ValueError:
+            continue
 
 
 # ---------- Identifiants communs avec la structure tirée de la source ----------
