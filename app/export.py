@@ -19,10 +19,10 @@ ID = re.compile(r"""\sid=["']([^"']+)["']""")
 STATES = {"fr": {"understood": "compris", "review": "à revoir", "verified": "vérifié"},
           "en": {"understood": "understood", "review": "to review", "verified": "verified"}}
 WORDS = {"fr": {"sheet": "Fiche de lecture", "statements": "Énoncés et preuves", "highlights": "Passages surlignés",
-                "proof": "Preuve de {label}", "exported": "Notes exportées d'arXivReader le {date}", "other": "Autres passages", "pdfPage": "PDF, page {page}", "zone": "Zone de la page (image)", "bookmarks": "Marque-pages", "library": "Bibliothèque", "folders": "Dossiers", "localPdf": "PDF importé",
+                "proof": "Preuve de {label}", "exported": "Notes exportées d'arXivReader le {date}", "other": "Autres passages", "pdfPage": "PDF, page {page}", "zone": "Zone de la page (image)", "bookmarks": "Marque-pages", "library": "Bibliothèque", "folders": "Dossiers", "localPdf": "PDF importé", "texFile": "Fichier TeX",
                 "empty": "Aucune note sur cet article.", "ai": "proposée par {who}, acceptée", "local": "un modèle local"},
          "en": {"sheet": "Reading notes", "statements": "Statements and proofs", "highlights": "Highlighted passages",
-                "proof": "Proof of {label}", "exported": "Notes exported from arXivReader on {date}", "other": "Other passages", "pdfPage": "PDF, page {page}", "zone": "Region of the page (image)", "bookmarks": "Bookmarks", "library": "Library", "folders": "Folders", "localPdf": "Imported PDF",
+                "proof": "Proof of {label}", "exported": "Notes exported from arXivReader on {date}", "other": "Other passages", "pdfPage": "PDF, page {page}", "zone": "Region of the page (image)", "bookmarks": "Bookmarks", "library": "Library", "folders": "Folders", "localPdf": "Imported PDF", "texFile": "TeX file",
                 "empty": "No notes on this paper.", "ai": "suggested by {who}, accepted", "local": "a local model"}}
 AUTHORS = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini"}
 
@@ -81,7 +81,9 @@ def paper_markdown(paper_id, language="fr"):
     nodes = {n["id"]: n for n in structure.get("nodes", [])}
     proof_of = {proof: node for node in nodes.values() for proof in node.get("proofs") or []}
     toc = structure.get("toc") or []
-    order = _order(paper_id)
+    # lu dans le PDF (source TeX) : pas de HTML, l'ordre des énoncés (et de leurs preuves) de la structure
+    order = _order(paper_id) or {element_id: rank for rank, element_id in enumerate(
+        [i for n in structure.get("nodes", []) for i in [n["id"], *(n.get("proofs") or [])]] + [s["id"] for s in toc])}
     rank = lambda element_id: order.get(element_id, len(order))  # noqa: E731
 
     link = f"https://arxiv.org/abs/{paper['arxiv_id']}v{paper['version']}" if paper.get("version") else f"https://arxiv.org/abs/{paper['arxiv_id']}"
@@ -183,7 +185,7 @@ def library_markdown(language="fr"):
     folder_list = folders.list_folders()
     by_id = {p["id"]: p for p in papers}
     line = lambda p: (f"- **{p['title']}** — {', '.join(p.get('authors') or [])}"  # noqa: E731
-                      + (f" · arXiv:{p['arxiv_id']}" if p.get("arxiv_id") else f" · {words['localPdf']}"))
+                      + (f" · arXiv:{p['arxiv_id']}" if p.get("arxiv_id") else f" · {words['texFile' if p.get('source') == 'local-tex' else 'localPdf']}"))
     lines = [f"# arXivReader — {words['library']}", "", f"*{words['exported'].format(date=time.strftime('%Y-%m-%d'))}*", ""]
     if folder_list:
         lines += [f"## {words['folders']}", ""]

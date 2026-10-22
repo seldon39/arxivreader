@@ -132,6 +132,10 @@ def init():
         if "citing" not in columns:  # article qui cite les vôtres : titres de vos articles cités (JSON)
             db.execute("ALTER TABLE feed_items ADD COLUMN citing TEXT")
             db.execute("ALTER TABLE feed_items ADD COLUMN cited_found TEXT")
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(profile_items)")}
+        if "only_categories" not in columns:  # auteur suivi : homonymes écartés (catégories gardées, articles écartés)
+            db.execute("ALTER TABLE profile_items ADD COLUMN only_categories TEXT")
+            db.execute("ALTER TABLE profile_items ADD COLUMN not_papers TEXT")
         columns = {row["name"] for row in db.execute("PRAGMA table_info(papers)")}
         if "in_library" not in columns:
             db.execute("ALTER TABLE papers ADD COLUMN in_library INTEGER DEFAULT 1")

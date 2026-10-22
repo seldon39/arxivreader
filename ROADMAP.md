@@ -17,6 +17,8 @@ readers, roughly in order of impact. Each one is a GitHub issue with the context
   next step. Linux runs from source; a packaged Linux app (AppImage) could follow.
 - [#4](https://github.com/seldon39/arxivreader/issues/4) Read on iPad.
 - [#5](https://github.com/seldon39/arxivreader/issues/5) Sync the library, notes and highlights across devices.
+  First step done in 1.9.31: signed export and import of the library and notes (a synced folder can carry it);
+  automatic sync remains.
 
 ## Reading and library
 
@@ -24,6 +26,9 @@ readers, roughly in order of impact. Each one is a GitHub issue with the context
 - [#7](https://github.com/seldon39/arxivreader/issues/7) Export references as BibTeX and copy a citation
   (good first issue).
 - [#13](https://github.com/seldon39/arxivreader/issues/13) Drawings LaTeXML cannot convert (PSTricks, picture).
+- Your own TeX files (papers and books being written): compiled PDF with statements, checks and recompiling, and an
+  experimental HTML version made on demand by LaTeXML (if installed), also for arXiv papers without HTML: done in
+  1.9.32. Next: faster or partial conversion of very long documents.
 - [#12](https://github.com/seldon39/arxivreader/issues/12) Cancelling a related-papers build should interrupt
   the request in flight.
 

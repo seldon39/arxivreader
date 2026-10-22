@@ -15,6 +15,9 @@ Thank you for your interest. arXivReader is a reader for arXiv papers built for 
 To see whether a problem comes from arXivReader or from arXiv's own HTML, compare with
 `https://arxiv.org/html/<id>` (or `https://ar5iv.labs.arxiv.org/html/<id>` for older papers) and with the PDF.
 
+For a TeX file of your own (statements numbered wrongly, compilation report), a minimal `.tex` that shows the
+problem helps most, with the TeX distribution and its year (`latexmk -v`, `pdflatex --version`).
+
 ## Where to start
 
 - [ROADMAP.md](ROADMAP.md) lists the larger steps, each with its issue.
@@ -37,8 +40,11 @@ These are not negotiable; a change that weakens one of them will not be merged.
   appear in code, logs or error messages.
 - **Zotero: no item is ever deleted or trashed.** Only the "arXivReader" collection and its sub-collections are
   modified (a sub-collection is removed when its folder is deleted in arXivReader; the papers stay in Zotero).
-- **No long requests from the page**: anything slow (imports, related-papers graphs) runs in the background and
-  is polled, because WebKit may drop a request left unanswered for about a minute.
+- **No long requests from the page**: anything slow (imports, related-papers graphs, compiling a TeX file) runs in
+  the background and is polled, because WebKit may drop a request left unanswered for about a minute.
+- **The user's files are read, never written.** A TeX file chosen by the user is compiled in a work folder of the
+  app (latexmk `-outdir`), never in its own folder, without shell escape; imported PDFs and notes exports are
+  copies. External programs (TeX, and LaTeXML for the experimental HTML) run only on files the user chose.
 
 ## Development setup
 
@@ -103,8 +109,10 @@ screens, and on several papers — a fix for one paper's LaTeXML output often br
   or update one deliberately, run the tests, then `./arxivreader lock`.
 - **Settings**: a new value of a setting must also be accepted by the server (`SETTING_CHOICES` in
   `app/main.py`), otherwise it is silently not saved.
-- **Analysis changes**: when `app/structure.py` changes what it extracts or marks, bump `STRUCTURE_VERSION` so
-  imported papers are re-analysed.
+- **Analysis changes**: when `app/structure.py` or `app/texstructure.py` changes what it extracts or marks, bump
+  `STRUCTURE_VERSION` so imported papers are re-analysed.
+- **Followed authors**: recognise a followed author's paper only through `relevance.follows` (names, namesakes set
+  aside, categories kept for that author).
 
 ## Pull requests
 

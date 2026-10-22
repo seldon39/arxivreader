@@ -18,7 +18,9 @@ import { typesetFragment, typesetMath, typesetTex } from "./math.js";
 const typesetTexSafe = (element) => typesetTex([element]).catch(() => {});
 import { t } from "./i18n.js";
 import { DEFAULT_FONT_SIZE, READING_WIDTHS, onSettingsChange, saveSettings, settings } from "./settings.js";
-import { debounce, formatDate, h, icons, metaDialog, nativeBridge, navigation, openRoute, plainTitle, titleTex, toast, toggleIcon, wantsNewTab, withMath } from "./util.js";
+import { debounce, formatDate, h, icons, metaDialog, nativeBridge, navigation, openRoute, plainTitle, titleTex, toast, toastError, toggleIcon, wantsNewTab, withMath } from "./util.js";
+import { chooseBibFor, texChecks } from "./texfile.js";
+import { htmlFlow, rememberView, wantsHtml } from "./latexml.js";
 
 const NEEDS_PROOF = new Set(["theorem", "proposition", "lemma", "corollary", "claim"]);
 const WIDE = 1280;
@@ -38,7 +40,8 @@ export async function renderReader(view, paperId, at, isCurrent = () => true) {
     view.replaceChildren(h("div", { class: "library" }, h("div", { class: "busy" }, h("span", { class: "spinner" }), t("reader.preparing"))));
     ({ paper, structure } = await api.paper(paperId));
   }
-  const html = ["none", "tex", "local-pdf"].includes(paper.source) ? "" : await api.content(paperId);
+  // lu dans le PDF faute de HTML, sauf version HTML faite par LaTeXML (paper.html « ready »)
+  const html = ["none", "tex", "local-pdf", "local-tex"].includes(paper.source) && paper.html !== "ready" ? "" : await api.content(paperId);
   if (!isCurrent()) return () => {}; // page déjà quittée pendant le chargement : rien n'est affiché
   document.title = plainTitle(paper.title); // titre de l'onglet
   const reader = new Reader(view, paper, structure || { toc: [], nodes: [], bibliography: [], hiddenText: 0 }, html, at);
@@ -72,7 +75,12 @@ class Reader {
   constructor(view, paper, structure, html, at = null) {
     this.paper = paper;
     this.startAt = at;
-    this.texOnly = paper.source === "tex" || paper.source === "local-pdf"; // pas de version HTML : toujours dans le PDF
+    // version HTML expérimentale possible (LaTeXML, à la demande) : fichier TeX importé, article d'arXiv lu depuis sa source
+    this.experimental = ["tex", "local-tex"].includes(paper.source);
+    // pas de version HTML : toujours dans le PDF
+    this.texOnly = ["tex", "local-pdf", "local-tex"].includes(paper.source) && !(this.experimental && paper.html === "ready");
+    this.texFile = paper.source === "local-tex";  // fichier TeX de l'ordinateur : recompilé à la demande
+    this.onlyIds = null;  // vérifications du fichier TeX : seulement ces énoncés dans la liste
     this.pdfMode = this.texOnly;
     this.structure = structure;
     this.nodes = structure.nodes;
@@ -90,7 +98,8 @@ class Reader {
     this.viewToken = 0;
 
     this.build(view, html);
-    if (!this.texOnly && this.viewSwitch && settings.readerView === "pdf") this.setView("pdf", { save: false });
+    // version HTML expérimentale : le PDF d'abord, sauf si on vient de la choisir (ou de la faire)
+    if (!this.texOnly && this.viewSwitch && (this.experimental ? !wantsHtml(paper.id) : settings.readerView === "pdf")) this.setView("pdf", { save: false });
     this.enhanceContent();
     this.renderToc();
     this.renderPanel();
@@ -109,6 +118,7 @@ class Reader {
       onAskAI: (quote) => this.assistant.setPassage(quote),
     });
     if (this.pdf && !this.pdfNotes) this.pdfNotes = this.makePdfNotes();
+    if (this.texFile) this.loadTexReport();
     // onglet Notes : passage surligné dans le PDF, lu en HTML → vue PDF d'abord
     this.annotator.version = paper.version;  // notes libres : version de l'article où elles sont posées
     // clic droit dans l'article : marque-page sur le paragraphe cliqué
@@ -127,6 +137,8 @@ class Reader {
       navigate: (id) => this.navigate(id),
       onChange: (options) => this.onAssistantChange(options),
       inPdf: () => this.pdfMode,
+      contextPages: (center, signal) => this.contextPages(center, signal),
+      currentPage: () => this.pdf?.frame.contentWindow?.PDFViewerApplication?.pdfViewer?.currentPageNumber || null,
       equationIds: () => [...this.content.querySelectorAll(".ltx_tag_equation")].map((tag) => {
         const row = tag.closest("tr[id], table[id], .ltx_equation[id]");
         return row ? [tag.textContent.trim(), row.id] : null;
@@ -186,7 +198,8 @@ class Reader {
   pdfSpot(id) {
     if (this.texOnly) {
       const item = this.byId.get(id) || this.structure.toc.find((s) => s.id === id)
-        || (this.structure.proofBlocks || []).find((p) => p.id === id);
+        || (this.structure.proofBlocks || []).find((p) => p.id === id)
+        || this.structure.equations?.[id] || this.bib.get(id);  // fichier TeX : équations et bibliographie (ancres)
       return item?.page ? { page: item.page, top: item.top ?? null } : null;
     }
     const pages = this.pages || {};
@@ -243,7 +256,8 @@ class Reader {
     // jeton : une bascule plus récente (ou un énoncé choisi entre-temps) l'emporte sur les suites de celle-ci
     const token = ++this.viewToken;
     const current = () => token === this.viewToken && !this.destroyed;
-    if (save) saveSettings({ readerView: view });
+    if (save && this.experimental) rememberView(this.paper.id, view === "html");  // réglage général inchangé
+    else if (save) saveSettings({ readerView: view });
     this.viewSwitch?.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === view)));
     if (view === "pdf") {
       // page où l'on en était dans le HTML (pas à l'ouverture : rien n'est encore lu)
@@ -260,7 +274,7 @@ class Reader {
       this.pdfMode = true;
       this.root.dataset.view = "pdf";
       if (!this.pdf) {
-        this.pdf = new PdfView(`/api/papers/${encodeURIComponent(this.paper.id)}/pdf`, this.paper.title);
+        this.pdf = new PdfView(this.pdfUrl(), this.paper.title);
         // à l'ouverture (vue PDF gardée), l'annotateur n'existe pas encore : PdfNotes créé juste après lui
         if (this.annotator) this.pdfNotes = this.makePdfNotes();
         this.pdfView = h("div", { class: "paper pdf-mode pdf-view" }, this.pdf.frame);
@@ -408,12 +422,15 @@ class Reader {
       this.widerButton = button(icons.wider, "reader.wider", () => this.changeWidth(1), { class: "wide-only html-only" }),
       this.foldButton,
       // choix HTML / PDF après les réglages du texte HTML (masqués dans le PDF) : il ne bouge pas quand on change
-      this.viewSwitch = !this.texOnly && paper.source !== "none" && h("div", { class: "view-switch", role: "group", "aria-label": t("reader.view") },
-        [["html", "HTML"], ["pdf", "PDF"]].map(([view, label]) => h("button", { type: "button", dataset: { view }, "aria-pressed": String(view === "html"),
-          title: t(`reader.view.${view}`), onclick: () => this.setView(view) }, label))),
+      // version HTML expérimentale (LaTeXML) : « HTML β » ; pas encore faite, un clic la propose
+      this.viewSwitch = ((!this.texOnly && paper.source !== "none") || this.experimental) && h("div", { class: "view-switch", role: "group", "aria-label": t("reader.view") },
+        [["html", "HTML"], ["pdf", "PDF"]].map(([view, label]) => h("button", { type: "button", dataset: { view }, "aria-pressed": String(this.texOnly ? view === "pdf" : view === "html"),
+          title: this.experimental && view === "html" ? t("latexml.buttonTitle") : t(`reader.view.${view}`),
+          onclick: (event) => (this.texOnly && view === "html" ? htmlFlow(event.currentTarget, { paperId: paper.id, article: this.article })
+            : this.setView(view)) }, label, this.experimental && view === "html" ? h("sup", { class: "beta" }, "β") : null))),
       // pas de version HTML : à la place du choix HTML / PDF, une petite mention (explication au survol)
-      paper.source === "tex" && h("span", { class: "no-html-badge", title: t("reader.pdfMode") }, "No HTML"),
       paper.source === "local-pdf" && h("span", { class: "no-html-badge", title: t("reader.localPdf") }, "PDF"),
+      this.texFile && (this.recompileButton = button(icons.refresh, "tex.recompile", () => this.recompile())),
       h("span", { class: "sep wide-only" }),
       this.libraryToggle(),
       paper.arxiv_id && link(icons.external, "arXiv", `https://arxiv.org/abs/${paper.arxiv_id}v${paper.version}`),
@@ -436,7 +453,7 @@ class Reader {
       paper.arxiv_id && h("span", { class: "chip" }, `arXiv:${paper.arxiv_id} · ${t("reader.version", { v: paper.version })}`),
       (paper.updated || paper.published) && h("span", { class: "chip" }, formatDate(paper.updated || paper.published)),
       paper.source === "local-pdf" && paper.comment && h("span", { class: "chip", title: t("reader.localPdf") }, paper.comment),
-      paper.source === "local-pdf" && h("button", { class: "chip chip-button", type: "button", onclick: () => this.editMeta() }, t("reader.editMeta")),
+      (paper.source === "local-pdf" || this.texFile) && h("button", { class: "chip chip-button", type: "button", onclick: () => this.editMeta() }, t("reader.editMeta")),
       paper.source !== "none" && h("span", { class: "chip" }, t(`reader.source.${paper.source}`)),
       paper.doi && h("a", { class: "chip", href: `https://doi.org/${paper.doi}`, target: "_blank", rel: "noopener noreferrer" }, `DOI ${paper.doi}`),
     );
@@ -452,10 +469,12 @@ class Reader {
     }
 
     if (this.texOnly) {
-      // Pas de version HTML : lecture dans le PDF ; énoncés (rendus depuis la source TeX, aucun pour un PDF importé)
-      this.pdf = new PdfView(`/api/papers/${encodeURIComponent(paper.id)}/pdf`, paper.title);
+      // Pas de version HTML : lecture dans le PDF ; énoncés (rendus depuis la source TeX, aucun pour un PDF importé).
+      // Fichier TeX : PDF de la dernière compilation (adresse changée à chaque fois : jamais l'ancien gardé en cache)
+      this.pdf = new PdfView(this.pdfUrl(), paper.title);
       const spot = this.startAt ? this.pdfSpot(this.startAt) : null;
-      this.pdf.load(spot?.page || 1, spot?.top ?? null);
+      const recompiled = this.recompiledPage();  // toujours lue : pas gardée pour une ouverture suivante
+      this.pdf.load(spot?.page || recompiled, spot?.top ?? null);
       this.article.classList.add("pdf-mode");
       this.article.append(this.pdf.frame);
       this.content = statementsContainer(this.structure);
@@ -1465,6 +1484,10 @@ class Reader {
   }
 
   renderStatements(body) {
+    if (this.texFile) {
+      const checks = this.texChecks();
+      if (checks) body.append(checks);
+    }
     if (!this.nodes.length) {
       body.append(h("p", { class: "hint" }, t(this.paper.source === "local-pdf" ? "panel.noStatementsPdf" : "panel.noStatements")));
       return;
@@ -1475,7 +1498,7 @@ class Reader {
     const draw = () => {
       const needle = this.search.trim().toLowerCase();
       const shown = this.nodes.filter((n) => (!this.kindFilter.size || this.kindFilter.has(n.kind))
-        && (!needle || `${n.label} ${n.name}`.toLowerCase().includes(needle)));
+        && (!needle || `${n.label} ${n.name}`.toLowerCase().includes(needle)) && (!this.onlyIds || this.onlyIds.has(n.id)));
       const sections = new Map(this.structure.toc.map((s) => [s.id, s]));
       const groups = new Map();
       for (const node of shown) {
@@ -1497,17 +1520,28 @@ class Reader {
       });
       return chip;
     }));
+    // vérifications d'un fichier TeX : seulement les énoncés concernés, jusqu'à « Tout afficher »
+    const showAll = this.onlyIds && h("button", { class: "kind-filter", type: "button", "aria-pressed": "true",
+      onclick: () => { this.onlyIds = null; this.renderPanel(); } }, t("tex.showAll"));
+    if (showAll) filters.prepend(showAll);
     body.append(filters, list);
     draw();
   }
 
+  // section de premier niveau (chapitre d'un livre) qui contient la section `sectionId`
   topSection(sectionId, sections) {
+    const top = this.structure.book ? 0 : 1;
     let id = sectionId;
     while (id) {
       const entry = sections.get(id);
-      if (entry && entry.level <= 1) return id;
+      if (entry && entry.level <= top) return id;
       const parent = this.find(id)?.parentElement?.closest("section[id]");
+      if (!parent && entry) break;  // lu dans le PDF (pas de HTML) : d'après l'ordre du sommaire
       id = parent?.id;
+    }
+    const toc = this.structure.toc;
+    for (let index = toc.findIndex((entry) => entry.id === sectionId); index >= 0; index--) {
+      if (toc[index].level <= top) return toc[index].id;
     }
     return sectionId;
   }
@@ -1561,8 +1595,45 @@ class Reader {
       h("p", { class: "hint" }, t("panel.depsNote")));
   }
 
+  // Livre : graphe d'un chapitre à la fois (celui de l'énoncé choisi, sinon le premier qui a des énoncés), avec les
+  // énoncés d'autres chapitres qu'il utilise directement ; un graphe de tout le livre serait illisible
+  graphNodes() {
+    if (!this.structure.book) return this.nodes;
+    const sections = new Map(this.structure.toc.map((s) => [s.id, s]));
+    const chapterOf = (node) => this.topSection(node.section, sections);
+    if (!this.chapters) {
+      this.chapters = new Map();
+      for (const node of this.nodes) {
+        const id = chapterOf(node);
+        if (!this.chapters.has(id)) this.chapters.set(id, { title: sections.get(id)?.title || "", ids: new Set() });
+        this.chapters.get(id).ids.add(node.id);
+      }
+      this.chapterNodes = new Map();  // mêmes tableaux d'un affichage à l'autre : disposition du graphe gardée
+    }
+    const selected = this.selected && this.byId.get(this.selected);
+    if (selected && (!this.graphChapter || !this.chapters.get(this.graphChapter)?.ids.has(selected.id))) this.graphChapter = chapterOf(selected);
+    if (!this.chapters.has(this.graphChapter)) this.graphChapter = this.chapters.keys().next().value;
+    if (!this.chapterNodes.has(this.graphChapter)) {
+      const own = this.chapters.get(this.graphChapter)?.ids || new Set();
+      const used = new Set(this.nodes.filter((n) => own.has(n.id)).flatMap((n) => n.uses));
+      this.chapterNodes.set(this.graphChapter, this.nodes.filter((n) => own.has(n.id) || used.has(n.id)).map((n) => (own.has(n.id)
+        ? { ...n, uses: n.uses.filter((id) => own.has(id) || used.has(id)), usedBy: n.usedBy.filter((id) => own.has(id)) }
+        : { ...n, uses: [], usedBy: n.usedBy.filter((id) => own.has(id)) })));
+    }
+    return this.chapterNodes.get(this.graphChapter);
+  }
+
+  chapterSelect() {
+    if (!this.structure.book || !this.chapters || this.chapters.size < 2) return null;
+    const select = h("select", { class: "chapter-select", "aria-label": t("graph.chapter") },
+      [...this.chapters].map(([id, chapter]) => h("option", { value: id }, chapter.title || id)));
+    select.value = this.graphChapter;
+    select.addEventListener("change", () => { this.graphChapter = select.value; this.selected = null; this.renderPanel(); });
+    return select;
+  }
+
   renderGraphTab(body) {
-    const graph = renderGraph(this.nodes, {
+    const graph = renderGraph(this.graphNodes(), {
       selected: this.selected, showIsolated: this.showIsolated, showRemarks: this.showRemarks,
       onSelect: (id) => this.select(id, { scroll: true }),
     });
@@ -1573,7 +1644,7 @@ class Reader {
     const expand = h("button", { class: "button", type: "button", onclick: () => this.openGraphOverlay() }, t("graph.expand"));
     const kinds = [...new Set(this.nodes.map((n) => n.kind))];
     body.append(
-      h("div", { class: "graph-tools" }, h("label", {}, isolated, t("graph.isolated")), h("label", {}, remarks, t("graph.remarks")), expand),
+      h("div", { class: "graph-tools" }, this.chapterSelect(), h("label", {}, isolated, t("graph.isolated")), h("label", {}, remarks, t("graph.remarks")), expand),
       graph ? h("div", { class: "graph-wrap" }, graph) : h("p", { class: "hint" }, t("graph.empty")),
       h("div", { class: "legend" }, kinds.map((k) => h("span", { dataset: { kind: k } }, h("span", { class: "dot" }), t(`kind.${k}`)))),
       h("p", { class: "hint" }, t("graph.help")),
@@ -1596,7 +1667,7 @@ class Reader {
   // Échap la ferme, le focus y entre puis revient au bouton qui l'a ouverte
   openGraphOverlay() {
     const opener = document.activeElement;
-    const draw = () => renderGraph(this.nodes, {
+    const draw = () => renderGraph(this.graphNodes(), {
       selected: this.selected, showIsolated: this.showIsolated, showRemarks: this.showRemarks,
       onSelect: (id) => { this.select(id); wrap.replaceChildren(draw()); },
     }) || h("p", { class: "hint" }, t("graph.empty"));
@@ -1756,6 +1827,7 @@ class Reader {
       onAddBookmark: (at) => this.addBookmark(at),
       onBookmark: (annotation, rect) => this.editBookmark(annotation, rect),
       onContextMenu: (point, items) => contextMenuAt(point, items),
+      relocate: this.texFile,  // fichier TeX recompilé : passages surlignés retrouvés s'ils ont bougé
     });
   }
 
@@ -1862,6 +1934,86 @@ class Reader {
     const tag = element?.closest("section")?.querySelector(":scope > .ltx_title .ltx_tag");
     const text = tag?.textContent.trim().replace(/[.\s]+$/, "");
     return text ? (/^\d/.test(text) ? `§${text}` : text) : "";
+  }
+
+  // Pages du PDF autour de `center` (page affichée si null) : 7 avant, 3 après, en JPEG d'environ 1 400 px, pour
+  // l'assistant quand l'article n'a pas de texte (scan) ; rendues à la demande, rien n'est gardé
+  async contextPages(center, signal = null) {
+    const app = await this.pdf?.ready();
+    const doc = app?.pdfDocument;
+    if (!doc) return [];
+    center = center || app.pdfViewer.currentPageNumber || 1;
+    const pages = [];
+    for (let number = Math.max(1, center - 7); number <= Math.min(doc.numPages, center + 3) && !signal?.aborted; number++) {
+      const page = await doc.getPage(number);
+      const base = page.getViewport({ scale: 1 });
+      const viewport = page.getViewport({ scale: 1400 / Math.max(base.width, base.height) });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(viewport.width);
+      canvas.height = Math.round(viewport.height);
+      const context = canvas.getContext("2d");
+      context.fillStyle = "#fff";  // fond blanc (JPEG sans transparence)
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: context, canvas, viewport }).promise;
+      pages.push({ page: number, image: canvas.toDataURL("image/jpeg", 0.75) });
+      canvas.width = canvas.height = 0;  // mémoire de l'image rendue libérée tout de suite
+    }
+    return pages;
+  }
+
+  // adresse du PDF ; fichier TeX : celle de sa dernière compilation (jamais l'ancien PDF gardé en cache)
+  pdfUrl() {
+    const stamp = this.texFile && this.structure.compiledAt ? `?v=${encodeURIComponent(this.structure.compiledAt)}` : "";
+    return `/api/papers/${encodeURIComponent(this.paper.id)}/pdf${stamp}`;
+  }
+
+  // ---- Fichier TeX de l'ordinateur ----
+  async loadTexReport() {
+    this.texReport = (await api.texReport(this.paper.id).catch(() => ({}))).report || null;
+    if (!this.destroyed && this.tab === "statements") this.renderPanel();
+  }
+
+  texChecks() {
+    return texChecks(this.texReport, this.nodes, {
+      hasProof: (node) => this.hasProof(node),
+      show: (ids) => { this.onlyIds = new Set(ids); this.renderPanel(); },
+      onChooseBib: (name) => chooseBibFor(this.paper.id, name, (result) => this.afterCompile(result)),
+    });
+  }
+
+  // source relue et recompilée ; l'article est réaffiché à la même page du PDF
+  async recompile() {
+    if (this.recompiling) return;
+    this.recompiling = true;
+    this.recompileButton?.classList.add("spinning");
+    this.recompileButton?.setAttribute("aria-busy", "true");
+    try { this.afterCompile(await api.recompile(this.paper.id)); } catch (error) { toastError(error); } finally {
+      this.recompiling = false;
+      this.recompileButton?.classList.remove("spinning");
+      this.recompileButton?.removeAttribute("aria-busy");
+    }
+  }
+
+  afterCompile(result) {
+    if (this.destroyed) return;
+    if (!result.report.pdf) {  // échec : l'ancien PDF reste affiché, l'onglet Énoncés dit pourquoi
+      this.texReport = result.report;
+      this.tab = "statements";
+      this.renderPanel();
+      toast(t("tex.lastFailed"), { error: true });
+      return;
+    }
+    const page = this.pdf?.frame.contentWindow?.PDFViewerApplication?.pdfViewer?.currentPageNumber;
+    try { if (page) sessionStorage.setItem(`texPage:${this.paper.id}`, String(page)); } catch { /* stockage indisponible */ }
+    dispatchEvent(new HashChangeEvent("hashchange"));
+  }
+
+  recompiledPage() {
+    try {
+      const page = Number(sessionStorage.getItem(`texPage:${this.paper.id}`)) || 1;
+      sessionStorage.removeItem(`texPage:${this.paper.id}`);
+      return page;
+    } catch { return 1; }
   }
 
   async editMeta() {

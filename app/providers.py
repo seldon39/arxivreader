@@ -22,6 +22,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -389,13 +390,23 @@ def _codex_events(event, state):
         state["error"] = event.get("message")  # parfois passager (reconnexion) : signalé seulement en cas d'échec
 
 
-async def stream_codex(system, prompt, model=None, effort=""):
+async def stream_codex(system, prompt, model=None, effort="", images=()):
+    """`images` : [(type, octets)] jointes à la question (fichiers temporaires, hors du dossier de travail)."""
     cli = find("codex")
     if not cli:
         raise ProviderError("codex is not installed", "missing")
     workdir = _workdir("codex")
     instructions = workdir.parent / "codex-instructions.md"  # hors du dossier de travail
     _write(instructions, system)
+    if images:  # restes d'un serveur arrêté pendant une réponse
+        for stale in workdir.parent.glob("codex-images-*"):
+            if time.time() - stale.stat().st_mtime > 3600:
+                shutil.rmtree(stale, ignore_errors=True)
+    attached = Path(tempfile.mkdtemp(dir=workdir.parent, prefix="codex-images-")) if images else None
+    files = []
+    for number, (media, data) in enumerate(images, 1):
+        files.append(attached / f"{number:02d}.{'png' if media == 'image/png' else 'jpg'}")
+        files[-1].write_bytes(data)
     argv = [cli, "exec", "--json", "--ephemeral", "--skip-git-repo-check", "--ignore-user-config",
             "--sandbox", "read-only", "-C", str(workdir),
             "-c", "features.shell_tool=false", "-c", "features.unified_exec=false",  # aucune commande
@@ -405,10 +416,15 @@ async def stream_codex(system, prompt, model=None, effort=""):
             "-c", f"model_instructions_file={json.dumps(str(instructions))}",      # consignes d'arXivReader
             *(["-m", model] if valid_model_name(model) else []),
             *(["-c", f"model_reasoning_effort={json.dumps(effort)}"] if effort in EFFORTS else []),
-            "-"]
+            # question lue sur l'entrée standard ; images après elle (« --image » accepte plusieurs valeurs)
+            "-", *(f"--image={path}" for path in files)]
     env = await asyncio.to_thread(_environment)  # recherche de Node (programmes lancés) hors de la boucle
-    async for text in _run(argv, prompt, workdir, _codex_events, env=env):
-        yield text
+    try:
+        async for text in _run(argv, prompt, workdir, _codex_events, env=env):
+            yield text
+    finally:
+        if attached:
+            shutil.rmtree(attached, ignore_errors=True)
 
 
 # ---------- Gemini (Google), par l'API ----------
@@ -469,16 +485,15 @@ def gemini_model(settings, models):
         or (models[0] if models else GEMINI_DEFAULT[0])
 
 
-async def stream_gemini(system, prompt, model, key, effort="", image=None):
+async def stream_gemini(system, prompt, model, key, effort="", images=()):
     if not key:
         raise ProviderError("No Gemini API key (Settings → AI)", "missing")
     if not valid_gemini_model(model):
         raise ProviderError("Unknown Gemini model")
     # aucun outil déclaré : Gemini ne peut que répondre par du texte
     body = {"systemInstruction": {"parts": [{"text": system}]},
-            "contents": [{"role": "user", "parts": ([{"inline_data": {"mime_type": "image/png",
-                                                                       "data": base64.b64encode(image).decode()}}] if image else [])
-                          + [{"text": prompt}]}]}
+            "contents": [{"role": "user", "parts": [{"inline_data": {"mime_type": media, "data": base64.b64encode(data).decode()}}
+                                                    for media, data in images] + [{"text": prompt}]}]}
     if effort in GEMINI_EFFORTS:
         body["generationConfig"] = {"thinkingConfig": {"thinkingLevel": effort}}
     received = False

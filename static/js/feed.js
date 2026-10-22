@@ -3,6 +3,7 @@
 import { api } from "./api.js";
 import { getLanguage, t, tn } from "./i18n.js";
 import { typesetTex } from "./math.js";
+import { contextMenuAt } from "./bookmarks.js";
 import { renderProfile } from "./profile.js";
 import { saveSettings, settings } from "./settings.js";
 import { dragEnded, dragGroup, selectButton, useSelectionBar } from "./selection.js";
@@ -385,6 +386,56 @@ function formatDay(iso) {
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString(getLanguage() === "fr" ? "fr-FR" : "en-GB", { weekday: "long", day: "numeric", month: "long" });
 }
 
+// Article d'un homonyme d'un auteur suivi : il n'est plus signalé comme le sien ; catégories où suivre l'auteur
+// proposées (celles de ses articles gardés, cochées ; celles de cet article, décochées), modifiables ensuite dans le profil
+async function notThisPerson(author, item, onChange) {
+  let info;
+  try { info = await api.authorCategories(author.id, item.arxiv_id || item.key); } catch (error) { toastError(error); return; }
+  const kept = info.kept.map((k) => k.category);
+  const chosen = new Set(info.only.length ? info.only : kept);
+  const note = (k) => tn("feed.namesake.kept", k.count) + (info.paper.includes(k.category) ? ` · ${t("feed.namesake.thisPaper")}` : "");
+  const choices = [...info.kept.map((k) => [k.category, note(k)]),
+    ...info.paper.filter((c) => !kept.includes(c)).map((c) => [c, t("feed.namesake.thisPaper")])];
+  const chips = choices.map(([category, note]) => {
+    const chip = h("button", { class: "kind-filter namesake-chip", type: "button", "aria-pressed": String(chosen.has(category)) },
+      category, h("span", { class: "muted small" }, note));
+    chip.addEventListener("click", () => {
+      if (chosen.has(category)) chosen.delete(category); else chosen.add(category);
+      chip.setAttribute("aria-pressed", String(chosen.has(category)));
+    });
+    return chip;
+  });
+  const exclude = item.arxiv_id || item.key;
+  const dialog = h("dialog", { class: "meta-dialog namesake-dialog" },
+    h("form", { method: "dialog" },
+      h("h3", { class: "meta-heading" }, t("feed.namesake.title", { name: author.label })),
+      h("p", { class: "muted small meta-note" }, t(kept.length ? "feed.namesake.intro" : "feed.namesake.introNone", { name: author.label })),
+      kept.length ? h("div", { class: "namesake-chips" }, chips) : null,
+      kept.length ? h("p", { class: "muted small" }, t("feed.namesake.after")) : null,
+      h("div", { class: "dialog-actions" },
+        kept.length ? h("button", { class: "button", value: "hide" }, t("feed.namesake.onlyHide")) : null,
+        h("button", { class: "button primary", value: kept.length ? "save" : "hide" }, t(kept.length ? "feed.namesake.save" : "feed.namesake.ok")))));
+  dialog.addEventListener("close", async () => {
+    dialog.remove();
+    if (!["hide", "save"].includes(dialog.returnValue)) return;
+    try {
+      await api.authorRule(author.id, dialog.returnValue === "save" ? { only: [...chosen], exclude } : { exclude });
+      // plus son article : raison retirée, et hors de la section des auteurs suivis s'il n'en a pas d'autre
+      for (const reason of item.reasons || []) {
+        if (reason.kind !== "author") continue;
+        reason.authors = reason.authors.filter((a) => a.id !== author.id);
+        reason.label = reason.authors.map((a) => a.label).join(", ");
+      }
+      item.reasons = (item.reasons || []).filter((r) => r.kind !== "author" || r.authors.length);
+      if (!item.reasons.some((r) => r.kind === "author")) item.followed = 0;
+      toast(t("feed.namesake.done", { name: author.label }));
+      onChange();
+    } catch (error) { toastError(error); }
+  });
+  document.body.append(dialog);
+  dialog.showModal();
+}
+
 export function feedCard(item, onChange = () => {}, { compact = false, fresh = false, showDate = false } = {}) {
   const authors = item.authors.length > 8 ? [...item.authors.slice(0, 8), t("feed.etAl")] : item.authors;
   // Résumé coupé à deux lignes : clic, Entrée ou Espace pour le déplier, ou le lien « Afficher tout le
@@ -417,8 +468,7 @@ export function feedCard(item, onChange = () => {}, { compact = false, fresh = f
       thumbs.forEach((b) => b.setAttribute("aria-pressed", "false"));
       if (next) button.setAttribute("aria-pressed", "true");
     };
-    button.addEventListener("click", async () => {
-      const next = item.status === value ? null : value;
+    const apply = async (next) => {
       try {
         await set(next);
         if (next === "disliked") {
@@ -428,6 +478,15 @@ export function feedCard(item, onChange = () => {}, { compact = false, fresh = f
       } catch (error) {
         toastError(error);
       }
+    };
+    button.addEventListener("click", () => {
+      const next = item.status === value ? null : value;
+      // article d'un auteur suivi : 👎 demande s'il n'est pas pertinent, ou si c'est un homonyme
+      const followed = next === "disliked" ? (item.reasons || []).find((r) => r.kind === "author")?.authors || [] : [];
+      if (!followed.length) { apply(next); return; }
+      const box = button.getBoundingClientRect();
+      contextMenuAt({ left: box.left, top: box.bottom + 6 }, [[t("feed.dislikeChoice"), () => apply(next)],
+        ...followed.map((author) => [t("feed.notThisPerson", { name: author.label }), () => notThisPerson(author, item, onChange)])]);
     });
     return button;
   };

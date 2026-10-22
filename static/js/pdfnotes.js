@@ -13,6 +13,10 @@ import { t } from "./i18n.js";
 import { h, icons, toast } from "./util.js";
 
 
+// passage d'un document recompilé : retrouvé par son texte, aux espaces près, s'il est assez long pour être sans ambiguïté
+const squash = (text) => text.replace(/\s+/g, "");
+const MIN_QUOTE = 12;
+
 // dessinés dans le PDF : passages et zones surlignés, notes libres (icône à l'endroit du clic droit)
 const isPdf = (annotation) => (annotation.kind === "highlight" || annotation.kind === "note") && annotation.target?.pdf;
 
@@ -21,7 +25,7 @@ export class PdfNotes {
   // zones : `readsImages()` (l'assistant lit-il les images ?), `onAskZone(zone)`, `onTranscribe(zone)`
   // marque-pages : `onAddBookmark(at)` (clic droit, ⌘D), `onBookmark(annotation, rect)` (clic sur un ruban)
   constructor({ annotator, view, onAskAI, readsImages = () => false, onAskZone = null, onTranscribe = null,
-    onAddBookmark = null, onBookmark = null, onContextMenu = null }) {
+    onAddBookmark = null, onBookmark = null, onContextMenu = null, relocate = false }) {
     this.annotator = annotator;
     this.view = view;
     this.onAskAI = onAskAI;
@@ -31,6 +35,8 @@ export class PdfNotes {
     this.onAddBookmark = onAddBookmark;
     this.onBookmark = onBookmark;
     this.onContextMenu = onContextMenu;
+    this.relocate = relocate;
+    this.moved = new Map();  // passages dont le texte n'est plus à sa place (document recompilé) : cherchés ailleurs
     this.zoneMode = false;
     this.drawing = null;
     this.draft = null;
@@ -116,9 +122,21 @@ export class PdfNotes {
     if (!pageDiv) return;
     pageDiv.querySelector(".arx-hl-layer:not(.arx-sel-layer)")?.remove();
     this.paintBookmarks(pageDiv, page);
-    const here = this.items.filter((a) => a.target.pdf.page <= page && (a.target.pdf.endPage || a.target.pdf.page) >= page);
-    if (!here.length) return;
     const nodes = this.textNodes(page);
+    if (this.relocate && nodes.length) {
+      // passage d'une page qui n'existe plus (document raccourci) : cherché sur les dernières pages
+      const count = this.app?.pagesCount || Infinity;
+      for (const annotation of this.items) {
+        const { page: first, endPage = first, rect } = annotation.target.pdf;
+        if (first > count && first === endPage && !rect && annotation.kind === "highlight" && squash(annotation.quote || "").length >= MIN_QUOTE) {
+          this.moved.set(annotation.id, annotation);
+        }
+      }
+      this.findMoved(page, nodes);
+    }
+    const here = this.items.filter((a) => a.target.pdf.page <= page && (a.target.pdf.endPage || a.target.pdf.page) >= page
+      && !(this.relocate && nodes.length && !this.inPlace(a, page, nodes)));
+    if (!here.length) return;
     if (!nodes.length && !here.some((a) => a.target.pdf.rect || a.kind === "note")) return;
     const length = nodes.reduce((n, node) => n + node.data.length, 0);
     const box = this.boxOf(pageDiv);
@@ -142,6 +160,57 @@ export class PdfNotes {
     const layer = this.layerFor(pageDiv, "arx-hl-layer", rects);
     const textLayer = pageDiv.querySelector(".textLayer");
     if (textLayer) textLayer.before(layer); else pageDiv.append(layer);
+  }
+
+  // ---- document recompilé (fichier TeX) : un passage surligné sur une seule page dont le texte n'est plus à sa
+  // place n'est pas dessiné (plutôt qu'au mauvais endroit) ; il est cherché sur sa page et jusqu'à 3 pages autour,
+  // et sa nouvelle place enregistrée ----
+  inPlace(annotation, page, nodes) {
+    const { page: first, endPage = first, start, end, rect } = annotation.target.pdf;
+    if (annotation.kind !== "highlight" || rect || first !== endPage || first !== page || !annotation.quote) return true;
+    const here = squash(nodes.map((node) => node.data).join("").slice(start, end));
+    const quote = squash(annotation.quote);
+    if (here && (here === quote || here.startsWith(quote))) return true;
+    if (quote.length < MIN_QUOTE) return true;  // trop court pour être retrouvé sans ambiguïté : laissé où il est
+    this.moved.set(annotation.id, annotation);
+    // cherché sur sa page, puis sur les pages voisines déjà affichées (les suivantes le chercheront à leur tour)
+    for (const near of [page, page - 1, page + 1, page - 2, page + 2, page - 3, page + 3]) {
+      if (!this.moved.has(annotation.id)) break;
+      const texts = near === page ? nodes : this.textNodes(near);
+      if (texts.length) this.findMoved(near, texts, page);
+    }
+    return !this.moved.has(annotation.id) && annotation.target.pdf.page === page;
+  }
+
+  // passages déplacés retrouvés sur la page `page` ; `painting` : page en cours de dessin (les autres pages
+  // concernées sont redessinées ensuite)
+  findMoved(page, nodes, painting = page) {
+    if (!this.moved.size) return;
+    const raw = nodes.map((node) => node.data).join("");
+    let squashed = "";
+    const position = [];  // position dans le texte de la page de chaque caractère gardé
+    for (let index = 0; index < raw.length; index++) {
+      if (/\s/.test(raw[index])) continue;
+      squashed += raw[index];
+      position.push(index);
+    }
+    for (const annotation of [...this.moved.values()]) {
+      const old = annotation.target.pdf;
+      if (Math.abs(old.page - page) > 3) continue;
+      const quote = squash(annotation.quote);
+      const hits = [];
+      for (let at = squashed.indexOf(quote); at >= 0 && hits.length < 50; at = squashed.indexOf(quote, at + 1)) hits.push(at);
+      if (!hits.length) continue;
+      // plusieurs fois sur la page : le plus près de l'ancienne place ; passage descendu sur une page suivante : le
+      // premier ; remonté : le dernier
+      const at = old.page === page ? hits.reduce((best, hit) => (Math.abs(position[hit] - old.start) < Math.abs(position[best] - old.start) ? hit : best))
+        : old.page < page ? hits[0] : hits[hits.length - 1];
+      annotation.target.pdf = { page, start: position[at], endPage: page, end: position[at + quote.length - 1] + 1 };
+      this.moved.delete(annotation.id);
+      api.updateAnnotation(annotation.id, { pdf: annotation.target.pdf }).catch(() => {});
+      if (old.page !== painting) setTimeout(() => this.paintPage(old.page), 0);
+      if (page !== painting) setTimeout(() => this.paintPage(page), 0);
+    }
   }
 
   // rubans des marque-pages de la page, dans sa marge droite, à leur hauteur (points du PDF → fraction de la page)

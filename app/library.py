@@ -352,11 +352,19 @@ def reanalyze(paper_id, previous):
     with paper_lock(paper_id):
         if not content.exists() and (folder / "source.tex").exists():  # article lu dans le PDF : source TeX
             structure = texstructure.extract((folder / "source.tex").read_text(encoding="utf-8"))
+            local = previous.get("stableIds")  # fichier TeX de l'ordinateur
+            if local:  # numéros imprimés et ancres de sa dernière compilation (dossier de travail, s'il est encore là)
+                from .texfile import apply_aux, build_dir
+                apply_aux(structure, build_dir(paper_id))
             pdf = folder / "paper.pdf"
             if pdf.exists():
                 texstructure.locate_pages(structure, pdf.read_bytes())
             structure["source"] = previous.get("source")
             structure["tex"] = previous.get("tex")
+            if local:  # énoncés repérés par leur \label, sinon par leur texte
+                from .texfile import stable_ids
+                stable_ids(structure)
+                structure["compiledAt"] = previous.get("compiledAt")  # adresse du PDF de cette compilation
             write_atomic(folder / "structure.json", json.dumps(structure, ensure_ascii=False))
             return structure
         if not content.exists():

@@ -331,6 +331,30 @@ export function chooseFolder(promptText) {
   return Promise.resolve((prompt(promptText) || "").trim() || null);
 }
 
+// Fichiers choisis dans la fenêtre du système (application Mac ou Windows) : `kind` « import » (PDF, fichier TeX
+// principal ; plusieurs) ou « bib » (un .bib). Renvoie la liste des chemins, [] si annulé ; null dans un navigateur
+// (pas de chemin : la page fait autrement).
+export function chooseFiles(kind) {
+  if (window.webkit?.messageHandlers?.arxivreader) {
+    return new Promise((resolve) => {
+      addEventListener("arxivreader:files", (event) => resolve(event.detail || []), { once: true });
+      window.webkit.messageHandlers.arxivreader.postMessage({ action: "chooseFiles", kind });
+    });
+  }
+  if (window.chrome?.webview) {
+    return new Promise((resolve) => {
+      const onMessage = (event) => {
+        if (event.data?.action !== "files") return;
+        window.chrome.webview.removeEventListener("message", onMessage);
+        resolve(event.data.paths || []);
+      };
+      window.chrome.webview.addEventListener("message", onMessage);
+      window.chrome.webview.postMessage({ action: "chooseFiles", kind });
+    });
+  }
+  return Promise.resolve(null);
+}
+
 export const wantsNewTab = (event) => Boolean(event.metaKey || event.ctrlKey || event.button === 1);
 
 // Bouton à bascule à la YouTube (contour au repos, plein une fois activé)

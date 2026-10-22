@@ -24,7 +24,8 @@ from . import localpdf, db, library, providers
 from .config import LIBRARY
 
 TASKS = ("explain", "detail", "audit", "annotate", "passage", "ask", "summary", "review", "zone", "transcribe")
-IMAGE_PROVIDERS = ("claude", "gemini")  # assistants qui lisent une image (zone du PDF)
+IMAGE_PROVIDERS = ("claude", "gemini", "codex")  # assistants qui lisent une image (zone du PDF, pages d'un scan)
+PAGES_BEFORE, PAGES_AFTER = 7, 3  # PDF sans texte (scan) : pages jointes en images autour de la question
 PAPER_LIMIT = 400_000  # caractères (~110 000 jetons) ; au-delà, l'article est tronqué (l'énoncé visé reste entier)
 
 BLOCKS = {"p", "div", "section", "article", "li", "ul", "ol", "dl", "dt", "dd", "table", "tr", "figure",
@@ -221,6 +222,85 @@ def _tex_text(text):
     return body.split("\\end{document}")[0].strip()
 
 
+# ---------- Document trop long (livre) : début, puis fenêtre autour de la question ----------
+
+HEAD_SHARE = 0.1      # part du budget pour le début (titre, table des matières, introduction, notations)
+BEFORE_SHARE = 0.75   # du reste : avant l'endroit de la question (définitions, résultats utilisés), puis après
+PAGE_MARK = re.compile(r"^\[page (\d+)\]$", re.M)
+
+
+def _find(text, snippet):
+    """Position d'un extrait dans le texte, aux espaces près (texte extrait du PDF, de la page HTML…) ; None."""
+    words = re.findall(r"\S+", snippet or "")[:12]
+    if len(words) < 3:
+        return None
+    found = re.search(r"\s+".join(map(re.escape, words)), text)
+    return found.start() if found else None
+
+
+def _focus(text, soup, index, structure, node, quote, page):
+    """Endroit du texte où porte la question : page (texte d'un PDF, repéré « [page n] »), sinon énoncé visé, sinon
+    passage cité, sinon l'énoncé le plus proche de la page (source TeX) ; None si rien ne le situe."""
+    if page:
+        marks = [(int(m.group(1)), m.start()) for m in PAGE_MARK.finditer(text)]
+        before = [start for number, start in marks if number <= page]
+        if before:
+            return before[-1]
+    if node is None and quote and (position := _find(text, quote)) is not None:
+        return position  # passage cité (texte de la zone, sélection) retrouvé : l'endroit exact
+    if node is None and page:  # source TeX lue dans le PDF : énoncé de cette page (ou d'une des 3 précédentes)
+        located = [n for n in structure.get("nodes", []) if n.get("page") and page - 3 <= n["page"] <= page]
+        node = max(located, key=lambda n: n["page"], default=None)
+    if node is not None:
+        element = index.get(node["id"])
+        snippet = element_text(element) if element is not None else node.get("tex")
+        position = _find(text, (snippet or "")[:400])
+        if position is not None:
+            return position
+    return _find(text, quote) if quote else None
+
+
+def _window(text, limit, position):
+    """Texte réduit à `limit` caractères : le début, puis une fenêtre autour de `position` (plus avant qu'après) ;
+    les parties omises sont signalées (avec leurs pages quand le texte les marque)."""
+    head_end = int(limit * HEAD_SHARE)
+    head_end = text.rfind("\n", 0, head_end) + 1 or head_end
+    room = limit - head_end
+    start = max(head_end, position - int(room * BEFORE_SHARE))
+    end = min(len(text), start + room)
+    start = max(head_end, end - room)  # fin du document atteinte : la fenêtre recule d'autant
+    if start > head_end:
+        line = text.find("\n", start, start + 2000)
+        start = line + 1 if line >= 0 else start
+
+    def omitted(a, b, rest=False):
+        pages = [int(m.group(1)) for m in PAGE_MARK.finditer(text, a, b)]
+        span = f" (pages {pages[0]}–{pages[-1]})" if pages else ""
+        what = "the rest of the document" if rest else "a part of the document"
+        return f"\n\n[… {what}{span} is omitted here: too long to be sent whole …]\n\n"
+
+    parts = [text[:head_end]]
+    if start > head_end:
+        parts.append(omitted(head_end, start))
+    parts.append(text[start:end])
+    if end < len(text):
+        parts.append(omitted(end, len(text), rest=True))
+    return "".join(parts)
+
+
+def _tex_context(structure):
+    """Article lu dans sa source TeX : macros de l'auteur (le préambule n'est pas envoyé) et numéros imprimés de ses
+    \\label, pour que la réponse cite « Lemma 2.2 » et non « lem:a »."""
+    nodes = {n["id"]: n["label"] for n in structure.get("nodes", [])}
+    labels = [f"{key} = {nodes[owner]}" for key, owner in structure.get("labels", {}).items() if owner in nodes]
+    labels += [f"{key} = equation {eq['label']}" for key, eq in structure.get("equations", {}).items() if eq.get("label")]
+    macros = "\n".join(structure.get("macros") or [])[:8000]
+    return ("<tex_context>\nThe paper is given as its TeX source. "
+            + (f"Author macros:\n{macros}\n" if macros else "")
+            + ("Printed numbers of \\label keys (cite these numbers, not the keys):\n" + "\n".join(labels[:400]) if labels else "")
+            + "\n</tex_context>")
+
+
 def _node_text(soup, index, structure, node):
     statement = index.get(node["id"])
     parts = []
@@ -258,14 +338,57 @@ def _node_text(soup, index, structure, node):
     return "\n\n".join(parts)
 
 
+MAX_PAGE_IMAGE = 2_000_000
+MAX_PAGES_TOTAL = 12_000_000  # pages jointes en tout (les assistants refusent les envois trop gros)
+
+
+def context_pages(items, center=None):
+    """Pages jointes par la page ([{"page", "image": JPEG en base64}]) : [(numéro, octets)], dans l'ordre ;
+    ValueError si une image n'est pas un JPEG ou est trop grosse. Trop lourdes ensemble : les plus éloignées de
+    `center` (page de la question) sont laissées de côté."""
+    pages = []
+    for item in (items or [])[:PAGES_BEFORE + PAGES_AFTER + 1]:
+        value = item.get("image") if isinstance(item, dict) else None
+        number = item.get("page") if isinstance(item, dict) else None
+        if not isinstance(value, str) or not isinstance(number, int) or isinstance(number, bool) or number < 1:
+            raise ValueError("bad page")
+        data = value.split(",", 1)[1] if value.startswith("data:") else value
+        try:
+            raw = base64.b64decode(data, validate=True)
+        except ValueError:
+            raise ValueError("bad page")
+        if len(raw) > MAX_PAGE_IMAGE or not raw.startswith(b"\xff\xd8\xff"):
+            raise ValueError("bad page")
+        pages.append((number, raw))
+    # les plus proches d'abord, celles d'avant comptant plus (7 avant pour 3 après)
+    pages.sort(key=lambda p: 0 if not center else center - p[0] if p[0] <= center else (p[0] - center) * PAGES_BEFORE / PAGES_AFTER)
+    while sum(len(raw) for _, raw in pages) > MAX_PAGES_TOTAL:
+        pages.pop()
+    return sorted(pages)
+
+
+def without_text(paper):
+    """PDF importé presque sans texte (scan) : l'assistant n'en a pas le texte, la page joint les pages en images."""
+    if paper.get("source") != localpdf.SOURCE:
+        return False
+    try:
+        pages = json.loads((library.paper_dir(paper["id"]) / "text.json").read_text(encoding="utf-8"))["pages"]
+    except (OSError, ValueError, KeyError):
+        return True
+    return sum(len(page.strip()) for page in pages) < 100 * max(1, len(pages))  # moins de 100 caractères par page
+
+
 def reads_images(model):
     return providers.provider_of(model) in IMAGE_PROVIDERS
 
 
 def build_prompt(paper, structure, task, target=None, quote=None, question=None, parent=None, language="fr",
-                 limit=PAPER_LIMIT, zone=None):
+                 limit=PAPER_LIMIT, zone=None, pages=(), page=None):
     """`zone` ({"page"}) : question sur une zone du PDF, dont l'image accompagne le texte ; `quote` y est alors le
-    texte que la couche de texte du PDF donne pour cette zone (souvent faux ou absent pour une formule numérisée)."""
+    texte que la couche de texte du PDF donne pour cette zone (souvent faux ou absent pour une formule numérisée).
+    `pages` : numéros des pages jointes en images (PDF sans texte), avant l'image de la zone. `page` : page du PDF
+    où porte la question (celle de la zone, ou celle qu'on lit) : un document trop long (livre) est envoyé réduit
+    à son début et à une fenêtre autour d'elle."""
     if task not in TASKS:
         raise AIError("Unknown task")
     if task in ("zone", "transcribe") and not zone:
@@ -275,10 +398,14 @@ def build_prompt(paper, structure, task, target=None, quote=None, question=None,
         text = f"# {paper['title']}"
     elif not text:  # pas de version HTML : titre et résumé seulement
         text = f"# {paper['title']}\n\n{', '.join(paper['authors'])}\n\nAbstract. {paper.get('abstract') or ''}"
-    if len(text) > limit:
-        text = text[:limit] + "\n\n[… the rest of the paper is cut: too long …]"
-
     node = next((n for n in structure.get("nodes", []) if n["id"] == target), None) if target else None
+    if len(text) > limit:  # livre : début et fenêtre autour de la question ; sans repère, le début seul
+        # résumé, relecture : tout le document, pas la page qu'on lit
+        page = None if task in ("summary", "review") else (zone or {}).get("page") or page
+        position = _focus(text, soup, index or {}, structure, node, quote, page)
+        text = _window(text, limit, position) if position is not None \
+            else text[:limit] + "\n\n[… the rest of the document is cut: too long …]"
+
     if task in ("explain", "detail", "audit", "annotate") and node is None:
         raise AIError("Unknown statement")
     has_text = node is not None and (node.get("proofs") or node.get("justifiedBy") or node.get("proofPassage"))
@@ -290,11 +417,21 @@ def build_prompt(paper, structure, task, target=None, quote=None, question=None,
     if task == "ask" and not question:
         raise AIError("No question")
 
-    origin = f' arxiv="{paper["arxiv_id"]}v{paper["version"]}"' if paper.get("arxiv_id") else ' source="PDF imported by the user"'
+    origin = (f' arxiv="{paper["arxiv_id"]}v{paper["version"]}"' if paper.get("arxiv_id")
+              else ' source="TeX source of an unpublished document by the user"' if paper.get("source") == "local-tex"
+              else ' source="PDF imported by the user"')
     title = html.escape(paper["title"] or "", quote=True)  # titre d'un PDF importé : écrit par n'importe qui
     parts = [f'<paper title="{title}"{origin}>\n{text}\n</paper>']
+    if structure.get("source") == "tex" and task != "transcribe":
+        parts.append(_tex_context(structure))
     if node is not None:
         parts.append(_node_text(soup, index, structure, node))
+    if pages:
+        parts.append(f'<context_pages first="{pages[0]}" last="{pages[-1]}">\nThe PDF has no text layer (scan): pages '
+                     f"{pages[0]}–{pages[-1]} around the question are attached as images, in this order"
+                     f"{', before the image of the selected region' if zone else ''}. Rely on them for context (notation, "
+                     f"definitions, earlier results) and cite pages by their PDF number (the printed numbers may differ)."
+                     f"\n</context_pages>")
     if zone:
         found = html.escape(quote or "", quote=False) or "(none)"
         parts.append(f'<zone page="{zone["page"]}">\nThe reader selected a region of page {zone["page"]} of the PDF; '
@@ -512,25 +649,27 @@ def _claude_status():
             "subscription": info.get("subscriptionType")}
 
 
-async def stream_answer(system, prompt, model, image=None):
-    """Morceaux de texte de la réponse, au fil de l'eau. `image` (PNG) : zone du PDF, jointe à la question."""
+async def stream_answer(system, prompt, model, image=None, pages=()):
+    """Morceaux de texte de la réponse, au fil de l'eau. `image` (PNG) : zone du PDF, jointe à la question ;
+    `pages` (JPEG) : pages d'un PDF sans texte autour de la question, jointes avant elle."""
     provider = providers.provider_of(model)
-    if image and provider not in IMAGE_PROVIDERS:
+    images = [("image/jpeg", page) for page in pages] + ([("image/png", image)] if image else [])
+    if images and provider not in IMAGE_PROVIDERS:
         raise AIError("This assistant cannot read images")
     settings = db.get_settings()
     # modèle et niveau : ceux que la page affiche (un niveau que le modèle ne propose pas : celui par défaut)
     if provider == "claude":
         effort = providers._effort(settings, "aiClaudeEffort", await asyncio.to_thread(claude_models), model)
-        stream = _stream_claude(system, prompt, model, effort, image)
+        stream = _stream_claude(system, prompt, model, effort, images)
     elif provider == "codex":
         _, codex_model, effort = await asyncio.to_thread(providers.codex_choice, settings)
-        stream = providers.stream_codex(system, prompt, codex_model or None, effort)
+        stream = providers.stream_codex(system, prompt, codex_model or None, effort, images)
     elif provider == "gemini":
         key = settings.get("geminiApiKey") or ""
         model_name = settings.get("aiGeminiModel") if providers.valid_gemini_model(settings.get("aiGeminiModel")) \
             else providers.GEMINI_DEFAULT[0]
         effort = settings.get("aiGeminiEffort") if settings.get("aiGeminiEffort") in providers.GEMINI_EFFORTS else ""
-        stream = providers.stream_gemini(system, prompt, model_name, key, effort, image)
+        stream = providers.stream_gemini(system, prompt, model_name, key, effort, images)
     else:
         url = settings.get("aiLocalUrl") or providers.LOCAL_URL
         stream = providers.stream_local(system, prompt, model.split(":", 1)[1], url)
@@ -542,14 +681,15 @@ async def stream_answer(system, prompt, model, image=None):
         raise AIError(str(error), error.code)
 
 
-async def _image_prompt(prompt, image):
-    """Question avec image (mode « streaming » du SDK : un message aux blocs image puis texte)."""
+async def _image_prompt(prompt, images):
+    """Question avec images (mode « streaming » du SDK : un message aux blocs image puis texte)."""
     yield {"type": "user", "session_id": "", "parent_tool_use_id": None, "message": {"role": "user", "content": [
-        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": base64.b64encode(image).decode()}},
+        *({"type": "image", "source": {"type": "base64", "media_type": media, "data": base64.b64encode(data).decode()}}
+          for media, data in images),
         {"type": "text", "text": prompt}]}}
 
 
-async def _stream_claude(system, prompt, model, effort="", image=None):
+async def _stream_claude(system, prompt, model, effort="", images=()):
     try:
         from claude_agent_sdk import ClaudeAgentOptions, query
         from claude_agent_sdk.types import AssistantMessage, ResultMessage, StreamEvent, TextBlock
@@ -574,7 +714,7 @@ async def _stream_claude(system, prompt, model, effort="", image=None):
     streamed = False
     pending = []  # texte reçu d'un bloc (sans flux) : gardé jusqu'au résultat, car il peut s'agir d'une erreur
     try:
-        async with contextlib.aclosing(query(prompt=_image_prompt(prompt, image) if image else prompt, options=options)) as messages:
+        async with contextlib.aclosing(query(prompt=_image_prompt(prompt, images) if images else prompt, options=options)) as messages:
             async for message in messages:
                 if isinstance(message, StreamEvent):
                     event = message.event

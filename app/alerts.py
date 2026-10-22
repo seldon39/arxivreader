@@ -18,7 +18,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from . import db, feed, profile
 from .config import FEED_CATEGORIES
-from .relevance import same_person
+from .relevance import followed_author, follows
 
 CHECK_EVERY = 3 * 3600
 NOTIFY_DAYS = 7  # un article plus ancien (auteur tout juste suivi…) est retenu sans notification
@@ -33,20 +33,22 @@ def recent_followed():
     """Articles récents des auteurs suivis, et articles qui citent les vôtres trouvés récemment."""
     with db.connect() as connection:
         return [dict(r) for r in connection.execute(
-            f"""SELECT key, title, authors, announced FROM feed_items WHERE (followed = 1 AND announced >= {WINDOW})
+            f"""SELECT key, title, authors, categories, announced FROM feed_items WHERE (followed = 1 AND announced >= {WINDOW})
                    OR (citing IS NOT NULL AND cited_found >= {WINDOW})""")]
 
 
 def _followed_names():
-    return [i["label"] for i in profile.list_items() if i["kind"] == "author"]
+    """Auteurs suivis, avec ce qui écarte leurs homonymes (catégories gardées, articles écartés)."""
+    return [followed_author(i) for i in profile.list_items() if i["kind"] == "author"]
 
 
 def _who(item, names=None):
     """Auteur suivi parmi les auteurs de l'article, tel qu'écrit dans l'article (ou None)."""
-    for name in names if names is not None else _followed_names():
-        for written in item.get("authors", []):
-            if same_person(written, name):  # pas un homonyme de même initiale (Xin Ma pour Xiaonan Ma)
-                return written
+    categories = item.get("categories") or []
+    for author in names if names is not None else _followed_names():
+        # pas un homonyme de même initiale (Xin Ma pour Xiaonan Ma), ni un homonyme écarté à la main
+        if follows(author, item.get("authors", []), categories, item.get("arxiv_id") or item.get("key")):
+            return next((w for w in item.get("authors", []) if follows(author, [w], categories)), None)
     return None
 
 
@@ -77,12 +79,13 @@ def check(categories=None):
 
 
 def forget_unfollowed():
-    """Auteur retiré du profil : ses articles quittent la section « auteurs suivis » et la pastille (tout de suite,
-    sans attendre la vérification suivante)."""
+    """Auteur retiré du profil, ou homonyme écarté : ses articles quittent la section « auteurs suivis » et la pastille
+    (tout de suite, sans attendre la vérification suivante)."""
     import json
     names = _followed_names()
     stale = [row["key"] for row in recent_followed()
-             if not _who({"authors": json.loads(row["authors"] or "[]")}, names)]
+             if not _who({"key": row["key"], "authors": json.loads(row["authors"] or "[]"),
+                          "categories": json.loads(row.get("categories") or "[]")}, names)]
     if stale:
         with db.connect() as connection:
             connection.executemany("UPDATE feed_items SET followed = 0 WHERE key = ?", [(key,) for key in stale])

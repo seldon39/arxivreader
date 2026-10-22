@@ -100,6 +100,22 @@ def same_person(name, other):
     return len(first(a)) <= 1 or len(first(b)) <= 1
 
 
+CATEGORY_ALIASES = {"math-ph": "math.MP", "math.MP": "math-ph"}  # deux noms d'une même catégorie
+
+
+def follows(author, names, categories=(), key=None):
+    """Article de cet auteur suivi (élément du profil : label, only, excluded) ? Même personne d'après le nom (pas un
+    homonyme de même initiale), article pas écarté à la main (« pas cette personne »), et dans les catégories
+    gardées pour lui s'il y en a (homonyme d'un autre sous-domaine)."""
+    if not any(same_person(name, author["label"]) for name in names or []):
+        return False
+    if key and key in (author.get("excluded") or []):
+        return False
+    only = set(author.get("only") or [])
+    only |= {CATEGORY_ALIASES[c] for c in only if c in CATEGORY_ALIASES}
+    return not only or bool(only & set(categories or []))
+
+
 # ---------- Vecteurs SPECTER (Semantic Scholar) ----------
 
 # Identifiant arXiv nouveau (2606.24503) ou ancien (math/0601001, math.DG/0601001)
@@ -214,9 +230,15 @@ def profile_documents():
             positives.append(dict(document, via="liked"))
         elif item["status"] == "disliked":
             negatives.append(document)
-    authors = [i["label"] for i in profile if i["kind"] == "author" and author_key(i["label"])]
+    authors = [followed_author(i) for i in profile if i["kind"] == "author" and author_key(i["label"])]
     keywords = [i["label"] for i in profile if i["kind"] == "keyword"]
     return positives, negatives, authors, keywords
+
+
+def followed_author(row):
+    """Auteur suivi (ligne du profil) : nom, catégories gardées, articles écartés (« pas cette personne »)."""
+    return {"id": row.get("id"), "label": row["label"], "only": json.loads(row.get("only_categories") or "[]"),
+            "excluded": json.loads(row.get("not_papers") or "[]")}
 
 
 # ---------- Score ----------
@@ -285,11 +307,13 @@ def score_items(items, skip_self=False):
             reasons.append({"kind": "similar", "label": best["label"], "value": round(positive, 2),
                             "via": "reference" if best.get("reference") else best.get("via", "profile")})
 
-        # auteur suivi : même personne (pas seulement mêmes nom et initiale : Xin Ma n'est pas Xiaonan Ma)
-        followed = [label for label in authors if any(same_person(a, label) for a in item.get("authors") or [])]
+        # auteur suivi : même personne (pas seulement mêmes nom et initiale : Xin Ma n'est pas Xiaonan Ma), pas un
+        # homonyme écarté à la main
+        followed = [a for a in authors if follows(a, item.get("authors"), item.get("categories"), item.get("arxiv_id") or item.get("key"))]
         if followed:
             score += 0.6
-            reasons.insert(0, {"kind": "author", "label": ", ".join(followed)})
+            reasons.insert(0, {"kind": "author", "label": ", ".join(a["label"] for a in followed),
+                               "authors": [{"id": a["id"], "label": a["label"]} for a in followed]})
         title = _ascii(item["title"]).lower()
         abstract = _ascii(item.get("abstract") or "").lower()
         bonus = 0.0

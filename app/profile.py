@@ -18,7 +18,7 @@ from . import db, s2
 from .arxiv import ATOM, ArxivError, fetch_metadata, parse_arxiv_id, with_retry
 from .config import USER_AGENT
 from .library import paper_dir
-from .relevance import STOPWORDS, _ascii, author_key, same_person
+from .relevance import STOPWORDS, _ascii, author_key, followed_author, follows, same_person
 
 KINDS = ("mine", "paper", "book", "author", "keyword")
 S2 = "https://api.semanticscholar.org/graph/v1"
@@ -39,10 +39,81 @@ def _get_s2(path, params, api_key=None):
 def list_items():
     with db.connect() as connection:
         rows = connection.execute("SELECT * FROM profile_items ORDER BY kind, added_at").fetchall()
-    return [dict(r, authors=json.loads(r["authors"] or "[]")) for r in rows]
+    return [dict(r, authors=json.loads(r["authors"] or "[]"), only=json.loads(r["only_categories"] or "[]"),
+                 excluded=json.loads(r["not_papers"] or "[]")) for r in rows]
 
 
-def add_item(kind, label, ref=None, authors=None, year=None, text=None, source="manual"):
+CATEGORY = re.compile(r"[a-z][a-z-]{1,15}(?:\.[A-Za-z-]{1,15})?")
+LOWERCASE_ARCHIVES = ("physics", "cond-mat")  # sous-catégories en minuscules (physics.optics, cond-mat.stat-mech)
+
+
+def clean_category(value):
+    """Catégorie d'arXiv telle qu'arXiv l'écrit (« math.dg » → « math.DG », « cond-mat.Stat-Mech » →
+    « cond-mat.stat-mech ») : la comparaison avec celles des articles est exacte."""
+    archive, dot, sub = str(value).strip().partition(".")
+    archive = archive.lower()
+    return archive + dot + (sub.lower() if archive in LOWERCASE_ARCHIVES else sub.upper())
+
+
+def set_author_rule(item_id, only=None, exclude=None):
+    """Homonymes d'un auteur suivi : `only` (catégories où le suivre ; [] : toutes), `exclude` (article écarté :
+    « pas cette personne »). Les articles qui ne sont plus les siens quittent aussitôt la section du feed."""
+    with db.connect() as connection:
+        row = connection.execute("SELECT * FROM profile_items WHERE id = ? AND kind = 'author'", (item_id,)).fetchone()
+        if row is None:
+            raise ValueError("not a followed author")
+        if only is not None:
+            if not isinstance(only, list) or len(only) > 40 or not all(isinstance(c, str) for c in only):
+                raise ValueError("bad categories")
+            only = [clean_category(c) for c in only]
+            if not all(CATEGORY.fullmatch(c) for c in only):
+                raise ValueError("bad categories")
+            connection.execute("UPDATE profile_items SET only_categories = ? WHERE id = ?",
+                               (json.dumps(sorted(set(only))) if only else None, item_id))
+        if exclude:
+            excluded = json.loads(row["not_papers"] or "[]")
+            if exclude not in excluded:
+                excluded = (excluded + [str(exclude)[:100]])[-500:]
+            connection.execute("UPDATE profile_items SET not_papers = ? WHERE id = ?", (json.dumps(excluded), item_id))
+    from .alerts import forget_unfollowed
+    forget_unfollowed()
+
+
+def author_categories(item_id, paper_key=None):
+    """Catégories des articles d'un auteur suivi que vous avez gardés, sans celui qu'on écarte : {"kept": [{"category",
+    "count"}], "paper": [catégories de l'article écarté]} (fenêtre « pas cette personne »). Gardés : dans votre
+    bibliothèque, 👍, ou annoncés dans vos catégories ; pas ceux trouvés seulement par la recherche de ses articles
+    (ils peuvent être de l'homonyme : leur catégorie serait cochée d'office)."""
+    author = next((i for i in list_items() if i["id"] == item_id and i["kind"] == "author"), None)
+    if author is None:
+        raise ValueError("not a followed author")
+    rule = followed_author({**author, "only_categories": None})  # catégories : toutes, pour les proposer
+    counts, paper = {}, []
+    with db.connect() as connection:
+        rows = [dict(r) for r in connection.execute(
+            "SELECT f.key, f.arxiv_id, f.authors, f.categories, f.in_arxiv, s.status FROM feed_items f "
+            "LEFT JOIN feed_status s ON s.key = f.key")]
+        rows += [dict(r, in_arxiv=1) for r in connection.execute("SELECT id AS key, arxiv_id, authors, categories FROM papers")]
+    seen = set()
+    for row in rows:
+        key = row["arxiv_id"] or row["key"]
+        categories = json.loads(row["categories"] or "[]")
+        if paper_key and key == paper_key:
+            paper = categories
+            continue
+        if key in seen or not (row["in_arxiv"] or row.get("status") == "liked"):
+            continue
+        if not follows(rule, json.loads(row["authors"] or "[]"), categories, key):
+            continue
+        seen.add(key)
+        for category in set(categories):
+            counts[category] = counts.get(category, 0) + 1
+    kept = sorted(({"category": c, "count": n} for c, n in counts.items()), key=lambda c: (-c["count"], c["category"]))
+    return {"kept": kept[:12], "paper": paper, "only": author["only"]}
+
+
+def add_item(kind, label, ref=None, authors=None, year=None, text=None, source="manual", only=None, excluded=None):
+    """`only`, `excluded` : règle d'un auteur suivi contre ses homonymes (rétablie quand on annule son retrait)."""
     if kind not in KINDS or not label.strip():
         raise ValueError("bad item")
     with db.connect() as connection:
@@ -52,9 +123,14 @@ def add_item(kind, label, ref=None, authors=None, year=None, text=None, source="
         ).fetchone()
         if duplicate:
             return duplicate["id"]
+        rule = kind == "author"
+        only = [clean_category(c) for c in only or [] if isinstance(c, str)] if rule else []
+        excluded = [str(k)[:100] for k in excluded or []][-500:] if rule else []
         cursor = connection.execute(
-            "INSERT INTO profile_items (kind, label, ref, authors, year, text, source) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (kind, label.strip(), ref, json.dumps(authors or [], ensure_ascii=False), year, text, source),
+            "INSERT INTO profile_items (kind, label, ref, authors, year, text, source, only_categories, not_papers) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (kind, label.strip(), ref, json.dumps(authors or [], ensure_ascii=False), year, text, source,
+             json.dumps(only) if [c for c in only if CATEGORY.fullmatch(c)] else None, json.dumps(excluded) if excluded else None),
         )
         return cursor.lastrowid
 
@@ -257,6 +333,7 @@ def followed_author_papers(categories, per_author=30, days=60, stop=None):
     """
     fields = {f for c in categories for f in _fields(c)}
     authors = [i["label"] for i in list_items() if i["kind"] == "author"]
+    rules = {i["label"]: followed_author(i) for i in list_items() if i["kind"] == "author"}
     since = time.strftime("%Y-%m-%d", time.gmtime(time.time() - days * 86400))
     papers = {}
     with httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=40) as client:
@@ -291,6 +368,8 @@ def followed_author_papers(categories, per_author=30, days=60, stop=None):
                 match = re.search(r"abs/(.+?)(v(\d+))?$", entry.findtext(f"{ATOM}id") or "")
                 if not match:
                     continue
+                if not follows(rules[author], names, categories_here, match.group(1)):
+                    continue  # homonyme écarté (catégories gardées pour cet auteur, article « pas cette personne »)
                 papers[match.group(1)] = {
                     "key": match.group(1), "arxiv_id": match.group(1), "version": int(match.group(3) or 1),
                     "title": " ".join((entry.findtext(f"{ATOM}title") or "").split()),

@@ -31,17 +31,18 @@ function replaceCommand(text, names, f) {
 }
 
 // TeX d'un énoncé → HTML : formules gardées pour MathJax ($…$, \[…\], environnements), texte mis en forme
-export function texToHtml(tex, { labels = {}, nodes = new Map(), bib = new Map() } = {}) {
+export function texToHtml(tex, { labels = {}, nodes = new Map(), bib = new Map(), equations = {} } = {}) {
   let text = tex.replace(/\\label\s*(\[[^\]]*\])?\s*\{[^}]*\}/g, "");
   const refText = (keys, command) => keys.split(",").map((key) => {
     const node = nodes.get(labels[key.trim()]);
-    if (!node) return "?";
+    if (!node) return equations[key.trim()]?.label?.replace(/^\((.*)\)$/, "$1") || "?";  // équation (numéro du .aux)
     const number = node.label.match(/(\S+)$/)?.[1] || node.label;
     return /^(cref|Cref|autoref)$/.test(command) ? node.label : number;
   }).join(", ");
   text = replaceCommand(text, "ref|cref|Cref|autoref|eqref", (arg, command) =>
-    command === "eqref" ? "(·)" : refText(arg, command));
-  text = replaceCommand(text, "cite|citep|citet|Cite", (arg, _, note) => {
+    command === "eqref" ? arg.split(",").map((key) => equations[key.trim()]?.label || "(·)").join(", ") : refText(arg, command));
+  // natbib et biblatex (\parencite, \textcite…)
+  text = replaceCommand(text, "cite|citep|citet|Cite|citealp|citealt|parencite|Parencite|textcite|Textcite|autocite|Autocite|footcite", (arg, _, note) => {
     const labelsText = arg.split(",").map((key) => bib.get(`bib.${key.trim()}`)?.label || "?").join(", ");
     return `[${labelsText}${note ? `, ${note}` : ""}]`;
   });
@@ -96,7 +97,7 @@ export async function defineMacros(macros = []) {
 export function statementsContainer(structure) {
   const nodes = new Map(structure.nodes.map((n) => [n.id, n]));
   const bib = new Map((structure.bibliography || []).map((b) => [b.id, b]));
-  const context = { labels: structure.labels || {}, nodes, bib };
+  const context = { labels: structure.labels || {}, nodes, bib, equations: structure.equations || {} };
   const container = document.createElement("div");
   container.className = "paper-content tex-statements";
   container.setAttribute("aria-hidden", "true");

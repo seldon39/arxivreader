@@ -20,7 +20,12 @@ MAX_WALKED_BYTES = 400_000_000  # octets décompressés parcourus, fichiers igno
 COMMENT = re.compile(r"(?<!\\)%.*")
 DOCUMENTCLASS = re.compile(r"\\documentclass\s*(?:\[([^\]]*)\])?\s*\{([^}]+)\}")
 USEPACKAGE = re.compile(r"\\usepackage\s*(?:\[[^\]]*\])?\s*\{([^}]+)\}")
-INPUT = re.compile(r"\\(?:input|include|subfile)\s*\{([^}]+)\}")
+# \input{fichier}, et \input fichier (sans accolades, à la manière de TeX) ; cible : input_target(match)
+INPUT = re.compile(r"\\(?:input|include|subfile)\s*\{([^}]+)\}|\\input\s+([^\s{}%\\]+)")
+
+
+def input_target(match):
+    return (match.group(1) or match.group(2)).strip()
 ENUMERATE = re.compile(r"\\begin\s*\{enumerate\}(?:\s*\[([^\]]*)\])?")
 
 # Paquets de police → police du lecteur
@@ -81,7 +86,7 @@ def _expand(files, name, depth=0, seen=None):
     base = posixpath.dirname(name)
 
     def replace(match):
-        target = match.group(1).strip()
+        target = input_target(match)
         for candidate in (target, target + ".tex", posixpath.join(base, target), posixpath.join(base, target + ".tex")):
             candidate = posixpath.normpath(candidate)
             if candidate in files:
@@ -150,15 +155,39 @@ def stretchy_macros(text):
     return sorted(names)
 
 
-def analyze_source(data):
-    files = _read_archive(data)
-    if not files:
-        return None
-    candidates = [name for name, text in files.items() if DOCUMENTCLASS.search(_strip_comments(text))]
+def choose_main(files, readme=None):
+    """Fichier principal d'une source ({chemin: texte}) : celui qu'indique 00README.json d'arXiv (« toplevel »), sinon
+    parmi ceux qui ont \\documentclass et \\begin{document}, le plus long (une lettre d'accompagnement est courte) ;
+    None s'il n'y en a pas. Le même choix pour l'analyse et pour la version HTML (LaTeXML)."""
+    if readme:
+        try:
+            import json
+            listed = [s.get("filename") for s in json.loads(readme).get("sources", []) if s.get("usage") == "toplevel"]
+            found = next((posixpath.normpath(f) for f in listed if f and posixpath.normpath(f) in files), None)
+            if found:
+                return found
+        except (ValueError, AttributeError, TypeError):
+            pass
+    candidates = [name for name, text in files.items() if name.lower().endswith((".tex", ".ltx"))
+                  and DOCUMENTCLASS.search(_strip_comments(text))]
     if not candidates:
         return None
-    main = next((n for n in candidates if "\\begin{document}" in files[n]), candidates[0])
-    text = _expand(files, main)
+    complete = [n for n in candidates if "\\begin{document}" in files[n]] or candidates
+    return max(complete, key=lambda n: (len(files[n]), n))
+
+
+def analyze_source(data):
+    files = _read_archive(data, extensions=(".tex", ".ltx", ".json"))
+    if not files:
+        return None
+    main = choose_main(files, files.get("00README.json"))
+    if not main:
+        return None
+    return analyze_text(_expand(files, main))
+
+
+def analyze_text(text):
+    """Options de mise en page lues dans le texte développé du fichier principal."""
     match = DOCUMENTCLASS.search(text)
     options = [o.strip() for o in (match.group(1) or "").split(",") if o.strip()]
     documentclass = match.group(2).strip()

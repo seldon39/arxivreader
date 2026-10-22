@@ -246,7 +246,9 @@ Menu **Feed** en haut, quatre onglets :
   sont réduits à une ligne (clic pour déplier). Un clic sur le titre ouvre l'article sans l'ajouter à la
   bibliothèque (cache vidé après 30 jours sans lecture) ; le **signet** l'ajoute ou l'en retire
   (aussi dans la barre du lecteur). En tête : les nouveaux articles des **auteurs suivis**,
-  même hors de vos catégories. Tri « Ordre arXiv » possible. 👍 / 👎 affinent le tri. Les flèches de part et d'autre de la date
+  même hors de vos catégories ; un homonyme (même nom, autre personne) ? 👎 sur son article → « Pas ce … (homonyme) » :
+  l'article n'est plus signalé, et l'auteur peut n'être suivi que dans les catégories des articles gardés (modifiables
+  sous son nom, dans le Profil). Tri « Ordre arXiv » possible. 👍 / 👎 affinent le tri. Les flèches de part et d'autre de la date
   d'annonce mènent aux jours précédents ; au-delà d'une semaine, ils viennent de l'API de recherche
   d'arXiv, qui donne les nouveaux articles et les croisés mais pas les nouvelles versions.
 - **Recommandations** : Semantic Scholar (API publique, sans compte), à partir du profil et des 👍.
@@ -310,6 +312,35 @@ toutes les fonctions (pas de doublon). Sinon, si son DOI ou son titre est retrou
 Scholar), elle propose d'ouvrir la version arXiv après l'import. Le fichier reste sur l'ordinateur, dans le
 dossier de la bibliothèque.
 
+## Fichiers TeX (articles ou livres en cours d'écriture)
+
+Le même bouton (« Importer un PDF ou un fichier TeX… ») prend aussi le fichier `.tex` principal d'un document en
+cours d'écriture, pour le relire avec toutes les fonctions du lecteur. L'application le compile avec latexmk (sinon
+pdflatex, BibTeX ou Biber, puis pdflatex), dans un dossier de travail à elle : rien n'est écrit dans votre dossier.
+Énoncés, preuves, dépendances et bibliographie sont lus dans la source, et Claude reçoit la source TeX. Les `.bib`
+sont cherchés dans le dossier du fichier, puis dans votre installation TeX ; un `.bib` introuvable est signalé et
+peut être choisi à la main (retenu). **Recompiler et recharger** (barre du lecteur) relit la source : les notes
+d'un énoncé le suivent (retrouvé par son `\label`, sinon par son texte), et les passages surlignés sont retrouvés là où ils ont bougé. L'onglet
+Énoncés commence par des vérifications : erreurs LaTeX, renvois et citations non définis, énoncés sans preuve
+trouvée, lemmes jamais utilisés. Un livre (avec `\chapter`) a ses énoncés classés par chapitre, et le graphe montre
+un chapitre à la fois. Sans TeX (MacTeX, MiKTeX ou TeX Live), le PDF compilé à côté du fichier (`main.pdf` pour
+`main.tex`) est lu tel quel. Le fichier se choisit dans la fenêtre de l'application (son chemin est gardé pour le
+recompiler). Comme latexmk dans un terminal, la compilation suit le `latexmkrc` du dossier s'il en a un : n'importez
+que des documents de confiance.
+
+## Version HTML expérimentale (LaTeXML)
+
+Un fichier TeX importé, ou un article d'arXiv sans version HTML mais avec sa source TeX, s'ouvre dans son PDF. Le
+bouton **HTML β** en fait une version HTML sur votre ordinateur avec [LaTeXML](https://math.nist.gov/~BMiller/LaTeXML/)
+(l'outil qu'arXiv utilise pour ses propres pages HTML), à la demande seulement. La première fois, une courte note dit
+qu'elle est expérimentale et peut contenir des erreurs (formules, figures, numérotation) : le PDF fait foi. La
+conversion se fait en arrière-plan (de quelques secondes à quelques minutes) pendant qu'on lit le PDF ; la version
+HTML s'ouvre ensuite, avec les mêmes notes sur les énoncés que dans le PDF. Elle est gardée jusqu'à la prochaine
+compilation du fichier TeX ou une nouvelle version sur arXiv. Les figures pgfplots (courbes, surfaces), que LaTeXML
+met très longtemps à calculer, sont remplacées par une mention renvoyant au PDF. Il faut LaTeXML : `brew install
+latexml` sur Mac, `apt install latexml` sous Linux ; sous Windows, quelques étapes (Perl, puis LaTeXML), voir
+[son guide](https://math.nist.gov/~BMiller/LaTeXML/get.html).
+
 ## Citations de vos articles
 
 Une fois par jour, Semantic Scholar donne les articles qui citent ceux du profil (« Mes articles ») ; les
@@ -333,7 +364,12 @@ il suffit de la fermer et d'aller dans le feed.
 - **Zones d'un PDF** (formules, figures, articles numérisés dont les formules n'ont pas de texte sélectionnable) :
   ⌥ + glisser (Alt + glisser sous Windows), ou le bouton zone de la barre du PDF, puis la même barre : surlignage
   et note (vignette dans l'onglet Notes), « Demander à Claude » avec l'image de la zone, ou « Copier la zone en LaTeX »
-  (Claude la transcrit). Ces deux derniers seulement avec un assistant qui lit les images (Claude, Gemini).
+  (Claude la transcrit). Ces deux derniers seulement avec un assistant qui lit les images (Claude, Codex, Gemini).
+  Dans un PDF sans texte (scan), chaque question part aussi avec les pages autour, en images (7 avant, 3 après la
+  zone, ou la page affichée) : l'assistant connaît ainsi les notations et les résultats qui précèdent.
+- **Documents longs** (livres, au-delà de 150 pages environ) : l'assistant reçoit le début (sommaire, introduction,
+  notations) et une fenêtre autour de la question (page de la zone ou page qu'on lit, sinon énoncé ou passage cité),
+  plus avant qu'après ; les pages omises sont signalées. Un article part toujours en entier.
 - **Énoncés et preuves** : l'icône de note en marge (au survol) ouvre une note et, pour un énoncé,
   l'état de lecture *compris / à revoir / vérifié* (affiché dans le titre et la liste des énoncés).
 - **Notes sans passage** : clic droit → « Ajouter une note », en HTML (sur le paragraphe ; dans un énoncé ou une
@@ -443,15 +479,18 @@ app/            serveur Python (FastAPI)
   texsource.py  lecture de la source TeX (options de classe, police, étiquettes de listes)
   feed.py       nouveautés arXiv (RSS, OAI-PMH), recommandations Semantic Scholar, repérage d'identifiants
   journals.py   revue où un article est paru (arXiv, Semantic Scholar)
-  search.py     recherche dans tout arXiv (onglet Recherche) ; related.py : papiers liés (graphe) ; zotero.py : synchronisation avec Zotero ; check.py : vérification des services extérieurs ; onboarding.py : assistant de premier lancement ; export.py : export des notes
+  search.py     recherche dans tout arXiv (onglet Recherche) ; related.py : papiers liés (graphe) ; zotero.py : synchronisation avec Zotero ; check.py : vérification des services extérieurs ; onboarding.py : assistant de premier lancement ; export.py : export des notes ; notesync.py : export signé et import des notes d'un ordinateur à l'autre
   folders.py    dossiers de la bibliothèque
-  profile.py    profil de recherche, pré-remplissage, auteurs suivis ; relevance.py : tri par pertinence
+  profile.py    profil de recherche, pré-remplissage, auteurs suivis (homonymes) ; relevance.py : tri par pertinence
   annotations.py  surlignages, notes, état de lecture
-  ai.py         texte de l'article et consignes pour Claude, appel sans outils (SDK Claude Agent)
+  ai.py         texte de l'article et consignes pour Claude, appel sans outils (SDK Claude Agent) ; pages d'un
+                scan en images, fenêtre autour de la question pour les livres longs
   crossrefs.py  références qui sont des articles lus ici ; citations.py : articles qui citent les vôtres
   texstructure.py  structure tirée de la source TeX et pages du PDF (articles sans version HTML)
   providers.py  autres assistants : Codex (en ligne de commande), Gemini (API), modèle local (Ollama, LM Studio)
   localpdf.py   PDF importés de l'ordinateur (texte, titre, version arXiv)
+  texfile.py    fichiers TeX de l'ordinateur (compilation, bibliographie, vérifications, identifiants stables)
+  latexml.py    version HTML expérimentale faite par LaTeXML (fichiers TeX, articles d'arXiv sans HTML)
   library.py    import d'un article ; db.py : base SQLite ; main.py : routes web
 macos/          application Mac : main.swift (fenêtre, onglets, serveur), icon.swift, build.sh, release.sh
 windows/        application Windows : shell/ (fenêtre à onglets en C#, WebView2), launcher.py (serveur, construit

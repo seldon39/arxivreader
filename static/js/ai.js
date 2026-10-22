@@ -53,10 +53,14 @@ function runningLine(exchange) {
 }
 
 export class Assistant {
-  // `inPdf()` : article lu dans son PDF (la consigne mentionne alors les zones)
-  constructor({ paper, structure, find, navigate, annotator, onChange, equationIds, inPdf = () => false }) {
+  // `inPdf()` : article lu dans son PDF (la consigne mentionne alors les zones) ; `contextPages(center)` : pages du
+  // PDF autour de `center` (page affichée si null), en images, pour un article sans texte (scan)
+  constructor({ paper, structure, find, navigate, annotator, onChange, equationIds, inPdf = () => false, contextPages = null,
+    currentPage = null }) {
     this.paper = paper;
     this.inPdf = inPdf;
+    this.currentPage = currentPage;  // page du PDF qu'on lit
+    this.contextPages = contextPages;
     this.equationIds = equationIds;
     this.structure = structure;
     this.byId = new Map(structure.nodes.map((n) => [n.id, n]));
@@ -200,8 +204,12 @@ export class Assistant {
       frame = requestAnimationFrame(() => { frame = 0; this.live?.update(local.answer, false); });
     };
     try {
-      const image = zone ? { image: zone.image, page: zone.page } : {};
-      await streamAI(this.paper.id, { task, target, quote, question, parent_id: parent?.id ?? null, ...image }, (event) => {
+      // page de la zone, sinon celle qu'on lit dans le PDF : un livre trop long part réduit autour d'elle
+      const image = zone ? { image: zone.image, page: zone.page } : this.inPdf() && this.currentPage?.() ? { page: this.currentPage() } : {};
+      // PDF sans texte (scan) : l'assistant voit les pages autour de la zone (sinon de la page affichée)
+      const pages = this.paper.noText && task !== "transcribe" && this.readsImages() && this.contextPages
+        ? await this.contextPages(zone?.page ?? null, controller.signal).catch(() => []) : [];
+      await streamAI(this.paper.id, { task, target, quote, question, parent_id: parent?.id ?? null, ...image, pages }, (event) => {
         if (event.exchange) Object.assign(local, event.exchange, { answer: local.answer });
         if (event.delta) { local.answer += event.delta; redraw(); }
         if (event.error) { local.error = event.error; local.errorCode = event.code; }

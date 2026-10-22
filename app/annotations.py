@@ -130,8 +130,16 @@ def create(paper_id, kind, target=None, color=None, quote=None, note=None, state
     return update(existing["id"], color=color, note=note, state=state)
 
 
-def update(annotation_id, color=None, note=None, state=None, clear_state=False, quote=None, version=None):
+def update(annotation_id, color=None, note=None, state=None, clear_state=False, quote=None, version=None, span=None):
     fields = {}
+    if span is not None:  # passage surligné du PDF retrouvé ailleurs (document recompilé) : sa nouvelle place
+        keys = ("page", "start", "endPage", "end")
+        if set(span) != set(keys) or not all(isinstance(span[k], int) and not isinstance(span[k], bool) and 0 <= span[k] < 10_000_000 for k in keys):
+            raise ValueError("bad span")
+        with db.connect() as connection:
+            connection.execute("UPDATE annotations SET target = json_set(target, '$.pdf', json(?)), updated_at = datetime('now') "
+                               "WHERE id = ? AND kind = 'highlight' AND json_extract(target, '$.pdf.rect') IS NULL",
+                               (json.dumps({k: span[k] for k in keys}), annotation_id))
     if version is not None:  # marque-page vérifié sur la version actuelle de l'article
         with db.connect() as connection:
             connection.execute("UPDATE annotations SET target = json_set(target, '$.version', ?) WHERE id = ? AND kind = 'bookmark'",

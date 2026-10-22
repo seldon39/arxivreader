@@ -6,6 +6,7 @@
 // sites s'ouvrent dans le navigateur par défaut.
 
 import AppKit
+import UniformTypeIdentifiers
 import WebKit
 
 let french = Locale.preferredLanguages.first?.hasPrefix("fr") ?? true
@@ -529,6 +530,10 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
 
     func received(_ message: WKScriptMessage) {
         if (message.body as? [String: Any])?["action"] as? String == "chooseFolder" { chooseFolder(); return }
+        if let body = message.body as? [String: Any], body["action"] as? String == "chooseFiles" {
+            chooseFiles(bib: body["kind"] as? String == "bib")
+            return
+        }
         guard let body = message.body as? [String: Any], body["action"] as? String == "openTab",
               let route = body["route"] as? String,
               route.range(of: "^#/[A-Za-z0-9/._%~-]*$", options: .regularExpression) != nil else { return }
@@ -550,6 +555,26 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
             guard let data = try? JSONSerialization.data(withJSONObject: [path]),
                   let json = String(data: data, encoding: .utf8) else { return }
             self?.webView.evaluateJavaScript("window.dispatchEvent(new CustomEvent('arxivreader:folder', { detail: \(json)[0] }))")
+        }
+    }
+
+    // fichiers à importer (PDF, fichier TeX principal) ou .bib d'un fichier TeX : choisis ici, chemins rendus à la page
+    // (évènement arxivreader:files, liste de chemins, ou null si la fenêtre est annulée) ; le chemin d'un fichier TeX
+    // est gardé pour le recompiler
+    func chooseFiles(bib: Bool) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = !bib
+        panel.allowedContentTypes = (bib ? ["bib"] : ["pdf", "tex", "ltx"]).compactMap { UTType(filenameExtension: $0) }
+        panel.prompt = tr("Choisir", "Choose")
+        panel.message = bib ? tr("Fichier .bib de la bibliographie", "Bibliography .bib file")
+            : tr("PDF, ou fichier principal d'un document TeX", "PDF, or main file of a TeX document")
+        panel.beginSheetModal(for: window) { [weak self] response in
+            let paths: Any = response == .OK ? panel.urls.map { $0.path } : NSNull()
+            guard let data = try? JSONSerialization.data(withJSONObject: [paths]),
+                  let json = String(data: data, encoding: .utf8) else { return }
+            self?.webView.evaluateJavaScript("window.dispatchEvent(new CustomEvent('arxivreader:files', { detail: \(json)[0] }))")
         }
     }
 

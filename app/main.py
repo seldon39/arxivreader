@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Res
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import (ai, alerts, annotations, notesync, citations, crossrefs, db, export, feed, folders, journals, library, localpdf, onboarding, profile, providers, related,
+from . import (ai, alerts, annotations, notesync, citations, crossrefs, db, export, feed, folders, journals, latexml, library, localpdf, onboarding, profile, providers, related, texfile,
                relevance, search, updates, zotero)
 from .arxiv import ArxivError, fetch_metadata, parse_arxiv_id
 from .config import HOST, PORT, STATIC
@@ -186,6 +186,7 @@ class AppliedRequest(BaseModel):
 
 class AnnotationUpdate(BaseModel):
     quote: str | None = None  # nom d'un marque-page
+    pdf: dict | None = None  # nouvelle place d'un passage surligné du PDF (document recompilé)
     version: int | None = None  # marque-page vérifié sur cette version de l'article
     color: str | None = None
     note: str | None = None
@@ -207,7 +208,8 @@ class AIRequest(BaseModel):
     question: str | None = None
     parent_id: int | None = None
     image: str | None = None  # zone du PDF (PNG en base64) : tâches « zone » et « transcribe »
-    page: int | None = None
+    page: int | None = None  # page de la zone, sinon page du PDF qu'on lit (livre trop long : fenêtre autour d'elle)
+    pages: list[dict] = []  # PDF sans texte : [{"page", "image" (JPEG en base64)}] autour de la question
 
 
 class FindArxivRequest(BaseModel):
@@ -235,6 +237,8 @@ class ProfileItem(BaseModel):
     authors: list[str] | None = None
     year: str | None = None
     text: str | None = None
+    only: list[str] | None = None      # auteur suivi : règle contre ses homonymes (retrait annulé)
+    excluded: list[str] | None = None
 
 
 class ResolveRequest(BaseModel):
@@ -355,6 +359,12 @@ def paper(paper_id: str):
     db.update_paper(paper_id, opened_at=_now())
     if library.missing_assets(paper_id):  # figures manquantes : redemandées en arrière-plan
         threading.Thread(target=library.repair_assets, args=(paper_id,), daemon=True).start()
+    # sans texte pour l'assistant (PDF scanné) : la page joint les pages autour de la question
+    paper = {**paper, "noText": ai.without_text(paper)}
+    if paper.get("source") in latexml.SOURCES:  # version HTML expérimentale (LaTeXML), si elle est faite et à jour
+        paper["html"] = latexml.state(paper)
+        if paper["html"] == "ready" and (structure := latexml.structure(paper_id)):
+            return {"paper": paper, "structure": structure}
     return {"paper": paper, "structure": library.load_structure(paper_id)}
 
 
@@ -370,6 +380,8 @@ def content(paper_id: str):
     checked_paper(paper_id)
     library.ensure_ready(paper_id, timeout=45)
     path = library.paper_dir(paper_id) / "content.html"
+    if not path.exists():
+        path = latexml.html_dir(paper_id) / "content.html"  # version faite par LaTeXML
     if not path.exists():
         raise HTTPException(404, "No HTML version")
     return PlainTextResponse(path.read_text(encoding="utf-8"))
@@ -388,6 +400,8 @@ def asset(paper_id: str, name: str):
     if not ASSET_NAME.fullmatch(name):
         raise HTTPException(400, "Bad asset name")
     path = library.paper_dir(paper_id) / "assets" / name
+    if not path.exists():
+        path = latexml.html_dir(paper_id) / "assets" / name  # images de la version faite par LaTeXML
     if not path.exists():
         raise HTTPException(404, "Missing asset")
     return FileResponse(path)
@@ -536,7 +550,8 @@ def edit_annotation(annotation_id: int, body: AnnotationUpdate):
     try:
         return annotations.update(annotation_id, body.color, body.note[:100000] if body.note is not None else None,
                                   body.state, clear_state=body.clear_state,
-                                  quote=body.quote[:300] if body.quote is not None else None, version=body.version)
+                                  quote=body.quote[:300] if body.quote is not None else None, version=body.version,
+                                  span=body.pdf)
     except ValueError:
         raise HTTPException(400, "Bad annotation")
 
@@ -558,19 +573,30 @@ def set_proof_location(paper_id: str, node_id: str, body: ProofChoice):
         annotations.set_proof(paper_id, node_id, body.mode, body.ref, body.start, body.end)
     except ValueError:
         raise HTTPException(400, "Bad proof location")
-    return library.reanalyze(paper_id, structure)
+    return _reanalyze(paper_id, structure)
 
 
 @app.delete("/api/papers/{paper_id}/proofs/{node_id}")
 def clear_proof_location(paper_id: str, node_id: str):
     structure = _checked_node(paper_id, node_id)
     annotations.clear_proof(paper_id, node_id)
+    return _reanalyze(paper_id, structure)
+
+
+def _html_ready(paper):
+    return paper.get("source") in latexml.SOURCES and latexml.state(paper) == "ready"
+
+
+def _reanalyze(paper_id, structure):
+    """Version HTML de LaTeXML affichée : sa structure, refaite sur sa page ; sinon celle de l'article."""
+    if _html_ready(checked_paper(paper_id)):
+        return latexml.reanalyze(paper_id)
     return library.reanalyze(paper_id, structure)
 
 
 def _checked_node(paper_id, node_id):
-    checked_paper(paper_id)
-    structure = library.load_structure(paper_id)
+    paper = checked_paper(paper_id)
+    structure = latexml.structure(paper_id) if _html_ready(paper) else library.load_structure(paper_id)
     if not structure or not any(n["id"] == node_id for n in structure["nodes"]):
         raise HTTPException(404, "Unknown statement")
     return structure
@@ -617,11 +643,18 @@ async def ask_ai(paper_id: str, body: AIRequest):
         return JSONResponse({"error": "Bad image"}, status_code=400)
     zone = {"page": max(1, body.page or 1)} if image else None
     try:
+        pages = ai.context_pages(body.pages, body.page) if body.task != "transcribe" else []
+    except ValueError:
+        return JSONResponse({"error": "Bad page image"}, status_code=400)
+    try:
         model = ai.current_model(settings)
         if image and not ai.reads_images(model):
             raise ai.AIError("This assistant cannot read images")
+        if not ai.reads_images(model):
+            pages = []  # sans images : la question part sans les pages (comme avant)
         system, prompt = await run_in_threadpool(ai.build_prompt, paper, structure, body.task, target, quote, question,
-                                                 parent, settings.get("language", "fr"), ai.paper_limit(model), zone)
+                                                 parent, settings.get("language", "fr"), ai.paper_limit(model), zone,
+                                                 [number for number, _ in pages], max(1, body.page) if body.page else None)
     except ai.AIError as error:
         return JSONResponse({"error": str(error)}, status_code=400)
     exchange = ai.create(paper_id, body.task, target, quote, question, parent["id"] if parent else None, model, image)
@@ -631,7 +664,7 @@ async def ask_ai(paper_id: str, body: AIRequest):
         status = "stopped"  # si la page interrompt la réponse
         try:
             yield json.dumps({"exchange": exchange}) + "\n"
-            async for text in ai.stream_answer(system, prompt, model, image):
+            async for text in ai.stream_answer(system, prompt, model, image, [data for _, data in pages]):
                 answer.append(text)
                 yield json.dumps({"delta": text}) + "\n"
             status = "done"
@@ -687,18 +720,28 @@ def save_position(paper_id: str, body: PositionRequest):
 @app.post("/api/papers/pdf")
 async def import_local_pdf(request: Request):
     """PDF de l'ordinateur (corps : le fichier, en application/pdf ; nom dans l'en-tête X-Filename) : article de la
-    bibliothèque. Sa version arXiv est cherchée ensuite (GET …/arxiv-match), pour répondre tout de suite."""
-    if int(request.headers.get("content-length") or 0) > localpdf.MAX_BYTES:
-        raise HTTPException(413, "PDF too large")
-    chunks, size = [], 0
-    async for chunk in request.stream():  # taille comptée en lisant (un envoi « chunked » n'annonce pas sa longueur)
-        size += len(chunk)
-        if size > localpdf.MAX_BYTES:
-            raise HTTPException(413, "PDF too large")
-        chunks.append(chunk)
-    filename = unquote(request.headers.get("x-filename", ""))[:300]
+    bibliothèque. Sa version arXiv est cherchée ensuite (GET …/arxiv-match), pour répondre tout de suite.
+    Choisi dans la fenêtre de l'application (Mac, Windows) : son chemin (?path=…) au lieu du fichier."""
     check = request.query_params.get("check") == "1"  # PDF d'arXiv : la page propose d'abord la version arXiv
-    data = b"".join(chunks)
+    if request.query_params.get("path"):
+        path = Path(request.query_params["path"]).expanduser()
+        try:
+            if path.suffix.lower() != ".pdf" or path.stat().st_size > localpdf.MAX_BYTES:
+                raise HTTPException(400, "PDF: not a PDF, or too large")
+            data, filename = path.read_bytes(), path.name
+        except OSError:
+            raise HTTPException(400, "PDF: file not found")
+    else:
+        if int(request.headers.get("content-length") or 0) > localpdf.MAX_BYTES:
+            raise HTTPException(413, "PDF too large")
+        chunks, size = [], 0
+        async for chunk in request.stream():  # taille comptée en lisant (un envoi « chunked » n'annonce pas sa longueur)
+            size += len(chunk)
+            if size > localpdf.MAX_BYTES:
+                raise HTTPException(413, "PDF too large")
+            chunks.append(chunk)
+        filename = unquote(request.headers.get("x-filename", ""))[:300]
+        data = b"".join(chunks)
     known = db.get_paper(localpdf.paper_id(data)) is not None
     try:
         found = await run_in_threadpool(localpdf.import_pdf, data, filename, check)
@@ -707,6 +750,109 @@ async def import_local_pdf(request: Request):
     if "arxivId" in found:
         return {"paper": None, "arxiv": found}
     return {"paper": found, "created": not known}  # nouveau : la page fait vérifier titre et auteurs
+
+
+class TexImport(BaseModel):
+    path: str
+    pdf: str | None = None
+
+
+@app.post("/api/papers/tex")
+async def import_tex_file(body: TexImport):
+    """Fichier principal d'un document TeX de l'ordinateur (chemin choisi dans la fenêtre de l'application) : compilé
+    en arrière-plan, puis article de la bibliothèque. Renvoie {"job"} ; la page suit GET /api/tex/job/<job>, dont le
+    résultat est {"paper", "report"} (paper None sans PDF : le bilan dit pourquoi)."""
+    try:
+        pid = texfile.paper_id(texfile.main_file(body.path))
+    except (texfile.TexError, OSError) as error:
+        raise HTTPException(400, f"TeX: {error}")
+    _started(texfile.start(pid, texfile.import_tex, body.path, body.pdf))
+    return {"job": pid}
+
+
+def _started(started):
+    if not started:  # une autre compilation de ce document est en cours : celle-ci n'est pas faite
+        raise HTTPException(409, "A compilation of this document is already running: try again when it ends")
+
+
+def _tex_paper(paper_id, compiling=False):
+    if not texfile.is_tex_file(checked_paper(paper_id)):
+        raise HTTPException(400, "Not a TeX file")
+    if compiling and texfile.job(latexml.job_id(paper_id)).get("running"):  # LaTeXML lit le .bbl de la compilation
+        raise HTTPException(409, "The HTML version is being made: try again when it ends")
+
+
+@app.post("/api/papers/{paper_id}/recompile")
+def recompile_tex(paper_id: str):
+    """Source relue et recompilée en arrière-plan (fichier TeX de l'ordinateur) : {"job"}, comme l'import."""
+    _tex_paper(paper_id, compiling=True)
+    try:
+        texfile.check_recompile(paper_id)
+    except texfile.TexError as error:
+        raise HTTPException(400, f"TeX: {error}")
+    _started(texfile.start(paper_id, texfile.recompile, paper_id))
+    return {"job": paper_id}
+
+
+class BibChoice(BaseModel):
+    name: str
+    path: str
+
+
+@app.post("/api/papers/{paper_id}/bib")
+def choose_bib(paper_id: str, body: BibChoice):
+    """.bib introuvable choisi à la main : retenu, puis recompilation en arrière-plan ({"job"}, comme l'import)."""
+    _tex_paper(paper_id, compiling=True)
+    try:
+        texfile.check_bib(body.path)
+    except texfile.TexError as error:
+        raise HTTPException(400, f"TeX: {error}")
+    _started(texfile.start(paper_id, texfile.choose_bib, paper_id, body.name[:300], body.path))
+    return {"job": paper_id}
+
+
+@app.get("/api/papers/{paper_id}/texfile")
+def tex_report(paper_id: str):
+    """Bilan de la dernière compilation d'un fichier TeX (vérifications du lecteur)."""
+    _tex_paper(paper_id)
+    return {"report": texfile.report(paper_id)}
+
+
+@app.get("/api/tex/job/{job_id}")
+def tex_job(job_id: str):
+    """Compilation en cours ou finie : {"running"}, puis {"result": {"paper", "report"}} ou {"error"}."""
+    if not PAPER_ID.fullmatch(job_id):
+        raise HTTPException(400, "Bad job id")
+    return texfile.job(job_id)
+
+
+@app.get("/api/tex/tools")
+def tex_tools():
+    return {"tools": {**texfile.tools(), "latexmlc": latexml.find()}}
+
+
+@app.get("/api/papers/{paper_id}/html")
+def html_status(paper_id: str):
+    """Version HTML expérimentale (LaTeXML) : {"state": none|running|ready|stale|failed, "installed", "error"}."""
+    paper = checked_paper(paper_id)
+    if paper.get("source") not in latexml.SOURCES:
+        raise HTTPException(400, "No TeX source")
+    return latexml.status(paper)
+
+
+@app.post("/api/papers/{paper_id}/html")
+def make_html(paper_id: str):
+    """Conversion par LaTeXML en arrière-plan : {"job"} (la page suit GET /api/tex/job/<job>)."""
+    paper = checked_paper(paper_id)
+    if paper.get("source") not in latexml.SOURCES:
+        raise HTTPException(400, "No TeX source")
+    if not latexml.find():
+        raise HTTPException(400, "LaTeXML is not installed")
+    if texfile.job(paper_id).get("running"):  # recompilation en cours : la version HTML serait aussitôt périmée
+        raise HTTPException(409, "A compilation of this document is already running: try again when it ends")
+    job = latexml.job_id(paper_id)
+    _started(texfile.start(job, latexml.convert, paper_id))
+    return {"job": job}
 
 
 @app.get("/api/papers/{paper_id}/arxiv-match")
@@ -739,8 +885,8 @@ def paper_meta(paper_id: str, body: PaperMeta):
 @app.post("/api/papers/{paper_id}/refresh")
 def refresh(paper_id: str):
     """Mise à jour (dernière version d'arXiv) en arrière-plan ; la page suit GET …/importing jusqu'à la fin."""
-    if localpdf.is_local(checked_paper(paper_id)):
-        raise HTTPException(400, "Imported PDF: nothing to update from arXiv")
+    if not checked_paper(paper_id).get("arxiv_id"):
+        raise HTTPException(400, "Imported PDF or TeX file: nothing to update from arXiv")
     library.update_in_background(paper_id)  # un article seulement lu le reste (place gardée)
     return {"started": True}
 
@@ -970,7 +1116,8 @@ def get_profile():
 async def add_profile_item(body: ProfileItem):
     ref = (body.ref or "")[:200] or None
     try:
-        profile.add_item(body.kind, body.label[:400], ref, body.authors, body.year, (body.text or "")[:20000] or None)
+        profile.add_item(body.kind, body.label[:400], ref, body.authors, body.year, (body.text or "")[:20000] or None,
+                         only=(body.only or [])[:40], excluded=(body.excluded or [])[:500])
     except ValueError:
         raise HTTPException(400, "Bad profile item")
     key = relevance.s2_key(None, ref) if ref else None
@@ -987,6 +1134,30 @@ def remove_profile_item(item_id: int):
     profile.remove_item(item_id)
     alerts.forget_unfollowed()  # auteur retiré : ses articles quittent aussitôt la section « auteurs suivis »
     return get_profile()
+
+
+class AuthorRule(BaseModel):
+    only: list[str] | None = None  # catégories où suivre l'auteur ([] : toutes)
+    exclude: str | None = None     # article écarté : « pas cette personne »
+
+
+@app.put("/api/profile/items/{item_id}/rule")
+def author_rule(item_id: int, body: AuthorRule):
+    """Homonymes d'un auteur suivi : catégories gardées, article écarté."""
+    try:
+        profile.set_author_rule(item_id, body.only, (body.exclude or "")[:100] or None)
+    except ValueError:
+        raise HTTPException(400, "Bad rule")
+    return get_profile()
+
+
+@app.get("/api/profile/items/{item_id}/categories")
+def author_categories(item_id: int, paper: str | None = None):
+    """Catégories de ses articles gardés, et celles de l'article qu'on écarte (fenêtre « pas cette personne »)."""
+    try:
+        return profile.author_categories(item_id, (paper or "")[:100] or None)
+    except ValueError:
+        raise HTTPException(404, "Unknown followed author")
 
 
 @app.post("/api/profile/resolve")

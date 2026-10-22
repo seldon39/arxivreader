@@ -236,9 +236,9 @@ def text(pid):
 
 def update_meta(pid, title, authors):
     paper = db.get_paper(pid)
-    if not is_local(paper):
+    if not is_local(paper) and paper.get("source") != "local-tex":
         raise PdfError("not an imported PDF")
-    (paper_dir(pid) / "meta-edited").touch()  # corrigés à la main : jamais relus du PDF (redetect_all)
+    (paper_dir(pid) / "meta-edited").touch()  # corrigés à la main : jamais relus du PDF (redetect_all) ni de la source
     db.update_paper(pid, title=_clean(title)[:300] or paper["title"],
                     authors=json.dumps([_clean(a) for a in authors if _clean(a)][:30], ensure_ascii=False))
     return db.get_paper(pid)

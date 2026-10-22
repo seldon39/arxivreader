@@ -76,6 +76,17 @@ class Providers(unittest.TestCase):
         instructions = next(a for a in log["argv"] if a.startswith("model_instructions_file="))
         self.assertEqual(pathlib.Path(json.loads(instructions.split("=", 1)[1])).read_text(), "SYSTEM")
 
+    def test_codex_images(self):
+        # zone du PDF et pages d'un scan : fichiers joints après la question, effacés ensuite
+        self.events({"type": "item.completed", "item": {"type": "agent_message", "text": "ok"}})
+        asyncio.run(collect(providers.stream_codex("S", "P", images=[("image/jpeg", b"\xff\xd8\xffpage"), ("image/png", b"png")])))
+        argv = self.log()["argv"]
+        images = [a.split("=", 1)[1] for a in argv if a.startswith("--image=")]
+        self.assertEqual([pathlib.Path(p).suffix for p in images], [".jpg", ".png"])
+        self.assertLess(argv.index("-"), argv.index(f"--image={images[0]}"))
+        self.assertFalse(pathlib.Path(images[0]).parent.exists())
+        self.assertNotEqual(pathlib.Path(images[0]).parent.parent.resolve(), (providers.LIBRARY / "ai" / "codex").resolve())
+
     def test_codex_model_and_effort(self):
         self.events({"type": "item.completed", "item": {"type": "agent_message", "text": "ok"}})
         asyncio.run(collect(providers.stream_codex("S", "P", "gpt-6-luna", "high")))

@@ -34,8 +34,6 @@ class Relevance(unittest.TestCase):
         self.assertAlmostEqual(sorted(z)[len(z) // 2], 0.0, places=6)
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class LibraryRelevance(unittest.TestCase):
@@ -99,8 +97,79 @@ class FollowedAuthorReason(unittest.TestCase):
                   "authors": ["Xin Ma"]},
                  {"key": "b", "arxiv_id": "2610.28479", "title": "Toeplitz operators", "abstract": "",
                   "authors": ["X. Ma", "G. Marinescu"]}]
-        with mock.patch.object(relevance, "profile_documents", return_value=([], [], ["Xiaonan Ma"], [])), \
+        followed = [{"id": 1, "label": "Xiaonan Ma", "only": [], "excluded": []}]
+        with mock.patch.object(relevance, "profile_documents", return_value=([], [], followed, [])), \
              mock.patch.object(relevance, "cached_embeddings", return_value={}):
             relevance.score_items(items)
         reasons = {i["key"]: [r["label"] for r in i["reasons"] if r["kind"] == "author"] for i in items}
         self.assertEqual(reasons, {"a": [], "b": ["Xiaonan Ma"]})
+
+
+class Namesakes(unittest.TestCase):
+    """Homonyme d'un auteur suivi : catégories gardées pour lui, article écarté (« pas cette personne »)."""
+
+    def setUp(self):
+        import pathlib
+        import tempfile
+        from app import db
+        self.saved = (db.DB_PATH, db.LIBRARY)
+        self.tmp = pathlib.Path(tempfile.mkdtemp())
+        db.DB_PATH, db.LIBRARY = self.tmp / "test.db", self.tmp
+        db.init()
+
+    def tearDown(self):
+        from app import db
+        db.DB_PATH, db.LIBRARY = self.saved
+
+    def test_rule(self):
+        from app.relevance import follows
+        author = {"label": "Jan Novák", "only": ["math.CV", "math-ph"], "excluded": ["2610.00009"]}
+        self.assertTrue(follows(author, ["Jan Novak"], ["math.CV"], "2610.00001"))
+        self.assertFalse(follows(author, ["Jan Novák"], ["math.NT"], "2610.00002"))   # autre sous-domaine
+        self.assertTrue(follows(author, ["Jan Novák"], ["math.MP"], "2610.00003"))    # math-ph = math.MP
+        self.assertFalse(follows(author, ["Jan Novák"], ["math.CV"], "2610.00009"))   # écarté à la main
+        self.assertTrue(follows({"label": "Jan Novák"}, ["J. Novák"], ["math.NT"]))   # sans règle : comme avant
+
+    def test_set_rule_and_categories(self):
+        from fastapi.testclient import TestClient
+        from app import db, feed, main, profile
+        item_id = profile.add_item("author", "Jan Novák")
+        # trois articles annoncés dans vos catégories, un trouvé seulement par la recherche de ses articles (hep-th)
+        papers = [("2610.00001", ["math.CV"]), ("2610.00002", ["math.CV", "math.DG"]), ("2610.00003", ["math.NT"]),
+                  ("2610.00004", ["hep-th"])]
+        with db.connect() as connection:
+            for arxiv_id, categories in papers:
+                item = {"key": arxiv_id, "arxiv_id": arxiv_id, "version": 1, "title": "T", "authors": ["Jan Novák"], "abstract": "",
+                        "categories": categories, "primary_category": categories[0], "announced": feed._now()[:10], "link": ""}
+                if arxiv_id != "2610.00004":
+                    feed._store(connection, item)
+                feed._store(connection, item, followed=True)
+        client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
+        info = client.get(f"/api/profile/items/{item_id}/categories", params={"paper": "2610.00003"}).json()
+        # hep-th : peut-être l'homonyme, pas proposé d'office
+        self.assertEqual(info["kept"], [{"category": "math.CV", "count": 2}, {"category": "math.DG", "count": 1}])
+        self.assertEqual(info["paper"], ["math.NT"])
+        response = client.put(f"/api/profile/items/{item_id}/rule", json={"only": ["math.CV", "math.DG"], "exclude": "2610.00003"})
+        author = next(i for i in response.json()["items"] if i["id"] == item_id)
+        self.assertEqual((author["only"], author["excluded"]), (["math.CV", "math.DG"], ["2610.00003"]))
+        with db.connect() as connection:
+            followed = {r["key"]: r["followed"] for r in connection.execute("SELECT key, followed FROM feed_items")}
+        self.assertEqual(followed, {"2610.00001": 1, "2610.00002": 1, "2610.00003": 0, "2610.00004": 0})  # quittent la section
+        self.assertEqual(client.put(f"/api/profile/items/{item_id}/rule", json={"only": ["not a category!"]}).status_code, 400)
+        # catégories écrites comme arXiv les écrit
+        client.put(f"/api/profile/items/{item_id}/rule", json={"only": ["math.dg", "cond-mat.stat-mech", "physics.Optics"]})
+        self.assertEqual(next(i for i in profile.list_items() if i["id"] == item_id)["only"], ["cond-mat.stat-mech", "math.DG", "physics.optics"])
+        # retrait annulé : la règle revient avec l'auteur
+        rule = next(i for i in profile.list_items() if i["id"] == item_id)
+        client.delete(f"/api/profile/items/{item_id}")
+        client.post("/api/profile/items", json={"kind": "author", "label": "Jan Novák", "only": rule["only"], "excluded": rule["excluded"]})
+        restored = next(i for i in profile.list_items() if i["label"] == "Jan Novák")
+        self.assertEqual((restored["only"], restored["excluded"]), (rule["only"], ["2610.00003"]))
+        item_id = restored["id"]
+        client.put(f"/api/profile/items/{item_id}/rule", json={"only": []})  # plus de règle : toutes les catégories
+        self.assertEqual(next(i for i in profile.list_items() if i["id"] == item_id)["only"], [])
+        self.assertEqual(next(i for i in profile.list_items() if i["id"] == item_id)["excluded"], ["2610.00003"])
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -18,6 +18,18 @@ async function request(method, url, body) {
   return data;
 }
 
+// Compilation d'un fichier TeX (une minute ou plus pour un livre) : suivie jusqu'à la fin
+async function texJob(started) {
+  const { job } = await started;
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    const state = await request("GET", `/api/tex/job/${encodeURIComponent(job)}`);
+    if (state.running) continue;
+    if (state.error) throw new Error(state.error);
+    return state.result;
+  }
+}
+
 // PDF de l'ordinateur : le fichier tel quel (le seul envoi qui ne soit pas du JSON), son nom dans un en-tête
 // `check` : un PDF d'arXiv n'est pas importé, la réponse donne son identifiant ({paper: null, arxiv: {arxivId}})
 async function uploadPdf(file, { check = false } = {}) {
@@ -31,6 +43,18 @@ async function uploadPdf(file, { check = false } = {}) {
 export const api = {
   papers: () => request("GET", "/api/papers"),
   uploadPdf,
+  // PDF choisi dans la fenêtre de l'application : lu par le serveur à son chemin
+  importPdfAt: (path, { check = false } = {}) => request("POST", `/api/papers/pdf?path=${encodeURIComponent(path)}${check ? "&check=1" : ""}`, {}),
+  // fichier TeX : compilé en arrière-plan ; ces appels attendent la fin et renvoient {paper, report}
+  importTex: (path, pdf = null) => texJob(request("POST", "/api/papers/tex", { path, pdf })),
+  recompile: (id) => texJob(request("POST", `/api/papers/${encodeURIComponent(id)}/recompile`, {})),
+  chooseBib: (id, name, path) => texJob(request("POST", `/api/papers/${encodeURIComponent(id)}/bib`, { name, path })),
+  texReport: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/texfile`),
+  texTools: () => request("GET", "/api/tex/tools"),
+  // version HTML expérimentale (LaTeXML) : état, conversion (attendue jusqu'à la fin), conversion déjà lancée
+  htmlStatus: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/html`),
+  makeHtml: (id) => texJob(request("POST", `/api/papers/${encodeURIComponent(id)}/html`, {})),
+  htmlJob: (id) => texJob(Promise.resolve({ job: `${id}.html` })),
   pdfArxivMatch: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/arxiv-match`),
   updateMeta: (id, title, authors) => request("PUT", `/api/papers/${encodeURIComponent(id)}/meta`, { title, authors }),
   zoteroStatus: () => request("GET", "/api/zotero"),
@@ -76,6 +100,8 @@ export const api = {
   onboardingApply: (body) => request("POST", "/api/onboarding/apply", body),
   notesCount: () => request("GET", "/api/notes"),
   importNotes: (files, accept = []) => request("POST", "/api/notes/import", { files, accept }),
+  authorRule: (id, body) => request("PUT", `/api/profile/items/${id}/rule`, body),
+  authorCategories: (id, paper) => request("GET", `/api/profile/items/${id}/categories${paper ? `?paper=${encodeURIComponent(paper)}` : ""}`),
   notesDevice: () => request("GET", "/api/notes/device"),
   setNotesFolder: (path) => request("PUT", "/api/notes/folder", { path }),
   exportNotesToFolder: (lang) => request("POST", `/api/notes/export-folder?lang=${encodeURIComponent(lang)}`, {}),

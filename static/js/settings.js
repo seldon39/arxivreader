@@ -188,6 +188,7 @@ export function openSettingsDialog({ section = null } = {}) {
         segmented("mathRenderer", [["mathjax", t("settings.math.mathjax")], ["native", t("settings.math.native")]], settings.mathRenderer)),
       ...check("proofsCollapsed", t("settings.proofs"), settings.proofsCollapsed),
       ...check("marginMarks", t("settings.marginMarks"), settings.marginMarks),
+      texToolsRow(),
       h("div", { class: "row" }, h("span", {}, t("settings.notesExport")),
         h("div", {}, h("a", { class: "button small-button", download: "", href: `/api/notes.zip?lang=${settings.language || "fr"}`,
           // rien d'annoté : un message plutôt qu'une archive vide
@@ -362,6 +363,18 @@ function folderRow() {
         const path = await chooseFolder(t("settings.notesFolderPrompt"));
         if (path) save(path);
       } }, t("settings.notesFolderChoose"))));
+}
+
+// fichiers TeX de l'ordinateur : programme qui les compile ici (latexmk, sinon pdflatex), ou comment l'installer
+function texToolsRow() {
+  const status = h("span", { class: "muted small" });
+  api.texTools().then(({ tools }) => {
+    const tool = tools.latexmk || tools.pdflatex;
+    status.textContent = (tool ? t("settings.texFound", { tool: tool.split(/[\\/]/).pop().replace(/\.exe$/i, "") }) : t("settings.texMissing"))
+      + (tools.latexmlc ? ` · ${t("settings.latexmlFound")}` : "");
+    status.title = tool || "";
+  }).catch(() => status.remove());
+  return h("div", { class: "row" }, h("span", {}, t("settings.texTools")), status);
 }
 
 // empreinte de la clé qui signe les notes exportées ici : à comparer quand un autre ordinateur demande confiance

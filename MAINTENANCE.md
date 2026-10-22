@@ -41,19 +41,21 @@ anglais.
 |---|---|---|
 | Import, HTML nettoyé, PDF | `library.py`, `arxiv.py`, `sanitize.py` | `reader.js`, `pdfview.js`, `pdfsync.js` |
 | Structure (énoncés, preuves, dépendances) | `structure.py` (HTML LaTeXML), `texstructure.py`, `texsource.py` (source TeX) | `reader.js`, `graph.js`, `texview.js` |
-| Notes, surlignages, état de lecture, export | `annotations.py`, `export.py` | `annotations.js`, `markdown.js` |
+| Notes, surlignages, état de lecture, export | `annotations.py`, `export.py`, `notesync.py` (export signé, import d'un ordinateur à l'autre) | `annotations.js`, `markdown.js`, `bookmarks.js` (marque-pages, menu du clic droit), `pdfnotes.js` (passages, zones et notes dans le PDF ; passages retrouvés après recompilation) |
+| PDF et fichiers TeX de l'ordinateur | `localpdf.py` (PDF importés : texte, titre, version arXiv), `texfile.py` (fichiers TeX : compilation, bibliographie, vérifications, identifiants tirés des `\label`, tâches en arrière-plan) | `library.js` (import), `texfile.js` (fenêtre d'import, vérifications du lecteur), `reader.js` (Recompiler, livres : énoncés et graphe par chapitre) |
+| Version HTML expérimentale (LaTeXML) | `latexml.py` (conversion à la demande, dossier `html/` de l'article, identifiants alignés sur la structure de la source) | `latexml.js` (bouton « HTML β », avertissement, attente), `reader.js` |
 | Bibliothèque, dossiers, sélection | `library.py`, `folders.py` | `library.js`, `selection.js` |
-| Feed, profil, pertinence, alertes, citations | `feed.py`, `profile.py`, `relevance.py`, `alerts.py`, `citations.py`, `journals.py` | `feed.js`, `profile.js` |
+| Feed, profil, pertinence, alertes, citations | `feed.py`, `profile.py`, `relevance.py` (`same_person`, `follows` : homonymes des auteurs suivis), `alerts.py`, `citations.py`, `journals.py` | `feed.js` (👎 → « pas cette personne »), `profile.js` (catégories gardées pour un auteur) |
 | Recherche arXiv | `search.py` | `search.js` |
 | Papiers liés (graphe) | `related.py` | `related.js` |
-| IA | `ai.py` (Claude, SDK Agent), `providers.py` (Codex, Gemini, local) | `ai.js`, `aiproviders.js` |
+| IA | `ai.py` (Claude, SDK Agent ; scans : pages jointes en images ; livres trop longs : début et fenêtre autour de la question), `providers.py` (Codex, Gemini, local) | `ai.js`, `aiproviders.js`, `reader.js` (`contextPages` : pages d'un scan rendues par pdf.js) |
 | Zotero | `zotero.py` | `zotero.js`, `settings.js` |
 | Premier lancement | `onboarding.py` | `onboarding.js` |
 | Mises à jour, vérification des services | `updates.py`, `check.py` | `updates.js` |
 | Formules, construction du DOM | `feed.tex_text` (TeX des titres et résumés) | `math.js` (MathJax), `amsfix.js`, `util.js` (`h`, `withMath`, `tidyTitle`) |
 | Réglages | `main.py` (liste `allowed` et `_valid_setting` de `/api/settings`) | `settings.js` |
 | Textes de l'interface | — | `i18n.js` (blocs FR et EN : mêmes clés) |
-| Application Mac | — | `macos/main.swift` (onglets, glisser sur un onglet, téléchargements, essais), `macos/build.sh`, `macos/release.sh` |
+| Application Mac | — | `macos/main.swift` (onglets, glisser sur un onglet, téléchargements, essais, sélecteurs natifs de dossier et de fichiers : `chooseFolder`, `chooseFiles`), `macos/build.sh`, `macos/release.sh` |
 | Application Windows | `windows/launcher.py` (serveur sans fenêtre, repli Edge) | `windows/shell/` (fenêtre C# : `MainForm.cs`, `TabStrip.cs`, `Program.cs`), `windows/smoke.ps1`, `.github/workflows/windows.yml` |
 
 Base : `app/db.py` (`SCHEMA` en `CREATE TABLE IF NOT EXISTS`, colonnes ajoutées par `ALTER TABLE` après
@@ -167,7 +169,9 @@ problème ; journal `~/Library/Logs/arXivReader-check.log`, résultat `check.jso
 | Semantic Scholar (graph, batch, recommendations) | `related.py`, `relevance.py`, `journals.py`, `citations.py`, `feed.py`, `onboarding.py`, `localpdf.py` (version arXiv d'un PDF importé) | quota partagé sans clé (429), champs | attente et nouvel essai ; fonctions dégradées sans lui |
 | Zotero web API v3 | `zotero.py` | en-têtes (`Total-Results`, `Last-Modified-Version`, `Backoff`), écritures multiples (`successful`/`failed`), `since`/`/deleted` | garde-fous : écriture refusée réessayée, retraits massifs en attente |
 | Claude (SDK Agent et son CLI) | `ai.py` | options du SDK, liste des modèles (`get_server_info`), connexion | message de connexion dans les réglages |
-| Codex CLI, API Gemini, modèle local | `providers.py` | options du CLI (`-m`, `model_reasoning_effort`), `~/.codex/models_cache.json`, `thinkingLevel` de Gemini | — (la CLI Gemini n'accepte plus les comptes Google gratuits : API par clé) |
+| TeX de l'utilisateur (latexmk, pdflatex/xelatex, BibTeX/Biber, kpsewhich) | `texfile.py` (fichiers TeX importés) | latexmk ancien (BibTeX ne peut pas écrire dans `-outdir` : `$bibtex_fudge=1`), MiKTeX sans Perl (latexmk ne démarre pas), programmes hors du PATH d'une application lancée du Finder (`TEX_DIRS`) | compilation à la main (LaTeX, BibTeX ou Biber, LaTeX ×2) ; sans TeX, PDF compilé à côté du fichier |
+| LaTeXML de l'utilisateur (`latexmlc`) | `latexml.py` (HTML β) | options de `latexmlc`, lenteur (pgfplots, gros documents), installation sous Windows (Perl) | figures pgfplots remplacées par une mention ; 10 minutes au plus, puis échec retenu (« Réessayer ») ; le PDF reste lisible |
+| Codex CLI, API Gemini, modèle local | `providers.py` | options du CLI (`-m`, `model_reasoning_effort`, `--image=` après la question `-`), `~/.codex/models_cache.json`, `thinkingLevel` de Gemini | — (la CLI Gemini n'accepte plus les comptes Google gratuits : API par clé) |
 | GitHub releases | `updates.py` | — | silencieux |
 
 **Démarche quand un service a changé** : reproduire avec une requête réelle minimale (comme `check.py`) ; corriger
@@ -217,6 +221,37 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   télécharger dans ce cache (`conda create` sans `--offline`), avec l'accord de l'utilisateur.
 
 ## 9. Pièges connus
+
+- Version HTML par LaTeXML (`latexml.py`) : rangée dans `papers/<id>/html/`, jamais dans `content.html` à la racine
+  (sa présence fait d'un article un article d'arXiv lu en HTML : analyse, texte pour l'assistant). Les identifiants des
+  énoncés (rapprochés dans l'ordre du document, type par type), des sections, de la bibliographie et des équations
+  numérotées de la sortie sont remplacés par ceux de la structure de la source (`align_ids`) : notes et pages du PDF
+  (`structure.json`, source « tex ») servent aux deux vues ; emplacement de preuve indiqué à la main en vue HTML :
+  `latexml.reanalyze`. Fichier principal d'une source d'arXiv : `texsource.choose_main` (00README.json, sinon le
+  plus long), le même pour l'analyse et pour LaTeXML. Conversion et compilation d'un même document : l'une à la fois
+  (409). LaTeXML est lancé dans le dossier du document
+  sur un chemin relatif (les espaces dans les chemins le gênent), sortie dans un dossier temporaire ; bibliographie par
+  le `.bbl` de la compilation (`nobibtex`). Faite pour un état de la source (`state.json` : `compiledAt` ou version
+  arXiv, `STRUCTURE_VERSION`) : sinon « stale », refaite au clic.
+
+- Auteurs suivis et homonymes : une seule règle, `relevance.follows` (même personne d'après le nom, article pas écarté,
+  catégories gardées), utilisée par le feed (`score_items`), la recherche des articles récents
+  (`profile.followed_author_papers`) et les alertes (`alerts._who`, `forget_unfollowed`). Toute nouvelle façon de
+  reconnaître un auteur suivi passe par elle. Catégories normalisées comme arXiv les écrit (`profile.clean_category`).
+
+- Assistant et documents sans texte ou trop longs : un PDF scanné (`ai.without_text`) envoie les pages autour de la
+  question en JPEG (7 avant, 3 après, 12 Mo au plus : les plus éloignées laissées de côté) ; un document au-delà de
+  `PAPER_LIMIT` part réduit à son début et à une fenêtre autour de la question (`ai._focus`, `ai._window`), sauf
+  résumé et relecture. Un article sous la limite part toujours entier.
+
+- Fichiers TeX importés (`texfile.py`) : compilés dans `<temp>/arxivreader-tex/<id>`, jamais dans le dossier de
+  l'utilisateur (latexmk `-outdir`). latexmk retient qu'un `.bib` manquait et ne relance plus BibTeX : après un
+  `.bib` manquant, son état (`.fdb_latexmk`) est effacé. Les énoncés qui ont un `\label` ont un identifiant tiré de
+  lui, les autres de leur type et de leur texte (`stable_ids`, aussi à la ré-analyse : `stableIds` dans
+  structure.json). Les `.aux` de la compilation donnent les numéros imprimés et les ancres exactes des `\label`
+  (`apply_aux` : énoncés, équations ; `cite.<clé>` pour la bibliographie, lue aussi dans un `.bbl` de biblatex) ;
+  journal sans lignes coupées (`max_print_line`) ; les passages surlignés du PDF qui ont
+  bougé sont retrouvés par leur texte côté page (`PdfNotes.inPlace`/`findMoved`, ±3 pages) et leur place enregistrée.
 
 - Semantic Scholar avec une clé : 1 requête/s pour toute l'application. Toute nouvelle requête passe par
   `s2.paced(send, api_key)` (`app/s2.py`), qui espace les requêtes avec clé quel que soit le fil ; sans clé, rien

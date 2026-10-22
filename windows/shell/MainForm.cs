@@ -286,6 +286,12 @@ namespace ArxivReader
             var action = Regex.Match(json, "\"action\"\\s*:\\s*\"([a-zA-Z]+)\"").Groups[1].Value;
             // fenêtre du système hors du gestionnaire de WebView2 (une boucle de messages imbriquée y est déconseillée)
             if (action == "chooseFolder") { BeginInvoke(new Action(() => ChooseFolder(sender))); return; }
+            if (action == "chooseFiles")
+            {
+                bool bib = Regex.IsMatch(json, "\"kind\"\\s*:\\s*\"bib\"");
+                BeginInvoke(new Action(() => ChooseFiles(sender, bib)));
+                return;
+            }
             var route = Regex.Match(json, "\"route\"\\s*:\\s*\"([^\"\\\\]*)\"").Groups[1].Value;
             bool front = Regex.IsMatch(json, "\"front\"\\s*:\\s*true");
             if (action == "openTab" && Route.IsMatch(route)) _ = OpenTab(route, front);
@@ -303,6 +309,23 @@ namespace ArxivReader
             }
             var json = path == null ? "null" : "\"" + path.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
             try { sender.PostWebMessageAsJson("{\"action\":\"folder\",\"path\":" + json + "}"); } catch (Exception) { }
+        }
+
+        // Fichiers à importer (PDF, fichier TeX principal) ou .bib d'un fichier TeX : choisis ici, chemins rendus à la
+        // page ({"action":"files","paths":[…]}, paths null si la fenêtre est annulée) ; le chemin d'un fichier TeX est
+        // gardé pour le recompiler
+        void ChooseFiles(CoreWebView2 sender, bool bib)
+        {
+            string[] paths = null;
+            using (var dialog = new OpenFileDialog { Multiselect = !bib,
+                Filter = bib ? Program.Tr("Bibliographie (*.bib)|*.bib", "Bibliography (*.bib)|*.bib")
+                    : Program.Tr("PDF ou TeX (*.pdf;*.tex;*.ltx)|*.pdf;*.tex;*.ltx", "PDF or TeX (*.pdf;*.tex;*.ltx)|*.pdf;*.tex;*.ltx") })
+            {
+                if (dialog.ShowDialog(this) == DialogResult.OK) paths = dialog.FileNames;
+            }
+            var json = paths == null ? "null"
+                : "[" + string.Join(",", paths.Select(p => "\"" + p.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"")) + "]";
+            try { sender.PostWebMessageAsJson("{\"action\":\"files\",\"paths\":" + json + "}"); } catch (Exception) { }
         }
 
         // Raccourcis des onglets (Ctrl+T, Ctrl+W, Ctrl+Tab, Ctrl+1…9) ; le reste va à la page

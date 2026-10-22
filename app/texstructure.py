@@ -10,11 +10,13 @@ La source n'est ni extraite sur le disque ni compilée.
 """
 
 import io
+import posixpath
 import re
+import unicodedata
 
 from .arxiv import extract_ids
 from .structure import NEEDS_PROOF, PROOF_HEADING, STRUCTURE_VERSION, classify
-from .texsource import DOCUMENTCLASS, _expand, _read_archive, _strip_comments
+from .texsource import DOCUMENTCLASS, _expand, _read_archive, _strip_comments, choose_main
 
 SECTIONS = {"part": 0, "chapter": 0, "section": 1, "subsection": 2, "subsubsection": 3}
 EQUATION_ENVS = {"equation", "align", "gather", "multline", "eqnarray", "flalign", "alignat", "split", "dmath",
@@ -242,19 +244,38 @@ def extract(text, bbl=""):
     since_proof = True       # rien depuis la dernière preuve (deuxième preuve à la suite)
     proof_sections = {}      # id de section → clés citées dans son titre (« Proof of Theorem \ref{…} »)
     section_of_level = {}
+    # livre (chapitres) : sections et énoncés numérotés dans leur chapitre (« 3.2 », « 3.2.1 »), regroupés par chapitre
+    book = bool(re.search(r"\\chapter\s*[\[{]", body))
+    numbered_chapters = True  # \frontmatter, \backmatter : chapitres sans numéro (préface, bibliographie…)
+    parts = 0
+
+    def chapter():
+        return _letter(sections[0]) if appendix else str(sections[0])
+
+    def in_chapter(value):
+        return f"{chapter()}.{value}" if book else value
+
+    printed = {}  # dernier numéro imprimé de chaque compteur d'énoncés (« Claim 1.2.1 » numéroté dans le théorème 1.2)
 
     def number(env):
         counter = envs[env]["counter"]
         counters[counter] = counters.get(counter, 0) + 1
+        for child, inside in within.items():  # compteurs numérotés dans celui-ci : repartent de zéro
+            if envs.get(inside, {}).get("counter", inside) == counter:
+                counters[envs.get(child, {}).get("counter", child)] = 0
         level = within.get(counter) or within.get(env)
         value = _format(counters[counter], formats.get(counter) or formats.get(env))
-        section = _letter(sections[1]) if appendix else str(sections[1])
-        if level == "section":
+        section = in_chapter(str(sections[1]) if book or not appendix else _letter(sections[1]))
+        parent = envs.get(level, {}).get("counter", level)
+        if parent in printed:  # \newtheorem{claim}{Claim}[theorem]
+            value = f"{printed[parent]}.{value}"
+        elif level == "section":
             value = f"{section}.{value}"
         elif level == "subsection":
             value = f"{section}.{sections[2]}.{value}"
         elif level == "chapter":
-            value = f"{sections[0]}.{value}"
+            value = f"{chapter()}.{value}"
+        printed[counter] = value
         return counter, value
 
     def current_section():
@@ -282,9 +303,11 @@ def extract(text, bbl=""):
             if title is None:
                 continue
             level = SECTIONS[command]
-            if not star:
-                if level == 0:
+            unnumbered = star or (command == "chapter" and not numbered_chapters)
+            if not unnumbered:
+                if command == "chapter":
                     sections[0] += 1
+                    sections[1:] = [0, 0, 0]
                 elif level in (1, 2, 3):
                     sections[level] += 1
                     for deeper in range(level + 1, 4):
@@ -293,10 +316,20 @@ def extract(text, bbl=""):
                     if (inside == "section" and level <= 1) or (inside == "subsection" and level <= 2) or (inside == "chapter" and level == 0):
                         counters[envs.get(counter, {}).get("counter", counter)] = 0
             section_id = f"tex-sec-{len(toc) + 1}"
-            numbered = "" if star else ".".join(
-                [_letter(sections[1]) if appendix else str(sections[1])] + [str(sections[i]) for i in range(2, level + 1)]) + ". "
-            toc.append({"id": section_id, "level": level, "title": numbered + plain(title),
-                        "anchors": [f"{command}.{numbered.rstrip('. ')}"] if numbered else []})
+            if unnumbered or command == "part":
+                numbered = ""
+            elif command == "chapter":
+                numbered = chapter() + ". "
+            else:
+                numbered = in_chapter(".".join(
+                    [str(sections[1]) if book or not appendix else _letter(sections[1])] + [str(sections[i]) for i in range(2, level + 1)])) + ". "
+            anchors = [f"{command}.{numbered.rstrip('. ')}"] if numbered else []
+            if numbered and appendix and command == ("chapter" if book else "section"):  # hyperref : « appendix.A »
+                anchors.append(f"appendix.{numbered.rstrip('. ')}")
+            if command == "part" and not star:
+                parts += 1
+                anchors = [f"part.{parts}"]
+            toc.append({"id": section_id, "level": level, "title": numbered + plain(title), "anchors": anchors})
             section_of_level[level] = section_id
             for deeper in range(level + 1, 4):
                 section_of_level.pop(deeper, None)
@@ -306,9 +339,12 @@ def extract(text, bbl=""):
                     proof_sections[section_id] = keys
             candidate = None
             continue
+        if command in ("frontmatter", "mainmatter", "backmatter"):
+            numbered_chapters = command == "mainmatter"
+            continue
         if command == "appendix":
             appendix = True
-            sections[1] = 0
+            sections[0 if book else 1] = 0
             continue
         if command in ("begin", "end"):
             group = _group(body, pos, "{")
@@ -348,7 +384,12 @@ def extract(text, bbl=""):
                     keys = [k.strip() for m in re.finditer(r"\\(?:ref|cref|Cref|autoref)\*?\{([^}]*)\}", optional[0] if optional else "")
                             for k in m.group(1).split(",")]
                     target = None
-                    if not keys:
+                    outer = next((f for f in reversed(stack) if f["type"] == "proof"), None)
+                    taken = {p["of"] for p in proofs.values()}
+                    inner = [n for n in order if outer and nodes[n]["insideProof"] == outer["id"] and n not in taken]
+                    if not keys and inner:  # preuve dans une preuve : celle du dernier énoncé posé dans cette preuve
+                        target = inner[-1]
+                    elif not keys:
                         if candidate:
                             target = candidate
                         elif since_proof and last_proof_target:
@@ -472,7 +513,7 @@ def extract(text, bbl=""):
     return {
         "labels": {key: (found[1] if found[0] == "theorem" else None) for key, found in labels.items()},
         "macros": macros(preamble),
-        "version": STRUCTURE_VERSION, "source": "tex", "toc": toc,
+        "version": STRUCTURE_VERSION, "source": "tex", "toc": toc, "book": book,
         "nodes": [{k: v for k, v in nodes[n].items() if k not in ("insideProof", "chain")} for n in order],
         "proofBlocks": [{"id": p["id"], "of": p["of"], "anchors": []} for p in proofs.values()],
         "equations": equations, "bibliography": bibliography(body + "\n" + bbl), "hiddenText": 0,
@@ -498,10 +539,10 @@ def macros(preamble):
 
 
 def bibliography(text):
-    """Références d'un environnement thebibliography (ou d'un fichier .bbl de BibTeX)."""
+    """Références d'un environnement thebibliography (ou d'un fichier .bbl de BibTeX), sinon d'un .bbl de biblatex."""
     start = text.find("\\begin{thebibliography}")
     if start < 0:
-        return []
+        return _biblatex(text) if "\\entry{" in text else []
     stop = text.find("\\end{thebibliography}", start)
     block = text[start:stop if stop > 0 else len(text)]
     entries = []
@@ -518,17 +559,48 @@ def bibliography(text):
     return entries
 
 
+def _biblatex(text):
+    """Entrées d'un .bbl de biblatex (\\entry{clé}{type}… \\endentry) : auteurs, titre, revue, année, DOI, arXiv."""
+    entries = []
+    for index, match in enumerate(re.finditer(r"\\entry\{([^}]*)\}\{(\w+)\}", text)):
+        stop = text.find("\\endentry", match.end())
+        block = text[match.end():stop if stop > 0 else len(text)]
+
+        def field(name):
+            found = re.search(r"\\field\{" + name + r"\}", block)
+            group = found and _group(block, found.end(), "{")
+            return plain(group[0]) if group else ""
+
+        families = re.findall(r"family=\{([^{}]*)\}", block)
+        givens = re.findall(r"given=\{([^{}]*)\}", block)
+        names = [plain(f"{g} {f}" if len(givens) == len(families) else f) for f, g in zip(families, givens or families)]
+        doi = re.search(r"\\verb\{doi\}\s*\\verb\s*(\S+)", block)
+        venue = field("journaltitle") or field("booktitle") or field("publisher")
+        text_entry = ", ".join(part for part in (", ".join(names), field("title"), venue, field("year")) if part)
+        eprint = field("eprint")
+        entries.append({"id": f"bib.{match.group(1).strip()}", "label": field("labelalpha") or str(index + 1), "text": text_entry,
+                        "title": field("title"), "arxiv": extract_ids(eprint) if eprint else [],
+                        "doi": doi.group(1).rstrip(".,;") if doi else ""})
+    return entries
+
+
 def from_source(data):
     """Structure à partir de l'archive de la source arXiv ; None si ce n'est pas du TeX."""
-    files = _read_archive(data, extensions=(".tex", ".ltx", ".bbl"))
+    files = _read_archive(data, extensions=(".tex", ".ltx", ".bbl", ".json"))
     if not files:
         return None
-    candidates = [name for name, text in files.items() if name.endswith((".tex", ".ltx")) and DOCUMENTCLASS.search(_strip_comments(text))]
-    if not candidates:
+    main = choose_main(files, files.get("00README.json"))
+    if not main:
         return None
-    main = next((n for n in candidates if "\\begin{document}" in files[n]), candidates[0])
+    # .bbl du fichier principal de préférence (une source peut en contenir plusieurs)
+    bbl = files.get(posixpath.splitext(main)[0] + ".bbl") or next((t for n, t in files.items() if n.endswith(".bbl")), "")
+    return from_files(files, main, bbl)
+
+
+def from_files(files, main, bbl=""):
+    """Structure et texte développé du fichier principal `main` de `files` ({chemin: texte}) ; `bbl` : bibliographie
+    produite par BibTeX, ajoutée si le texte n'a pas son propre thebibliography."""
     text = _expand(files, main)
-    bbl = next((t for n, t in files.items() if n.endswith(".bbl")), "")
     if "\\begin{thebibliography}" not in text and bbl:
         text = text.replace("\\end{document}", bbl + "\n\\end{document}") if "\\end{document}" in text else text + bbl
     return extract(text), text
@@ -537,8 +609,9 @@ def from_source(data):
 # ---------- Pages du PDF ----------
 
 def locate_pages(structure, pdf_bytes):
-    """Page (à partir de 1) de chaque énoncé et section : ancres de hyperref, sinon texte du PDF.
-    Avec une ancre, aussi la hauteur dans la page (« top », coordonnées du PDF, origine en bas)."""
+    """Page (à partir de 1) de chaque énoncé et section : ancres de hyperref, sinon texte du PDF (dans l'ordre du
+    document : à partir de la page de l'élément précédent ; jamais une page de sommaire pour une section). Avec une
+    ancre, aussi la hauteur dans la page (« top », coordonnées du PDF, origine en bas). Preuves : leur propre page."""
     import pypdf
     try:
         reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
@@ -551,23 +624,74 @@ def locate_pages(structure, pdf_bytes):
             except Exception:
                 continue
         texts = None
-        for item in structure["nodes"] + structure["toc"]:
-            page, top = next((destinations[a] for a in item.get("anchors", []) if a in destinations), (None, None))
-            if page is None:
-                if texts is None:
-                    texts = [re.sub(r"\s+", " ", page.extract_text() or "") for page in reader.pages]
-                page = _search(texts, item)
-            item["page"] = page
-            if top is not None:
-                item["top"] = top
+
+        def page_texts():
+            nonlocal texts
+            if texts is None:  # ligatures (« ﬁ » de « Deﬁnition ») et espaces normalisés
+                texts = [re.sub(r"\s+", " ", unicodedata.normalize("NFKC", page.extract_text() or "")) for page in reader.pages]
+            return texts
+
+        for items, is_toc in ((structure["nodes"], False), (structure["toc"], True)):
+            previous = 1
+            contents = _contents_pages(page_texts(), structure["toc"]) if is_toc and any(not t.get("anchors") for t in items) else set()
+            for item in items:
+                page, top = next((destinations[a] for a in item.get("anchors", []) if a in destinations), (None, None))
+                if page is None:
+                    page = _search(page_texts(), item, previous, contents)
+                item["page"] = page
+                if top is not None:
+                    item["top"] = top
+                previous = page or previous
+        # équations et entrées de la bibliographie : seulement par leurs ancres (renvois cliquables du panneau)
+        for item in [*structure.get("equations", {}).values(), *structure.get("bibliography", [])]:
+            found = next((destinations[a] for a in item.get("anchors", []) if a in destinations), None)
+            if found:
+                item["page"], item["top"] = found
         for proof in structure.get("proofBlocks", []):
             target = next((n for n in structure["nodes"] if n["id"] == proof["of"]), None)
-            proof["page"] = target.get("page") if target else None
-            if target and target.get("top") is not None:
-                proof["top"] = target["top"]
+            proof["page"] = _proof_page(page_texts(), target) if target and target.get("page") else None
+            if proof["page"] and proof["page"] == target.get("page") and target.get("top") is not None:
+                proof["top"] = target["top"]  # même page : à la hauteur de l'énoncé (la preuve le suit)
     except Exception:
         pass
     return structure
+
+
+def _contents_pages(texts, toc):
+    """Pages de sommaire : celles où figurent au moins trois titres de sections (et le tiers d'entre eux)."""
+    titles = [re.sub(r"^[\dA-Z.]+\s+", "", t.get("title", ""))[:40].lower() for t in toc]
+    titles = [t for t in titles if len(t) >= 4]
+    found = set()
+    for number, text in enumerate(texts, 1):
+        lowered = text.lower()
+        # une introduction qui annonce le plan cite aussi les sections : seulement une page titrée comme un sommaire
+        if not re.search(r"\b(contents|table des mati[eè]res|sommaire|inhaltsverzeichnis)\b", lowered):
+            continue
+        hits = sum(1 for t in titles if t in lowered)
+        if hits >= max(3, len(titles) // 3):
+            found.add(number)
+    return found
+
+
+def _proof_page(texts, node):
+    """Page de la preuve d'un énoncé : « Proof of <énoncé> » plus loin, sinon le premier « Proof » à partir de
+    l'énoncé (sur sa page, après lui)."""
+    label = node["label"]
+    name, _, value = label.rpartition(" ")
+    titled = re.compile(rf"Proof of {re.escape(name)}\s*{re.escape(value)}\b") if value else None
+    start = node["page"]
+    if titled:
+        for number in range(start, len(texts) + 1):
+            if titled.search(texts[number - 1]):
+                return number
+    for number in range(start, len(texts) + 1):
+        text = texts[number - 1]
+        if number == start:
+            at = re.search(rf"{re.escape(name)}\s*{re.escape(value)}", text) if value else None
+            text = text[at.end():] if at else text
+        if re.search(r"\bProof\b|\bDémonstration\b|\bPreuve\b", text):
+            return number
+    return start
 
 
 # Ancres de hyperref possibles pour un énoncé de la version HTML : « lemma.2.3 », « lem.2.3 »…, puis le
@@ -601,17 +725,21 @@ def pages_for(structure, pdf_bytes):
             "tops": {item["id"]: item["top"] for item in located if item.get("top") is not None}}
 
 
-def _search(texts, item):
+def _search(texts, item, start=1, skip=frozenset()):
+    """Page d'un énoncé ou d'une section d'après le texte du PDF, à partir de la page `start` (puis avant, si rien
+    plus loin), en sautant les pages `skip` (sommaire)."""
     label = item.get("label") or item.get("title") or ""
     if not label:
         return None
+    label = unicodedata.normalize("NFKC", label)
     if "level" in item:  # section : son titre
         words = re.escape(re.sub(r"^[\dA-Z.]+\s+", "", label)[:40]).replace(r"\ ", r"\s*")
         pattern = re.compile(words, re.I)
     else:  # « Theorem 2.3. » en tête d'énoncé, sinon toute mention
         name, _, value = label.rpartition(" ")
         pattern = re.compile(rf"{re.escape(name)}\s*{re.escape(value)}\s*[.(:]") if value else re.compile(re.escape(label))
-    for number, text in enumerate(texts):
-        if pattern.search(text):
-            return number + 1
+    order = list(range(max(1, start), len(texts) + 1)) + list(range(1, max(1, start)))
+    for number in order:
+        if number not in skip and pattern.search(texts[number - 1]):
+            return number
     return None

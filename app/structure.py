@@ -7,7 +7,7 @@ from bs4 import NavigableString, Tag
 
 from .arxiv import ID_RE, extract_ids
 
-STRUCTURE_VERSION = 9  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
+STRUCTURE_VERSION = 10  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
 
 SECTION_LEVELS = {
     "ltx_part": 0, "ltx_chapter": 0, "ltx_section": 1, "ltx_appendix": 1,

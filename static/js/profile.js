@@ -113,9 +113,9 @@ function profileRow(item, update) {
   remove.addEventListener("click", async () => {
     try {
       update(await api.removeProfileItem(item.id));
-      const { kind, label, ref, authors, year, text } = item;
+      const { kind, label, ref, authors, year, text, only, excluded } = item;  // auteur suivi : sa règle aussi
       toast(t("profile.removed", { label }), { action: { label: t("common.undo"),
-        onClick: () => api.addProfileItem({ kind, label, ref, authors, year, text }).then(update, toastError) } });
+        onClick: () => api.addProfileItem({ kind, label, ref, authors, year, text, only, excluded }).then(update, toastError) } });
     } catch (error) {
       toastError(error);
     }
@@ -131,9 +131,41 @@ function profileRow(item, update) {
     h("div", { class: "profile-text" },
       h("span", { class: item.kind === "author" || item.kind === "keyword" ? "profile-name" : "feed-title" }, withMath(item.label)),
       details && h("span", { class: "muted small" }, details),
-      initialsOnly && h("span", { class: "badge warn" }, t("profile.initialsOnly"))),
+      initialsOnly && h("span", { class: "badge warn" }, t("profile.initialsOnly")),
+      item.kind === "author" && item.only?.length > 0 && authorRule(item, update)),
+    // sans règle : lien discret à droite, au survol (la ligne garde sa hauteur)
+    item.kind === "author" && !item.only?.length && authorRule(item, update),
     item.source === "suggested" && h("span", { class: "badge" }, t("profile.suggested")),
     remove);
+}
+
+// Homonymes d'un auteur suivi : catégories où le suivre (« Seulement dans : math.CV × math.DG × + catégorie ») ;
+// sans règle, un lien discret au survol
+function authorRule(item, update) {
+  const only = item.only || [];
+  const save = async (next) => {
+    try { update(await api.authorRule(item.id, { only: next })); } catch (error) { toastError(error); }
+  };
+  const line = h("span", { class: `author-rule${only.length ? "" : " rule-unset"}` });
+  const addLink = h("button", { class: "link-button small", type: "button" }, only.length ? t("profile.addCategory") : t("profile.limitCategories"));
+  addLink.addEventListener("click", () => {
+    const input = h("input", { class: "text-input category-input", type: "text", placeholder: "math.DG", spellcheck: "false", "aria-label": t("profile.addCategory") });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") { input.replaceWith(addLink); return; }
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      const value = input.value.trim();
+      if (!/^[A-Za-z][A-Za-z-]{1,15}(\.[A-Za-z-]{1,15})?$/.test(value)) { toast(t("profile.badCategory"), { error: true }); return; }
+      save([...new Set([...only, value])]);
+    });
+    input.addEventListener("blur", () => { if (!input.value.trim()) input.replaceWith(addLink); });
+    addLink.replaceWith(input);
+    input.focus();
+  });
+  line.append(...(only.length ? [h("span", { class: "muted small" }, t("profile.onlyIn")), ...only.map((category) => h("span", { class: "chip rule-chip" }, category,
+    h("button", { class: "rule-remove", type: "button", title: t("profile.removeCategory", { category }), "aria-label": t("profile.removeCategory", { category }),
+      onclick: () => save(only.filter((c) => c !== category)) }, "×")))] : []), addLink);
+  return line;
 }
 
 function searchForm(section, update) {

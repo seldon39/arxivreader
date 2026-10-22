@@ -233,7 +233,9 @@ papers to the library. Run it again from the Profile ("Getting-started assistant
   shown ("followed author", "close to …", keyword); papers of low relevance are reduced to one line (click
   to unfold). Clicking the title opens the paper without adding it to the library (cache cleared after
   30 days without reading); the **bookmark** adds it to or removes it from the library (also in the reader's
-  toolbar). At the top: new papers by your **followed authors**, even outside your categories.
+  toolbar). At the top: new papers by your **followed authors**, even outside your categories. A namesake
+  (same name, another person)? 👎 on their paper → "Not this … (namesake)": the paper is no longer flagged, and the
+  author can be followed only in the categories of the papers you kept (editable under the name, in Profile).
   "arXiv order" sorting is available. 👍 / 👎 refine the ranking. The arrows next to the announcement date
   go back to earlier days; days older than a week come from arXiv's search API, which gives new and
   cross-listed papers but not replacements.
@@ -297,6 +299,34 @@ first offers to import its arXiv version instead, which has every feature (no du
 DOI or title is found on arXiv (Semantic Scholar), the app offers to open the arXiv version after the import.
 The file stays on the computer, in the library folder.
 
+## TeX files (papers or books being written)
+
+The same button ("Import PDF or TeX file…") also takes the main `.tex` file of a document you are writing, to
+proofread it with every feature of the reader. The app compiles it with latexmk (otherwise pdflatex, BibTeX or
+Biber, then pdflatex), in a work folder of its own: nothing is written in your folder. It reads statements,
+proofs, dependencies and the bibliography from the source, and Claude receives the TeX source. The `.bib` files
+are looked for in the file's folder, then in your TeX installation; a missing one is reported and can be chosen
+by hand (remembered). **Recompile and reload** (toolbar of the reader) reads the source again: notes on a
+statement stay on it (found by its `\label`, otherwise by its text), and highlighted passages are found again where they moved. The
+Statements tab starts with checks: LaTeX errors, undefined references and citations, statements without a proof
+found, lemmas never used. A book (with `\chapter`) has its statements grouped by chapter, and the graph shows one
+chapter at a time. Without TeX (MacTeX, MiKTeX or TeX Live), the PDF compiled next to the file (`main.pdf` for
+`main.tex`) is read as is. The file must be chosen in the app's window (its path is kept to recompile it). Like
+latexmk in a terminal, the compilation follows the folder's `latexmkrc` if it has one: import only documents you
+trust.
+
+## Experimental HTML version (LaTeXML)
+
+A TeX file you imported, or an arXiv paper without an HTML version but with its TeX source, opens in its PDF. The
+**HTML β** button makes an HTML version on your computer with [LaTeXML](https://math.nist.gov/~BMiller/LaTeXML/)
+(the tool arXiv uses for its own HTML pages), on demand only. The first time, a short note says it is experimental
+and may contain errors (formulas, figures, numbering): the PDF is the reference. The conversion runs in the
+background (from a few seconds to a few minutes) while you read the PDF; the HTML version then opens, with the same
+notes on statements as in the PDF. It is kept until the TeX file is recompiled or arXiv has a new version. pgfplots
+figures (curves, surfaces), which LaTeXML takes very long to compute, are replaced by a note pointing to the PDF.
+LaTeXML must be installed: `brew install latexml` on a Mac, `apt install latexml` on Linux; on Windows it takes a
+few steps (Perl, then LaTeXML), see [its guide](https://math.nist.gov/~BMiller/LaTeXML/get.html).
+
 ## Citations of your papers
 
 Once a day, Semantic Scholar gives the papers citing those of your profile ("My papers"); new ones appear
@@ -319,7 +349,12 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
 - **Regions of a PDF** (formulas, figures, scanned papers whose formulas have no selectable text): ⌥ + drag
   (Alt + drag on Windows), or the region button of the PDF toolbar, then the same bar: highlight and note
   (shown in the Notes tab as a thumbnail), "Ask Claude" with the image of the region, or "Copy region as LaTeX"
-  (Claude transcribes it). The last two only with an assistant that reads images (Claude, Gemini).
+  (Claude transcribes it). The last two only with an assistant that reads images (Claude, Codex, Gemini).
+  In a PDF without text (a scan), every question also sends the pages around it as images (7 before, 3 after the
+  region, or the page shown), so that the assistant knows the notation and earlier results.
+- **Long documents** (books, beyond about 150 pages): the assistant receives the beginning (contents, introduction,
+  notation) and a window around the question (the page of the region or the page being read, otherwise the
+  statement or the quoted passage), more before than after; omitted pages are marked. A paper is always sent whole.
 - **Statements and proofs**: the note icon in the margin (on hover) opens a note and, for a statement,
   the reading state *understood / to review / checked* (shown in the title and in the list of statements).
 - **Notes without a passage**: right-click → "Add note", in HTML (on the paragraph; in a statement or proof, its
@@ -426,15 +461,18 @@ app/            Python server (FastAPI)
   texsource.py  reading the TeX source (class options, font, list labels)
   feed.py       new arXiv papers (RSS, OAI-PMH), Semantic Scholar recommendations, identifier detection
   journals.py   journal where a paper appeared (arXiv, Semantic Scholar)
-  search.py     search across arXiv (Search tab); related.py: related papers (graph); zotero.py: Zotero synchronisation; check.py: check of the external services; onboarding.py: getting-started assistant; export.py: notes export
+  search.py     search across arXiv (Search tab); related.py: related papers (graph); zotero.py: Zotero synchronisation; check.py: check of the external services; onboarding.py: getting-started assistant; export.py: notes export; notesync.py: signed notes export and import between computers
   folders.py    library folders
-  profile.py    research profile, prefill, followed authors; relevance.py: relevance ranking
+  profile.py    research profile, prefill, followed authors (namesakes); relevance.py: relevance ranking
   annotations.py  highlights, notes, reading state
-  ai.py         paper text and instructions for Claude, called without tools (Claude Agent SDK)
+  ai.py         paper text and instructions for Claude, called without tools (Claude Agent SDK); pages of a scan
+                as images, window around the question for long books
   crossrefs.py  references that are papers read here; citations.py: papers citing yours
   texstructure.py  structure from the TeX source and PDF pages (papers without an HTML version)
   providers.py  other assistants: Codex (command line), Gemini (API), local model (Ollama, LM Studio)
   localpdf.py   PDFs imported from the computer (text, title, arXiv version)
+  texfile.py    TeX files from the computer (compilation, bibliography, checks, stable ids)
+  latexml.py    experimental HTML version made by LaTeXML (TeX files, arXiv papers without HTML)
   library.py    importing a paper; db.py: SQLite database; main.py: web routes
 macos/          Mac app: main.swift (window, tabs, server), icon.swift, build.sh, release.sh
 windows/        Windows app: shell/ (C# window with tabs, WebView2), launcher.py (server, built with PyInstaller),

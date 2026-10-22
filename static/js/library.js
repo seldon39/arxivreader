@@ -3,7 +3,8 @@
 import { setFindHandler } from "./find.js";
 import { api } from "./api.js";
 import { t, tn } from "./i18n.js";
-import { debounce, draggablePaper, droppedPapers, formatDate, h, icons, journalChip, localDrag, mayBePaper, metaDialog, tidyTitle, timeAgo, toast, toastError, withMath } from "./util.js";
+import { chooseFiles, debounce, draggablePaper, droppedPapers, formatDate, h, icons, journalChip, localDrag, mayBePaper, metaDialog, tidyTitle, timeAgo, toast, toastError, withMath } from "./util.js";
+import { importTexFile, unquote } from "./texfile.js";
 import { addToLibrary, dragEnded, dragGroup, fileInFolder, forgetSelected, selectButton, selectionDropped, syncSelection, useSelectionBar } from "./selection.js";
 
 // Recherche et filtres, gardés d'une visite à l'autre (le temps de la session)
@@ -43,10 +44,10 @@ function passes(paper, state) {
   if (state.categories.size && !paper.categories.some((c) => state.categories.has(c))) return false;
   if (state.folders.size && !folderList.some((f) => state.folders.has(f.id) && f.papers.includes(paper.id))) return false;
   if (state.years.size && !state.years.has((paper.published || "").slice(0, 4))) return false;
-  const pdf = paper.source === "none" || paper.source === "tex" || paper.source === "local-pdf"; // lu dans le PDF
+  const pdf = ["none", "tex", "local-pdf", "local-tex"].includes(paper.source); // lu dans le PDF
   if (state.source === "html" && pdf) return false;
   if (state.source === "pdf" && !pdf) return false;
-  if (state.source === "local" && paper.source !== "local-pdf") return false;  // hors arXiv : PDF importés
+  if (state.source === "local" && paper.arxiv_id) return false;  // hors arXiv : PDF et fichiers TeX importés
   if (state.publication === "journal" && !paper.publishedIn) return false;
   if (state.publication === "none" && paper.publishedIn) return false;
   if (state.reading.size) {
@@ -118,11 +119,16 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
   });
   const submit = h("button", { class: "button", type: "submit" }, t("library.import"));
   const status = h("div", { class: "busy", hidden: true }, h("span", { class: "spinner" }), t("library.importing"));
-  // PDF de l'ordinateur (hors arXiv) : à côté d'« Importer » ; aussi par glisser-déposer sur la bibliothèque
-  const pdfInput = h("input", { type: "file", accept: "application/pdf,.pdf", multiple: true, hidden: true });
-  const pdfButton = h("button", { class: "button", type: "button", title: t("library.importPdfHint"), onclick: () => pdfInput.click() },
-    t("library.importPdf"));
-  pdfInput.addEventListener("change", () => { importPdfs([...pdfInput.files]); pdfInput.value = ""; });
+  // PDF ou fichier TeX de l'ordinateur (hors arXiv) : à côté d'« Importer » ; PDF aussi par glisser-déposer. Choisis
+  // dans la fenêtre de l'application (le chemin d'un fichier TeX est gardé pour le recompiler) ; dans un navigateur,
+  // sélecteur de la page, et chemin du fichier TeX tapé
+  const pdfInput = h("input", { type: "file", accept: "application/pdf,.pdf,.tex,.ltx", multiple: true, hidden: true });
+  const pdfButton = h("button", { class: "button", type: "button", title: t("library.importPdfHint"), onclick: async () => {
+    const paths = await chooseFiles("import");
+    if (paths === null) pdfInput.click();
+    else if (paths.length) importChosen(paths.map((path) => ({ path, name: path.split(/[\\/]/).pop() })));
+  } }, t("library.importPdf"));
+  pdfInput.addEventListener("change", () => { importChosen([...pdfInput.files]); pdfInput.value = ""; });
   const form = h("form", { class: "import-box" }, input, submit, pdfButton, pdfInput);
   const list = h("div", {});
   const heading = h("h2", {});
@@ -179,6 +185,24 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
     });
   }
 
+  const isTex = (item) => /\.(tex|ltx)$/i.test(item.name || "");
+  async function importChosen(items) {
+    const texFiles = items.filter(isTex);
+    // PDF choisi avec son fichier TeX (même nom, même dossier) : lu tel quel au lieu de compiler
+    const pdfOf = new Map(texFiles.map((tex) => [tex, items.find((item) => item.path && tex.path
+      && item.path === tex.path.replace(/\.(tex|ltx)$/i, ".pdf"))]));
+    const paired = new Set(pdfOf.values());
+    const pdfs = items.filter((item) => !isTex(item) && !paired.has(item));
+    if (pdfs.length) await importPdfs(pdfs);
+    for (const tex of texFiles) {
+      const path = tex.path || unquote(prompt(t("tex.pathPrompt", { name: tex.name })));
+      if (!path) continue;
+      const paper = await importTexFile(path, pdfOf.get(tex)?.path || null);
+      await refreshList();
+      if (paper) location.hash = `#/paper/${encodeURIComponent(paper.id)}`;
+    }
+  }
+
   async function importPdfs(files) {
     const pdfs = files.filter((file) => file.type === "application/pdf" || /\.pdf$/i.test(file.name));
     if (!pdfs.length) return;
@@ -190,12 +214,14 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
     try {
       for (const file of pdfs) {  // un fichier refusé n'arrête pas les suivants
         try {
-          let result = await api.uploadPdf(file, { check: true });
+          // choisi dans la fenêtre de l'application : lu par le serveur à son chemin
+          const upload = (options) => (file.path ? api.importPdfAt(file.path, options) : api.uploadPdf(file, options));
+          let result = await upload({ check: true });
           if (!result.paper && result.arxiv?.arxivId) {
             const choice = await askArxivFirst(file.name, result.arxiv.arxivId);
             if (choice === "arxiv") { fromArxiv.push(await api.importPaper(result.arxiv.arxivId)); continue; }
             if (choice !== "pdf") continue;  // fermé (Échap) : rien n'est importé
-            result = await api.uploadPdf(file);
+            result = await upload();
             kept.add(result.paper.id);
           }
           // nouveau PDF : titre et auteurs lus dans le fichier, à vérifier (corrigés seulement s'ils changent)
@@ -587,7 +613,12 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
     element.addEventListener("drop", async (event) => {
       event.preventDefault();
       list.classList.remove("drop-target");
-      if (event.dataTransfer.files?.length) { importPdfs([...event.dataTransfer.files]); return; }
+      if (event.dataTransfer.files?.length) {
+        const dropped = [...event.dataTransfer.files];
+        if (dropped.some(isTex)) toast(t("tex.dropHint"));  // pas de chemin par glisser-déposer : bouton d'import
+        importPdfs(dropped);
+        return;
+      }
       const dropped = droppedPapers(event.dataTransfer);
       if (!dropped.length) { toast(t("library.drop.notPaper"), { error: true }); return; }
       try {
@@ -873,6 +904,7 @@ function card(paper, refreshList, context = null) {
       paper.arxiv_id && h("span", { class: "chip" }, `arXiv:${paper.arxiv_id}v${paper.version}`),
       paper.published && h("span", { class: "chip" }, formatDate(paper.published)),
       paper.source === "local-pdf" && h("span", { class: "chip", title: paper.comment || "" }, t("library.localPdf")),
+      paper.source === "local-tex" && h("span", { class: "chip", title: paper.comment || "" }, t("library.texFile")),
       paper.source === "none" && h("span", { class: "chip" }, t("library.pdfOnly")),
       paper.source === "tex" && h("span", { class: "chip", title: t("library.pdfTexHint") }, t("library.pdfTex")),
       journalChip(paper.publishedIn),
@@ -885,8 +917,8 @@ function card(paper, refreshList, context = null) {
         "aria-label": t("related.fromCard"), html: icons.graph }),
       paper.arxiv_id && h("a", { class: "icon-button", href: `https://arxiv.org/abs/${paper.arxiv_id}`, target: "_blank", rel: "noopener noreferrer",
         title: "arXiv", "aria-label": "arXiv", html: icons.external }),
-      // PDF importé : titre et auteurs corrigés sans ouvrir l'article
-      paper.source === "local-pdf" && action(icons.edit, t("reader.editMeta"), async () => {
+      // PDF ou fichier TeX importé : titre et auteurs corrigés sans ouvrir l'article
+      (paper.source === "local-pdf" || paper.source === "local-tex") && action(icons.edit, t("reader.editMeta"), async () => {
         const edited = await metaDialog({ title: paper.title, authors: paper.authors });
         if (!edited) return;
         try {
