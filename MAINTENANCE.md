@@ -256,7 +256,8 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   `.bib` manquant, son état (`.fdb_latexmk`) est effacé. Les énoncés qui ont un `\label` ont un identifiant tiré de
   lui, les autres de leur type et de leur texte (`stable_ids`, aussi à la ré-analyse : `stableIds` dans
   structure.json). Les `.aux` de la compilation donnent les numéros imprimés et les ancres exactes des `\label`
-  (`apply_aux` : énoncés, équations ; `cite.<clé>` pour la bibliographie, lue aussi dans un `.bbl` de biblatex) ;
+  (`apply_aux` : énoncés, équations ; `cite.<clé>` pour la bibliographie, lue aussi dans un `.bbl` de biblatex ou
+  d'amsrefs) ;
   journal sans lignes coupées (`max_print_line`) ; les passages surlignés du PDF qui ont
   bougé sont retrouvés par leur texte côté page (`PdfNotes.inPlace`/`findMoved`, ±3 pages) et leur place enregistrée.
 

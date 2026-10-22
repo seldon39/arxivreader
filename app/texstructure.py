@@ -676,7 +676,9 @@ def bibliography(text):
     """Références d'un environnement thebibliography (ou d'un fichier .bbl de BibTeX), sinon d'un .bbl de biblatex."""
     start = text.find("\\begin{thebibliography}")
     if start < 0:
-        return _biblatex(text) if "\\entry{" in text else []
+        if "\\entry{" in text:
+            return _biblatex(text)
+        return _amsrefs(text) if "\\bib{" in text else []
     stop = text.find("\\end{thebibliography}", start)
     block = text[start:stop if stop > 0 else len(text)]
     entries = []
@@ -690,6 +692,32 @@ def bibliography(text):
         label = plain(match.group(1)[1:-1]) if match.group(1) else str(index + 1)
         entries.append({"id": f"bib.{match.group(2).strip()}", "label": label, "text": text_entry, "title": "",
                         "arxiv": extract_ids(f"{raw} {url}"), "doi": doi.group(0).rstrip(".,;") if doi else ""})
+    return entries
+
+
+def _amsrefs(text):
+    """Entrées au format amsrefs (\\bib{clé}{type}{author={…}, title={…}, …}), du .bbl ou de la source."""
+    entries = []
+    for index, match in enumerate(re.finditer(r"\\bib\*?\s*\{([^}]*)\}\s*\{(\w+)\}\s*(?=\{)", text)):
+        group = _group(text, match.end(), "{")
+        if group is None:
+            continue
+        body = group[0]
+        fields = {}
+        for field in re.finditer(r"(\w+)\s*=\s*(?=\{)", body):
+            value = _group(body, field.end(), "{")
+            if value:
+                fields.setdefault(field.group(1).lower(), []).append(plain(value[0]))
+        authors = ", ".join(fields.get("author", []))
+        venue = (fields.get("journal") or fields.get("conference") or fields.get("publisher") or [""])[0]
+        year = re.sub(r"[-–].*$", "", (fields.get("date") or fields.get("year") or [""])[0])
+        text_entry = ", ".join(part for part in (authors, (fields.get("title") or [""])[0], venue,
+                                                (fields.get("volume") or [""])[0], year, (fields.get("pages") or [""])[0]) if part)
+        doi = (fields.get("doi") or [""])[0]
+        eprint = " ".join(fields.get("eprint", []) + fields.get("arxiv", []))
+        entries.append({"id": f"bib.{match.group(1).strip()}", "label": str(index + 1), "text": text_entry,
+                        "title": (fields.get("title") or [""])[0], "arxiv": extract_ids(eprint) if eprint else [],
+                        "doi": doi.rstrip(".,;")})
     return entries
 
 

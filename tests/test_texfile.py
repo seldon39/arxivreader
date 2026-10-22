@@ -316,5 +316,22 @@ From \eqref{eq:b} and the above lemma, we get
         self.assertEqual(analyze_text(source)["enumerate"], [["(", "α", ")"]])
 
 
+    def test_amsrefs_bibliography(self):
+        bbl = r"""\begin{bibdiv}\begin{biblist}
+\bib{BMMP14}{article}{
+      author={Barron, T.},
+      author={Ma, X.},
+       title={Semi-classical properties of {B}erezin-{T}oeplitz operators},
+     journal={J. Math. Phys.},
+      volume={55},
+        date={2014},
+         doi={10.1063/1.4870869},
+}
+\end{biblist}\end{bibdiv}"""
+        entry = texstructure.bibliography(bbl)[0]
+        self.assertEqual((entry["id"], entry["label"], entry["doi"]), ("bib.BMMP14", "1", "10.1063/1.4870869"))
+        self.assertEqual(entry["text"], "Barron, T., Ma, X., Semi-classical properties of Berezin-Toeplitz operators, J. Math. Phys., 55, 2014")
+
+
 if __name__ == "__main__":
     unittest.main()
