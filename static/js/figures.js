@@ -195,6 +195,9 @@ export function openFigure(target, { closeLabel = "Close", onLink = null } = {})
   close.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4L12 13.4 6.4 19 5 17.6 10.6 12 5 6.4z"/></svg>';
   const dialog = document.createElement("dialog");
   dialog.className = "figure-viewer";
+  // police de l'article (réglage du lecteur) : la fenêtre est hors de l'article
+  const font = target.closest("[data-paper-font]")?.dataset.paperFont;
+  if (font) dialog.dataset.paperFont = font;
   dialog.setAttribute("aria-label", caption?.textContent.trim().slice(0, 120) || closeLabel);
   dialog.append(close, frame);
   if (caption) {

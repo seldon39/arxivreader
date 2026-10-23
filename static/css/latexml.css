@@ -175,6 +175,13 @@ table.ltx_eqn_table { width: 100%; border-collapse: collapse; margin: .55em 0; d
 .figure-card img, svg.ltx_picture img, .figure-card img.ltx_graphics {
   background: none; border: 0; border-radius: 0; padding: 0; box-sizing: border-box; max-width: 100%;
 }
+/* sous-figures (subfigure, subcaption) : côte à côte comme sur arXiv, à la ligne quand la colonne est trop étroite */
+.ltx_flex_figure { display: flex; flex-flow: row wrap; justify-content: center; align-items: flex-start; gap: .8em .6em; }
+.ltx_flex_cell { flex: 1 1 0; min-width: min(9em, 100%); }
+.ltx_flex_size_1 { flex-basis: 100%; }
+.ltx_flex_break { flex-basis: 100%; height: 0; }
+.ltx_flex_figure .ltx_figure { margin: 0; }
+.ltx_flex_figure .ltx_figure img, .ltx_flex_figure img.ltx_graphics { padding: 6px; max-width: calc(100% - 12px); }
 /* dessin dans une cellule d'équation : largeur propre, au plus celle de la colonne de texte (unités de conteneur) */
 .paper-content { container-type: inline-size; }
 .figure-card.in-cell { max-width: none; }
@@ -184,7 +191,7 @@ table.ltx_eqn_table { width: 100%; border-collapse: collapse; margin: .55em 0; d
 .figure-card.centered:not(.figure-block .figure-card) { display: table; margin-left: auto; margin-right: auto; }
 .figure-label {
   position: absolute; left: 0; top: 0; translate: var(--shift-x, 14px) var(--shift-y, 14px);
-  white-space: nowrap; line-height: 1; text-indent: 0; text-align: left; color: #000;
+  white-space: nowrap; line-height: 1; text-indent: 0; text-align: left; color: #000; font-family: var(--paper-font);
 }
 .figure-label .ltx_foreignobject_container, .figure-label .ltx_foreignobject_content { display: inline-block; }
 .figure-baseline { display: inline-block; width: 0; height: 0; vertical-align: baseline; }

@@ -184,6 +184,7 @@ class Latexml(unittest.TestCase):
         (work / "main.tex").write_text(r"""\documentclass{article}\usepackage{tikz}\usetikzlibrary{matrix}\begin{document}
 \begin{tikzpicture}\fill (0,1) circle (2pt) node [below] {$x_0$};\end{tikzpicture}
 \begin{tikzpicture}\matrix (m) [matrix of math nodes,row sep=3em]{ A_1 \\ B^X \\};\end{tikzpicture}
+\begin{tikzpicture}\node[draw,align=center] {first $x$\\ second line};\end{tikzpicture}
 \end{document}""", encoding="utf-8")
         out = work / "out"
         out.mkdir()
@@ -191,6 +192,14 @@ class Latexml(unittest.TestCase):
         labels = BeautifulSoup(html, "html.parser").find_all("foreignobject")
         self.assertTrue(labels and all("--ltx-fo-height" in fo.get("style", "") for fo in labels))
         self.assertIn("ltx_tikzmatrix_base", html)
+        self.assertNotIn("<text", html)  # ligne de texte seul : une étiquette comme les autres
+
+    def test_figure_refs_get_their_number(self):
+        # LaTeXML donne aux \ref une largeur fixe : boîtes de nœuds trop étroites ; numéro du .aux, toujours un lien
+        text = r"\ref{a} \begin{tikzpicture}\node{\ref{a}}; \node{\eqref{e}}; \node{\ref{x}};\end{tikzpicture}"
+        out = latexml._figure_refs(text, {"a": ("A3", None), "e": ("2.1", "eq.1")})
+        self.assertEqual(out, r"\ref{a} \begin{tikzpicture}\node{\arxivreaderref{a}{A3}}; "
+                              r"\node{(\arxivreaderref{e}{2.1})}; \node{\ref{x}};\end{tikzpicture}")
 
 
 if __name__ == "__main__":

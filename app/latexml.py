@@ -167,13 +167,14 @@ def _source(paper, work):
         # resté dans le dossier (autre style, amsrefs…) passerait avant lui. Images, paquets et .bib du dossier par
         # --path ; .bib choisis à la main : dossier de travail de la compilation. Rien n'est écrit chez l'utilisateur.
         build = texfile.build_dir(paper["id"])
+        labels = texfile.aux_labels(build)
         copy = work / "source"
         for name in texfile.read_project(main):
             if ".." in name:
                 continue
             target = copy / name
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(_without_plots_bytes((main.parent / name).read_bytes()))
+            target.write_bytes(_without_plots_bytes((main.parent / name).read_bytes(), labels))
         # tous les .bib trouvés : LaTeXML les lit (un .bbl au format amsrefs, par exemple, lui échappe) ; sinon le
         # .bbl de la compilation
         report = texfile.report(paper["id"]) or {}
@@ -217,12 +218,23 @@ LAYOUT_ONLY = ("typearea", "scrlayer-scrpage", "scrlayer", "scrextend", "scrbase
 # Étiquettes des dessins TikZ : LaTeXML 0.8.8 ne note que la hauteur totale de chaque étiquette et la pose une
 # interligne plus haut. Celui d'arXiv note hauteur, profondeur et corps (--ltx-fo-…) et la pose sur sa ligne de base :
 # figures.js s'en sert pour la placer comme dans le PDF. Même chose ici, ajoutée après coup (rien si déjà fait).
+# Étiquette faite de texte seul (deuxième ligne d'un nœud « align=center ») : LaTeXML en fait un <text> SVG sans corps
+# ni place ; enveloppée, elle reste une étiquette comme les autres. \arxivreaderref : renvoi dont le numéro est déjà
+# connu (_figure_refs).
 # Matrices TikZ (diagrammes) : 0.8.8 estime la ligne de base de la dernière ligne (moitié de sa hauteur) ; elle est
 # connue, c'est la position de cette ligne (comme dans la version suivante de LaTeXML). Classe « ltx_tikzmatrix_base » :
 # figures.js ne leur applique pas la correction faite pour les pages d'arXiv.
 FIGURE_LABELS = r"""package LaTeXML::Package::Pool;
 use strict;
 use LaTeXML::Package;
+Tag('svg:foreignObject', 'afterClose:early' => sub {
+    my ($document, $node) = @_;
+    my @children = $node->childNodes;
+    return unless @children && !grep { $_->nodeType != 3 } @children;
+    return unless grep { $_->textContent =~ /\S/ } @children;
+    $document->wrapNodes('ltx:text', @children); });
+DefConstructor('\\arxivreaderref Semiverbatim {}', "<ltx:ref labelref='#label'>#2</ltx:ref>",
+  sizer => '#2', properties => sub { (label => CleanLabel($_[1])); });
 my @version = split(/\./, $LaTeXML::VERSION || '0');
 if (($version[0] || 0) == 0 && (($version[1] || 0) < 8 || (($version[1] || 0) == 8 && ($version[2] || 0) <= 8))) {
   Tag('svg:g', afterClose => sub {
@@ -268,10 +280,32 @@ PGFPLOTS = re.compile(r"\\begin\{(?:axis|semilogxaxis|semilogyaxis|loglogaxis|po
 TIKZPICTURE = re.compile(r"\\begin\{tikzpicture\}.*?\\end\{tikzpicture\}", re.S)
 
 
-def _without_plots_bytes(data):
-    """Même remplacement sur les octets du fichier (encodage d'origine gardé : latin-1 aussi)."""
+def _without_plots_bytes(data, labels=None):
+    """Même remplacement sur les octets du fichier (encodage d'origine gardé : latin-1 aussi), et numéros des renvois
+    des dessins (`labels` : ceux du .aux de la compilation)."""
     text = data.decode("utf-8", errors="surrogateescape")
-    return _without_plots(text).encode("utf-8", errors="surrogateescape") if PGFPLOTS.search(text) else data
+    changed = _figure_refs(text, labels) if labels else text
+    if PGFPLOTS.search(changed):
+        changed = _without_plots(changed)
+    return changed.encode("utf-8", errors="surrogateescape") if changed != text else data
+
+
+FIGURE_ENV = re.compile(r"\\begin\{(tikzpicture|tikzcd)\}.*?\\end\{\1\}", re.S)
+FIGURE_REF = re.compile(r"\\(eq)?ref\*?\s*\{([^{}]+)\}")
+
+
+def _figure_refs(text, labels):
+    """Renvois (\\ref, \\eqref) dans un dessin TikZ : LaTeXML leur donne une largeur fixe (le numéro n'est connu
+    qu'après), et les boîtes des nœuds sont dessinées trop étroites (« A3 » réduit dans une boîte faite pour un
+    chiffre). Numéro imprimé par LaTeX à la place, toujours lien vers sa cible (\\arxivreaderref, FIGURE_LABELS)."""
+    def ref(match):
+        key = match.group(2).strip()
+        number = labels.get(key, (None,))[0]
+        if not number or re.search(r"[\\{}$&#^_%~]", number):
+            return match.group(0)
+        link = f"\\arxivreaderref{{{key}}}{{{number}}}"
+        return f"({link})" if match.group(1) else link
+    return FIGURE_ENV.sub(lambda m: FIGURE_REF.sub(ref, m.group(0)), text)
 
 
 def _without_plots(text):

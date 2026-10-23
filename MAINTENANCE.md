@@ -236,7 +236,10 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   copie du `.bib` (LaTeXML le lit sans le préambule : `_expand_macros`), étiquettes des dessins TikZ sans hauteur ni
   profondeur et matrices (diagrammes) mal posées (`FIGURE_LABELS`, chargé par `--preload` : mêmes mesures que la
   sortie d'arXiv, matrices marquées `ltx_tikzmatrix_base` que `figures.js` ne corrige pas), hachures dont le motif
-  est perdu (`fix_patterns`). Bibliographie : le `.bib` quand tous
+  est perdu (`fix_patterns`), ligne de texte seul d'un nœud devenue un `<text>` SVG (enveloppée, même module),
+  renvois des dessins à largeur fixe (`_figure_refs` : numéro du `.aux`, lien gardé par `\arxivreaderref`).
+  Reste : lignes d'un nœud à plusieurs lignes un peu serrées (LaTeXML les empile sans interligne). Sous-figures
+  (`ltx_flex_figure`) côte à côte : `latexml.css`. Bibliographie : le `.bib` quand tous
   sont trouvés (un `.bbl` amsrefs lui
   échappe), sinon le `.bbl` (`nobibtex`). Dépendances implicites (« the above lemma », phrase de justification,
   équations du texte courant, corollaire qui suit un énoncé) : `structure.py` et `texstructure.implicit_dependencies`.
