@@ -122,9 +122,10 @@ export function prepareFigures(root) {
       label.matrix = matrixTo(svg, fo);
       // Cellule d'un diagramme (tikz-cd, matrice TikZ) : LaTeXML compte deux fois la hauteur du texte
       // (ligne de la matrice déjà posée sur la ligne de base, plus la translation propre à l'étiquette) ;
-      // les nœuds remontent alors vers les flèches qui en partent. On retire cette translation.
+      // les nœuds remontent alors vers les flèches qui en partent. On retire cette translation. Pas pour les
+      // matrices déjà posées sur leur ligne de base (LaTeXML 0.8.8 corrigé à la conversion, latexml.py).
       const own = fo.transform?.baseVal?.consolidate?.()?.matrix;
-      if (fo.closest(".ltx_tikzmatrix_col") && own && own.a === 1 && own.b === 0 && own.c === 0 && own.d === -1 && own.e === 0) {
+      if (fo.closest(".ltx_tikzmatrix_col") && !fo.closest(".ltx_tikzmatrix_base") && own && own.a === 1 && own.b === 0 && own.c === 0 && own.d === -1 && own.e === 0) {
         label.matrix = label.matrix.multiply(new DOMMatrix().translate(0, own.f));
       }
       label.geometry = {

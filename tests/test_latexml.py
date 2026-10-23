@@ -14,6 +14,7 @@ from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 
 from app import db, latexml, library, main, texfile, texstructure
+from app.sanitize import sanitize_document
 from tests.test_texfile import ARTICLE, BIB, HAS_TEX
 
 PAGE = """<article class="ltx_document">
@@ -162,6 +163,34 @@ class Latexml(unittest.TestCase):
         bib = "@article{k, title={With {$\\mC^k$} and $\\cC$ and \\mCx}}".encode("latin-1")
         self.assertEqual(latexml._expand_macros(bib, macros).decode(),
                          "@article{k, title={With {${\\mathcal{C}}^k$} and ${\\mathscr{C}}$ and \\mCx}}")
+
+    def test_lost_pattern_rebuilt_from_its_tile(self):
+        # LaTeXML 0.8.8 : définition du motif perdue, sa tuile dessinée seule juste avant
+        page = ('<article class="ltx_document"><svg class="ltx_picture" width="10" height="10"><g>'
+                '<path d="M 0 0 L 4.29 4.29" style="fill:none"></path>'
+                '<defs><pattern id="pgfupat1" href="#pgfpat3"><g fill="#000000" stroke="#000000"><use href="#pgfsym3"></use>'
+                '</g></pattern></defs><g fill="url(#pgfupat1)"><path d="M -39 37 L 39 41 Z"></path></g></g></svg></article>')
+        fragment, _ = sanitize_document(page, latexml.BASE)
+        latexml.fix_patterns(fragment)
+        pattern = fragment.find("pattern")
+        self.assertEqual((pattern.get("patternunits"), pattern.get("width"), pattern.get("href")), ("userSpaceOnUse", "4.15", None))
+        self.assertEqual(pattern.path["d"], "M 0 0 L 4.29 4.29")
+        self.assertEqual(len(fragment.find_all("path")), 2)  # la tuile isolée a disparu du dessin
+
+    @unittest.skipUnless(latexml.find(), "LaTeXML n'est pas installé")
+    def test_figure_labels_on_their_baseline(self):
+        work = self.tmp / "fig"
+        work.mkdir()
+        (work / "main.tex").write_text(r"""\documentclass{article}\usepackage{tikz}\usetikzlibrary{matrix}\begin{document}
+\begin{tikzpicture}\fill (0,1) circle (2pt) node [below] {$x_0$};\end{tikzpicture}
+\begin{tikzpicture}\matrix (m) [matrix of math nodes,row sep=3em]{ A_1 \\ B^X \\};\end{tikzpicture}
+\end{document}""", encoding="utf-8")
+        out = work / "out"
+        out.mkdir()
+        html = latexml._run(latexml.find(), work, "main.tex", [latexml._stubs(work)], out)
+        labels = BeautifulSoup(html, "html.parser").find_all("foreignobject")
+        self.assertTrue(labels and all("--ltx-fo-height" in fo.get("style", "") for fo in labels))
+        self.assertIn("ltx_tikzmatrix_base", html)
 
 
 if __name__ == "__main__":

@@ -214,12 +214,51 @@ def _source(paper, work):
 LAYOUT_ONLY = ("typearea", "scrlayer-scrpage", "scrlayer", "scrextend", "scrbase", "scrkbase")
 
 
+# Étiquettes des dessins TikZ : LaTeXML 0.8.8 ne note que la hauteur totale de chaque étiquette et la pose une
+# interligne plus haut. Celui d'arXiv note hauteur, profondeur et corps (--ltx-fo-…) et la pose sur sa ligne de base :
+# figures.js s'en sert pour la placer comme dans le PDF. Même chose ici, ajoutée après coup (rien si déjà fait).
+# Matrices TikZ (diagrammes) : 0.8.8 estime la ligne de base de la dernière ligne (moitié de sa hauteur) ; elle est
+# connue, c'est la position de cette ligne (comme dans la version suivante de LaTeXML). Classe « ltx_tikzmatrix_base » :
+# figures.js ne leur applique pas la correction faite pour les pages d'arXiv.
+FIGURE_LABELS = r"""package LaTeXML::Package::Pool;
+use strict;
+use LaTeXML::Package;
+my @version = split(/\./, $LaTeXML::VERSION || '0');
+if (($version[0] || 0) == 0 && (($version[1] || 0) < 8 || (($version[1] || 0) == 8 && ($version[2] || 0) <= 8))) {
+  Tag('svg:g', afterClose => sub {
+      my ($document, $node) = @_;
+      return unless ($node->getAttribute('class') || '') eq 'ltx_tikzmatrix';
+      my @rows = grep { $_->nodeType == 1 && ($_->getAttribute('class') || '') =~ /^ltx_tikzmatrix_row\b/ } $node->childNodes;
+      return unless @rows;
+      my ($y) = ($rows[-1]->getAttribute('transform') || '') =~ /^matrix\(1 0 0 1 0 (-?[\d.]+)\)$/;
+      my ($x) = ($node->getAttribute('transform') || '') =~ /^matrix\(1 0 0 -1 (-?[\d.]+) -?[\d.]+\)$/;
+      return unless defined $x && defined $y;
+      $node->setAttribute(transform => "matrix(1 0 0 -1 $x $y)");
+      $node->setAttribute(class => 'ltx_tikzmatrix ltx_tikzmatrix_base'); }); }
+Tag('svg:foreignObject', afterClose => sub {
+    my ($document, $node, $whatsit) = @_;
+    return unless $whatsit && $node->parentNode && $document->getNodeQName($node) eq 'svg:foreignObject';
+    my $style = $node->getAttribute('style') || '';
+    return if $style =~ /--ltx-fo-height/;
+    my ($w, $h, $d) = $whatsit->getSize;
+    return unless $w && $h && $d;
+    my $font = $whatsit->getFont;
+    my $size = ($font && $font->getSize) || 10;
+    my $em   = sub { sprintf('%.2f', $_[0]->ptValue / $size); };
+    $node->setAttribute(transform => 'matrix(1 0 0 -1 0 ' . $h->pxValue . ')');
+    $node->setAttribute(style => '--ltx-fo-width:' . &$em($w) . 'em;--ltx-fo-height:' . &$em($h)
+        . 'em;--ltx-fo-depth:' . &$em($d) . 'em;font-size:' . $size . 'pt;' . $style); });
+1;
+"""
+
+
 def _stubs(work):
     folder = work / "stubs"
     folder.mkdir(exist_ok=True)
     for name in LAYOUT_ONLY:
         (folder / f"{name}.sty.ltxml").write_text(
             "package LaTeXML::Package::Pool;\nuse strict;\nuse LaTeXML::Package;\n1;\n", encoding="utf-8")
+    (folder / "arxivreader-figures.sty.ltxml").write_text(FIGURE_LABELS, encoding="utf-8")
     return folder
 
 
@@ -321,7 +360,7 @@ def _run(program, cwd, main, paths, out, use_bbl=False):
     env = texfile._env(kpsewhich or program)
     env["PATH"] = os.pathsep.join([str(Path(program).parent), env["PATH"]])
     command = [program, "--quiet", "--format=html5", "--nodefaultresources", "--pmml", "--mathtex", "--timestamp=0",
-               *(["--preload=[nobibtex]latexml.sty"] if use_bbl else []),
+               *(["--preload=[nobibtex]latexml.sty"] if use_bbl else []), "--preload=arxivreader-figures.sty",
                *(f"--path={p}" for p in paths), f"--dest={out / 'index.html'}", f"--log={out / 'log.txt'}", main]
     try:
         texfile._run(command, str(cwd), env, TIMEOUT)
@@ -341,6 +380,7 @@ def _store(pid, html, out):
     except ValueError as error:
         raise LatexmlError(str(error))
     add_viewboxes(fragment)
+    fix_patterns(fragment)
     tex = json.loads((paper_dir(pid) / "structure.json").read_text(encoding="utf-8"))
     align_ids(fragment, tex)
     structure = extract_structure(fragment, annotations.proof_overrides(pid))
@@ -381,6 +421,40 @@ def add_viewboxes(fragment):
             svg["viewbox"] = f"0 0 {float(width):g} {float(height):g}"
         except ValueError:
             continue
+
+
+PATTERN_STEP = 4.15  # 3pt en px de LaTeXML : pas des motifs de pgf (lignes, grilles, points)
+TILE = 12  # coordonnées d'une tuile de motif, en px : quelques points autour de l'origine
+
+
+def _tile(path):
+    numbers = re.findall(r"-?\d+(?:\.\d+)?", path.get("d") or "") if path is not None and path.name == "path" else []
+    return path if numbers and all(abs(float(n)) <= TILE for n in numbers) else None
+
+
+def fix_patterns(fragment):
+    """Hachures TikZ (pattern=north east lines…) : LaTeXML 0.8.8 perd la définition du motif et dessine sa tuile
+    seule, à l'origine (un petit trait isolé) ; la surface hachurée restait vide. Le motif est refait avec cette tuile
+    (un trait oblique par défaut), qui disparaît du dessin."""
+    ids = {element["id"] for element in fragment.find_all(id=True)}
+    tiles = {}
+    for pattern in fragment.find_all("pattern"):
+        target = (pattern.get("href") or "").lstrip("#")
+        if not target or target in ids:
+            continue
+        if target not in tiles:  # tuile dessinée juste avant la première utilisation du motif
+            defs = pattern.find_parent("defs")
+            loose = _tile(defs.find_previous_sibling() if defs else None)
+            tiles[target] = loose.extract() if loose else BeautifulSoup(
+                '<path d="M 0 0 L 4.29 4.29" style="fill:none"></path>', "html.parser").path
+        color = (pattern.find("g") or {}).get("stroke") or "#000000"
+        tile = BeautifulSoup(str(tiles[target]), "html.parser").path
+        tile.attrs.update(stroke=color, fill=color)
+        tile["stroke-width"] = "0.4pt"
+        pattern.clear()
+        del pattern["href"]
+        pattern.attrs.update(patternunits="userSpaceOnUse", width=f"{PATTERN_STEP:g}", height=f"{PATTERN_STEP:g}")
+        pattern.append(tile)
 
 
 # ---------- Identifiants communs avec la structure tirée de la source ----------

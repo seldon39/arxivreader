@@ -233,7 +233,10 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   `viewBox` (`add_viewboxes`), paquets KOMA sans équivalent qui vident la bibliographie (`LAYOUT_ONLY`, paquets vides
   écrits dans le dossier de la conversion), chemins de recherche avec accents (« Thèse » : .bib et images
   introuvables) remplacés par des liens symboliques au nom simple (`_ascii`), macros de l'auteur développées dans la
-  copie du `.bib` (LaTeXML le lit sans le préambule : `_expand_macros`). Bibliographie : le `.bib` quand tous
+  copie du `.bib` (LaTeXML le lit sans le préambule : `_expand_macros`), étiquettes des dessins TikZ sans hauteur ni
+  profondeur et matrices (diagrammes) mal posées (`FIGURE_LABELS`, chargé par `--preload` : mêmes mesures que la
+  sortie d'arXiv, matrices marquées `ltx_tikzmatrix_base` que `figures.js` ne corrige pas), hachures dont le motif
+  est perdu (`fix_patterns`). Bibliographie : le `.bib` quand tous
   sont trouvés (un `.bbl` amsrefs lui
   échappe), sinon le `.bbl` (`nobibtex`). Dépendances implicites (« the above lemma », phrase de justification,
   équations du texte courant, corollaire qui suit un énoncé) : `structure.py` et `texstructure.implicit_dependencies`.

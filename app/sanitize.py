@@ -34,7 +34,7 @@ MATHML_TAGS = {
 SVG_TAGS = {
     "svg", "g", "path", "line", "rect", "circle", "ellipse", "polygon", "polyline", "text",
     "tspan", "foreignobject", "defs", "marker", "clippath", "lineargradient", "radialgradient",
-    "stop",
+    "stop", "pattern",
 }
 ALLOWED_TAGS = HTML_TAGS | MATHML_TAGS | SVG_TAGS
 
@@ -59,7 +59,8 @@ ALLOWED_ATTRS = {
     "transform", "fill", "stroke", "stroke-width", "stroke-dasharray", "stroke-linecap",
     "stroke-linejoin", "fill-opacity", "stroke-opacity", "opacity", "font-size", "font-family",
     "font-weight", "font-style", "text-anchor", "dominant-baseline", "overflow", "version",
-    "xmlns", "preserveaspectratio", "marker-end", "marker-start", "offset", "stop-color",
+    "xmlns", "preserveaspectratio", "marker-end", "marker-start", "offset", "stop-color", "patternunits",
+    "patterncontentunits", "patterntransform",
 }
 
 UNSAFE_STYLE = re.compile(r"url\s*\(|expression|javascript|@import|behavior", re.I)
