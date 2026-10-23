@@ -156,5 +156,13 @@ class Latexml(unittest.TestCase):
         self.assertEqual(latexml._ascii(work, work, 1), work)  # sans accent : tel quel
 
 
+    def test_author_macros_expanded_in_bib(self):
+        # LaTeXML lit le .bib sans le préambule : « $\mC^k$ » perdait son C
+        macros = {"mC": r"\mathcal{C}", "cC": r"\mathscr{C}"}
+        bib = "@article{k, title={With {$\\mC^k$} and $\\cC$ and \\mCx}}".encode("latin-1")
+        self.assertEqual(latexml._expand_macros(bib, macros).decode(),
+                         "@article{k, title={With {${\\mathcal{C}}^k$} and ${\\mathscr{C}}$ and \\mCx}}")
+
+
 if __name__ == "__main__":
     unittest.main()

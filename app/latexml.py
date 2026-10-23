@@ -113,7 +113,7 @@ def reanalyze(pid):
     previous = structure(pid) or {}
     fragment = BeautifulSoup((folder / "content.html").read_text(encoding="utf-8"), "html.parser")
     result = extract_structure(fragment, annotations.proof_overrides(pid))
-    for key in ("source", "tex", "book", "compiledAt"):
+    for key in ("source", "tex", "book", "compiledAt", "macros"):
         result[key] = previous.get(key)
     write_atomic(folder / "content.html", str(fragment))
     write_atomic(folder / "structure.json", json.dumps(result, ensure_ascii=False))
@@ -181,6 +181,12 @@ def _source(paper, work):
         bbl = build / f"{main.stem}.bbl"
         if use_bbl and bbl.is_file():
             shutil.copyfile(bbl, copy / bbl.name)
+        macros = _simple_macros(paper["id"])
+        for bib in report.get("bibs", []):  # copiés à côté du fichier, macros de l'auteur développées
+            target = copy / bib["name"]
+            if Path(bib["path"]).is_file() and ".." not in bib["name"]:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(_expand_macros(Path(bib["path"]).read_bytes(), macros))
         folders = dict.fromkeys([main.parent, build, *(Path(b["path"]).parent for b in report.get("bibs", []))])
         return copy, main.name, [_ascii(folder, work, index) for index, folder in enumerate(folders)], use_bbl
     from .arxiv import fetch_source
@@ -192,9 +198,12 @@ def _source(paper, work):
     main = _extract(data, source)
     if not main:
         raise LatexmlError("no main TeX file in the source")
+    macros = _simple_macros(paper["id"])
     for path in source.rglob("*"):
         if path.suffix.lower() in (".tex", ".ltx") and path.is_file():
             path.write_bytes(_without_plots_bytes(path.read_bytes()))
+        elif path.suffix.lower() == ".bib" and path.is_file():
+            path.write_bytes(_expand_macros(path.read_bytes(), macros))
     # .bbl déposé avec la source (le cas habituel sur arXiv) : lui ; sinon le .bib
     return source, main, [], any(source.rglob("*.bbl"))
 
@@ -230,6 +239,30 @@ def _without_plots(text):
     note = "Figure omise dans la version HTML (pgfplots) : voir le PDF." if db.get_settings().get("language") == "fr" \
         else "Figure omitted in the HTML version (pgfplots): see the PDF."
     return TIKZPICTURE.sub(lambda m: f"\\fbox{{{note}}}" if PGFPLOTS.search(m.group(0)) else m.group(0), text)
+
+
+def _simple_macros(pid):
+    """Macros sans argument de l'auteur ({nom: définition}), d'après la structure tirée de la source."""
+    try:
+        listed = json.loads((paper_dir(pid) / "structure.json").read_text(encoding="utf-8")).get("macros") or []
+    except (OSError, ValueError):
+        return {}
+    found = {}
+    for macro in listed:
+        match = re.fullmatch(r"\\newcommand\{\\([A-Za-z]+)\}\{(.*)\}", macro, re.S)
+        if match:
+            found[match.group(1)] = match.group(2)
+    return found
+
+
+def _expand_macros(data, macros):
+    """.bib dont les formules emploient les macros de l'auteur (« $\\mC^k$ ») : LaTeXML lit la bibliographie sans le
+    préambule du document ; ces macros y sont remplacées par leur définition (encodage d'origine gardé)."""
+    if not macros:
+        return data
+    text = data.decode("utf-8", errors="surrogateescape")
+    pattern = re.compile(r"\\(" + "|".join(map(re.escape, sorted(macros, key=len, reverse=True))) + r")(?![A-Za-z])")
+    return pattern.sub(lambda m: "{" + macros[m.group(1)] + "}", text).encode("utf-8", errors="surrogateescape")
 
 
 def _ascii(folder, work, index):
@@ -315,6 +348,7 @@ def _store(pid, html, out):
     structure["tex"] = tex.get("tex")
     structure["book"] = tex.get("book", False)
     structure["compiledAt"] = tex.get("compiledAt")  # adresse du PDF de cette compilation
+    structure["macros"] = tex.get("macros", [])  # macros de l'auteur, pour MathJax (comme la vue PDF)
     folder = html_dir(pid)
     staging = Path(tempfile.mkdtemp(dir=paper_dir(pid), prefix=".html."))
     try:
