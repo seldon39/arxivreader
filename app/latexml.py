@@ -16,6 +16,7 @@ import os
 import posixpath
 import re
 import shutil
+import sys
 import tarfile
 import tempfile
 import gzip
@@ -25,7 +26,7 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup
 
-from . import annotations, db, texfile
+from . import annotations, db, texfile, texstructure
 from .library import paper_dir, write_atomic
 from .sanitize import sanitize_document
 from .structure import STRUCTURE_VERSION, classify, extract_structure
@@ -140,6 +141,13 @@ def convert(pid):
         out.mkdir()
         try:
             html = _run(program, cwd, main, paths, out, use_bbl)
+            if _lost_bibliography(html, cwd) and (_biblatex_bibliography(paper, cwd, main)
+                                                  or not use_bbl and _bbl(paper, cwd, main)):
+                again = work / "out-bbl"  # bibliographie d'après le .bbl, comme sur arXiv
+                again.mkdir()
+                retry = _run(program, cwd, main, paths, again, True)
+                if "ltx_bibitem" in retry:
+                    html, out = retry, again
             _store(pid, html, out)
         except LatexmlError as error:
             _save_state(pid, {"ok": False, "stamp": stamp, "error": str(error)[:400]})
@@ -149,6 +157,88 @@ def convert(pid):
         return {"state": state(db.get_paper(pid))}  # « stale » si la source a été recompilée entre-temps
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+# Bibliographie lue dans le .bib par LaTeXML : il recharge pour cela tout le préambule, et un paquet qu'il ne connaît
+# pas (pdfx, CJK…) peut l'arrêter ; la bibliographie sort vide. Seconde conversion d'après un .bbl : celui de la
+# compilation (fichier importé) ou celui que BibTeX fait des citations de l'article (source d'arXiv sans .bbl).
+BIBDATA = re.compile(r"\\bibliography\s*\{([^{}]+)\}")
+BIBLATEX = re.compile(r"\\(?:addbibresource|printbibliography|bibliography)\b")
+PRINTBIBLIOGRAPHY = re.compile(r"\\printbibliography\s*(?:\[[^\]]*\])?")
+TEX_SPECIAL = re.compile(r"([&%#_$])")
+BIBSTYLE = re.compile(r"\\bibliographystyle\s*\{([^{}]+)\}")
+CITE = re.compile(r"\\(?:no)?cite[a-zA-Z]*\*?\s*(?:\[[^\]]*\]\s*){0,2}\{([^{}]*)\}")
+
+
+def _texts(cwd):
+    return "\n".join(re.sub(r"(?<!\\)%[^\n]*", "", path.read_bytes().decode("utf-8", errors="replace"))
+                     for path in sorted(cwd.rglob("*")) if path.suffix.lower() in (".tex", ".ltx") and path.is_file())
+
+
+def _lost_bibliography(html, cwd):
+    return "ltx_bibitem" not in html and bool(BIBLATEX.search(_texts(cwd)))
+
+
+def _biblatex_bibliography(paper, cwd, main):
+    """.bbl de biblatex (biber) : LaTeXML ne le lit pas. Ses entrées (auteurs, titre, revue, année) deviennent une
+    liste thebibliography, mise à la place de \\printbibliography (True si fait)."""
+    stem = Path(main).stem
+    candidates = [cwd / Path(main).parent / f"{stem}.bbl", *sorted(cwd.rglob("*.bbl"))]
+    if paper["source"] == "local-tex":
+        candidates.insert(0, texfile.build_dir(paper["id"]) / f"{stem}.bbl")
+    text = next((path.read_text(encoding="utf-8", errors="replace") for path in candidates if path.is_file()), "")
+    entries = texstructure._biblatex(text) if "\\entry{" in text else []
+    if not entries:
+        return False
+    items = "".join(f"\\bibitem{{{entry['id'].removeprefix('bib.')}}} {TEX_SPECIAL.sub(r'\\\1', entry['text'])}.\n"
+                    for entry in entries)
+    (cwd / "arxivreader-bibliography.tex").write_text(
+        "\\begin{thebibliography}{99}\n" + items + "\\end{thebibliography}\n", encoding="utf-8")
+    placed = False
+    for path in sorted(cwd.rglob("*")):
+        if path.suffix.lower() not in (".tex", ".ltx") or not path.is_file() or path.name == "arxivreader-bibliography.tex":
+            continue
+        source = path.read_bytes().decode("utf-8", errors="surrogateescape")
+        changed = PRINTBIBLIOGRAPHY.sub(lambda m: "\\input{arxivreader-bibliography}", source)
+        if changed != source:
+            placed = True
+            path.write_bytes(changed.encode("utf-8", errors="surrogateescape"))
+    if not placed:
+        main_path = cwd / main
+        source = main_path.read_bytes().decode("utf-8", errors="surrogateescape")
+        source = source.replace("\\end{document}", "\\input{arxivreader-bibliography}\n\\end{document}", 1)
+        main_path.write_bytes(source.encode("utf-8", errors="surrogateescape"))
+    return True
+
+
+def _bbl(paper, cwd, main):
+    """Un .bbl à côté du fichier principal (True), d'après la compilation ou BibTeX."""
+    stem = Path(main).stem
+    target = cwd / Path(main).parent / f"{stem}.bbl"
+    if paper["source"] == "local-tex":
+        built = texfile.build_dir(paper["id"]) / f"{stem}.bbl"
+        if built.is_file():
+            shutil.copyfile(built, target)
+            return True
+        return False
+    bibtex = texfile.find_tool("bibtex")
+    text = _texts(cwd)
+    data = BIBDATA.search(text)
+    if not bibtex or not data:
+        return False
+    keys = list(dict.fromkeys(key.strip() for found in CITE.finditer(text) for key in found.group(1).split(",") if key.strip()))
+    style = BIBSTYLE.search(text)
+    for name in dict.fromkeys([style.group(1).strip() if style else "plain", "plain"]):
+        (target.with_suffix(".aux")).write_text(
+            "\\relax\n" + "".join(f"\\citation{{{key}}}\n" for key in keys)
+            + f"\\bibstyle{{{name}}}\n\\bibdata{{{data.group(1)}}}\n", encoding="utf-8")
+        try:
+            texfile._run([bibtex, stem], str(target.parent), texfile._env(bibtex), 120)
+        except texfile.TexError:
+            return False
+        if target.is_file() and "\\bibitem" in target.read_text(encoding="utf-8", errors="replace"):
+            return True
+    return False
 
 
 def _save_state(pid, value):
@@ -189,6 +279,7 @@ def _source(paper, work):
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(_expand_macros(Path(bib["path"]).read_bytes(), macros))
         folders = dict.fromkeys([main.parent, build, *(Path(b["path"]).parent for b in report.get("bibs", []))])
+        _raster_figures(copy, [copy, main.parent])
         return copy, main.name, [_ascii(folder, work, index) for index, folder in enumerate(folders)], use_bbl
     from .arxiv import fetch_source
     data = fetch_source(paper["arxiv_id"], paper.get("version"))
@@ -205,8 +296,121 @@ def _source(paper, work):
             path.write_bytes(_without_plots_bytes(path.read_bytes()))
         elif path.suffix.lower() == ".bib" and path.is_file():
             path.write_bytes(_expand_macros(path.read_bytes(), macros))
+    _raster_figures(source, [source])
     # .bbl déposé avec la source (le cas habituel sur arXiv) : lui ; sinon le .bib
     return source, main, [], any(source.rglob("*.bbl"))
+
+
+# Figures en PDF : LaTeXML ne les convertit qu'avec le module Perl Image::Magick, absent des installations courantes
+# (Homebrew, Windows) ; elles restaient vides (« ltx_missing_image »). Converties ici en PNG (sips de macOS, sinon le
+# Ghostscript de TeX), dans le dossier de travail ; \includegraphics vise alors le PNG, à la largeur de la figure
+# d'origine (LaTeXML prend sinon la taille en pixels de l'image).
+INCLUDE = re.compile(r"\\includegraphics\s*(\*?)\s*(?:\[([^\]]*)\])?\s*\{([^{}]+)\}")
+GRAPHICSPATH = re.compile(r"\\graphicspath\s*\{((?:\s*\{[^{}]*\})*)\s*\}")
+RASTER = (".png", ".jpg", ".jpeg", ".gif", ".svg")
+MAX_FIGURES = 300
+FIGURE_DPI = 200
+
+
+def _rasterizer():
+    if sys.platform == "darwin" and shutil.which("sips"):
+        return "sips"
+    for name in ("gswin64c", "gswin32c", "gs", "rungs", "mgs"):
+        found = texfile.find_tool(name)
+        if found:
+            return found
+    return None
+
+
+def _pdf_width(path):
+    """Largeur de la première page d'un PDF, en points (None si illisible)."""
+    try:
+        from pypdf import PdfReader
+        box = PdfReader(str(path)).pages[0].cropbox
+        return abs(float(box.width)) or None
+    except Exception:
+        return None
+
+
+def _rasterize(tool, source, target, width):
+    if tool == "sips":
+        size = str(max(64, min(2400, round((width or 300) * FIGURE_DPI / 72))))
+        command = ["sips", "-s", "format", "png", "-Z", size, str(source), "--out", str(target)]
+    else:
+        command = [tool, "-q", "-dSAFER", "-dBATCH", "-dNOPAUSE", "-sDEVICE=png16m", f"-r{FIGURE_DPI}", "-dUseCropBox",
+                   "-dFirstPage=1", "-dLastPage=1", "-dTextAlphaBits=4", "-dGraphicsAlphaBits=4",
+                   f"-sOutputFile={target}", str(source)]
+    try:
+        texfile._run(command, str(target.parent), dict(os.environ), 60)
+    except texfile.TexError:
+        return False
+    return target.is_file() and target.stat().st_size > 0
+
+
+def _with_width(options, width):
+    """Options de \\includegraphics : largeur de la figure d'origine (échelle comprise) si aucune taille n'est donnée."""
+    keys = [part.strip() for part in (options or "").split(",") if part.strip()]
+    if not width or any(re.match(r"(width|height|totalheight)\s*=", key) for key in keys):
+        return options
+    scale = next((key for key in keys if re.match(r"scale\s*=", key)), None)
+    try:
+        factor = float(scale.split("=", 1)[1]) if scale else 1.0
+    except ValueError:
+        return options
+    return ",".join([key for key in keys if key != scale] + [f"width={width * factor:.2f}pt"])
+
+
+def _raster_figures(copy, folders):
+    """Figures PDF des fichiers TeX de `copy` converties en PNG (dossier « arxivreader-figures » de `copy`)."""
+    tool = _rasterizer()
+    if not tool:
+        return
+    texts = {path: path.read_bytes().decode("utf-8", errors="surrogateescape")
+             for path in copy.rglob("*") if path.suffix.lower() in (".tex", ".ltx") and path.is_file()}
+    prefixes = [""]
+    for text in texts.values():
+        for found in GRAPHICSPATH.finditer(text):
+            prefixes += re.findall(r"\{([^{}]*)\}", found.group(1))
+    out = copy / "arxivreader-figures"
+    done = {}
+
+    def locate(name):
+        name = name.strip()
+        stem = name[:-4] if name.lower().endswith(".pdf") else name
+        for folder in folders:
+            for prefix in prefixes:
+                base = (folder / prefix / stem).resolve()
+                if not base.is_relative_to(folder.resolve()):
+                    continue
+                if name == stem and any(base.with_name(base.name + ext).is_file() for ext in RASTER):
+                    return None  # image déjà lisible par LaTeXML
+                pdf = base.with_name(base.name + ".pdf")
+                if pdf.is_file() and pdf.stat().st_size < 50_000_000:
+                    return pdf
+        return None
+
+    def replace(match):
+        star, options, name = match.groups()
+        pdf = locate(name)
+        if pdf is None:
+            return match.group(0)
+        if pdf not in done:
+            if len(done) >= MAX_FIGURES:
+                return match.group(0)
+            out.mkdir(exist_ok=True)
+            target = out / f"{len(done) + 1}.png"
+            width = _pdf_width(pdf)
+            done[pdf] = (target.relative_to(copy).as_posix(), width) if _rasterize(tool, pdf, target, width) else None
+        if done[pdf] is None:
+            return match.group(0)
+        png, width = done[pdf]
+        options = _with_width(options, width)
+        return f"\\includegraphics{star}{f'[{options}]' if options else ''}{{{png}}}"
+
+    for path, text in texts.items():
+        changed = INCLUDE.sub(replace, text)
+        if changed != text:
+            path.write_bytes(changed.encode("utf-8", errors="surrogateescape"))
 
 
 # Paquets de mise en page (KOMA-Script) que LaTeXML 0.8.8 ne connaît pas : il charge alors le vrai paquet, échoue
@@ -234,7 +438,7 @@ Tag('svg:foreignObject', 'afterClose:early' => sub {
     return unless grep { $_->textContent =~ /\S/ } @children;
     $document->wrapNodes('ltx:text', @children); });
 DefConstructor('\\arxivreaderref Semiverbatim {}', "<ltx:ref labelref='#label'>#2</ltx:ref>",
-  sizer => '#2', properties => sub { (label => CleanLabel($_[1])); });
+  mode => 'text', bounded => 1, sizer => '#2', properties => sub { (label => CleanLabel($_[1])); });
 my @version = split(/\./, $LaTeXML::VERSION || '0');
 if (($version[0] || 0) == 0 && (($version[1] || 0) < 8 || (($version[1] || 0) == 8 && ($version[2] || 0) <= 8))) {
   Tag('svg:g', afterClose => sub {
@@ -291,21 +495,29 @@ def _without_plots_bytes(data, labels=None):
 
 
 FIGURE_ENV = re.compile(r"\\begin\{(tikzpicture|tikzcd)\}.*?\\end\{\1\}", re.S)
-FIGURE_REF = re.compile(r"\\(eq)?ref\*?\s*\{([^{}]+)\}")
+FIGURE_REF = re.compile(r"\\(eq)?ref\s*\{([^{}]+)\}")
+# commentaires et code affiché : masqués (même longueur) avant la recherche des dessins et des renvois
+HIDDEN = re.compile(r"(?<!\\)%[^\n]*|\\begin\{(verbatim\*?|lstlisting|minted|comment)\}.*?\\end\{\1\}"
+                    r"|\\(?:verb|lstinline)\*?([^\sa-zA-Z]).*?\2", re.S)
 
 
 def _figure_refs(text, labels):
     """Renvois (\\ref, \\eqref) dans un dessin TikZ : LaTeXML leur donne une largeur fixe (le numéro n'est connu
     qu'après), et les boîtes des nœuds sont dessinées trop étroites (« A3 » réduit dans une boîte faite pour un
     chiffre). Numéro imprimé par LaTeX à la place, toujours lien vers sa cible (\\arxivreaderref, FIGURE_LABELS)."""
-    def ref(match):
-        key = match.group(2).strip()
-        number = labels.get(key, (None,))[0]
-        if not number or re.search(r"[\\{}$&#^_%~]", number):
-            return match.group(0)
-        link = f"\\arxivreaderref{{{key}}}{{{number}}}"
-        return f"({link})" if match.group(1) else link
-    return FIGURE_ENV.sub(lambda m: FIGURE_REF.sub(ref, m.group(0)), text)
+    masked = HIDDEN.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
+    edits = []
+    for figure in FIGURE_ENV.finditer(masked):
+        for match in FIGURE_REF.finditer(masked, figure.start(), figure.end()):
+            key = match.group(2).strip()
+            number = labels.get(key, (None,))[0]
+            if not number or re.search(r"[\\{}$&#^_%~]", number):
+                continue
+            link = f"\\arxivreaderref{{{key}}}{{{number}}}"
+            edits.append((match.start(), match.end(), f"\\textup{{({link})}}" if match.group(1) else link))
+    for start, end, value in reversed(edits):
+        text = text[:start] + value + text[end:]
+    return text
 
 
 def _without_plots(text):
@@ -415,6 +627,7 @@ def _store(pid, html, out):
         raise LatexmlError(str(error))
     add_viewboxes(fragment)
     fix_patterns(fragment)
+    fix_tiny_images(fragment)
     tex = json.loads((paper_dir(pid) / "structure.json").read_text(encoding="utf-8"))
     align_ids(fragment, tex)
     structure = extract_structure(fragment, annotations.proof_overrides(pid))
@@ -457,19 +670,48 @@ def add_viewboxes(fragment):
             continue
 
 
-PATTERN_STEP = 4.15  # 3pt en px de LaTeXML : pas des motifs de pgf (lignes, grilles, points)
-TILE = 12  # coordonnées d'une tuile de motif, en px : quelques points autour de l'origine
+def fix_tiny_images(fragment):
+    """Image réduite à quelques pixels : largeur donnée par une longueur que LaTeXML ne connaît pas (longueur d'une
+    classe, « 0.86\\normaltextwidth » vaut 0). Sans dimensions, elle prend sa taille, bornée par la colonne."""
+    for image in fragment.select("img.ltx_graphics"):
+        try:
+            tiny = float(image.get("width", 100)) < 8 and float(image.get("height", 100)) < 8
+        except ValueError:
+            continue
+        if tiny:
+            for attribute in ("width", "height"):
+                image.attrs.pop(attribute, None)
+            style = re.sub(r"aspect-ratio\s*:[^;]*;?", "", image.get("style", "")).strip()
+            if style:
+                image["style"] = style
+            else:
+                image.attrs.pop("style", None)
+
+
+PATTERN_STEP = 4.15  # 3pt en px de LaTeXML : pas des motifs de pgf en traits fins (lignes obliques, grilles, points)
+SMALL_TILE = 4.5  # tuile de ces motifs (3,1pt au plus) ; au-delà (lignes horizontales, damier, étoiles…), pas inconnu
+NEAR_ORIGIN = 12
 
 
 def _tile(path):
-    numbers = re.findall(r"-?\d+(?:\.\d+)?", path.get("d") or "") if path is not None and path.name == "path" else []
-    return path if numbers and all(abs(float(n)) <= TILE for n in numbers) else None
+    """Tuile isolée d'un motif : chemin commencé près de l'origine (sa place dans la définition perdue)."""
+    if path is None or path.name != "path":
+        return None
+    start = re.match(r"\s*M\s*(-?[\d.]+)\s+(-?[\d.]+)", path.get("d") or "")
+    return path if start and abs(float(start.group(1))) <= NEAR_ORIGIN and abs(float(start.group(2))) <= NEAR_ORIGIN else None
+
+
+def _small(path):
+    """Tuile des motifs au pas de 3pt : coordonnées absolues (M, L, C, Z) toutes proches de l'origine."""
+    d = path.get("d") or ""
+    numbers = re.findall(r"-?\d+(?:\.\d+)?", d)
+    return not re.search(r"[A-BD-KN-Ya-z]", d) and numbers and all(abs(float(n)) <= SMALL_TILE for n in numbers)
 
 
 def fix_patterns(fragment):
     """Hachures TikZ (pattern=north east lines…) : LaTeXML 0.8.8 perd la définition du motif et dessine sa tuile
-    seule, à l'origine (un petit trait isolé) ; la surface hachurée restait vide. Le motif est refait avec cette tuile
-    (un trait oblique par défaut), qui disparaît du dessin."""
+    seule, à l'origine (un petit trait isolé) ; la surface hachurée restait vide. La tuile quitte le dessin ; le motif
+    est refait avec elle quand son pas est connu (traits fins au pas de 3pt), sinon la surface reste vide."""
     ids = {element["id"] for element in fragment.find_all(id=True)}
     tiles = {}
     for pattern in fragment.find_all("pattern"):
@@ -479,14 +721,15 @@ def fix_patterns(fragment):
         if target not in tiles:  # tuile dessinée juste avant la première utilisation du motif
             defs = pattern.find_parent("defs")
             loose = _tile(defs.find_previous_sibling() if defs else None)
-            tiles[target] = loose.extract() if loose else BeautifulSoup(
-                '<path d="M 0 0 L 4.29 4.29" style="fill:none"></path>', "html.parser").path
+            tiles[target] = loose.extract() if loose else None
         color = (pattern.find("g") or {}).get("stroke") or "#000000"
+        pattern.clear()
+        del pattern["href"]
+        if tiles[target] is None or not _small(tiles[target]):
+            continue
         tile = BeautifulSoup(str(tiles[target]), "html.parser").path
         tile.attrs.update(stroke=color, fill=color)
         tile["stroke-width"] = "0.4pt"
-        pattern.clear()
-        del pattern["href"]
         pattern.attrs.update(patternunits="userSpaceOnUse", width=f"{PATTERN_STEP:g}", height=f"{PATTERN_STEP:g}")
         pattern.append(tile)
 

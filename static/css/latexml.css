@@ -177,11 +177,13 @@ table.ltx_eqn_table { width: 100%; border-collapse: collapse; margin: .55em 0; d
 }
 /* sous-figures (subfigure, subcaption) : côte à côte comme sur arXiv, à la ligne quand la colonne est trop étroite */
 .ltx_flex_figure { display: flex; flex-flow: row wrap; justify-content: center; align-items: flex-start; gap: .8em .6em; }
-.ltx_flex_cell { flex: 1 1 0; min-width: min(9em, 100%); }
+.ltx_flex_cell { flex: 1 1 0; min-width: min(9em, 100%); overflow-x: auto; } /* sous-tableau large : défile dans sa case */
 .ltx_flex_size_1 { flex-basis: 100%; }
 .ltx_flex_break { flex-basis: 100%; height: 0; }
 .ltx_flex_figure .ltx_figure { margin: 0; }
-.ltx_flex_figure .ltx_figure img, .ltx_flex_figure img.ltx_graphics { padding: 6px; max-width: calc(100% - 12px); }
+.ltx_flex_figure .ltx_figure img:not(.figure-card img), .ltx_flex_figure img.ltx_graphics:not(.figure-card img) {
+  padding: 6px; max-width: calc(100% - 12px);
+}
 /* dessin dans une cellule d'équation : largeur propre, au plus celle de la colonne de texte (unités de conteneur) */
 .paper-content { container-type: inline-size; }
 .figure-card.in-cell { max-width: none; }

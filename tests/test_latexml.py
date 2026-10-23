@@ -199,7 +199,68 @@ class Latexml(unittest.TestCase):
         text = r"\ref{a} \begin{tikzpicture}\node{\ref{a}}; \node{\eqref{e}}; \node{\ref{x}};\end{tikzpicture}"
         out = latexml._figure_refs(text, {"a": ("A3", None), "e": ("2.1", "eq.1")})
         self.assertEqual(out, r"\ref{a} \begin{tikzpicture}\node{\arxivreaderref{a}{A3}}; "
-                              r"\node{(\arxivreaderref{e}{2.1})}; \node{\ref{x}};\end{tikzpicture}")
+                              r"\node{\textup{(\arxivreaderref{e}{2.1})}}; \node{\ref{x}};\end{tikzpicture}")
+
+    def test_unknown_pattern_step_left_empty(self):
+        # lignes horizontales : tuile de 100pt, pas inconnu ; la tuile quitte quand même le dessin
+        page = ('<article class="ltx_document"><svg class="ltx_picture" width="10" height="10"><g>'
+                '<path d="M 0 0.69 L 138.37 0.69" style="fill:none"></path>'
+                '<defs><pattern id="pgfupat1" href="#pgfpat3"><g fill="#000000" stroke="#000000"></g></pattern></defs>'
+                '<g fill="url(#pgfupat1)"><path d="M -39 37 L 39 41 Z"></path></g></g></svg></article>')
+        fragment, _ = sanitize_document(page, latexml.BASE)
+        latexml.fix_patterns(fragment)
+        self.assertIsNone(fragment.find("pattern").find("path"))
+        self.assertEqual(len(fragment.find_all("path")), 1)
+
+    def test_refs_in_code_and_comments_untouched(self):
+        text = ("\\begin{verbatim}\\begin{tikzpicture}\\node{\\ref{a}};\\end{tikzpicture}\\end{verbatim}\n"
+                "% \\begin{tikzpicture}\n\\ref{a}\n\\begin{tikzpicture}\\node{\\ref{a}};\\end{tikzpicture}")
+        out = latexml._figure_refs(text, {"a": ("A3", None)})
+        self.assertEqual(out.count("\\arxivreaderref"), 1)
+        self.assertTrue(out.startswith("\\begin{verbatim}\\begin{tikzpicture}\\node{\\ref{a}}"))
+
+    def test_tiny_images_lose_their_size(self):
+        # « 0.86\normaltextwidth » : longueur de la classe, inconnue de LaTeXML (0) → image de 2 pixels
+        fragment = BeautifulSoup('<img class="ltx_graphics" width="2" height="2" style="aspect-ratio:2/2;" src="a.png">'
+                                 '<img class="ltx_graphics" width="300" height="200" src="b.png">', "html.parser")
+        latexml.fix_tiny_images(fragment)
+        first, second = fragment.find_all("img")
+        self.assertEqual((first.get("width"), first.get("style")), (None, None))
+        self.assertEqual(second["width"], "300")
+
+    def test_figure_width_from_pdf(self):
+        self.assertEqual(latexml._with_width("scale=0.5", 400), "width=200.00pt")
+        self.assertEqual(latexml._with_width("width=3cm", 400), "width=3cm")
+        self.assertEqual(latexml._with_width(None, 300.5), "width=300.50pt")
+
+    @unittest.skipUnless(latexml._rasterizer(), "ni sips ni Ghostscript")
+    def test_pdf_figures_become_png(self):
+        from pypdf import PdfWriter
+        copy = self.tmp / "src"
+        (copy / "figs").mkdir(parents=True)
+        writer = PdfWriter()
+        writer.add_blank_page(width=144, height=72)
+        with open(copy / "figs" / "plot.pdf", "wb") as handle:
+            writer.write(handle)
+        (copy / "main.tex").write_text("\\graphicspath{{figs/}}\\includegraphics[scale=0.5]{plot}", encoding="utf-8")
+        latexml._raster_figures(copy, [copy])
+        self.assertEqual((copy / "main.tex").read_text(), "\\graphicspath{{figs/}}\\includegraphics[width=72.00pt]"
+                                                          "{arxivreader-figures/1.png}")
+        self.assertTrue((copy / "arxivreader-figures" / "1.png").stat().st_size > 0)
+
+    def test_biblatex_bbl_becomes_thebibliography(self):
+        cwd = self.tmp / "bl"
+        cwd.mkdir()
+        (cwd / "main.tex").write_text("\\addbibresource{b.bib}\\begin{document}\\cite{k}\\printbibliography[title=R]"
+                                      "\\end{document}", encoding="utf-8")
+        (cwd / "main.bbl").write_text("\\refsection{0}\\entry{k}{article}{}\\name{author}{1}{}{{{\\hash{x}\\family={Doe}"
+                                      "\\given={Jane}}}}\\field{title}{A & B}\\field{journaltitle}{J}\\field{year}{2020}"
+                                      "\\endentry\\endrefsection", encoding="utf-8")
+        paper = {"id": "x", "source": "tex"}
+        self.assertTrue(latexml._lost_bibliography("<p></p>", cwd))
+        self.assertTrue(latexml._biblatex_bibliography(paper, cwd, "main.tex"))
+        self.assertIn("\\input{arxivreader-bibliography}", (cwd / "main.tex").read_text())
+        self.assertIn("\\bibitem{k} Jane Doe, A \\& B, J, 2020.", (cwd / "arxivreader-bibliography.tex").read_text())
 
 
 if __name__ == "__main__":

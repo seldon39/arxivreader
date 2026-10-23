@@ -337,7 +337,9 @@ qu'elle est expérimentale et peut contenir des erreurs (formules, figures, num�
 conversion se fait en arrière-plan (de quelques secondes à quelques minutes) pendant qu'on lit le PDF ; la version
 HTML s'ouvre ensuite, avec les mêmes notes sur les énoncés que dans le PDF. Elle est gardée jusqu'à la prochaine
 compilation du fichier TeX ou une nouvelle version sur arXiv. Les figures pgfplots (courbes, surfaces), que LaTeXML
-met très longtemps à calculer, sont remplacées par une mention renvoyant au PDF. Il faut LaTeXML : `brew install
+met très longtemps à calculer, sont remplacées par une mention renvoyant au PDF. Les figures au format PDF sont
+d'abord converties en images (par macOS lui-même, ou par le Ghostscript fourni avec TeX sous Windows) ; une
+bibliographie perdue est refaite d'après le `.bbl` (celui de la compilation, ou celui que fait BibTeX). Il faut LaTeXML : `brew install
 latexml` sur Mac, `apt install latexml` sous Linux ; sous Windows, quelques étapes (Perl, puis LaTeXML), voir
 [son guide](https://math.nist.gov/~BMiller/LaTeXML/get.html).
 

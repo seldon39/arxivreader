@@ -324,6 +324,8 @@ and may contain errors (formulas, figures, numbering): the PDF is the reference.
 background (from a few seconds to a few minutes) while you read the PDF; the HTML version then opens, with the same
 notes on statements as in the PDF. It is kept until the TeX file is recompiled or arXiv has a new version. pgfplots
 figures (curves, surfaces), which LaTeXML takes very long to compute, are replaced by a note pointing to the PDF.
+Figures in PDF format are converted to images first (by macOS itself, or by the Ghostscript that comes with TeX
+on Windows); if the bibliography is lost, it is rebuilt from the `.bbl` (the compilation's, or one made by BibTeX).
 LaTeXML must be installed: `brew install latexml` on a Mac, `apt install latexml` on Linux; on Windows it takes a
 few steps (Perl, then LaTeXML), see [its guide](https://math.nist.gov/~BMiller/LaTeXML/get.html).
 
