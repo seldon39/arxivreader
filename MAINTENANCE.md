@@ -231,7 +231,9 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   plus long), le même pour l'analyse et pour LaTeXML. Conversion et compilation d'un même document : l'une à la fois
   (409). Défauts de LaTeXML 0.8.8 (Homebrew) contournés, que corrige la version de développement d'arXiv : dessins sans
   `viewBox` (`add_viewboxes`), paquets KOMA sans équivalent qui vident la bibliographie (`LAYOUT_ONLY`, paquets vides
-  écrits dans le dossier de la conversion). Bibliographie : le `.bib` quand tous sont trouvés (un `.bbl` amsrefs lui
+  écrits dans le dossier de la conversion), chemins de recherche avec accents (« Thèse » : .bib et images
+  introuvables) remplacés par des liens symboliques au nom simple (`_ascii`). Conversion améliorée : augmenter
+  `latexml.CONVERSION`, les versions HTML déjà faites passent à « à refaire ». Bibliographie : le `.bib` quand tous sont trouvés (un `.bbl` amsrefs lui
   échappe), sinon le `.bbl` (`nobibtex`). Dépendances implicites (« the above lemma », phrase de justification,
   équations du texte courant, corollaire qui suit un énoncé) : `structure.py` et `texstructure.implicit_dependencies`.
   Étiquettes de listes inconnues de LaTeXML (« (enumi) », ex. `\greek*` de moreenum) : refaites par `relabelLists`

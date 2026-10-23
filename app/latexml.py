@@ -32,6 +32,7 @@ from .structure import STRUCTURE_VERSION, classify, extract_structure
 from .texsource import MAX_FILE_BYTES, MAX_MEMBERS, MAX_TOTAL_BYTES, choose_main
 
 SOURCES = ("local-tex", "tex")
+CONVERSION = 2  # à augmenter quand la conversion s'améliore : les versions HTML déjà faites sont à refaire
 TIMEOUT = 600  # secondes : un livre peut demander plusieurs minutes
 GUIDE = "https://math.nist.gov/~BMiller/LaTeXML/get.html"  # installation (Windows : Perl, puis LaTeXML)
 DIRS = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "~/perl5/bin",
@@ -83,7 +84,8 @@ def state(paper):
     saved = _state_file(paper["id"])
     if not saved:
         return "none"
-    fresh = saved.get("stamp") == _stamp(paper) and saved.get("structureVersion") == STRUCTURE_VERSION
+    fresh = (saved.get("stamp") == _stamp(paper) and saved.get("structureVersion") == STRUCTURE_VERSION
+             and saved.get("conversion") == CONVERSION)
     if saved.get("ok"):
         return "ready" if fresh and (html_dir(paper["id"]) / "content.html").exists() else "stale"
     return "failed" if saved.get("stamp") == _stamp(paper) else "none"
@@ -144,7 +146,7 @@ def convert(pid):
         except LatexmlError as error:
             _save_state(pid, {"ok": False, "stamp": stamp, "error": str(error)[:400]})
             raise
-        _save_state(pid, {"ok": True, "stamp": stamp, "structureVersion": STRUCTURE_VERSION,
+        _save_state(pid, {"ok": True, "stamp": stamp, "structureVersion": STRUCTURE_VERSION, "conversion": CONVERSION,
                           "at": datetime.now().isoformat(timespec="seconds")})
         return {"state": state(db.get_paper(pid))}  # « stale » si la source a été recompilée entre-temps
     finally:
@@ -181,8 +183,8 @@ def _source(paper, work):
         bbl = build / f"{main.stem}.bbl"
         if use_bbl and bbl.is_file():
             shutil.copyfile(bbl, copy / bbl.name)
-        bib_dirs = [str(Path(b["path"]).parent) for b in report.get("bibs", [])]
-        return copy, main.name, [main.parent, build, *dict.fromkeys(bib_dirs)], use_bbl
+        folders = dict.fromkeys([main.parent, build, *(Path(b["path"]).parent for b in report.get("bibs", []))])
+        return copy, main.name, [_ascii(folder, work, index) for index, folder in enumerate(folders)], use_bbl
     from .arxiv import fetch_source
     data = fetch_source(paper["arxiv_id"], paper.get("version"))
     if not data:
@@ -230,6 +232,21 @@ def _without_plots(text):
     note = "Figure omise dans la version HTML (pgfplots) : voir le PDF." if db.get_settings().get("language") == "fr" \
         else "Figure omitted in the HTML version (pgfplots): see the PDF."
     return TIKZPICTURE.sub(lambda m: f"\\fbox{{{note}}}" if PGFPLOTS.search(m.group(0)) else m.group(0), text)
+
+
+def _ascii(folder, work, index):
+    """Chemin de recherche que LaTeXML sait ouvrir : un dossier dont le chemin a des accents (« Thèse ») lui échappe
+    (.bib et images introuvables) ; il passe alors par un lien symbolique au nom simple, dans le dossier de la
+    conversion. Sans lien possible (Windows sans le droit d'en créer) : le chemin tel quel."""
+    folder = Path(folder)
+    if str(folder).isascii():
+        return folder
+    link = work / f"path{index}"
+    try:
+        link.symlink_to(folder, target_is_directory=True)
+        return link
+    except OSError:
+        return folder
 
 
 def _extract(data, folder):

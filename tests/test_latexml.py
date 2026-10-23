@@ -74,7 +74,8 @@ class Latexml(unittest.TestCase):
         paper = db.get_paper("tex-s")
         self.assertEqual(latexml.state(paper), "none")
         with mock.patch.object(texfile, "report", return_value={"compiledAt": "A"}):
-            latexml._save_state("tex-s", {"ok": True, "stamp": "A", "structureVersion": texstructure.STRUCTURE_VERSION})
+            latexml._save_state("tex-s", {"ok": True, "stamp": "A", "structureVersion": texstructure.STRUCTURE_VERSION,
+                                          "conversion": latexml.CONVERSION})
             (latexml.html_dir("tex-s") / "content.html").write_text("<article></article>")
             self.assertEqual(latexml.state(paper), "ready")
         with mock.patch.object(texfile, "report", return_value={"compiledAt": "B"}):  # recompilé depuis
@@ -142,6 +143,18 @@ class Latexml(unittest.TestCase):
         self.assertEqual([s.get("viewbox") for s in fragment.find_all("svg")], ["0 0 355 315.51", "0 0 20 10"])
         folder = latexml._stubs(self.tmp)  # typearea sans équivalent dans LaTeXML 0.8.8 : vide la bibliographie
         self.assertTrue((folder / "typearea.sty.ltxml").read_text().startswith("package LaTeXML::Package::Pool;"))
+
+
+    def test_paths_with_accents_go_through_a_link(self):
+        folder = self.tmp / "Thèse"  # LaTeXML 0.8.8 n'y trouve pas le .bib (bibliographie vide)
+        folder.mkdir()
+        (folder / "refs.bib").write_text("@book{k, title={T}}")
+        work = self.tmp / "work"
+        work.mkdir()
+        path = latexml._ascii(folder, work, 0)
+        self.assertTrue(str(path).isascii())
+        self.assertEqual((path / "refs.bib").read_text(), "@book{k, title={T}}")
+        self.assertEqual(latexml._ascii(work, work, 1), work)  # sans accent : tel quel
 
 
 if __name__ == "__main__":
