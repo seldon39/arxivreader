@@ -239,7 +239,8 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   est perdu (`fix_patterns`), ligne de texte seul d'un nœud devenue un `<text>` SVG (enveloppée, même module),
   renvois des dessins à largeur fixe (`_figure_refs` : numéro du `.aux`, lien gardé par `\arxivreaderref`).
   Figures PDF (Image::Magick absent : `ltx_missing_image`) converties en PNG avant LaTeXML (`_raster_figures` : sips,
-  sinon Ghostscript de TeX ; largeur de la figure d'origine), images réduites à quelques pixels par une longueur
+  sinon Ghostscript de TeX ; largeur de la figure d'origine ; vrais PDF seulement (`%PDF-` : pas de PostScript pour
+  Ghostscript), dans le dossier du document, 2400 px et 180 s au plus en tout, `page=` respecté), images réduites à quelques pixels par une longueur
   inconnue de LaTeXML (`fix_tiny_images`). Bibliographie vide (le `.bib` relu avec le préambule : pdfx, CJK… arrêtent
   LaTeXML) : seconde conversion d'après un `.bbl` (`_lost_bibliography`, `_bbl` : compilation ou BibTeX sur les
   citations ; `.bbl` biblatex changé en thebibliography, `_biblatex_bibliography`).

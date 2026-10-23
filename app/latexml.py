@@ -19,6 +19,7 @@ import shutil
 import sys
 import tarfile
 import tempfile
+import time
 import gzip
 import io
 from datetime import datetime
@@ -145,7 +146,10 @@ def convert(pid):
                                                   or not use_bbl and _bbl(paper, cwd, main)):
                 again = work / "out-bbl"  # bibliographie d'après le .bbl, comme sur arXiv
                 again.mkdir()
-                retry = _run(program, cwd, main, paths, again, True)
+                try:
+                    retry = _run(program, cwd, main, paths, again, True)
+                except LatexmlError:  # la première conversion reste bonne
+                    retry = ""
                 if "ltx_bibitem" in retry:
                     html, out = retry, again
             _store(pid, html, out)
@@ -179,9 +183,35 @@ def _lost_bibliography(html, cwd):
     return "ltx_bibitem" not in html and bool(BIBLATEX.search(_texts(cwd)))
 
 
+def _bib_text(text):
+    """Texte d'une entrée pour thebibliography : formules $…$ gardées si leurs accolades s'équilibrent, le reste
+    échappé (caractères spéciaux de TeX)."""
+    parts = re.split(r"(\$[^$]+\$)", text)
+    out = []
+    for part in parts:
+        if part.startswith("$") and part.endswith("$") and len(part) > 1 and _balanced(part):
+            out.append(part)
+        else:
+            out.append(re.sub(r"[\\{}$&%#_^~]", lambda m: {"\\": r"\textbackslash{}", "^": r"\^{}", "~": r"\~{}"}
+                              .get(m.group(0), "\\" + m.group(0)), part))
+    return "".join(out)
+
+
+def _balanced(text):
+    depth = 0
+    for index, char in enumerate(text):
+        if char in "{}" and index and text[index - 1] == "\\":
+            continue
+        depth += {"{": 1, "}": -1}.get(char, 0)
+        if depth < 0:
+            return False
+    return depth == 0
+
+
 def _biblatex_bibliography(paper, cwd, main):
     """.bbl de biblatex (biber) : LaTeXML ne le lit pas. Ses entrées (auteurs, titre, revue, année) deviennent une
-    liste thebibliography, mise à la place de \\printbibliography (True si fait)."""
+    liste thebibliography, mise à la place du premier \\printbibliography (les suivants sont retirés : une seule liste ;
+    ceux des commentaires ne comptent pas). True si fait."""
     stem = Path(main).stem
     candidates = [cwd / Path(main).parent / f"{stem}.bbl", *sorted(cwd.rglob("*.bbl"))]
     if paper["source"] == "local-tex":
@@ -190,21 +220,29 @@ def _biblatex_bibliography(paper, cwd, main):
     entries = texstructure._biblatex(text) if "\\entry{" in text else []
     if not entries:
         return False
-    items = "".join(f"\\bibitem{{{entry['id'].removeprefix('bib.')}}} {TEX_SPECIAL.sub(r'\\\1', entry['text'])}.\n"
-                    for entry in entries)
-    (cwd / "arxivreader-bibliography.tex").write_text(
-        "\\begin{thebibliography}{99}\n" + items + "\\end{thebibliography}\n", encoding="utf-8")
+    main_path = cwd / main
+    main_text = main_path.read_bytes()
+    try:
+        main_text.decode("utf-8")
+        encoding = "utf-8"
+    except UnicodeDecodeError:  # document en latin-1 (inputenc) : la liste dans le même codage
+        encoding = "latin-1"
+    items = "".join(f"\\bibitem{{{entry['id'].removeprefix('bib.')}}} {_bib_text(entry['text'])}.\n" for entry in entries)
+    (cwd / "arxivreader-bibliography.tex").write_bytes(
+        ("\\begin{thebibliography}{99}\n" + items + "\\end{thebibliography}\n").encode(encoding, errors="replace"))
+    files = [main_path] + [path for path in sorted(cwd.rglob("*")) if path != main_path and path.is_file()
+                           and path.suffix.lower() in (".tex", ".ltx") and path.name != "arxivreader-bibliography.tex"]
     placed = False
-    for path in sorted(cwd.rglob("*")):
-        if path.suffix.lower() not in (".tex", ".ltx") or not path.is_file() or path.name == "arxivreader-bibliography.tex":
-            continue
+    for path in files:
         source = path.read_bytes().decode("utf-8", errors="surrogateescape")
-        changed = PRINTBIBLIOGRAPHY.sub(lambda m: "\\input{arxivreader-bibliography}", source)
-        if changed != source:
+        found = list(PRINTBIBLIOGRAPHY.finditer(_masked(source)))
+        for match in reversed(found):
+            value = "\\input{arxivreader-bibliography}" if not placed and match is found[0] else ""
+            source = source[:match.start()] + value + source[match.end():]
+        if found:
             placed = True
-            path.write_bytes(changed.encode("utf-8", errors="surrogateescape"))
+            path.write_bytes(source.encode("utf-8", errors="surrogateescape"))
     if not placed:
-        main_path = cwd / main
         source = main_path.read_bytes().decode("utf-8", errors="surrogateescape")
         source = source.replace("\\end{document}", "\\input{arxivreader-bibliography}\n\\end{document}", 1)
         main_path.write_bytes(source.encode("utf-8", errors="surrogateescape"))
@@ -308,8 +346,11 @@ def _source(paper, work):
 INCLUDE = re.compile(r"\\includegraphics\s*(\*?)\s*(?:\[([^\]]*)\])?\s*\{([^{}]+)\}")
 GRAPHICSPATH = re.compile(r"\\graphicspath\s*\{((?:\s*\{[^{}]*\})*)\s*\}")
 RASTER = (".png", ".jpg", ".jpeg", ".gif", ".svg")
-MAX_FIGURES = 300
+MAX_FIGURES = 150
+FIGURES_SECONDS = 180  # pour toutes les figures d'un document ; au-delà, les suivantes restent manquantes
 FIGURE_DPI = 200
+MAX_PIXELS = 2400  # côté le plus long de l'image produite
+UNSIZED = ("width", "height", "totalheight", "angle", "trim", "viewport", "bb", "natwidth", "natheight")
 
 
 def _rasterizer():
@@ -322,42 +363,64 @@ def _rasterizer():
     return None
 
 
-def _pdf_width(path):
-    """Largeur de la première page d'un PDF, en points (None si illisible)."""
+def _pdf_size(path, page):
+    """(largeur, hauteur) de la page `page` d'un PDF, en points (None si illisible ou absente)."""
     try:
         from pypdf import PdfReader
-        box = PdfReader(str(path)).pages[0].cropbox
-        return abs(float(box.width)) or None
+        reader = PdfReader(str(path))
+        box = reader.pages[page - 1].cropbox
+        return abs(float(box.width)) or None, abs(float(box.height)) or None
     except Exception:
-        return None
+        return None, None
 
 
-def _rasterize(tool, source, target, width):
+def _rasterize(tool, source, target, size, page, timeout):
+    width, height = size
+    longest = max(width or 300, height or 0)
     if tool == "sips":
-        size = str(max(64, min(2400, round((width or 300) * FIGURE_DPI / 72))))
-        command = ["sips", "-s", "format", "png", "-Z", size, str(source), "--out", str(target)]
+        if page != 1:
+            return False  # sips ne rend que la première page
+        pixels = str(max(64, min(MAX_PIXELS, round(longest * FIGURE_DPI / 72))))
+        command = ["sips", "-s", "format", "png", "-Z", pixels, str(source), "--out", str(target)]
     else:
-        command = [tool, "-q", "-dSAFER", "-dBATCH", "-dNOPAUSE", "-sDEVICE=png16m", f"-r{FIGURE_DPI}", "-dUseCropBox",
-                   "-dFirstPage=1", "-dLastPage=1", "-dTextAlphaBits=4", "-dGraphicsAlphaBits=4",
+        dpi = max(10, min(FIGURE_DPI, int(MAX_PIXELS * 72 / longest)))
+        command = [tool, "-q", "-dSAFER", "-dBATCH", "-dNOPAUSE", "-sDEVICE=png16m", f"-r{dpi}", "-dUseCropBox",
+                   f"-dFirstPage={page}", f"-dLastPage={page}", "-dTextAlphaBits=4", "-dGraphicsAlphaBits=4",
                    f"-sOutputFile={target}", str(source)]
     try:
-        texfile._run(command, str(target.parent), dict(os.environ), 60)
+        texfile._run(command, str(target.parent), dict(os.environ), max(1, timeout))
     except texfile.TexError:
         return False
     return target.is_file() and target.stat().st_size > 0
 
 
+def _option(keys, name):
+    found = next((key for key in keys if re.match(name + r"\s*=", key)), None)
+    return found.split("=", 1)[1].strip() if found else None
+
+
 def _with_width(options, width):
-    """Options de \\includegraphics : largeur de la figure d'origine (échelle comprise) si aucune taille n'est donnée."""
+    """Options de \\includegraphics : largeur de la figure d'origine (échelle comprise) si aucune taille n'est donnée
+    (ni rotation ni découpe, que la largeur imposée fausserait). « page= » retiré : le PNG est cette page."""
     keys = [part.strip() for part in (options or "").split(",") if part.strip()]
-    if not width or any(re.match(r"(width|height|totalheight)\s*=", key) for key in keys):
-        return options
-    scale = next((key for key in keys if re.match(r"scale\s*=", key)), None)
+    kept = [key for key in keys if not re.match(r"page\s*=", key)]
+    if not width or any(re.match(name + r"\s*=", key) for key in kept for name in UNSIZED):
+        return ",".join(kept)
+    scale = next((key for key in kept if re.match(r"scale\s*=", key)), None)
     try:
         factor = float(scale.split("=", 1)[1]) if scale else 1.0
     except ValueError:
-        return options
-    return ",".join([key for key in keys if key != scale] + [f"width={width * factor:.2f}pt"])
+        return ",".join(kept)
+    return ",".join([key for key in kept if key != scale] + [f"width={width * factor:.2f}pt"])
+
+
+def _is_pdf(path):
+    """Vrai PDF (pas du PostScript nommé .pdf, que Ghostscript exécuterait)."""
+    try:
+        with open(path, "rb") as handle:
+            return b"%PDF-" in handle.read(1024)
+    except OSError:
+        return False
 
 
 def _raster_figures(copy, folders):
@@ -369,23 +432,24 @@ def _raster_figures(copy, folders):
              for path in copy.rglob("*") if path.suffix.lower() in (".tex", ".ltx") and path.is_file()}
     prefixes = [""]
     for text in texts.values():
-        for found in GRAPHICSPATH.finditer(text):
+        for found in GRAPHICSPATH.finditer(_masked(text)):
             prefixes += re.findall(r"\{([^{}]*)\}", found.group(1))
     out = copy / "arxivreader-figures"
     done = {}
+    deadline = time.monotonic() + FIGURES_SECONDS
 
     def locate(name):
         name = name.strip()
         stem = name[:-4] if name.lower().endswith(".pdf") else name
         for folder in folders:
+            root = folder.resolve()
             for prefix in prefixes:
                 base = (folder / prefix / stem).resolve()
-                if not base.is_relative_to(folder.resolve()):
-                    continue
-                if name == stem and any(base.with_name(base.name + ext).is_file() for ext in RASTER):
+                if name == stem and any(base.with_name(base.name + ext).is_file() for ext in RASTER
+                                        if base.with_name(base.name + ext).resolve().is_relative_to(root)):
                     return None  # image déjà lisible par LaTeXML
-                pdf = base.with_name(base.name + ".pdf")
-                if pdf.is_file() and pdf.stat().st_size < 50_000_000:
+                pdf = base.with_name(base.name + ".pdf").resolve()
+                if pdf.is_relative_to(root) and pdf.is_file() and pdf.stat().st_size < 50_000_000 and _is_pdf(pdf):
                     return pdf
         return None
 
@@ -393,24 +457,34 @@ def _raster_figures(copy, folders):
         star, options, name = match.groups()
         pdf = locate(name)
         if pdf is None:
-            return match.group(0)
-        if pdf not in done:
-            if len(done) >= MAX_FIGURES:
-                return match.group(0)
+            return None
+        try:
+            page = int(_option([part.strip() for part in (options or "").split(",")], "page") or 1)
+        except ValueError:
+            return None
+        if (pdf, page) not in done:
+            remaining = deadline - time.monotonic()
+            if len(done) >= MAX_FIGURES or remaining <= 0:
+                return None
             out.mkdir(exist_ok=True)
             target = out / f"{len(done) + 1}.png"
-            width = _pdf_width(pdf)
-            done[pdf] = (target.relative_to(copy).as_posix(), width) if _rasterize(tool, pdf, target, width) else None
-        if done[pdf] is None:
-            return match.group(0)
-        png, width = done[pdf]
+            size = _pdf_size(pdf, page)
+            ok = size != (None, None) and _rasterize(tool, pdf, target, size, page, min(60, remaining))
+            done[(pdf, page)] = (target.relative_to(copy).as_posix(), size[0]) if ok else None
+        if done[(pdf, page)] is None:
+            return None
+        png, width = done[(pdf, page)]
         options = _with_width(options, width)
         return f"\\includegraphics{star}{f'[{options}]' if options else ''}{{{png}}}"
 
     for path, text in texts.items():
-        changed = INCLUDE.sub(replace, text)
-        if changed != text:
-            path.write_bytes(changed.encode("utf-8", errors="surrogateescape"))
+        masked = _masked(text)  # commentaires et code affiché : laissés tels quels
+        edits = [(m.start(), m.end(), value) for m in INCLUDE.finditer(masked)
+                 if (value := replace(INCLUDE.match(text, m.start()))) is not None]
+        for start_at, end_at, value in reversed(edits):
+            text = text[:start_at] + value + text[end_at:]
+        if edits:
+            path.write_bytes(text.encode("utf-8", errors="surrogateescape"))
 
 
 # Paquets de mise en page (KOMA-Script) que LaTeXML 0.8.8 ne connaît pas : il charge alors le vrai paquet, échoue
@@ -498,14 +572,20 @@ FIGURE_ENV = re.compile(r"\\begin\{(tikzpicture|tikzcd)\}.*?\\end\{\1\}", re.S)
 FIGURE_REF = re.compile(r"\\(eq)?ref\s*\{([^{}]+)\}")
 # commentaires et code affiché : masqués (même longueur) avant la recherche des dessins et des renvois
 HIDDEN = re.compile(r"(?<!\\)%[^\n]*|\\begin\{(verbatim\*?|lstlisting|minted|comment)\}.*?\\end\{\1\}"
-                    r"|\\(?:verb|lstinline)\*?([^\sa-zA-Z]).*?\2", re.S)
+                    r"|\\lstinline\*?(?:\[[^\]]*\])?\{[^{}\n]*\}"
+                    r"|\\(?:verb|lstinline)\*?([^\sa-zA-Z{]).*?\2", re.S)
+
+
+def _masked(text):
+    """Texte où commentaires et code affiché sont remplacés par des espaces (positions inchangées)."""
+    return HIDDEN.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
 
 
 def _figure_refs(text, labels):
     """Renvois (\\ref, \\eqref) dans un dessin TikZ : LaTeXML leur donne une largeur fixe (le numéro n'est connu
     qu'après), et les boîtes des nœuds sont dessinées trop étroites (« A3 » réduit dans une boîte faite pour un
     chiffre). Numéro imprimé par LaTeX à la place, toujours lien vers sa cible (\\arxivreaderref, FIGURE_LABELS)."""
-    masked = HIDDEN.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
+    masked = _masked(text)
     edits = []
     for figure in FIGURE_ENV.finditer(masked):
         for match in FIGURE_REF.finditer(masked, figure.start(), figure.end()):

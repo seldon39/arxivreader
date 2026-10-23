@@ -262,6 +262,76 @@ class Latexml(unittest.TestCase):
         self.assertIn("\\input{arxivreader-bibliography}", (cwd / "main.tex").read_text())
         self.assertIn("\\bibitem{k} Jane Doe, A \\& B, J, 2020.", (cwd / "arxivreader-bibliography.tex").read_text())
 
+    def test_biblatex_text_and_single_list(self):
+        self.assertEqual(latexml._bib_text(r"On $L^2$ for $\bar\partial$ & A_B"), r"On $L^2$ for $\bar\partial$ \& A\_B")
+        self.assertIn(r"\$\textbackslash{}left\{x", latexml._bib_text(r"$\left{x\right.$"))  # formule déséquilibrée
+        cwd = self.tmp / "two"
+        cwd.mkdir()
+        (cwd / "main.tex").write_text("% \\printbibliography\n\\printbibliography[keyword=a]\n\\printbibliography[keyword=b]"
+                                      "\n\\end{document}", encoding="utf-8")
+        (cwd / "main.bbl").write_text("\\entry{k}{article}{}\\field{title}{T}\\endentry", encoding="utf-8")
+        self.assertTrue(latexml._biblatex_bibliography({"id": "x", "source": "tex"}, cwd, "main.tex"))
+        self.assertEqual((cwd / "main.tex").read_text(),
+                         "% \\printbibliography\n\\input{arxivreader-bibliography}\n\n\\end{document}")
+
+    def test_figures_only_real_pdfs_inside_the_folder(self):
+        root = self.tmp / "proj"
+        (root / "src").mkdir(parents=True)
+        (root / "src.pdf").write_bytes(b"%PDF-1.4 outside")  # frère du dossier : jamais lu
+        (root / "src" / "ps.pdf").write_bytes(b"%!PS-Adobe-3.0\n(x) = flush")  # PostScript nommé .pdf : refusé
+        (root / "src" / "main.tex").write_text("\\includegraphics{.} \\includegraphics{ps}\n"
+                                               "\\begin{verbatim}\\includegraphics{ps}\\end{verbatim}", encoding="utf-8")
+        with mock.patch.object(latexml, "_rasterizer", return_value="gs"), \
+             mock.patch.object(latexml, "_rasterize", side_effect=AssertionError("no conversion expected")):
+            latexml._raster_figures(root / "src", [root / "src"])
+        self.assertNotIn("arxivreader-figures", (root / "src" / "main.tex").read_text())
+
+    def test_page_option_gets_its_own_image(self):
+        from pypdf import PdfWriter
+        copy = self.tmp / "pages"
+        copy.mkdir()
+        writer = PdfWriter()
+        writer.add_blank_page(width=100, height=50)
+        writer.add_blank_page(width=200, height=50)
+        with open(copy / "slides.pdf", "wb") as handle:
+            writer.write(handle)
+        (copy / "main.tex").write_text("\\includegraphics[page=2]{slides}\\includegraphics{slides}", encoding="utf-8")
+        calls = []
+
+        def fake(tool, source, target, size, page, timeout):
+            calls.append((size, page))
+            target.write_bytes(b"png")
+            return True
+        with mock.patch.object(latexml, "_rasterizer", return_value="gs"), mock.patch.object(latexml, "_rasterize", fake):
+            latexml._raster_figures(copy, [copy])
+        self.assertEqual(calls, [((200.0, 50.0), 2), ((100.0, 50.0), 1)])
+        self.assertEqual((copy / "main.tex").read_text(), "\\includegraphics[width=200.00pt]{arxivreader-figures/1.png}"
+                                                          "\\includegraphics[width=100.00pt]{arxivreader-figures/2.png}")
+
+    def test_failed_bibliography_retry_keeps_first_conversion(self):
+        db.save_paper({"id": "tex-r", "arxiv_id": "", "version": None, "title": "T", "authors": [], "abstract": "",
+                       "categories": [], "primary_category": "", "published": None, "updated": None, "doi": None,
+                       "journal_ref": None, "comment": "", "source": "local-tex", "in_library": 1})
+        work = self.tmp / "w"
+        work.mkdir()
+        (work / "main.tex").write_text("\\bibliography{refs}", encoding="utf-8")
+        page = '<article class="ltx_document"><p>ok</p></article>'
+        runs = iter([page, latexml.LatexmlError("timeout")])
+
+        def run(*args, **kwargs):
+            value = next(runs)
+            if isinstance(value, Exception):
+                raise value
+            return value
+        (latexml.paper_dir("tex-r")).mkdir(parents=True, exist_ok=True)
+        (latexml.paper_dir("tex-r") / "structure.json").write_text("{}", encoding="utf-8")
+        with mock.patch.object(latexml, "find", return_value="/bin/latexmlc"), \
+             mock.patch.object(latexml, "_source", return_value=(work, "main.tex", [], False)), \
+             mock.patch.object(latexml, "_run", run), mock.patch.object(latexml, "_bbl", return_value=True), \
+             mock.patch.object(texfile, "report", return_value={"compiledAt": "A"}):
+            self.assertEqual(latexml.convert("tex-r")["state"], "ready")
+        self.assertIn("ok", (latexml.html_dir("tex-r") / "content.html").read_text())
+
 
 if __name__ == "__main__":
     unittest.main()
