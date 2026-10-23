@@ -32,7 +32,6 @@ from .structure import STRUCTURE_VERSION, classify, extract_structure
 from .texsource import MAX_FILE_BYTES, MAX_MEMBERS, MAX_TOTAL_BYTES, choose_main
 
 SOURCES = ("local-tex", "tex")
-CONVERSION = 2  # à augmenter quand la conversion s'améliore : les versions HTML déjà faites sont à refaire
 TIMEOUT = 600  # secondes : un livre peut demander plusieurs minutes
 GUIDE = "https://math.nist.gov/~BMiller/LaTeXML/get.html"  # installation (Windows : Perl, puis LaTeXML)
 DIRS = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "~/perl5/bin",
@@ -84,8 +83,7 @@ def state(paper):
     saved = _state_file(paper["id"])
     if not saved:
         return "none"
-    fresh = (saved.get("stamp") == _stamp(paper) and saved.get("structureVersion") == STRUCTURE_VERSION
-             and saved.get("conversion") == CONVERSION)
+    fresh = saved.get("stamp") == _stamp(paper) and saved.get("structureVersion") == STRUCTURE_VERSION
     if saved.get("ok"):
         return "ready" if fresh and (html_dir(paper["id"]) / "content.html").exists() else "stale"
     return "failed" if saved.get("stamp") == _stamp(paper) else "none"
@@ -146,7 +144,7 @@ def convert(pid):
         except LatexmlError as error:
             _save_state(pid, {"ok": False, "stamp": stamp, "error": str(error)[:400]})
             raise
-        _save_state(pid, {"ok": True, "stamp": stamp, "structureVersion": STRUCTURE_VERSION, "conversion": CONVERSION,
+        _save_state(pid, {"ok": True, "stamp": stamp, "structureVersion": STRUCTURE_VERSION,
                           "at": datetime.now().isoformat(timespec="seconds")})
         return {"state": state(db.get_paper(pid))}  # « stale » si la source a été recompilée entre-temps
     finally:

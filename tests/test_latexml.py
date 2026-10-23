@@ -74,8 +74,7 @@ class Latexml(unittest.TestCase):
         paper = db.get_paper("tex-s")
         self.assertEqual(latexml.state(paper), "none")
         with mock.patch.object(texfile, "report", return_value={"compiledAt": "A"}):
-            latexml._save_state("tex-s", {"ok": True, "stamp": "A", "structureVersion": texstructure.STRUCTURE_VERSION,
-                                          "conversion": latexml.CONVERSION})
+            latexml._save_state("tex-s", {"ok": True, "stamp": "A", "structureVersion": texstructure.STRUCTURE_VERSION})
             (latexml.html_dir("tex-s") / "content.html").write_text("<article></article>")
             self.assertEqual(latexml.state(paper), "ready")
         with mock.patch.object(texfile, "report", return_value={"compiledAt": "B"}):  # recompilé depuis
