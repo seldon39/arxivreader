@@ -245,7 +245,8 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   LaTeXML) : seconde conversion d'après un `.bbl` (`_lost_bibliography`, `_bbl` : compilation ou BibTeX sur les
   citations ; `.bbl` biblatex changé en thebibliography, `_biblatex_bibliography`).
   Reste : lignes d'un nœud à plusieurs lignes un peu serrées (LaTeXML les empile sans interligne). Sous-figures
-  (`ltx_flex_figure`) côte à côte : `latexml.css`. Bibliographie : le `.bib` quand tous
+  (`ltx_flex_figure`) côte à côte : `latexml.css`. Taille des figures (dessins, images) rapportée au texte
+  (`figures.sizeToText` : largeur LaTeXML à 100 dpi convertie en em d'après le corps du document, 10pt par défaut). Bibliographie : le `.bib` quand tous
   sont trouvés (un `.bbl` amsrefs lui
   échappe), sinon le `.bbl` (`nobibtex`). Dépendances implicites (« the above lemma », phrase de justification,
   équations du texte courant, corollaire qui suit un énoncé) : `structure.py` et `texstructure.implicit_dependencies`.

@@ -799,8 +799,8 @@ def fix_patterns(fragment):
         if not target or target in ids:
             continue
         if target not in tiles:  # tuile dessinée juste avant la première utilisation du motif
-            defs = pattern.find_parent("defs")
-            loose = _tile(defs.find_previous_sibling() if defs else None)
+            defs = pattern.find_parent("defs")  # tuile : dernier tracé avant la définition (parfois dans un <g>)
+            loose = _tile(defs.find_previous("path") if defs else None)
             tiles[target] = loose.extract() if loose else None
         color = (pattern.find("g") or {}).get("stroke") or "#000000"
         pattern.clear()

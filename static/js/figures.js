@@ -96,6 +96,18 @@ export function emptyPictures(root) {
   });
 }
 
+// Taille des figures rapportée au texte : LaTeXML donne leur largeur en pixels à 100 dpi, le texte de l'article est
+// affiché plus grand que dans le PDF ; une figure y paraissait réduite. Largeur convertie en em d'après le corps du
+// document (10pt par défaut) : même proportion que dans le PDF, suit A+/A−, bornée par la colonne (max-width).
+export function sizeToText(root, basePt = 10) {
+  const pxPerEm = (basePt * 100) / 72.27;
+  for (const element of root.querySelectorAll("svg.ltx_picture, img.ltx_graphics")) {
+    if (element.closest(".figure-card") && element.tagName.toLowerCase() === "img") continue; // image placée dans un dessin
+    const width = parseFloat(element.getAttribute("width"));
+    if (width > 0) element.style.width = `${(width / pxPerEm).toFixed(3)}em`;
+  }
+}
+
 export function prepareFigures(root) {
   const cards = [];
   for (const svg of root.querySelectorAll("svg.ltx_picture")) {

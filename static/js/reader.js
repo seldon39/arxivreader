@@ -6,7 +6,7 @@ import { Annotator, findAll, noteEditor } from "./annotations.js";
 import { Assistant } from "./ai.js";
 import { alignNumberColumns, amsBibliography, dropMacroDebris, fixMathML, texQuotes, splitLongInlineMath, markItalicStatements, moveTitleNotes, normalizeFontScale, placeEquationNumbers, relabelLists } from "./amsfix.js";
 import { currentModel } from "./aiproviders.js";
-import { emptyPictures, layoutFigures, openFigure, prepareFigures } from "./figures.js";
+import { emptyPictures, layoutFigures, openFigure, prepareFigures, sizeToText } from "./figures.js";
 import { findBar, setFindHandler } from "./find.js";
 import { PdfView } from "./pdfview.js";
 import { PdfNotes } from "./pdfnotes.js";
@@ -634,6 +634,9 @@ class Reader {
       rest.forEach((picture) => picture.remove());
       first.replaceWith(this.pictureNotice());
     }
+    // corps du document (option 11pt, 12pt de \documentclass) : référence de la taille des figures
+    const size = (this.structure?.tex?.options || []).map((option) => option.match(/^(\d+(?:\.\d+)?)pt$/)).find(Boolean);
+    sizeToText(this.content, size ? parseFloat(size[1]) : 10);
     this.figures = prepareFigures(this.content);
     // Figures cliquables (et au clavier) : affichage en grand par-dessus l'article
     // (une image placée dans un dessin s'ouvre avec le dessin entier)

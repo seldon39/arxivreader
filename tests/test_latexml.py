@@ -201,6 +201,17 @@ class Latexml(unittest.TestCase):
         self.assertEqual(out, r"\ref{a} \begin{tikzpicture}\node{\arxivreaderref{a}{A3}}; "
                               r"\node{\textup{(\arxivreaderref{e}{2.1})}}; \node{\ref{x}};\end{tikzpicture}")
 
+    def test_pattern_tile_inside_a_group(self):
+        # pattern color=… : la tuile isolée est dans son propre <g stroke-width>, avant celui qui porte la définition
+        page = ('<article class="ltx_document"><svg class="ltx_picture" width="10" height="10"><g>'
+                '<g stroke-width="0.4pt"><path d="M 0 0 L 4.29 4.29" style="fill:none"></path></g><g stroke-width="0.8pt">'
+                '<defs><pattern id="pgfupat1" href="#pgfpat3"><g fill="#B3B3B3" stroke="#B3B3B3"></g></pattern></defs>'
+                '<g fill="url(#pgfupat1)"><path d="M 39 0 C 39 21 21 39 0 39 Z"></path></g></g></g></svg></article>')
+        fragment, _ = sanitize_document(page, latexml.BASE)
+        latexml.fix_patterns(fragment)
+        self.assertEqual(fragment.find("pattern").path["stroke"], "#B3B3B3")
+        self.assertEqual(len(fragment.find_all("path")), 2)
+
     def test_unknown_pattern_step_left_empty(self):
         # lignes horizontales : tuile de 100pt, pas inconnu ; la tuile quitte quand même le dessin
         page = ('<article class="ltx_document"><svg class="ltx_picture" width="10" height="10"><g>'
