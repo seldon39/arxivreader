@@ -83,6 +83,64 @@ def _safe_href(href):
     return href if scheme in ("http", "https", "mailto") else None
 
 
+def _repair_patterns(article):
+    """Hachures TikZ des pages d'arXiv (LaTeXML de développement) : la définition du motif (<symbol> de sa tuile) ne
+    se referme qu'à la fin du dessin. Tout ce qui suit la première hachure se trouve alors dans <defs>, invisible,
+    sur arXiv aussi (étiquettes, traits) ; et la surface hachurée est remplie en noir, son groupe à motif restant vide.
+    Le dessin est remis à sa place, la tuile copiée dans chaque motif (<use> n'est pas gardé), la surface rendue à son
+    motif."""
+    tiles = {}
+    for pattern in article.find_all("pattern"):
+        symbol = pattern.find("symbol", recursive=False)
+        if symbol is None:
+            continue
+        children = [child for child in symbol.children if getattr(child, "name", None)]
+        if not children:
+            continue
+        tile, rest = children[0], children[1:]
+        anchor = pattern.find_parent("defs") or pattern
+        for element in rest:  # remis après la définition, dans l'ordre
+            anchor.insert_after(element.extract())
+            anchor = element
+        tiles[symbol.get("id")] = tile
+        symbol.replace_with(tile.extract())
+    definitions = {pattern.get("id"): pattern for pattern in article.find_all("pattern") if pattern.get("id")}
+    for pattern in article.find_all("pattern"):
+        base = definitions.get((pattern.get("href") or "").lstrip("#"))
+        uses = pattern.find_all("use")
+        if base is None or not uses:
+            continue
+        for use in uses:
+            tile = tiles.get((use.get("href") or use.get("xlink:href") or "").lstrip("#"))
+            if tile is None:
+                use.decompose()
+                continue
+            use.replace_with(BeautifulSoup(str(tile), "html.parser"))
+        for key in ("width", "height", "patternunits"):
+            if base.get(key) and not pattern.get(key):
+                pattern[key] = base[key]
+        del pattern["href"]
+    # surface hachurée : tracé dans le groupe noir qui précède un groupe à motif resté vide
+    for group in article.find_all("g", attrs={"fill": re.compile(r"^url\(#pgfupat")}):
+        if group.find(True):
+            continue
+        before = group.find_previous_sibling()
+        paths = before.find_all(True, recursive=False) if before is not None and before.name == "g" else []
+        if len(paths) == 1 and paths[0].name == "path":
+            group.append(paths[0].extract())
+            if not before.find(True):
+                before.decompose()
+    # motif que rien n'emploie (réemploi d'un motif déjà défini) : la surface est le tracé qui suit sa définition
+    used = {match for group in article.find_all("g", attrs={"fill": True})
+            for match in re.findall(r"url\(#([^)]+)\)", group["fill"])}
+    for pattern in article.find_all("pattern", id=re.compile(r"^pgfupat")):
+        defs = pattern.find_parent("defs")
+        after = defs.find_next_sibling() if defs is not None else None
+        shapes = after.find_all(True, recursive=False) if after is not None and after.name == "g" else []
+        if pattern["id"] not in used and len(shapes) == 1 and shapes[0].name == "path":
+            after["fill"] = f"url(#{pattern['id']})"
+
+
 def sanitize_document(html, base_url):
     """Renvoie (soupe nettoyée de l'article, liste des images [(nom local, url distante)])."""
     soup = BeautifulSoup(html, "html.parser")
@@ -98,6 +156,7 @@ def sanitize_document(html, base_url):
     for selector in NOISE_SELECTORS:
         for element in fragment.select(selector):
             element.decompose()
+    _repair_patterns(fragment)
 
     assets = {}
     for element in list(fragment.find_all(True)):

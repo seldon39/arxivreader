@@ -201,6 +201,25 @@ class Latexml(unittest.TestCase):
         self.assertEqual(out, r"\ref{a} \begin{tikzpicture}\node{\arxivreaderref{a}{A3}}; "
                               r"\node{\textup{(\arxivreaderref{e}{2.1})}}; \node{\ref{x}};\end{tikzpicture}")
 
+    def test_arxiv_patterns_repaired(self):
+        # LaTeXML d'arXiv : le <symbol> de la tuile enferme la suite du dessin (invisible dans <defs>), la surface est
+        # remplie en noir ; au réemploi du motif, plus de groupe à motif du tout
+        page = ('<article class="ltx_document"><svg class="ltx_picture" width="10" height="10"><g>'
+                '<defs><pattern height="4" id="pgfpat3" patternUnits="userSpaceOnUse" width="4"><symbol id="pgfsym3">'
+                '<g stroke-width="0.4pt"><path d="M 0 0 L 4.29 4.29" style="fill:none"></path></g>'
+                '<defs><pattern id="pgfupat1" href="#pgfpat3"><g fill="#000" stroke="#000"><use href="#pgfsym3"></use>'
+                '</g></pattern></defs><g fill="#000000"><path d="M -39 37 L 39 41 Z"></path></g>'
+                '<g fill="url(#pgfupat1)"></g><g id="label"><path d="M 1 1 L 2 2"></path></g>'
+                '</symbol></pattern></defs>'
+                '<defs><pattern id="pgfupat2" href="#pgfpat3"><g fill="#000" stroke="#000"><use href="#pgfsym3"></use>'
+                '</g></pattern></defs><g fill="#000000"><path d="M -9 7 L 9 11 Z"></path></g></g></svg></article>')
+        fragment, _ = sanitize_document(page, latexml.BASE)
+        self.assertIsNone(fragment.find(id="label").find_parent("defs"))  # le reste du dessin est visible
+        for pattern_id in ("pgfupat1", "pgfupat2"):
+            pattern = fragment.find(id=pattern_id)
+            self.assertEqual((pattern.get("width"), pattern.path["d"]), ("4", "M 0 0 L 4.29 4.29"))
+            self.assertEqual(len(fragment.select(f'g[fill="url(#{pattern_id})"] > path')), 1)
+
     def test_pattern_tile_inside_a_group(self):
         # pattern color=… : la tuile isolée est dans son propre <g stroke-width>, avant celui qui porte la définition
         page = ('<article class="ltx_document"><svg class="ltx_picture" width="10" height="10"><g>'
