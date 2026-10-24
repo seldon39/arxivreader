@@ -120,22 +120,26 @@ def _repair_patterns(article):
             if base.get(key) and not pattern.get(key):
                 pattern[key] = base[key]
         del pattern["href"]
-    # surface hachurée : tracé dans le groupe noir qui précède un groupe à motif resté vide
+    # surface hachurée : tracé seul dans le groupe noir juste avant (ou, sinon, juste après) un groupe à motif resté
+    # sans tracé (vide, ou ne contenant qu'une nouvelle définition du motif pour sa couleur)
     for group in article.find_all("g", attrs={"fill": re.compile(r"^url\(#pgfupat")}):
-        if group.find(True):
+        if any(child.name != "defs" for child in group.find_all(True, recursive=False)):
             continue
-        before = group.find_previous_sibling()
-        paths = before.find_all(True, recursive=False) if before is not None and before.name == "g" else []
-        if len(paths) == 1 and paths[0].name == "path":
-            group.append(paths[0].extract())
-            if not before.find(True):
-                before.decompose()
+        for neighbour in (group.find_previous_sibling(), group.find_next_sibling()):
+            shapes = neighbour.find_all(True, recursive=False) if neighbour is not None and neighbour.name == "g" else []
+            if len(shapes) == 1 and shapes[0].name == "path" and not neighbour.get("transform"):
+                group.append(shapes[0].extract())
+                neighbour.decompose()
+                break
     # motif que rien n'emploie (réemploi d'un motif déjà défini) : la surface est le tracé qui suit sa définition
     used = {match for group in article.find_all("g", attrs={"fill": True})
             for match in re.findall(r"url\(#([^)]+)\)", group["fill"])}
     for pattern in article.find_all("pattern", id=re.compile(r"^pgfupat")):
-        defs = pattern.find_parent("defs")
-        after = defs.find_next_sibling() if defs is not None else None
+        node = pattern.find_parent("defs")
+        while node is not None and node.parent is not None and node.parent.name == "g" \
+                and len(node.parent.find_all(True, recursive=False)) == 1:  # définition seule dans un <g>
+            node = node.parent
+        after = node.find_next_sibling() if node is not None else None
         shapes = after.find_all(True, recursive=False) if after is not None and after.name == "g" else []
         if pattern["id"] not in used and len(shapes) == 1 and shapes[0].name == "path":
             after["fill"] = f"url(#{pattern['id']})"

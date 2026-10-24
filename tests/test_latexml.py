@@ -220,6 +220,22 @@ class Latexml(unittest.TestCase):
             self.assertEqual((pattern.get("width"), pattern.path["d"]), ("4", "M 0 0 L 4.29 4.29"))
             self.assertEqual(len(fragment.select(f'g[fill="url(#{pattern_id})"] > path')), 1)
 
+    def test_arxiv_pattern_variants(self):
+        # surface après le groupe à motif (qui ne contient qu'une redéfinition du motif pour sa couleur) ; réemploi
+        # d'un motif défini seul dans un <g>, la surface suivant ce <g> (2610.29950, 2610.31099)
+        page = ('<article class="ltx_document"><svg class="ltx_picture" width="10" height="10"><g>'
+                '<defs><pattern height="4" id="pgfpat3" patternUnits="userSpaceOnUse" width="4"><symbol id="pgfsym3">'
+                '<g stroke-width="0.4pt"><path d="M 0 0 L 4.29 4.29"></path></g>'
+                '<defs><pattern id="pgfupat1" href="#pgfpat3"><g><use href="#pgfsym3"></use></g></pattern></defs>'
+                '<g fill="url(#pgfupat1)"><defs><pattern id="pgfupat2" href="#pgfpat3"><g><use href="#pgfsym3"></use></g>'
+                '</pattern></defs></g><g fill="#000000"><path id="a" d="M 1 1 h 2 v 2 h -2 Z"></path></g>'
+                '<g><defs><pattern id="pgfupat3" href="#pgfpat3"><g><use href="#pgfsym3"></use></g></pattern></defs></g>'
+                '<g fill="#000000"><path id="b" d="M 5 5 h 2 v 2 h -2 Z"></path></g>'
+                '</symbol></pattern></defs></g></svg></article>')
+        fragment, _ = sanitize_document(page, latexml.BASE)
+        self.assertEqual(fragment.find(id="a").parent["fill"], "url(#pgfupat1)")
+        self.assertEqual(fragment.find(id="b").parent["fill"], "url(#pgfupat3)")
+
     def test_pattern_tile_inside_a_group(self):
         # pattern color=… : la tuile isolée est dans son propre <g stroke-width>, avant celui qui porte la définition
         page = ('<article class="ltx_document"><svg class="ltx_picture" width="10" height="10"><g>'
