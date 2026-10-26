@@ -422,6 +422,9 @@ il suffit de la fermer et d'aller dans le feed.
   annote… ». Claude joint une liste d'annotations (passages cités mot pour mot, couleur, note ; notes sur un
   énoncé ou une preuve) : chaque passage est retrouvé dans l'article, vous cochez ce que vous gardez,
   *Appliquer* les crée (marquées « Claude ») et *Annuler* les retire. Claude n'écrit jamais lui-même.
+- **Liens dans les réponses** : énoncés, équations, sections (« Section 3.2 », « §2.1 », « Appendix A ») et
+  références (« [12] », « Smith and Jones (2007) ») cités par l'assistant sont des liens, avec le même aperçu au
+  survol que dans l'article.
 - **Réponses adaptées à vous** : chaque demande emporte votre profil (vos articles et le début de leur résumé,
   mots-clés, auteurs suivis, articles et livres de référence, catégories du feed) et ce que vous écrivez de vous
   dans *Réglages → Assistant IA → Votre profil* (domaine, niveau, ce qu'il faut détailler). Les réglages montrent

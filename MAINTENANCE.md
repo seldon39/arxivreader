@@ -48,7 +48,9 @@ anglais.
 | Feed, profil, pertinence, alertes, citations | `feed.py`, `profile.py`, `relevance.py` (`same_person`, `follows` : homonymes des auteurs suivis), `alerts.py`, `citations.py`, `journals.py` | `feed.js` (👎 → « pas cette personne »), `profile.js` (catégories gardées pour un auteur) |
 | Recherche arXiv | `search.py` | `search.js` |
 | Papiers liés (graphe) | `related.py` | `related.js` |
-| IA | `ai.py` (Claude, SDK Agent ; scans : pages jointes en images ; livres trop longs : début et fenêtre autour de la question), `providers.py` (Codex, Gemini, local) | `ai.js` (onglet en conversation : sous-onglets Questions / Résumé / Relecture d'après la racine de chaque échange, `viewOf` ; une question sur un résumé ou une relecture a pour parent ce document, seul échange précédent transmis par `ai.py` ; positions de lecture `positions`, boutons ↑ ↓ dans la marge du fil), `aiproviders.js`, `reader.js` (`contextPages` : pages d'un scan rendues par pdf.js) |
+| IA | `ai.py` (Claude, SDK Agent ; scans : pages jointes en images ; livres trop longs : début et fenêtre autour de la question), `providers.py` (Codex, Gemini, local) | `ai.js` (onglet en conversation : sous-onglets Questions / Résumé / Relecture d'après la racine de chaque échange, `viewOf` ; une question sur un résumé ou une relecture a pour parent ce document, seul échange précédent transmis par `ai.py` ; positions de lecture `positions`, boutons ↑ ↓ dans la marge du fil ; renvois des réponses `buildRefs` : énoncés, équations,
+sections d'après le numéro du titre (`toc`), références entre crochets ou auteur-année (`bibliography`), sauf l'énoncé d'un
+article cité, « Theorem 3.1 of [12] », « [12, Theorem 3.1] » ; aperçu au survol par `reader.previewFor`), `aiproviders.js`, `reader.js` (`contextPages` : pages d'un scan rendues par pdf.js) |
 | Zotero | `zotero.py` | `zotero.js`, `settings.js` |
 | Premier lancement | `onboarding.py` | `onboarding.js` |
 | Mises à jour, vérification des services | `updates.py`, `check.py` | `updates.js` |

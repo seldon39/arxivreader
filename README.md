@@ -405,6 +405,9 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   "highlight… / annotate…". Claude attaches a list of annotations (passages quoted word for word, colour,
   note; notes on a statement or a proof): each passage is located in the paper, you tick what you keep,
   *Apply* creates them (marked "Claude") and *Cancel* removes them. Claude never writes anything itself.
+- **Links in answers**: statements, equations, sections ("Section 3.2", "§2.1", "Appendix A") and references
+  ("[12]", "Smith and Jones (2007)") mentioned by the assistant are links, with the same preview on hover as in the
+  paper.
 - **Answers adapted to you**: every request carries your profile (your papers and the start of their abstracts,
   keywords, followed authors, reference papers and books, feed categories) and what you write about yourself in
   *Settings → AI assistant → Your profile* (field, level, what to detail). The settings show exactly what is sent.

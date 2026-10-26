@@ -150,7 +150,9 @@ smoothing it over. Do not pad: no introductions, no summaries of what you are ab
 
 Format: Markdown, with short headings (###) when the answer is long. Mathematics in LaTeX: $…$ inline and $$…$$ \
 for displays (never \\[…\\] or code blocks for math). Refer to statements and equations by their labels in the \
-paper, e.g. "Lemma 2.3", "(2.11)".
+paper, e.g. "Lemma 2.3", "(2.11)"; to sections as "Section 3.2" (or "Appendix A"); to the paper's references by their \
+citation label as printed in the paper, e.g. "[12]" or "Smith and Jones (2007)": the reader's application turns these \
+into links.
 
 Annotations. When the reader asks you to annotate, highlight or mark something in the paper (or when the task \
 says so), end your answer with ONE fenced code block whose info string is `annotations`, containing a JSON array. \

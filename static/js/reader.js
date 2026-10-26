@@ -1184,7 +1184,7 @@ class Reader {
       const note = link.closest(".ltx_note")?.querySelector(".ltx_note_content");
       return note ? { body: this.clean(note) } : null;
     }
-    const id = link.getAttribute("href")?.slice(1);
+    const id = link.dataset.ref || link.getAttribute("href")?.slice(1);  // renvoi d'une réponse de l'IA : son identifiant
     const target = this.find(id);
     if (!target) return null;
     const theorem = target.closest(".ltx_theorem");
@@ -1794,6 +1794,22 @@ class Reader {
     });
     this.scroller.addEventListener("mouseout", (event) => {
       const link = event.target.closest(hoverable);
+      if (link && !link.contains(event.relatedTarget)) {
+        clearTimeout(this.showTimer);
+        this.scheduleHide();
+      }
+    });
+    // renvois des réponses de l'IA (énoncés, équations, sections, références) : même aperçu au survol
+    this.panel.addEventListener("mouseover", (event) => {
+      const link = event.target.closest("a.ai-ref");
+      if (!link || link.contains(event.relatedTarget)) return;
+      if (this.previewBox && this.previewLink === link) { clearTimeout(this.hideTimer); return; }
+      clearTimeout(this.hideTimer);
+      clearTimeout(this.showTimer);
+      this.showTimer = setTimeout(() => this.showPreview(link), 220);
+    });
+    this.panel.addEventListener("mouseout", (event) => {
+      const link = event.target.closest("a.ai-ref");
       if (link && !link.contains(event.relatedTarget)) {
         clearTimeout(this.showTimer);
         this.scheduleHide();
