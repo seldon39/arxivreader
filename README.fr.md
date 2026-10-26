@@ -403,10 +403,16 @@ il suffit de la fermer et d'aller dans le feed.
 - **Énoncé** (onglet Dépendances, ou note en marge) : *Expliquer*. **Preuve** : *Détailler la preuve*
   (étapes numérotées, arguments ajoutés marqués **[added]**, points douteux **⚠**) et *Auditer la preuve*
   (verdict, problèmes avec leur gravité, hypothèses utilisées, dépendances).
-- **Passage** : le sélectionner, puis ✦ ; on peut ajouter une question. **Article entier** : résumé
-  structuré, relecture critique, ou question libre ; *Question de suite* pour poursuivre un échange.
-  *Envoyer à Claude* (ou à ChatGPT, à Gemini) ouvre une nouvelle conversation dans l'application ou le site
-  de l'assistant, avec les références de l'article, et copie son texte complet dans le presse-papiers.
+- **Passage** : le sélectionner, puis ✦ ; on peut ajouter une question.
+- **Une conversation en trois fils** : *Questions* (questions sur l'article ; *↩ Répondre* sous une réponse pose
+  une question de suite, rappelée au-dessus du champ et dans la question), *Résumé* et *Relecture* (le résumé
+  structuré ou la relecture critique, lancés depuis la barre du bas, puis les questions posées dessus, dans le même
+  onglet). Le plus ancien en haut, la saisie en bas ; Entrée envoie, Maj+Entrée va à la ligne. Boutons ↑ et ↓ en
+  haut et en bas à droite : début ou fin du fil ; chaque onglet se rouvre là où on l'a laissé. *⋯* sous une
+  réponse : copier l'échange, ou le supprimer (question et réponse ; un résumé ou une relecture part avec les
+  questions posées dessus). Le bouton ↗ en haut (*Envoyer à Claude*, ou à ChatGPT, à Gemini) ouvre une nouvelle
+  conversation dans l'application ou le site de l'assistant, avec les références de l'article, et copie son texte
+  complet dans le presse-papiers.
 - Réponses en direct, formules rendues, renvois (« Lemma 2.3 », « (2.11) ») cliquables ; *Ajouter à mes
   notes* les copie dans la note de l'énoncé ou de la preuve (sinon dans la fiche de lecture). Modèle
   (Opus, Fable, Sonnet, Haiku… selon votre abonnement) et niveau de réflexion au choix, dans l'onglet IA ou

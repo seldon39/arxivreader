@@ -30,6 +30,8 @@ readers, roughly in order of impact. Each one is a GitHub issue with the context
   experimental HTML version made on demand by LaTeXML (if installed), also for arXiv papers without HTML: done in
   1.9.32; figures, PDF images and lost bibliographies checked on 15 recent arXiv papers in 1.10.4. Next: faster
   or partial conversion of very long documents; line spacing inside multi-line TikZ nodes.
+- AI tab as a conversation (Questions, Summary and Review threads, field at the bottom, ↩ Reply, ↑ ↓): done in
+  1.11.0. Next: pass the whole chain of follow-ups to the assistant, not only the previous exchange.
 - [#12](https://github.com/seldon39/arxivreader/issues/12) Cancelling a related-papers build should interrupt
   the request in flight.
 

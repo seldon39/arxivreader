@@ -7,7 +7,7 @@ import { authorName, currentModel as modelFor, modelControls, modelLabel, provid
 import { COLORS, rangeForQuote } from "./annotations.js";
 import { markdownToHtml } from "./markdown.js";
 import { typesetTex } from "./math.js";
-import { t } from "./i18n.js";
+import { t, tn } from "./i18n.js";
 import { DEFAULT_AI_FONT_SIZE, saveSettings, settings } from "./settings.js";
 import { h, icons, plainTitle, toast, toastError } from "./util.js";
 
@@ -74,6 +74,10 @@ export class Assistant {
     this.running = null;      // { exchange, controller }
     this.live = null;         // rendu en direct de la réponse en cours
     this.pending = { quote: null, parent: null, question: "", zone: null };
+    this.docPending = {};     // question en cours de saisie dans Résumé, Relecture
+    this.view = "questions";  // sous-onglet : questions, summary, review
+    this.positions = {};      // position de lecture de chaque sous-onglet ({ top, atBottom })
+    this.seen = {};           // échanges vus en bas de chaque sous-onglet (pastille du bouton ↓)
     this.refs = this.buildRefs();
   }
 
@@ -166,6 +170,7 @@ export class Assistant {
   setPassage(quote) {
     this.pending.quote = quote;
     this.pending.zone = null;
+    this.view = "questions";
     this.onChange({ focus: true });
   }
 
@@ -173,6 +178,7 @@ export class Assistant {
   setZone(zone) {
     this.pending.zone = zone;
     this.pending.quote = null;
+    this.view = "questions";
     this.onChange({ focus: true });
   }
 
@@ -196,12 +202,15 @@ export class Assistant {
       model: this.status?.model || currentModel(), created_at: new Date().toISOString().slice(0, 19).replace("T", " ") };
     this.exchanges.push(local);
     this.running = { exchange: local, controller };
-    this.pending = { quote: null, parent: null, question: "", zone: null };
+    this.view = this.viewOf(local);
+    this.positions[this.view] = { top: 0, atBottom: true };
+    if (this.view === "questions") this.pending = { quote: null, parent: null, question: "", zone: null };
+    else this.docPending[this.view] = { question: "" };
     this.onChange({ show: true });
     let frame = 0;
     const redraw = () => {
       if (frame) return;
-      frame = requestAnimationFrame(() => { frame = 0; this.live?.update(local.answer, false); });
+      frame = requestAnimationFrame(() => { frame = 0; this.live?.update(local.answer, false); this.followAnswer(); });
     };
     try {
       // page de la zone, sinon celle qu'on lit dans le PDF : un livre trop long part réduit autour d'elle
@@ -229,14 +238,28 @@ export class Assistant {
     this.running?.controller.abort();
   }
 
+  // Supprime un échange (question et réponse) ; un résumé ou une relecture part avec les questions posées sur lui
   async remove(exchange) {
-    try {
-      if (typeof exchange.id === "number") await api.deleteAIExchange(exchange.id);
-    } catch (error) {
-      toastError(error);
-      return;
+    const doomed = new Set([exchange]);
+    if (["summary", "review"].includes(exchange.task)) {
+      for (let grew = true; grew;) {
+        grew = false;
+        for (const e of this.exchanges) {
+          if (!doomed.has(e) && [...doomed].some((d) => d.id === e.parent_id)) { doomed.add(e); grew = true; }
+        }
+      }
+      if (doomed.size > 1 && !confirm(tn("ai.deleteWithFollowUps", doomed.size - 1))) return;
     }
-    this.exchanges = this.exchanges.filter((e) => e !== exchange);
+    for (const e of doomed) {
+      try {
+        if (typeof e.id === "number") await api.deleteAIExchange(e.id);
+      } catch (error) {
+        toastError(error);
+        break;
+      }
+      this.exchanges = this.exchanges.filter((x) => x !== e);
+      if (this.pending.parent === e) this.pending.parent = null;
+    }
     this.onChange();
   }
 
@@ -266,76 +289,173 @@ export class Assistant {
   }
 
   // ---------- Onglet ----------
+  // Trois fils, en sous-onglets : Questions (questions sur l'article, suites par « Répondre »), Résumé et Relecture
+  // (le document, puis les questions posées sur lui). Chacun : fil chronologique, saisie en bas, boutons ↑ ↓.
+
+  // fil d'un échange : celui de son premier ancêtre (résumé, relecture, sinon questions)
+  viewOf(exchange) {
+    const byId = new Map(this.exchanges.map((e) => [e.id, e]));
+    let root = exchange;
+    for (let depth = 0; root?.parent_id && byId.has(root.parent_id) && depth < 50; depth++) root = byId.get(root.parent_id);
+    return root?.task === "summary" ? "summary" : root?.task === "review" ? "review" : "questions";
+  }
 
   renderPanel(body, { focus = false } = {}) {
     if ((!this.status && !this.checking) || this.statusFor !== currentModel()) this.refreshStatus(); // assistant changé dans les réglages
+    body.classList.add("ai-body");
+    const view = this.view;
     const status = this.status;
-    if (status && !status.loggedIn) body.append(setupNotice(status, () => { this.status = null; this.onChange(); }));
-
-    body.append(this.askBox(focus));
-
-    const list = [...this.exchanges].reverse(); // la plus récente en haut, juste sous la question
     this.live = null;
-    if (list.length) body.append(this.textSizeBar());
-    body.append(h("div", { class: "ai-list" }, list.length ? list.map((e) => this.card(e))
-      : h("p", { class: "hint" }, t("ai.empty"))));
-    body.append(h("p", { class: "hint ai-privacy" }, t(`ai.privacy.${providerOf(currentModel())}`)));
+    const exchanges = this.exchanges.filter((e) => this.viewOf(e) === view);
+    const notice = status && !status.loggedIn ? setupNotice(status, () => { this.status = null; this.onChange(); }) : null;
+
+    const content = h("div", { class: "ai-thread-content" });
+    const thread = h("div", { class: "ai-thread", tabindex: -1 }, content);
+    if (view === "questions") {
+      if (exchanges.length) exchanges.forEach((e) => this.renderExchange(content, e));
+      else content.append(h("p", { class: "hint ai-empty" }, t("ai.emptyQuestions") + (this.inPdf() && this.readsImages() ? ` ${t("ai.hintZone")}` : "")));
+    } else {
+      const docs = exchanges.filter((e) => e.task === (view === "summary" ? "summary" : "review"));
+      if (exchanges.length) exchanges.forEach((e) => (docs.includes(e) ? this.renderDocument(content, e, e === docs[docs.length - 1])
+        : this.renderExchange(content, e, { reply: false })));
+      else content.append(h("div", { class: "ai-empty ai-empty-doc" }, h("div", { class: "ai-empty-title" }, t(`ai.title.${view}`)),
+        h("p", {}, t(`ai.intro.${view}`))));
+    }
+
+    // ↑ en haut à droite, ↓ en bas à droite (dans la marge du fil : le texte n'est jamais couvert) ; seulement s'ils servent
+    const up = h("button", { class: "ai-jump up", type: "button", title: t("ai.toTop"), "aria-label": t("ai.toTop"), html: ARROW_UP, hidden: true,
+      onclick: () => thread.scrollTo({ top: 0, behavior: "smooth" }) });
+    const dot = h("span", { class: "ai-jump-dot", hidden: true });
+    const down = h("button", { class: "ai-jump down", type: "button", title: t("ai.toBottom"), "aria-label": t("ai.toBottom"), html: ARROW_DOWN, hidden: true,
+      onclick: () => thread.scrollTo({ top: thread.scrollHeight, behavior: "smooth" }) }, dot);
+    const update = () => {
+      if (!thread.isConnected) return;
+      const atBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 24;
+      this.positions[view] = { top: thread.scrollTop, atBottom };
+      if (atBottom) this.seen[view] = exchanges.length;
+      up.hidden = thread.scrollTop < 24;
+      down.hidden = atBottom;
+      dot.hidden = atBottom || (this.seen[view] ?? exchanges.length) >= exchanges.length;
+    };
+    thread.addEventListener("scroll", update, { passive: true });
+    // formules mises en forme après coup, images : le fil grandit ; s'il était en bas, il y reste
+    new ResizeObserver(() => {
+      if (!thread.isConnected) return;
+      if (this.positions[view]?.atBottom) thread.scrollTop = thread.scrollHeight;
+      update();
+    }).observe(content);
+    this.thread = thread;
+    this.updateJumps = update;
+
+    body.append(this.viewBar(), ...(notice ? [notice] : []), h("div", { class: "ai-frame" }, thread, up, down), this.bottomBar(view, exchanges, focus));
+    // position de lecture : celle laissée ; la première fois, le document depuis le haut, sinon la dernière réponse
+    requestAnimationFrame(() => {
+      const kept = this.positions[view];
+      const first = view !== "questions" && exchanges.length === 1;
+      thread.scrollTop = kept ? (kept.atBottom ? thread.scrollHeight : kept.top) : first ? 0 : thread.scrollHeight;
+      update();
+    });
   }
 
-  askBox(focus) {
-    const pending = this.pending;
-    const area = h("textarea", { class: "note-input ai-question", rows: 2, placeholder: t(pending.parent ? "ai.followUpPlaceholder" : "ai.placeholder"),
-      "aria-label": t("ai.placeholder") });
+  // le fil suit la réponse qui s'écrit, si l'on est en bas
+  followAnswer() {
+    if (!this.thread?.isConnected) return;
+    if (this.positions[this.view]?.atBottom !== false) this.thread.scrollTop = this.thread.scrollHeight;
+    this.updateJumps?.();
+  }
+
+  showView(view) {
+    if (view === this.view) return;
+    this.view = view;
+    this.onChange({ focus: false });
+  }
+
+  // Barre du haut : sous-onglets (pastille) et taille du texte des réponses
+  viewBar() {
+    const views = ["questions", "summary", "review"];
+    const seg = h("div", { class: "ai-views", role: "group", "aria-label": t("ai.views") }, views.map((view) =>
+      h("button", { type: "button", class: "ai-view", "aria-pressed": String(this.view === view), onclick: () => this.showView(view) },
+        t(`ai.view.${view}`))));
+    return h("div", { class: "ai-topbar" }, seg, h("span", { class: "spacer" }), this.textSizeBar(), this.shareLink({ compact: true }));
+  }
+
+  // Barre du bas : la saisie (Questions ; Résumé et Relecture une fois faits), sinon le bouton qui les lance
+  bottomBar(view, exchanges, focus) {
+    const running = Boolean(this.running);
+    const footer = h("p", { class: "ai-footnote", title: t(`ai.privacy.${providerOf(currentModel())}`) }, t("ai.footnote"));
+    if (view !== "questions" && !exchanges.length) {
+      const task = view === "summary" ? "summary" : "review";
+      const launch = running
+        ? h("button", { class: "button ai-launch", type: "button", onclick: () => this.stop() }, t("ai.stop"))
+        : h("button", { class: "button primary ai-launch", type: "button", onclick: () => this.ask({ task }) }, t(`ai.launch.${task}`));
+      return h("div", { class: "ai-bottom" }, launch, h("div", { class: "ai-foot" }, this.modelPicker() || h("span", { class: "muted small" }, modelLabel(currentModel()))), footer);
+    }
+    return h("div", { class: "ai-bottom" }, this.askBox(view, exchanges, focus), footer);
+  }
+
+  askBox(view, exchanges, focus) {
+    const pending = view === "questions" ? this.pending : (this.docPending[view] ||= { question: "" });
+    const placeholder = view === "questions" ? "ai.placeholder" : `ai.placeholder.${view}`;
+    const area = h("textarea", { class: "ai-question", rows: 1, placeholder: t(placeholder), "aria-label": t(placeholder) });
     area.value = pending.question;
     const grow = () => {
       if (!area.offsetWidth) return; // panneau fermé : hauteur calculée à son ouverture (sinon toujours la plus grande)
       area.style.height = "auto";
-      area.style.height = `${Math.min(260, area.scrollHeight + 2)}px`;
+      area.style.height = `${Math.min(220, area.scrollHeight + 2)}px`;
     };
     let width = 0;
     new ResizeObserver(() => { if (area.offsetWidth !== width) { width = area.offsetWidth; grow(); } }).observe(area);
     area.addEventListener("input", () => { pending.question = area.value; grow(); });
     const send = () => {
+      if (this.running) return;
       const question = area.value.trim();
+      if (view !== "questions") {
+        // question sur le résumé ou la relecture : suite du document le plus récent (il accompagne la question)
+        const doc = [...exchanges].reverse().find((e) => e.task === (view === "summary" ? "summary" : "review"));
+        if (!question || !doc) { area.focus(); return; }
+        pending.question = "";
+        this.ask({ task: "ask", question, parent: doc });
+        return;
+      }
       if (pending.zone) { this.ask({ task: "zone", zone: pending.zone, question: question || null, parent: pending.parent }); return; }
       if (!question && !pending.quote) { area.focus(); return; }
       if (pending.quote && !question) this.ask({ task: "passage", quote: pending.quote, parent: pending.parent });
       else this.ask({ task: pending.quote ? "passage" : "ask", quote: pending.quote, question, parent: pending.parent });
     };
+    // Entrée envoie ; Maj + Entrée va à la ligne (et rien pendant la composition d'un caractère : accents, IME)
     area.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); send(); }
+      if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); send(); }
     });
     const chips = [];
-    if (pending.quote) {
-      const quote = h("blockquote", { class: "note-quote ai-quote" }, pending.quote);
-      chips.push(h("div", { class: "ai-chip" }, h("span", { class: "muted small" }, t("ai.passage")),
-        h("button", { class: "icon-button small", type: "button", title: t("ai.removePassage"), "aria-label": t("ai.removePassage"), html: icons.close,
-          onclick: () => { pending.quote = null; this.onChange({ focus: true }); } }), quote));
-    }
-    if (pending.zone) {
-      chips.push(h("div", { class: "ai-chip" }, h("span", { class: "muted small" }, t("ai.zone", { page: pending.zone.page })),
-        h("button", { class: "icon-button small", type: "button", title: t("ai.removePassage"), "aria-label": t("ai.removePassage"), html: icons.close,
-          onclick: () => { pending.zone = null; this.onChange({ focus: true }); } }),
-        h("blockquote", { class: "note-quote ai-quote zone-quote" }, h("img", { src: pending.zone.image, alt: "" }))));
-    }
-    if (pending.parent) {
-      chips.push(h("div", { class: "ai-chip" }, h("span", { class: "muted small" }, t("ai.followUpOf", { title: this.title(pending.parent) })),
-        h("button", { class: "icon-button small", type: "button", title: t("ai.cancelFollowUp"), "aria-label": t("ai.cancelFollowUp"), html: icons.close,
-          onclick: () => { pending.parent = null; this.onChange({ focus: true }); } })));
+    const chip = (label, onRemove, removeKey, ...content) => h("div", { class: "ai-chip" }, label,
+      h("button", { class: "icon-button small", type: "button", title: t(removeKey), "aria-label": t(removeKey), html: icons.close, onclick: onRemove }), ...content);
+    if (view === "questions") {
+      if (pending.parent) {
+        chips.push(chip(h("div", { class: "ai-reply-to" }, h("div", { class: "ai-reply-who" }, `↩ ${t("ai.replyTo", { who: modelLabel(pending.parent.model), time: timeOf(pending.parent) })}`),
+          h("div", { class: "ai-reply-text" }, excerpt(pending.parent.answer))),
+          () => { pending.parent = null; this.onChange({ focus: true }); }, "ai.cancelFollowUp"));
+        chips[chips.length - 1].classList.add("reply");
+      }
+      if (pending.quote) {
+        chips.push(chip(h("span", { class: "muted small" }, t("ai.passage")), () => { pending.quote = null; this.onChange({ focus: true }); }, "ai.removePassage",
+          h("blockquote", { class: "note-quote ai-quote" }, pending.quote)));
+      }
+      if (pending.zone) {
+        chips.push(chip(h("span", { class: "muted small" }, t("ai.zone", { page: pending.zone.page })), () => { pending.zone = null; this.onChange({ focus: true }); },
+          "ai.removePassage", h("blockquote", { class: "note-quote ai-quote zone-quote" }, h("img", { src: pending.zone.image, alt: "" }))));
+      }
     }
     const running = Boolean(this.running);
+    const ready = Boolean(pending.question.trim() || pending.quote || pending.zone);
     const sendButton = running
-      ? h("button", { class: "button", type: "button", onclick: () => this.stop() }, t("ai.stop"))
-      : h("button", { class: "button primary", type: "button", onclick: send }, !pending.question.trim() && (pending.zone ? t("ai.explainZone") : pending.quote && t("ai.explainPassage")) || t("ai.send"));
-    const paperAction = (task) => h("button", { class: "button small-button", type: "button", disabled: running,
-      onclick: () => this.ask({ task }) }, t(`ai.task.${task}`));
-    const model = this.modelPicker();
-    const box = h("div", { class: "panel-section ai-ask" },
-      ...chips, area,
-      h("div", { class: "ai-ask-row" }, model || h("span", { class: "muted small" }, modelLabel(currentModel())), h("span", { class: "spacer" }), sendButton),
-      h("p", { class: "hint ai-hint" }, t("ai.hint") + (this.inPdf() && this.readsImages() ? ` ${t("ai.hintZone")}` : "")),
-      h("div", { class: "ai-ask-row ai-paper-row" }, h("span", { class: "muted small" }, t("ai.wholePaper")), paperAction("summary"),
-        paperAction("review"), this.shareLink()));
+      ? h("button", { class: "ai-send stop", type: "button", title: t("ai.stop"), "aria-label": t("ai.stop"), html: STOP, onclick: () => this.stop() })
+      : h("button", { class: "ai-send", type: "button", title: t("ai.send"), "aria-label": t("ai.send"), html: ARROW_UP, onclick: send });
+    if (!running) area.addEventListener("input", () => sendButton.classList.toggle("ready", Boolean(area.value.trim() || pending.quote || pending.zone)));
+    sendButton.classList.toggle("ready", ready);
+    const box = h("div", { class: "ai-ask" }, ...chips,
+      h("div", { class: "ai-field" }, area, sendButton),
+      h("div", { class: "ai-foot" }, this.modelPicker() || h("span", { class: "muted small" }, modelLabel(currentModel())),
+        h("span", { class: "spacer" }), h("span", { class: "muted small ai-enter" }, t("ai.enterToSend"))));
     requestAnimationFrame(() => { grow(); if (focus) area.focus(); });
     typesetTex(chips).catch(() => {});
     return box;
@@ -356,12 +476,11 @@ export class Assistant {
     value.addEventListener("click", () => set(DEFAULT_AI_FONT_SIZE));
     const button = (icon, key, step) => h("button", { class: "icon-button small", type: "button", title: t(key), "aria-label": t(key), html: icon,
       onclick: () => set(size() + step) });
-    return h("div", { class: "ai-text-size", role: "group", "aria-label": t("ai.textSize") },
-      h("span", { class: "muted small" }, t("ai.textSize")), h("span", { class: "spacer" }),
+    return h("div", { class: "ai-text-size", role: "group", "aria-label": t("ai.textSize"), title: t("ai.textSize") },
       button(icons.minus, "ai.textSmaller", -1), value, button(icons.plus, "ai.textLarger", 1));
   }
 
-  // Choix du modèle et du niveau de réflexion (liste du compte connecté), à côté du bouton d'envoi
+  // Choix du modèle et du niveau de réflexion (liste du compte connecté), sous la saisie
   modelPicker() {
     const [model, effort] = modelControls(this.status, () => {
       if (this.status) this.status.model = currentModel();
@@ -370,27 +489,42 @@ export class Assistant {
     return model ? h("span", { class: "ai-model-picker" }, model, effort) : null;
   }
 
-  card(exchange) {
+  // ---------- Échanges ----------
+
+  // Question à droite (bulle), réponse à gauche ; `reply` : bouton « Répondre » (fil des questions)
+  renderExchange(thread, exchange, { reply = true } = {}) {
     const node = this.byId.get(exchange.target);
-    const head = h("div", { class: "ai-card-head" },
-      h("span", { class: "ai-card-title" }, node
+    const bubble = h("div", { class: "ai-bubble" });
+    if (exchange.task !== "ask") {
+      bubble.append(h("div", { class: "ai-bubble-tag" }, node
         ? [t(`ai.title.${exchange.task}`, { label: "" }).trim(), " ", h("a", { href: `#${node.id}`, onclick: (e) => { e.preventDefault(); this.navigate(node.id); } }, node.label)]
-        : this.title(exchange)),
-      h("span", { class: "spacer" }),
-      h("span", { class: "muted small ai-date" }, exchange.created_at?.slice(5, 16).replace(" ", " · ")),
-      exchange.status !== "running" && h("button", { class: "icon-button small", type: "button", title: t("ai.delete"), "aria-label": t("ai.delete"), html: icons.trash,
-        onclick: () => this.remove(exchange) }));
-    const parent = exchange.parent_id && this.exchanges.find((e) => e.id === exchange.parent_id);
-    const context = [];
-    if (parent) context.push(h("p", { class: "muted small ai-context" }, t("ai.followUpOf", { title: this.title(parent) })));
+        : this.title(exchange)));
+    }
+    const parent = reply && exchange.parent_id && this.exchanges.find((e) => e.id === exchange.parent_id);
+    if (parent) {
+      bubble.append(h("div", { class: "ai-reply-to" }, h("div", { class: "ai-reply-who" }, `${modelLabel(parent.model)} · ${timeOf(parent)}`),
+        h("div", { class: "ai-reply-text" }, excerpt(parent.answer))));
+    }
     const zone = ["zone", "transcribe"].includes(exchange.task);
     if (zone && (exchange.imageUrl || exchange.image)) {  // zone du PDF : son image (le texte de la couche, souvent faux, n'est pas montré)
-      context.push(h("blockquote", { class: "note-quote ai-quote zone-quote" },
-        h("img", { src: exchange.imageUrl || `/api/ai/${exchange.id}/image`, alt: "" })));
-    } else if (exchange.quote && !zone) context.push(h("blockquote", { class: "note-quote ai-quote" }, exchange.quote));
-    if (exchange.question) context.push(h("p", { class: "ai-asked" }, exchange.question));
-    if (context.length) typesetTex(context).catch(() => {});
+      bubble.append(h("blockquote", { class: "note-quote ai-quote zone-quote" }, h("img", { src: exchange.imageUrl || `/api/ai/${exchange.id}/image`, alt: "" })));
+    } else if (exchange.quote && !zone) bubble.append(h("blockquote", { class: "note-quote ai-quote" }, exchange.quote));
+    if (exchange.question) bubble.append(h("p", { class: "ai-asked" }, exchange.question));
+    typesetTex([bubble]).catch(() => {});
+    thread.append(bubble, this.renderAnswer(exchange, { reply }));
+  }
 
+  // Résumé ou relecture : le document, pleine largeur ; « Refaire » sur le plus récent
+  renderDocument(thread, exchange, latest) {
+    const redo = latest && exchange.status !== "running" && !this.running
+      ? h("button", { class: "button small-button", type: "button", title: t(`ai.redo.${exchange.task}`), onclick: () => this.ask({ task: exchange.task }) },
+        h("span", { class: "ai-icon", html: icons.refresh }), t("ai.redo")) : null;
+    const answer = this.renderAnswer(exchange, { reply: false, document: true });
+    answer.querySelector(".ai-who")?.append(h("span", { class: "spacer" }), redo || "");
+    thread.append(answer);
+  }
+
+  renderAnswer(exchange, { reply = true, document = false } = {}) {
     const answer = h("div", { class: "markdown ai-answer" });
     const live = new LiveAnswer(answer, this.refs);
     live.update(exchange.answer || "", exchange.status !== "running");
@@ -401,55 +535,72 @@ export class Assistant {
       event.preventDefault();
       this.navigate(ref.dataset.ref);
     });
-
-    const foot = [];
+    const who = h("div", { class: "ai-who" }, h("span", { class: "ai-who-dot" }), h("span", {}, `${modelLabel(exchange.model)} · ${timeOf(exchange)}`));
+    const parts = [who, answer];
     if (exchange.status === "running") {
-      foot.push(runningLine(exchange));
+      parts.push(runningLine(exchange));
     } else {
-      if (exchange.status === "stopped") foot.push(h("span", { class: "badge warn" }, t("ai.stopped")));
+      if (exchange.status === "stopped") parts.push(h("span", { class: "badge warn" }, t("ai.stopped")));
       if (exchange.status === "error" || exchange.error) {
-        foot.push(h("div", { class: "notice small" }, t(ERROR_KEYS[exchange.errorCode] || "ai.error.other",
-          { message: exchange.error || "" })));
+        parts.push(h("div", { class: "notice small" }, t(ERROR_KEYS[exchange.errorCode] || "ai.error.other", { message: exchange.error || "" })));
       }
-      const latex = zone && exchange.answer && latexOf(exchange.answer);
-      const actions = h("div", { class: "ai-card-actions" },
-        latex && h("button", { class: "button small-button", type: "button",
-          onclick: () => navigator.clipboard.writeText(latex).then(() => toast(t("ai.latexCopied")), toastError) }, t("ai.copyLatex")),
-        exchange.answer && h("button", { class: "button small-button", type: "button", onclick: () => this.saveToNotes(exchange) },
-          h("span", { class: "ai-icon", html: icons.note }), t("ai.saveToNotes")),
-        exchange.answer && h("button", { class: "button small-button", type: "button",
-          onclick: () => { this.pending.parent = exchange; this.onChange({ focus: true }); } }, t("ai.followUp")),
-        exchange.answer && typeof exchange.id === "number" && (providerOf(currentModel()) === "claude"
-          ? h("button", { class: "button small-button", type: "button", title: t("ai.continueHint"), onclick: () => this.continueInClaude(exchange) },
-            h("span", { class: "ai-icon", html: icons.external }), t("ai.continue"))
-          : h("button", { class: "button small-button", type: "button", title: t("ai.exportCopyHint"), onclick: () => this.copyExchange(exchange) },
-            t("ai.exportCopy"))),
-        exchange.answer && h("button", { class: "button small-button", type: "button",
-          onclick: () => navigator.clipboard.writeText(parseProposals(exchange.answer).text.trim()).then(() => toast(t("ai.copied")), toastError) }, t("ai.copy")));
       const proposals = parseProposals(exchange.answer || "").items;
-      if (proposals.length && exchange.status === "done") foot.push(this.proposalBox(exchange, proposals));
-      foot.push(actions, h("p", { class: "ai-disclaimer" }, t("ai.disclaimer", { model: modelLabel(exchange.model) })));
+      if (proposals.length && exchange.status === "done") parts.push(this.proposalBox(exchange, proposals));
+      parts.push(this.answerActions(exchange, { reply, document }));
     }
-    return h("article", { class: `ai-card status-${exchange.status}` }, head, ...context, answer, ...foot);
+    return h("div", { class: `ai-reply status-${exchange.status}${document ? " document" : ""}` }, ...parts);
+  }
+
+  // Répondre · Notes · Copier · Continuer ↗ · ⋯ (copier l'échange, supprimer)
+  answerActions(exchange, { reply, document }) {
+    const zone = ["zone", "transcribe"].includes(exchange.task);
+    const latex = zone && exchange.answer && latexOf(exchange.answer);
+    const saved = typeof exchange.id === "number";
+    const button = (label, onclick, title) => h("button", { class: "ai-act", type: "button", title: title || undefined, onclick }, label);
+    const replying = this.pending.parent === exchange;
+    const claude = providerOf(currentModel()) === "claude";
+    const more = h("div", { class: "ai-more-menu", hidden: true, role: "menu" },
+      exchange.answer && saved && h("button", { type: "button", role: "menuitem", title: t("ai.exportCopyHint"), onclick: () => this.copyExchange(exchange) }, t("ai.exportCopy")),
+      document && exchange.answer && saved && claude && h("button", { type: "button", role: "menuitem", onclick: () => this.continueInClaude(exchange) }, t("ai.continue")),
+      h("button", { type: "button", role: "menuitem", class: "danger", onclick: () => this.remove(exchange) }, t("ai.delete")));
+    const toggle = h("button", { class: "ai-act ai-more", type: "button", title: t("ai.more"), "aria-label": t("ai.more"), "aria-haspopup": "menu" }, "⋯");
+    toggle.addEventListener("click", (event) => {
+      event.stopPropagation();
+      more.hidden = !more.hidden;
+      if (more.hidden) return;
+      const close = (e) => { if (!more.contains(e.target)) { more.hidden = true; removeEventListener("click", close, true); } };
+      setTimeout(() => addEventListener("click", close, true));
+    });
+    const replyButton = reply && exchange.answer && saved
+      ? button(`↩ ${t("ai.reply")}`, () => { this.pending.parent = replying ? null : exchange; this.onChange({ focus: true }); }, t("ai.replyHint")) : null;
+    replyButton?.classList.toggle("on", replying);
+    return h("div", { class: "ai-acts" },
+      replyButton,
+      exchange.answer && button(t("ai.notes"), () => this.saveToNotes(exchange), t("ai.saveToNotes")),
+      latex && button(t("ai.copyLatex"), () => navigator.clipboard.writeText(latex).then(() => toast(t("ai.latexCopied")), toastError)),
+      exchange.answer && button(t("ai.copyShort"), () => navigator.clipboard.writeText(parseProposals(exchange.answer).text.trim())
+        .then(() => toast(t("ai.copied")), toastError), t("ai.copy")),
+      !document && exchange.answer && saved && claude && button(`${t("ai.continueShort")} ↗`, () => this.continueInClaude(exchange), t("ai.continueHint")),
+      h("span", { class: "ai-more-wrap" }, toggle, more));
   }
 
   // Tout l'article dans l'application ou le site de l'assistant : un vrai lien (cliqué, il s'ouvre à côté),
   // et en même temps son texte complet copié dans le presse-papiers, au cas où l'assistant ne pourrait pas
   // ouvrir le lien d'arXiv (Gemini : à coller en entier)
-  shareLink() {
+  shareLink({ compact = false } = {}) {
     const provider = providerOf(currentModel());
     if (!SHARE[provider]) return null;
     const paper = this.paper;
     const authors = paper.authors.length > 8 ? `${paper.authors.slice(0, 8).join(", ")} et al.` : paper.authors.join(", ");
     const message = t("ai.shareMessage", { title: plainTitle(paper.title).slice(0, 400), authors: authors.slice(0, 600),
       url: paper.arxiv_id ? `https://arxiv.org/abs/${paper.arxiv_id}v${paper.version}` : "" });
-    return h("a", { class: "button small-button ai-share", href: SHARE[provider](message), target: "_blank", rel: "noopener",
-      title: t(`ai.shareHint.${provider}`),
+    return h("a", { class: compact ? "icon-button small ai-share" : "button small-button ai-share", href: SHARE[provider](message), target: "_blank",
+      rel: "noopener", title: t(`ai.shareHint.${provider}`), "aria-label": compact ? t(`ai.share.${provider}`) : undefined,
       onclick: () => {
         copyLater(api.paperText(paper.id).then((result) => result.text))
           .then((copied) => toast(t(copied ? `ai.shareDone.${provider}` : "ai.shareNoCopy"), { duration: 9000 }));
       } },
-      h("span", { class: "ai-icon", html: icons.external }), t(`ai.share.${provider}`));
+      h("span", { class: "ai-icon", html: icons.external }), compact ? null : t(`ai.share.${provider}`));
   }
 
   // Nouvelle conversation dans l'application Claude, pré-remplie (non envoyée) avec l'article et l'échange.
@@ -610,6 +761,31 @@ export function parseProposals(answer) {
 }
 
 const currentModel = () => modelFor(settings);
+
+const svg = (d) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
+const ARROW_UP = svg("M11 20V7.8l-5.6 5.6L4 12l8-8 8 8-1.4 1.4L13 7.8V20z");
+const ARROW_DOWN = svg("M13 4v12.2l5.6-5.6L20 12l-8 8-8-8 1.4-1.4 5.6 5.6V4z");
+const STOP = svg("M7 7h10v10H7z");
+
+// heure de l'échange (enregistrée en UTC), avec le jour s'il ne date pas d'aujourd'hui
+function timeOf(exchange) {
+  const date = new Date(Date.parse(`${String(exchange.created_at || "").replace(" ", "T")}Z`));
+  if (Number.isNaN(date.getTime())) return "";
+  const time = date.toLocaleTimeString(document.documentElement.lang || undefined, { hour: "2-digit", minute: "2-digit" });
+  if (date.toDateString() === new Date().toDateString()) return time;
+  return `${date.toLocaleDateString(document.documentElement.lang || undefined, { day: "numeric", month: "short" })} ${time}`;
+}
+
+// début d'une réponse, sur une ligne (rappel de la réponse à laquelle on répond) ; formules gardées entières
+function excerpt(answer, length = 160) {
+  let text = parseProposals(answer || "").text.replace(/\$\$/g, "$").replace(/[#*>`_]+/g, "").replace(/\s+/g, " ").trim();
+  if (text.length > length) {
+    text = text.slice(0, length);
+    if ((text.match(/\$/g) || []).length % 2) text = text.slice(0, text.lastIndexOf("$"));
+    text = `${text.trimEnd()}…`;
+  }
+  return text;
+}
 
 // Copie d'un texte qui arrive du serveur : Safari n'autorise l'écriture dans le presse-papiers que pendant le
 // clic, d'où un ClipboardItem dont le contenu est promis (l'attendre d'abord ferait échouer la copie)
