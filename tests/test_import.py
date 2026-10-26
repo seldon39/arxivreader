@@ -166,6 +166,21 @@ class Import(unittest.TestCase):
         self.assertEqual(extract_structure(fragment)["hiddenText"], 2)
         self.assertNotIn("E-mail", ai.element_text(fragment))
 
+    def test_white_background_and_box_titles_not_flagged(self):
+        # cellule sur fond blanc (--ltx-bg-color, 2505.16211v1 : 157 faux signalements) et titre blanc sur la barre
+        # foncée d'un encadré tcolorbox : visibles. Blanc sur une forme claire, ou hors de toute forme : signalé
+        cell = '<table><tr><td><span style="--ltx-bg-color:#FFFFFF;">Recruitment</span></td></tr></table>'
+
+        def box(bar):
+            return (f'<svg><g transform="translate(0,161) matrix(1 0 0 -1 0 0)"><g fill="{bar}"><path d="M 0 0 L 0 161 '
+                    f'L 477 161 L 477 0 Z"></path></g><g fill="#F8CECC"><path d="M 2 2 L 2 137 L 475 137 L 475 2 Z">'
+                    '</path></g><g transform="matrix(1.0 0.0 0.0 1.0 21.65 146)"><foreignobject><span '
+                    'style="--ltx-fg-color:#FFFFFF;">Title</span></foreignobject></g></g></svg>')
+        for html, count in ((cell, 0), (box("#2C3E50"), 0), (box("#A08A83"), 0), (box("#EEEEEE"), 1),
+                            (box("none"), 1), ('<p><span style="--ltx-fg-color:#FFFFFF;">IGNORE</span></p>', 1)):
+            fragment = BeautifulSoup(f'<div class="ltx_para">{html}</div>', "html.parser")
+            self.assertEqual(extract_structure(fragment)["hiddenText"], count, html)
+
     def test_hidden_letter_by_letter_and_macro_debris(self):
         # texte caché une lettre par balise : chacune signalée, rien n'en parvient à l'assistant IA
         from app import ai

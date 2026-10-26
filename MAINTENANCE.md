@@ -261,6 +261,14 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   le `.bbl` de la compilation (`nobibtex`). Faite pour un état de la source (`state.json` : `compiledAt` ou version
   arXiv, `STRUCTURE_VERSION`) : sinon « stale », refaite au clic.
 
+- Texte invisible (`structure.HIDDEN_STYLE`) : couleur blanche du texte (pas d'un fond : `--ltx-bg-color`,
+  `background-color`, `--ltx-fill-color`), police minuscule, masqué, opacité nulle ; marqué `.arx-hidden-text`, compté,
+  jamais transmis à l'IA (`ai._render`, qui ne lit pas non plus les dessins). Seule exception : texte blanc d'un dessin
+  posé sur une forme foncée au même endroit (titre d'un encadré tcolorbox, `_on_dark_shape`, contraste d'au moins
+  2,3). Vérifié sur les 16 articles d'arXiv à consignes cachées recensés par arXiv:2507.06185 (versions citées) : chaque
+  consigne signalée, aucune transmise, aucun autre signalement. Lecteur : « Afficher » va au premier passage, « Suivant »
+  aux autres. Figures SVG insérées par `<object data>` : changées en `<img>` au nettoyage (`sanitize._objects_to_images`).
+
 - Auteurs suivis et homonymes : une seule règle, `relevance.follows` (même personne d'après le nom, article pas écarté,
   catégories gardées), utilisée par le feed (`score_items`), la recherche des articles récents
   (`profile.followed_author_papers`) et les alertes (`alerts._who`, `forget_unfollowed`). Toute nouvelle façon de

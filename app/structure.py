@@ -7,7 +7,7 @@ from bs4 import NavigableString, Tag
 
 from .arxiv import ID_RE, extract_ids
 
-STRUCTURE_VERSION = 11  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
+STRUCTURE_VERSION = 12  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
 
 SECTION_LEVELS = {
     "ltx_part": 0, "ltx_chapter": 0, "ltx_section": 1, "ltx_appendix": 1,
@@ -54,15 +54,84 @@ JUSTIFIES_PREVIOUS = re.compile(
     r"|^\s*(ceci|cela|ce résultat)\s+(découle|est une (conséquence|application))", re.I)
 QED_END = re.compile(r"(□|∎|■|\$\\(Box|square|blacksquare|qed|qedsymbol|QED)\$)\s*$")
 
+# couleur du texte (aussi « --ltx-fg-color », celle que LaTeXML donne au texte), pas celle d'un fond ou d'un trait
+# (« --ltx-fill-color », « background-color », « --ltx-bg-color » d'une cellule \cellcolor{white}, « fill-opacity »… :
+# fond blanc d'un encadré TikZ ou d'un tableau)
+TEXT_COLOR = (r"(?<![\w])(?<!fill-)(?<!stroke-)(?<!background-)(?<!bg-)(?<!border-)(?<!outline-)(?<!flood-)(?<!stop-)"
+              r"(?<!lighting-)color\s*:\s*")
 HIDDEN_STYLE = re.compile(
-    # couleur du texte (aussi « --ltx-fg-color », celle que LaTeXML donne au texte), pas celle d'un fond ou d'un trait
-    # (« --ltx-fill-color », « background-color », « fill-opacity »… : fond blanc d'un encadré TikZ)
-    r"(?<![\w])(?<!fill-)(?<!stroke-)(?<!background-)(?<!border-)(?<!outline-)(?<!flood-)(?<!stop-)(?<!lighting-)"
-    r"(?:color\s*:\s*(#fff(fff)?\b|white|rgba?\([^)]*,\s*0\))"
+    TEXT_COLOR + r"(#fff(fff)?\b|white|rgba?\([^)]*,\s*0\))"
     r"|font-size\s*:\s*(0*\.\d+|[0-3](\.\d+)?)\s*(px|pt)|font-size\s*:\s*(\d|1\d)(\.\d+)?\s*%"
-    r"|display\s*:\s*none|visibility\s*:\s*hidden|(?<!fill-)(?<!stroke-)(?<!stop-)(?<!flood-)opacity\s*:\s*0(\.0+)?\s*(;|$))",
+    r"|display\s*:\s*none|visibility\s*:\s*hidden|(?<!fill-)(?<!stroke-)(?<!stop-)(?<!flood-)opacity\s*:\s*0(\.0+)?\s*(;|$)",
     re.I,
 )
+WHITE_TEXT = re.compile(TEXT_COLOR + r"(#fff(fff)?\b|white)", re.I)
+
+DRAWING_POINT = re.compile(r"-?\d+(?:\.\d+)?")
+TRANSLATION = re.compile(r"^\s*matrix\(\s*1(?:\.0+)?\s+0(?:\.0+)?\s+0(?:\.0+)?\s+1(?:\.0+)?\s+(-?[\d.]+)\s+(-?[\d.]+)\s*\)\s*$")
+
+
+def _luminance(color):
+    """Luminance relative (WCAG : 0 noir, 1 blanc) d'une couleur #rrggbb ou #rgb ; None si on ne sait pas la lire."""
+    match = re.fullmatch(r"#([0-9a-f]{3}|[0-9a-f]{6})", (color or "").strip(), re.I)
+    if not match:
+        return None
+    digits = match.group(1)
+    if len(digits) == 3:
+        digits = "".join(c * 2 for c in digits)
+    r, g, b = (c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+               for c in (int(digits[i:i + 2], 16) / 255 for i in (0, 2, 4)))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _fill(element, stop):
+    """Remplissage effectif d'une forme : le sien ou celui du groupe le plus proche (jusqu'au dessin) ; None si
+    transparent ou illisible."""
+    for node in [element, *element.parents]:
+        if node is stop or not isinstance(node, Tag):
+            break
+        if str(node.get("fill-opacity", "1")).strip() in ("0", "0.0"):
+            return None
+        if node.get("fill"):
+            return None if node["fill"] == "none" else node["fill"]
+    return None
+
+
+def _moved(shape, common):
+    """Forme déplacée (groupe avec « transform ») par rapport au repère commun avec le texte ?"""
+    for node in [shape, *shape.parents]:
+        if node is common:
+            return False
+        if node.get("transform"):
+            return True
+    return True
+
+
+def _on_dark_shape(element):
+    """Texte posé dans un dessin (foreignObject LaTeXML) sur une forme foncée dessinée juste avant, au même endroit :
+    titre blanc de la barre d'un encadré tcolorbox. Lu seulement dans le cas que LaTeXML produit (le texte et la
+    forme dans le même repère) ; dans le doute, non (le texte reste signalé)."""
+    fo = element.find_parent("foreignobject")
+    holder = fo.parent if fo else None
+    match = TRANSLATION.match(str(holder.get("transform", ""))) if isinstance(holder, Tag) and holder.name == "g" else None
+    if not match:
+        return False
+    x, y = float(match.group(1)), float(match.group(2))
+    svg = element.find_parent("svg")
+    for sibling in holder.find_previous_siblings():  # du plus proche (dessiné en dernier, donc au-dessus) au plus loin
+        if not isinstance(sibling, Tag):
+            continue
+        for shape in reversed(([sibling] if sibling.name == "path" else []) + sibling.find_all("path")):
+            if _moved(shape, holder.parent):
+                continue
+            numbers = [float(n) for n in DRAWING_POINT.findall(shape.get("d", ""))]
+            xs, ys = numbers[0::2], numbers[1::2]
+            if len(xs) < 3 or not (min(xs) <= x <= max(xs) and min(ys) <= y <= max(ys)):
+                continue
+            luminance = _luminance(_fill(shape, svg))
+            # forme la plus haute sous le texte : elle décide ; blanc lisible dessus (contraste d'au moins 2,3)
+            return luminance is not None and luminance < 0.4
+    return False
 
 
 def plain(element):
@@ -602,10 +671,14 @@ def extract_structure(fragment, overrides=None):
     for element in fragment.select(".arx-hidden-text"):  # nouvelle analyse : marques refaites ci-dessous
         element["class"] = [c for c in element["class"] if c != "arx-hidden-text"]
     for element in fragment.find_all(style=True):
-        if HIDDEN_STYLE.search(element["style"]) and re.search(r"[^\W\d_]", element.get_text()):
-            if "arx-hidden-text" not in (element.get("class") or []):
-                element["class"] = (element.get("class") or []) + ["arx-hidden-text"]
-            hidden += 1
+        style = element["style"]
+        if not HIDDEN_STYLE.search(style) or not re.search(r"[^\W\d_]", element.get_text()):
+            continue
+        if not HIDDEN_STYLE.search(WHITE_TEXT.sub("", style)) and _on_dark_shape(element):
+            continue  # titre blanc sur la barre foncée d'un encadré (tcolorbox) : visible
+        if "arx-hidden-text" not in (element.get("class") or []):
+            element["class"] = (element.get("class") or []) + ["arx-hidden-text"]
+        hidden += 1
 
     # Définition de macro que LaTeXML n'a pas comprise, imprimée avant le titre (« crcases ## ##{. ») : le lecteur ne
     # la montre pas, l'assistant IA ne la reçoit pas non plus (rien de caché à l'un qui soit lu par l'autre)
