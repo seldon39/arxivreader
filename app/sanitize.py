@@ -170,6 +170,7 @@ def sanitize_document(html, base_url):
         for element in fragment.select(selector):
             element.decompose()
     _repair_patterns(fragment)
+    _objects_to_images(fragment)
 
     assets = {}
     for element in list(fragment.find_all(True)):
@@ -215,6 +216,21 @@ def sanitize_document(html, base_url):
                 assets[local] = remote
                 element.attrs[attr] = "assets/" + local
     return fragment, sorted(assets.items())
+
+
+def _objects_to_images(fragment):
+    """arXiv insère parfois une figure SVG par <object data="figure.svg"> (2408.13940v4, figure 5) : l'<object> est
+    retiré comme le reste, la figure deviendrait vide. Une simple image à la place (une SVG affichée par <img>
+    n'exécute rien) ; un <object> qui ne désigne pas une image est retiré comme avant."""
+    for element in fragment.find_all("object"):
+        data = str(element.get("data", "")).strip()
+        if not _extension(data):
+            continue
+        image = fragment.new_tag("img", src=data, alt="Refer to caption")
+        for attr in ("id", "class", "style", "width", "height"):
+            if element.get(attr):
+                image[attr] = element[attr]
+        element.replace_with(image)
 
 
 def _relative(src, base_url):

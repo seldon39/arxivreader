@@ -83,6 +83,20 @@ class Import(unittest.TestCase):
                                                                   "https://arxiv.org/html/2609.40232v1/x1.png",
                                                                   "https://arxiv.org/static/a.png"])
 
+    def test_svg_object_becomes_image(self):
+        # figure SVG insérée par <object data=…> (2408.13940v4) : une image ; un <object> sans image reste retiré
+        html = """<html><body><article class="ltx_document"><figure id="F5"><object type="image/svg+xml"
+                  data="2408.13940v4/fig.svg" id="F5.g1" class="ltx_graphics" width="476" height="178"></object></figure>
+                  <object data="https://evil.example/x.swf"></object><object data="https://evil.example/fig.svg"></object>
+                  </article></body></html>"""
+        fragment, assets = sanitize_document(html, "https://arxiv.org/html/2408.13940v4/")
+        image = fragment.select_one("#F5 img")
+        self.assertEqual(image["class"], ["ltx_graphics"])
+        self.assertEqual(image["width"], "476")
+        self.assertEqual([remote for _, remote in assets], ["https://arxiv.org/html/2408.13940v4/fig.svg"])
+        self.assertIsNone(fragment.select_one("object"))
+        self.assertEqual(len(fragment.select("img[src]")), 1)  # SVG hors d'arXiv : jamais demandée
+
     def test_pinned_styles_removed(self):
         # position fixe ou collante (couvrirait l'interface) retirée ; position relative (\raisebox) gardée
         html = """<html><body><article class="ltx_document"><span id="a" style="position: fixed; inset:0">x</span>
