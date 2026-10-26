@@ -925,12 +925,16 @@ mark.hl.hl-display > mjx-container[display="true"] { margin: .2em 0 !important; 
 .ai-views { flex: none; display: flex; background: var(--surface-soft); border: 1px solid var(--border); border-radius: 999px; padding: 2px; }
 .ai-view { border: 0; background: transparent; border-radius: 999px; padding: 3px 10px; font: 13px var(--font-ui); color: var(--muted); cursor: pointer; white-space: nowrap; }
 .ai-view[aria-pressed="true"] { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, .14); }
+/* réponse en cours dans ce fil : point qui pulse après le nom */
+.ai-view.busy::after { content: ""; display: inline-block; width: 6px; height: 6px; margin-left: 5px; vertical-align: middle; border-radius: 50%; background: var(--accent); animation: ai-pulse 1.2s ease-in-out infinite; }
+@keyframes ai-pulse { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .ai-view.busy::after { animation: none; } }
 .ai-frame { flex: 1; position: relative; min-height: 0; display: flex; flex-direction: column; }
 /* marge à droite (36 px) : les boutons ↑ ↓ y tiennent sans couvrir le texte */
 .ai-thread { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 14px 36px 12px 12px; background: var(--surface-soft); outline: none; }
 .ai-thread-content { min-height: 100%; display: flex; flex-direction: column; gap: 14px; }
 .ai-jump {
-  position: absolute; right: 5px; z-index: 3; width: 26px; height: 26px; padding: 0; border-radius: 50%; border: 1px solid var(--border);
+  position: absolute; right: calc(5px + var(--ai-scrollbar, 0px)); z-index: 3; width: 26px; height: 26px; padding: 0; border-radius: 50%; border: 1px solid var(--border);
   background: var(--surface); color: var(--text); box-shadow: 0 1px 4px rgba(0, 0, 0, .15); display: flex; align-items: center; justify-content: center; cursor: pointer;
 }
 .ai-jump[hidden] { display: none; }
@@ -975,13 +979,15 @@ mark.hl.hl-display > mjx-container[display="true"] { margin: .2em 0 !important; 
 .ai-empty { margin: auto 6px; text-align: center; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
 .ai-empty-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
 .ai-empty-doc p { margin: 0; }
-.ai-bottom { flex: none; display: flex; flex-direction: column; gap: 7px; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--surface); }
+/* fenêtre basse : la barre du bas défile plutôt que de manger le fil */
+.ai-bottom { flex: none; max-height: 55%; overflow-y: auto; display: flex; flex-direction: column; gap: 7px; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--surface); }
+.ai-bottom .zone-quote img { max-height: 90px; }
 .ai-bottom .ai-ask { gap: 7px; }
 .ai-chip.reply { border-left: 3px solid var(--accent); }
 .ai-chip .ai-reply-to { border: 0; padding: 0; background: none; }
 .ai-field { display: flex; align-items: flex-end; gap: 6px; padding: 6px 6px 6px 10px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface); }
 .ai-field:focus-within { border-color: var(--focus); }
-.ai-field .ai-question { flex: 1; min-height: 24px; max-height: 220px; padding: 3px 0; border: 0; outline: none; resize: none; background: transparent; color: var(--text); font: 14.5px/1.4 var(--font-ui); }
+.ai-field .ai-question { flex: 1; min-height: 24px; max-height: min(220px, 25vh); padding: 3px 0; border: 0; outline: none; resize: none; background: transparent; color: var(--text); font: 14.5px/1.4 var(--font-ui); }
 .ai-send { flex: none; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer;
   color: #fff; background: color-mix(in srgb, var(--accent) 38%, var(--surface)); }
 .ai-send.ready { background: var(--accent); }

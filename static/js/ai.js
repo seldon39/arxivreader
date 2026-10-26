@@ -185,16 +185,22 @@ export class Assistant {
   // l'assistant choisi lit-il les images ? (zones du PDF)
   readsImages() { return Boolean(this.status?.images && this.status.loggedIn !== false); }
 
-  async ask({ task, target = null, quote = null, question = null, parent = null, zone = null }) {
+  // une demande peut-elle partir ? (sinon l'utilisateur est prévenu)
+  canAsk() {
     if (this.running) {
       toast(t("ai.busy"));
-      return;
+      return false;
     }
     if (this.status && !this.status.loggedIn) {
       this.onChange({ show: true });
       toast(t("ai.loginFirst"), { error: true });
-      return;
+      return false;
     }
+    return true;
+  }
+
+  async ask({ task, target = null, quote = null, question = null, parent = null, zone = null }) {
+    if (!this.canAsk()) return;
     const controller = new AbortController();
     if (zone) quote = zone.quote || null;
     const local = { id: `local-${Date.now()}`, startedAt: Date.now(), task, target, quote, question, parent_id: parent?.id ?? null, answer: "", status: "running",
@@ -204,8 +210,6 @@ export class Assistant {
     this.running = { exchange: local, controller };
     this.view = this.viewOf(local);
     this.positions[this.view] = { top: 0, atBottom: true };
-    if (this.view === "questions") this.pending = { quote: null, parent: null, question: "", zone: null };
-    else this.docPending[this.view] = { question: "" };
     this.onChange({ show: true });
     let frame = 0;
     const redraw = () => {
@@ -248,9 +252,11 @@ export class Assistant {
           if (!doomed.has(e) && [...doomed].some((d) => d.id === e.parent_id)) { doomed.add(e); grew = true; }
         }
       }
-      if (doomed.size > 1 && !confirm(tn("ai.deleteWithFollowUps", doomed.size - 1))) return;
+      if (!confirm(doomed.size > 1 ? tn("ai.deleteWithFollowUps", doomed.size - 1) : t(`ai.confirmDelete.${exchange.task}`))) return;
     }
-    for (const e of doomed) {
+    if (this.running && doomed.has(this.running.exchange)) this.stop();
+    // les suites d'abord, le document en dernier : un échec en cours de route ne laisse pas de suite orpheline
+    for (const e of [...doomed].reverse()) {
       try {
         if (typeof e.id === "number") await api.deleteAIExchange(e.id);
       } catch (error) {
@@ -310,7 +316,7 @@ export class Assistant {
     const notice = status && !status.loggedIn ? setupNotice(status, () => { this.status = null; this.onChange(); }) : null;
 
     const content = h("div", { class: "ai-thread-content" });
-    const thread = h("div", { class: "ai-thread", tabindex: -1 }, content);
+    const thread = h("div", { class: "ai-thread", tabindex: 0, "aria-label": t(`ai.view.${view}`) }, content);
     if (view === "questions") {
       if (exchanges.length) exchanges.forEach((e) => this.renderExchange(content, e));
       else content.append(h("p", { class: "hint ai-empty" }, t("ai.emptyQuestions") + (this.inPdf() && this.readsImages() ? ` ${t("ai.hintZone")}` : "")));
@@ -326,28 +332,35 @@ export class Assistant {
     const up = h("button", { class: "ai-jump up", type: "button", title: t("ai.toTop"), "aria-label": t("ai.toTop"), html: ARROW_UP, hidden: true,
       onclick: () => thread.scrollTo({ top: 0, behavior: "smooth" }) });
     const dot = h("span", { class: "ai-jump-dot", hidden: true });
+    const last = exchanges.length ? exchanges[exchanges.length - 1].id : null;
+    if (!(view in this.seen)) this.seen[view] = last;
     const down = h("button", { class: "ai-jump down", type: "button", title: t("ai.toBottom"), "aria-label": t("ai.toBottom"), html: ARROW_DOWN, hidden: true,
       onclick: () => thread.scrollTo({ top: thread.scrollHeight, behavior: "smooth" }) }, dot);
     const update = () => {
       if (!thread.isConnected) return;
       const atBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 24;
       this.positions[view] = { top: thread.scrollTop, atBottom };
-      if (atBottom) this.seen[view] = exchanges.length;
+      if (atBottom) this.seen[view] = last;
       up.hidden = thread.scrollTop < 24;
       down.hidden = atBottom;
-      dot.hidden = atBottom || (this.seen[view] ?? exchanges.length) >= exchanges.length;
+      dot.hidden = atBottom || this.seen[view] === last;
+      // barre de défilement classique (Windows) : les boutons restent à sa gauche
+      frame.style.setProperty("--ai-scrollbar", `${thread.offsetWidth - thread.clientWidth}px`);
     };
     thread.addEventListener("scroll", update, { passive: true });
     // formules mises en forme après coup, images : le fil grandit ; s'il était en bas, il y reste
-    new ResizeObserver(() => {
+    this.threadObserver?.disconnect(); // fil du rendu précédent
+    this.threadObserver = new ResizeObserver(() => {
       if (!thread.isConnected) return;
       if (this.positions[view]?.atBottom) thread.scrollTop = thread.scrollHeight;
       update();
-    }).observe(content);
+    });
+    this.threadObserver.observe(content);
     this.thread = thread;
     this.updateJumps = update;
 
-    body.append(this.viewBar(), ...(notice ? [notice] : []), h("div", { class: "ai-frame" }, thread, up, down), this.bottomBar(view, exchanges, focus));
+    const frame = h("div", { class: "ai-frame" }, thread, up, down);
+    body.append(this.viewBar(), ...(notice ? [notice] : []), frame, this.bottomBar(view, exchanges, focus));
     // position de lecture : celle laissée ; la première fois, le document depuis le haut, sinon la dernière réponse
     requestAnimationFrame(() => {
       const kept = this.positions[view];
@@ -364,18 +377,25 @@ export class Assistant {
     this.updateJumps?.();
   }
 
+  // dernier résumé ou relecture enregistré et terminé (parent des questions posées dessus)
+  lastDocument(view, exchanges) {
+    const task = view === "summary" ? "summary" : "review";
+    return [...exchanges].reverse().find((e) => e.task === task && typeof e.id === "number" && e.status === "done") || null;
+  }
+
   showView(view) {
     if (view === this.view) return;
     this.view = view;
     this.onChange({ focus: false });
   }
 
-  // Barre du haut : sous-onglets (pastille) et taille du texte des réponses
+  // Barre du haut : sous-onglets (une réponse en cours ailleurs y est signalée) et taille du texte des réponses
   viewBar() {
     const views = ["questions", "summary", "review"];
+    const busy = this.running ? this.viewOf(this.running.exchange) : null;
     const seg = h("div", { class: "ai-views", role: "group", "aria-label": t("ai.views") }, views.map((view) =>
-      h("button", { type: "button", class: "ai-view", "aria-pressed": String(this.view === view), onclick: () => this.showView(view) },
-        t(`ai.view.${view}`))));
+      h("button", { type: "button", class: `ai-view${busy === view ? " busy" : ""}`, "aria-pressed": String(this.view === view),
+        title: busy === view ? t("ai.busyHere") : undefined, onclick: () => this.showView(view) }, t(`ai.view.${view}`))));
     return h("div", { class: "ai-topbar" }, seg, h("span", { class: "spacer" }), this.textSizeBar(), this.shareLink({ compact: true }));
   }
 
@@ -383,7 +403,7 @@ export class Assistant {
   bottomBar(view, exchanges, focus) {
     const running = Boolean(this.running);
     const footer = h("p", { class: "ai-footnote", title: t(`ai.privacy.${providerOf(currentModel())}`) }, t("ai.footnote"));
-    if (view !== "questions" && !exchanges.length) {
+    if (view !== "questions" && !this.lastDocument(view, exchanges) && !exchanges.some((e) => e.status === "running")) {
       const task = view === "summary" ? "summary" : "review";
       const launch = running
         ? h("button", { class: "button ai-launch", type: "button", onclick: () => this.stop() }, t("ai.stop"))
@@ -406,25 +426,30 @@ export class Assistant {
     let width = 0;
     new ResizeObserver(() => { if (area.offsetWidth !== width) { width = area.offsetWidth; grow(); } }).observe(area);
     area.addEventListener("input", () => { pending.question = area.value; grow(); });
+    // le brouillon n'est vidé qu'au départ effectif de la demande (sinon il reste à sa place)
     const send = () => {
-      if (this.running) return;
       const question = area.value.trim();
       if (view !== "questions") {
-        // question sur le résumé ou la relecture : suite du document le plus récent (il accompagne la question)
-        const doc = [...exchanges].reverse().find((e) => e.task === (view === "summary" ? "summary" : "review"));
+        // question sur le résumé ou la relecture : suite du dernier document enregistré (il accompagne la question)
+        const doc = this.lastDocument(view, exchanges);
         if (!question || !doc) { area.focus(); return; }
+        if (!this.canAsk()) return;
         pending.question = "";
         this.ask({ task: "ask", question, parent: doc });
         return;
       }
-      if (pending.zone) { this.ask({ task: "zone", zone: pending.zone, question: question || null, parent: pending.parent }); return; }
-      if (!question && !pending.quote) { area.focus(); return; }
-      if (pending.quote && !question) this.ask({ task: "passage", quote: pending.quote, parent: pending.parent });
-      else this.ask({ task: pending.quote ? "passage" : "ask", quote: pending.quote, question, parent: pending.parent });
+      if (!question && !pending.quote && !pending.zone) { area.focus(); return; }
+      if (!this.canAsk()) return;
+      const { quote, zone, parent } = pending;
+      Object.assign(pending, { quote: null, parent: null, question: "", zone: null });
+      if (zone) this.ask({ task: "zone", zone, question: question || null, parent });
+      else if (quote && !question) this.ask({ task: "passage", quote, parent });
+      else this.ask({ task: quote ? "passage" : "ask", quote, question, parent });
     };
     // Entrée envoie ; Maj + Entrée va à la ligne (et rien pendant la composition d'un caractère : accents, IME)
     area.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); send(); }
+      // keyCode 229 : Entrée qui valide un caractère composé (WebKit ne met pas toujours isComposing)
+      if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229) { event.preventDefault(); send(); }
     });
     const chips = [];
     const chip = (label, onRemove, removeKey, ...content) => h("div", { class: "ai-chip" }, label,
@@ -559,15 +584,30 @@ export class Assistant {
     const button = (label, onclick, title) => h("button", { class: "ai-act", type: "button", title: title || undefined, onclick }, label);
     const replying = this.pending.parent === exchange;
     const claude = providerOf(currentModel()) === "claude";
+    const item = (label, action, extra = {}) => h("button", { type: "button", role: "menuitem", ...extra, onclick: () => { close(); action(); } }, label);
     const more = h("div", { class: "ai-more-menu", hidden: true, role: "menu" },
-      exchange.answer && saved && h("button", { type: "button", role: "menuitem", title: t("ai.exportCopyHint"), onclick: () => this.copyExchange(exchange) }, t("ai.exportCopy")),
-      document && exchange.answer && saved && claude && h("button", { type: "button", role: "menuitem", onclick: () => this.continueInClaude(exchange) }, t("ai.continue")),
-      h("button", { type: "button", role: "menuitem", class: "danger", onclick: () => this.remove(exchange) }, t("ai.delete")));
-    const toggle = h("button", { class: "ai-act ai-more", type: "button", title: t("ai.more"), "aria-label": t("ai.more"), "aria-haspopup": "menu" }, "⋯");
+      exchange.answer && saved && item(t("ai.exportCopy"), () => this.copyExchange(exchange), { title: t("ai.exportCopyHint") }),
+      document && exchange.answer && saved && claude && item(t("ai.continue"), () => this.continueInClaude(exchange)),
+      item(t(document ? `ai.delete.${exchange.task}` : "ai.delete"), () => this.remove(exchange), { class: "danger" }));
+    const toggle = h("button", { class: "ai-act ai-more", type: "button", title: t("ai.more"), "aria-label": t("ai.more"), "aria-haspopup": "menu",
+      "aria-expanded": "false" }, "⋯");
+    const wrap = h("span", { class: "ai-more-wrap" }, toggle, more);
+    const outside = (e) => { if (!wrap.contains(e.target)) close(); };
+    const escape = (e) => { if (e.key === "Escape") { e.stopPropagation(); close(); toggle.focus(); } };
+    function close() {
+      more.hidden = true;
+      toggle.setAttribute("aria-expanded", "false");
+      removeEventListener("click", outside, true);
+      removeEventListener("keydown", escape, true);
+    }
     toggle.addEventListener("click", (event) => {
       event.stopPropagation();
-      more.hidden = !more.hidden;
-      if (more.hidden) return;
+      if (!more.hidden) { close(); return; }
+      more.hidden = false;
+      toggle.setAttribute("aria-expanded", "true");
+      addEventListener("click", outside, true);
+      addEventListener("keydown", escape, true);
+      more.querySelector("button")?.focus();
       // ouvert du côté où il tient dans le fil (sinon coupé par le bord du panneau) : à droite du bouton si la
       // place manque à gauche, en dessous si elle manque au-dessus
       more.classList.remove("to-right", "below");
@@ -578,8 +618,6 @@ export class Assistant {
         box = more.getBoundingClientRect();
         if (box.top < room.top) more.classList.add("below");
       }
-      const close = (e) => { if (!more.contains(e.target)) { more.hidden = true; removeEventListener("click", close, true); } };
-      setTimeout(() => addEventListener("click", close, true));
     });
     const replyButton = reply && exchange.answer && saved
       ? button(`↩ ${t("ai.reply")}`, () => { this.pending.parent = replying ? null : exchange; this.onChange({ focus: true }); }, t("ai.replyHint")) : null;
@@ -591,7 +629,7 @@ export class Assistant {
       exchange.answer && button(t("ai.copyShort"), () => navigator.clipboard.writeText(parseProposals(exchange.answer).text.trim())
         .then(() => toast(t("ai.copied")), toastError), t("ai.copy")),
       !document && exchange.answer && saved && claude && button(`${t("ai.continueShort")} ↗`, () => this.continueInClaude(exchange), t("ai.continueHint")),
-      h("span", { class: "ai-more-wrap" }, toggle, more));
+      wrap);
   }
 
   // Tout l'article dans l'application ou le site de l'assistant : un vrai lien (cliqué, il s'ouvre à côté),
@@ -779,7 +817,8 @@ const STOP = svg("M7 7h10v10H7z");
 
 // heure de l'échange (enregistrée en UTC), avec le jour s'il ne date pas d'aujourd'hui
 function timeOf(exchange) {
-  const date = new Date(Date.parse(`${String(exchange.created_at || "").replace(" ", "T")}Z`));
+  const raw = String(exchange.created_at || "").replace(" ", "T");
+  const date = new Date(Date.parse(/[zZ]|[+-]\d\d:?\d\d$/.test(raw) ? raw : `${raw}Z`));
   if (Number.isNaN(date.getTime())) return "";
   const time = date.toLocaleTimeString(document.documentElement.lang || undefined, { hour: "2-digit", minute: "2-digit" });
   if (date.toDateString() === new Date().toDateString()) return time;
@@ -788,7 +827,10 @@ function timeOf(exchange) {
 
 // début d'une réponse, sur une ligne (rappel de la réponse à laquelle on répond) ; formules gardées entières
 function excerpt(answer, length = 160) {
-  let text = parseProposals(answer || "").text.replace(/\$\$/g, "$").replace(/[#*>`_]+/g, "").replace(/\s+/g, " ").trim();
+  let text = parseProposals(answer || "").text.replace(/\$\$/g, "$").replace(/\\[()[\]]/g, "$");
+  // Markdown retiré hors des formules seulement (« $x_1$ » garde son indice)
+  text = text.split(/(\$[^$]*\$)/).map((part, i) => (i % 2 ? part : part.replace(/(^|\n)\s*>\s?/g, " ").replace(/(^|\s)#+\s/g, " ").replace(/[*`]+/g, ""))).join("")
+    .replace(/\s+/g, " ").trim();
   if (text.length > length) {
     text = text.slice(0, length);
     if ((text.match(/\$/g) || []).length % 2) text = text.slice(0, text.lastIndexOf("$"));

@@ -1425,7 +1425,9 @@ class Reader {
     // Focus dans le panneau avant le nouveau rendu : il est rendu au même endroit ensuite (onglet, énoncé)
     const active = this.panel.contains(document.activeElement) ? document.activeElement : null;
     const keep = active?.matches('[role="tab"]') ? `[role="tab"][data-tab="${this.tab}"]`
-      : active?.matches(".node-item[data-id]") ? `.node-item[data-id="${CSS.escape(active.dataset.id)}"]` : null;
+      : active?.matches(".node-item[data-id]") ? `.node-item[data-id="${CSS.escape(active.dataset.id)}"]`
+      : active?.matches(".ai-view") ? '.ai-view[aria-pressed="true"]'   // sous-onglet de l'IA
+      : active?.closest(".ai-bottom") ? ".ai-question, .ai-launch" : null; // saisie de l'IA (envoi, arrêt)
 
     const keys = ["statements", "dependencies", "graph", "notes", "ai"];
     const show = (key) => { this.tab = key; this.renderPanel(); this.panel.querySelector(`[role="tab"][data-tab="${key}"]`)?.focus(); };
