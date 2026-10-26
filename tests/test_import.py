@@ -144,6 +144,14 @@ class Import(unittest.TestCase):
         self.assertEqual(len(fragment.select(".arx-hidden-text")), 1)
         self.assertEqual(fragment.select_one(".arx-hidden-text").get_text(), "secret")
 
+    def test_phantom_text_flagged_and_never_sent(self):
+        # \phantom{E-mail} (alignement) : signalé comme tout texte invisible, et jamais transmis à l'IA
+        from app import ai
+        phantom = '<span class="ltx_text ltx_phantom"><span style="visibility:hidden">E-mail</span></span>'
+        fragment = BeautifulSoup(f'<div class="ltx_para"><p>{phantom} a@b.fr {phantom} c@d.fr</p></div>', "html.parser")
+        self.assertEqual(extract_structure(fragment)["hiddenText"], 2)
+        self.assertNotIn("E-mail", ai.element_text(fragment))
+
     def test_hidden_letter_by_letter_and_macro_debris(self):
         # texte caché une lettre par balise : chacune signalée, rien n'en parvient à l'assistant IA
         from app import ai

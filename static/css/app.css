@@ -422,7 +422,14 @@ a.button.primary { text-decoration: none; }
 .paper-content a:hover { text-decoration: underline; }
 .paper .flash { animation: flash 1.6s ease; }
 @keyframes flash { 0%, 30% { background-color: color-mix(in srgb, var(--accent) 22%, transparent); } 100% { background-color: transparent; } }
-.paper.reveal-hidden .arx-hidden-text { outline: 2px dashed #e08a00; color: var(--text) !important; font-size: 1em !important; opacity: 1 !important; display: inline !important; visibility: visible !important; }
+.paper.reveal-hidden .arx-hidden-text {
+  outline: 2px dashed #e08a00; outline-offset: 1px; background: color-mix(in srgb, #e08a00 14%, transparent);
+  color: var(--text) !important; font-size: 1em !important; opacity: 1 !important; display: inline !important; visibility: visible !important;
+}
+/* tout ce qu'il contient aussi (texte blanc dans un texte masqué…) */
+.paper.reveal-hidden .arx-hidden-text * { color: var(--text) !important; opacity: 1 !important; visibility: visible !important; }
+/* dans un dessin (SVG) : la couleur du texte est son remplissage ; display laissé tel quel */
+.paper.reveal-hidden svg .arx-hidden-text, .paper.reveal-hidden svg .arx-hidden-text * { display: revert !important; fill: #c06000 !important; }
 
 /* pendant la conversion des formules : hors mise en page (et pas seulement invisible), sinon le navigateur
    recalcule tout l'article entre deux paquets de formules, pour rien */

@@ -460,12 +460,36 @@ class Reader {
     this.article.append(meta);
 
     if (this.structure.hiddenText > 0) {
+      // « Afficher » : le texte invisible apparaît, encadré, et on y va (il peut être loin : bloc des adresses, fin de
+      // l'article) ; « Suivant » passe aux autres endroits ; « Précédent » (barre) ramène où l'on lisait
       const toggle = h("button", { type: "button" }, t("reader.reveal"));
+      const next = h("button", { type: "button", hidden: true });
+      let spots = [];
+      let index = 0;
+      // un seul « Précédent » ramène à la lecture : les sauts suivants ne s'empilent pas
+      const go = (remember) => {
+        next.textContent = t("reader.nextHidden", { i: index + 1, n: spots.length });
+        next.hidden = spots.length < 2;
+        if (spots[index]) this.navigateElement(spots[index], { remember });
+      };
       toggle.addEventListener("click", () => {
         const on = this.article.classList.toggle("reveal-hidden");
         toggle.textContent = on ? t("reader.conceal") : t("reader.reveal");
+        if (!on || this.pdfMode) { next.hidden = true; return; }
+        // un endroit par paragraphe (texte caché lettre par lettre : une seule étape), dans l'ordre de l'article
+        const seen = new Set();
+        spots = [...this.content.querySelectorAll(".arx-hidden-text")].filter((element) => {
+          const block = element.closest(".ltx_para, p, li, td, figure, .ltx_theorem, svg, section") || element;
+          if (seen.has(block)) return false;
+          seen.add(block);
+          return true;
+        });
+        index = 0;
+        go(true);
       });
-      this.article.append(h("div", { class: "notice" }, h("span", { class: "reason-icon", html: icons.warning }), t("reader.hiddenText", { n: this.structure.hiddenText }), toggle));
+      next.addEventListener("click", () => { index = (index + 1) % spots.length; go(false); });
+      this.article.append(h("div", { class: "notice" }, h("span", { class: "reason-icon", html: icons.warning }),
+        t("reader.hiddenText", { n: this.structure.hiddenText }), toggle, next));
     }
 
     if (this.texOnly) {
