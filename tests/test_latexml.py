@@ -208,17 +208,30 @@ class Latexml(unittest.TestCase):
                 '<defs><pattern height="4" id="pgfpat3" patternUnits="userSpaceOnUse" width="4"><symbol id="pgfsym3">'
                 '<g stroke-width="0.4pt"><path d="M 0 0 L 4.29 4.29" style="fill:none"></path></g>'
                 '<defs><pattern id="pgfupat1" href="#pgfpat3"><g fill="#000" stroke="#000"><use href="#pgfsym3"></use>'
-                '</g></pattern></defs><g fill="#000000"><path d="M -39 37 L 39 41 Z"></path></g>'
+                '</g></pattern></defs><g fill="#000000"><path d="M -39 37 L 39 41 Z" style="stroke:none"></path></g>'
                 '<g fill="url(#pgfupat1)"></g><g id="label"><path d="M 1 1 L 2 2"></path></g>'
                 '</symbol></pattern></defs>'
                 '<defs><pattern id="pgfupat2" href="#pgfpat3"><g fill="#000" stroke="#000"><use href="#pgfsym3"></use>'
-                '</g></pattern></defs><g fill="#000000"><path d="M -9 7 L 9 11 Z"></path></g></g></svg></article>')
+                '</g></pattern></defs><g fill="#000000"><path d="M -9 7 L 9 11 Z" style="stroke:none"></path></g></g></svg></article>')
         fragment, _ = sanitize_document(page, latexml.BASE)
         self.assertIsNone(fragment.find(id="label").find_parent("defs"))  # le reste du dessin est visible
         for pattern_id in ("pgfupat1", "pgfupat2"):
             pattern = fragment.find(id=pattern_id)
             self.assertEqual((pattern.get("width"), pattern.path["d"]), ("4", "M 0 0 L 4.29 4.29"))
             self.assertEqual(len(fragment.select(f'g[fill="url(#{pattern_id})"] > path')), 1)
+
+    def test_pattern_repair_spares_other_shapes(self):
+        # un tracé qui n'est pas une surface noire sans contour (point, fond blanc d'étiquette) n'est pas hachuré ;
+        # un tracé d'une autre figure n'est jamais pris pour tuile
+        page = ('<article class="ltx_document"><svg class="ltx_picture" width="10" height="10"><g><path id="axis" d="M 0 0 L 300 0">'
+                '</path></g></svg><svg class="ltx_picture" width="10" height="10"><g>'
+                '<defs><pattern id="pgfupat1" href="#pgfpat3"><g fill="#000" stroke="#000"></g></pattern></defs>'
+                '<g fill="url(#pgfupat1)"></g><g fill="#FFFFFF"><path id="label" d="M 1 1 h 2 v 2 Z" style="stroke:none"></path></g>'
+                '</g></svg></article>')
+        fragment, _ = sanitize_document(page, latexml.BASE)
+        latexml.fix_patterns(fragment)
+        self.assertIsNotNone(fragment.find(id="axis"))
+        self.assertEqual(fragment.find(id="label").parent["fill"], "#FFFFFF")
 
     def test_arxiv_pattern_variants(self):
         # surface après le groupe à motif (qui ne contient qu'une redéfinition du motif pour sa couleur) ; réemploi
@@ -228,9 +241,9 @@ class Latexml(unittest.TestCase):
                 '<g stroke-width="0.4pt"><path d="M 0 0 L 4.29 4.29"></path></g>'
                 '<defs><pattern id="pgfupat1" href="#pgfpat3"><g><use href="#pgfsym3"></use></g></pattern></defs>'
                 '<g fill="url(#pgfupat1)"><defs><pattern id="pgfupat2" href="#pgfpat3"><g><use href="#pgfsym3"></use></g>'
-                '</pattern></defs></g><g fill="#000000"><path id="a" d="M 1 1 h 2 v 2 h -2 Z"></path></g>'
+                '</pattern></defs></g><g fill="#000000"><path id="a" d="M 1 1 h 2 v 2 h -2 Z" style="stroke:none"></path></g>'
                 '<g><defs><pattern id="pgfupat3" href="#pgfpat3"><g><use href="#pgfsym3"></use></g></pattern></defs></g>'
-                '<g fill="#000000"><path id="b" d="M 5 5 h 2 v 2 h -2 Z"></path></g>'
+                '<g fill="#000000"><path id="b" d="M 5 5 h 2 v 2 h -2 Z" style="stroke:none"></path></g>'
                 '</symbol></pattern></defs></g></svg></article>')
         fragment, _ = sanitize_document(page, latexml.BASE)
         self.assertEqual(fragment.find(id="a").parent["fill"], "url(#pgfupat1)")
@@ -248,7 +261,7 @@ class Latexml(unittest.TestCase):
         self.assertEqual(len(fragment.find_all("path")), 2)
 
     def test_unknown_pattern_step_left_empty(self):
-        # lignes horizontales : tuile de 100pt, pas inconnu ; la tuile quitte quand même le dessin
+        # lignes horizontales : tuile de 100pt, pas inconnu ; rien n'est retiré du dessin (ce pourrait être un axe)
         page = ('<article class="ltx_document"><svg class="ltx_picture" width="10" height="10"><g>'
                 '<path d="M 0 0.69 L 138.37 0.69" style="fill:none"></path>'
                 '<defs><pattern id="pgfupat1" href="#pgfpat3"><g fill="#000000" stroke="#000000"></g></pattern></defs>'
@@ -256,7 +269,7 @@ class Latexml(unittest.TestCase):
         fragment, _ = sanitize_document(page, latexml.BASE)
         latexml.fix_patterns(fragment)
         self.assertIsNone(fragment.find("pattern").find("path"))
-        self.assertEqual(len(fragment.find_all("path")), 1)
+        self.assertEqual(len(fragment.find_all("path")), 2)
 
     def test_refs_in_code_and_comments_untouched(self):
         text = ("\\begin{verbatim}\\begin{tikzpicture}\\node{\\ref{a}};\\end{tikzpicture}\\end{verbatim}\n"

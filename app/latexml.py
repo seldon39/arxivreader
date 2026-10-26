@@ -800,8 +800,13 @@ def fix_patterns(fragment):
             continue
         if target not in tiles:  # tuile dessinée juste avant la première utilisation du motif
             defs = pattern.find_parent("defs")  # tuile : dernier tracé avant la définition (parfois dans un <g>)
-            loose = _tile(defs.find_previous("path") if defs else None)
-            tiles[target] = loose.extract() if loose else None
+            # dans le même dessin, hors d'un motif ; retirée seulement si c'est bien une tuile connue (pas un axe
+            # qui commencerait à l'origine)
+            candidate = defs.find_previous("path") if defs else None
+            if candidate is not None and (candidate.find_parent("svg") is not defs.find_parent("svg") or candidate.find_parent("pattern")):
+                candidate = None
+            loose = _tile(candidate)
+            tiles[target] = loose.extract() if loose is not None and _small(loose) else None
         color = (pattern.find("g") or {}).get("stroke") or "#000000"
         pattern.clear()
         del pattern["href"]

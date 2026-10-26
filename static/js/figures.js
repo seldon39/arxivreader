@@ -102,8 +102,10 @@ export function emptyPictures(root) {
 export function sizeToText(root, basePt = 10) {
   const pxPerEm = (basePt * 100) / 72.27;
   for (const element of root.querySelectorAll("svg.ltx_picture, img.ltx_graphics")) {
-    if (element.closest(".figure-card") && element.tagName.toLowerCase() === "img") continue; // image placée dans un dessin
-    const width = parseFloat(element.getAttribute("width"));
+    if (element.tagName.toLowerCase() === "img" && element.closest("svg")) continue; // image placée dans un dessin : suit le dessin
+    const raw = element.getAttribute("width") || "";
+    if (!/^\d+(\.\d+)?$/.test(raw.trim())) continue; // largeur en pixels seulement (pas de pourcentage)
+    const width = parseFloat(raw);
     if (width > 0) element.style.width = `${(width / pxPerEm).toFixed(3)}em`;
   }
 }
@@ -196,6 +198,7 @@ export function openFigure(target, { closeLabel = "Close", onLink = null } = {})
     const image = target.cloneNode(true);
     image.removeAttribute("width");
     image.removeAttribute("height");
+    image.style.removeProperty("width"); // largeur en em de l'article (sizeToText) : ici, la taille naturelle
     image.className = "figure-viewer-image";
     frame.append(image);
   }

@@ -83,6 +83,16 @@ def _safe_href(href):
     return href if scheme in ("http", "https", "mailto") else None
 
 
+def _black_surface(element):
+    """Groupe noir d'un seul tracé plein, sans contour : la surface hachurée que LaTeXML a remplie en noir."""
+    if element is None or element.name != "g" or element.get("transform"):
+        return False
+    if str(element.get("fill", "")).strip().lower() not in ("#000000", "#000", "black"):
+        return False
+    shapes = element.find_all(True, recursive=False)
+    return len(shapes) == 1 and shapes[0].name == "path" and "stroke:none" in str(shapes[0].get("style", "")).replace(" ", "")
+
+
 def _repair_patterns(article):
     """Hachures TikZ des pages d'arXiv (LaTeXML de développement) : la définition du motif (<symbol> de sa tuile) ne
     se referme qu'à la fin du dessin. Tout ce qui suit la première hachure se trouve alors dans <defs>, invisible,
@@ -116,20 +126,19 @@ def _repair_patterns(article):
                 use.decompose()
                 continue
             use.replace_with(BeautifulSoup(str(tile), "html.parser"))
-        for key in ("width", "height", "patternunits"):
+        for key in ("width", "height", "x", "y", "patternunits", "patterncontentunits", "patterntransform", "viewbox"):
             if base.get(key) and not pattern.get(key):
                 pattern[key] = base[key]
         del pattern["href"]
-    # surface hachurée : tracé seul dans le groupe noir juste avant (ou, sinon, juste après) un groupe à motif resté
-    # sans tracé (vide, ou ne contenant qu'une nouvelle définition du motif pour sa couleur)
+    # surface hachurée : groupe noir d'un seul tracé plein (sans contour), juste avant (ou, sinon, juste après) un
+    # groupe à motif resté sans tracé (vide, ou ne contenant qu'une nouvelle définition du motif pour sa couleur) ;
+    # il prend le motif (ses autres attributs gardés), le groupe vide reste tel quel
     for group in article.find_all("g", attrs={"fill": re.compile(r"^url\(#pgfupat")}):
         if any(child.name != "defs" for child in group.find_all(True, recursive=False)):
             continue
         for neighbour in (group.find_previous_sibling(), group.find_next_sibling()):
-            shapes = neighbour.find_all(True, recursive=False) if neighbour is not None and neighbour.name == "g" else []
-            if len(shapes) == 1 and shapes[0].name == "path" and not neighbour.get("transform"):
-                group.append(shapes[0].extract())
-                neighbour.decompose()
+            if _black_surface(neighbour):
+                neighbour["fill"] = group["fill"]
                 break
     # motif que rien n'emploie (réemploi d'un motif déjà défini) : la surface est le tracé qui suit sa définition
     used = {match for group in article.find_all("g", attrs={"fill": True})
@@ -141,7 +150,7 @@ def _repair_patterns(article):
             node = node.parent
         after = node.find_next_sibling() if node is not None else None
         shapes = after.find_all(True, recursive=False) if after is not None and after.name == "g" else []
-        if pattern["id"] not in used and len(shapes) == 1 and shapes[0].name == "path":
+        if pattern["id"] not in used and _black_surface(after):
             after["fill"] = f"url(#{pattern['id']})"
 
 
