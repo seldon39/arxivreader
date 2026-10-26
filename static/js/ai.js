@@ -568,6 +568,16 @@ export class Assistant {
       event.stopPropagation();
       more.hidden = !more.hidden;
       if (more.hidden) return;
+      // ouvert du côté où il tient dans le fil (sinon coupé par le bord du panneau) : à droite du bouton si la
+      // place manque à gauche, en dessous si elle manque au-dessus
+      more.classList.remove("to-right", "below");
+      const room = toggle.closest(".ai-thread")?.getBoundingClientRect();
+      if (room) {
+        let box = more.getBoundingClientRect();
+        if (box.left < room.left) more.classList.add("to-right");
+        box = more.getBoundingClientRect();
+        if (box.top < room.top) more.classList.add("below");
+      }
       const close = (e) => { if (!more.contains(e.target)) { more.hidden = true; removeEventListener("click", close, true); } };
       setTimeout(() => addEventListener("click", close, true));
     });

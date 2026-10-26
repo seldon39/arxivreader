@@ -967,6 +967,8 @@ mark.hl.hl-display > mjx-container[display="true"] { margin: .2em 0 !important; 
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow);
 }
 .ai-more-menu[hidden] { display: none; }
+.ai-more-menu.to-right { right: auto; left: 0; }
+.ai-more-menu.below { bottom: auto; top: calc(100% + 4px); }
 .ai-more-menu button { border: 0; background: transparent; text-align: left; padding: 6px 10px; border-radius: 6px; font: 13px var(--font-ui); color: var(--text); cursor: pointer; }
 .ai-more-menu button:hover { background: var(--surface-hover); }
 .ai-more-menu .danger { color: var(--accent); }
