@@ -422,8 +422,13 @@ il suffit de la fermer et d'aller dans le feed.
   annote… ». Claude joint une liste d'annotations (passages cités mot pour mot, couleur, note ; notes sur un
   énoncé ou une preuve) : chaque passage est retrouvé dans l'article, vous cochez ce que vous gardez,
   *Appliquer* les crée (marquées « Claude ») et *Annuler* les retire. Claude n'écrit jamais lui-même.
-- Claude ne reçoit que le texte de l'article (le texte invisible est retiré) et la demande : aucun outil,
-  ni fichiers, ni réseau, ni commandes, ni réglages Claude Code personnels ; rien n'est gardé côté Claude Code.
+- **Réponses adaptées à vous** : chaque demande emporte votre profil (vos articles et le début de leur résumé,
+  mots-clés, auteurs suivis, articles et livres de référence, catégories du feed) et ce que vous écrivez de vous
+  dans *Réglages → Assistant IA → Votre profil* (domaine, niveau, ce qu'il faut détailler). Les réglages montrent
+  exactement ce qui est envoyé. Le profil adapte le niveau et signale les vrais liens avec vos travaux ; il n'adoucit
+  jamais une relecture.
+- Claude ne reçoit que le texte de l'article (le texte invisible est retiré), votre profil et la demande : aucun
+  outil, ni fichiers, ni réseau, ni commandes, ni réglages Claude Code personnels ; rien n'est gardé côté Claude Code.
 
 ### Autres assistants (Réglages → Assistant IA)
 

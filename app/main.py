@@ -607,6 +607,12 @@ async def ai_status():
     return await run_in_threadpool(ai.status, db.get_settings())
 
 
+@app.get("/api/ai/profile")
+def ai_profile():
+    """Ce que l'IA reçoit du profil avec chaque demande (aperçu dans les réglages)."""
+    return {"text": ai.reader_profile()}
+
+
 @app.post("/api/ai/setup")
 def ai_setup(body: SetupRequest):
     """Installation ou connexion de l'assistant : commande prévue d'avance, lancée dans le Terminal."""
@@ -1330,7 +1336,7 @@ def update_settings(values: dict):
                "feedCategories", "feedTypes", "s2ApiKey", "feedSort", "feedSortS2", "aiModel", "notifyFollowed",
                "aiProvider", "aiLocalUrl", "aiLocalModel", "checkUpdates", "aiFontSize", "notifyCitations", "readerView",
                "citingCollapsed", "followedCollapsed", "geminiApiKey", "aiGeminiModel", "profileOpen",
-               "aiClaudeEffort", "aiCodexModel", "aiCodexEffort", "aiGeminiEffort", "zoteroApiKey", "zoteroAutoSync", "onboarded"}
+               "aiClaudeEffort", "aiCodexModel", "aiCodexEffort", "aiGeminiEffort", "zoteroApiKey", "zoteroAutoSync", "onboarded", "aiProfile"}
     values = {k: v for k, v in values.items() if k in allowed}
     if not all(_valid_setting(k, v) for k, v in values.items()):
         raise HTTPException(400, "Bad setting")
@@ -1365,6 +1371,8 @@ def _valid_setting(key, value):
         return value is None or (isinstance(value, (int, float)) and 100 <= value <= 2000)
     if key == "aiLocalUrl":
         return isinstance(value, str) and (value == "" or providers.valid_local_url(value))
+    if key == "aiProfile":  # texte libre « mon profil » joint aux demandes à l'IA (ai.reader_profile)
+        return isinstance(value, str) and len(value) <= ai.PROFILE_TEXT
     if key == "aiLocalModel":
         return isinstance(value, str) and len(value) <= 200 and value.isprintable()
     if key == "geminiApiKey":

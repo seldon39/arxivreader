@@ -405,8 +405,12 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   "highlight… / annotate…". Claude attaches a list of annotations (passages quoted word for word, colour,
   note; notes on a statement or a proof): each passage is located in the paper, you tick what you keep,
   *Apply* creates them (marked "Claude") and *Cancel* removes them. Claude never writes anything itself.
-- Claude only receives the text of the paper (invisible text removed) and the request: no tools, no files,
-  no network, no commands, no personal Claude Code settings; nothing is kept on the Claude Code side.
+- **Answers adapted to you**: every request carries your profile (your papers and the start of their abstracts,
+  keywords, followed authors, reference papers and books, feed categories) and what you write about yourself in
+  *Settings → AI assistant → Your profile* (field, level, what to detail). The settings show exactly what is sent.
+  The profile adapts the level and points out real connections with your work; it never softens a review.
+- Claude only receives the text of the paper (invisible text removed), your profile and the request: no tools,
+  no files, no network, no commands, no personal Claude Code settings; nothing is kept on the Claude Code side.
 
 ### Other assistants (Settings → AI assistant)
 

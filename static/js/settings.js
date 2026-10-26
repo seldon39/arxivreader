@@ -220,6 +220,7 @@ export function openSettingsDialog({ section = null } = {}) {
         segmented("aiProvider", PROVIDERS.map((p) => [p, p === "local" ? t("settings.aiProvider.local") : { claude: "Claude", codex: "Codex", gemini: "Gemini" }[p]]),
           settings.aiProvider || "claude")),
       h("div", { class: "ai-settings" }),
+      aiProfileSection(settings),
     ]],
     ["feed", t("settings.feed"), [
       ...check("notifyFollowed", t("settings.notifyFollowed"), settings.notifyFollowed !== false, t("settings.notifyFollowedHint")),
@@ -284,7 +285,8 @@ export function openSettingsDialog({ section = null } = {}) {
     const { name, value, checked, type } = event.target;
     if (!name || event.target.classList.contains("ai-model")) return; // modèle et niveau : enregistrés par leurs menus
     if (name === "zoteroApiKey") zoteroBox.redraw();
-    if (name === "feedCategories" || name === "s2ApiKey" || name === "aiLocalUrl" || name === "geminiApiKey" || name === "zoteroApiKey") return; // enregistrés à la sortie du champ
+    if (name === "feedCategories" || name === "s2ApiKey" || name === "aiLocalUrl" || name === "geminiApiKey" || name === "zoteroApiKey"
+      || name === "aiProfile") return; // enregistrés à la sortie du champ
     const parsed = type === "checkbox" ? checked : name === "fontSize" ? Number(value) : value;
     if (name === "fontSize") form.querySelector("#setting-fontSize").textContent = t("settings.fontSize", { n: value });
     const saved = saveSettings({ [name]: parsed });
@@ -315,6 +317,8 @@ export function openSettingsDialog({ section = null } = {}) {
       // focus rendu au champ seulement s'il l'a encore (sortie par Tab ou clic : il va ailleurs, et la clé resterait affichée)
       const keep = document.activeElement === event.target ? "geminiApiKey" : null;
       saveSettings({ geminiApiKey: value.trim() }).then(() => renderAISettings(form.querySelector(".ai-settings"), keep));
+    } else if (name === "aiProfile") {
+      saveSettings({ aiProfile: value.trim() }).then(() => form.querySelector(".ai-profile-preview")?.refresh());
     } else if (name === "aiLocalUrl") {
       const url = value.trim().replace(/\/+$/, "");
       if (url && !localUrl(url)) {
@@ -330,6 +334,25 @@ export function openSettingsDialog({ section = null } = {}) {
   applyStatic(dialog);
   if (!dialog.open) dialog.showModal();
 
+}
+
+// Profil pour l'IA : texte libre, joint à chaque demande avec les éléments de l'onglet Profil (app/ai.py, reader_profile) ;
+// l'aperçu montre exactement ce qui part
+function aiProfileSection(settings) {
+  const preview = h("pre", { class: "ai-profile-text" });
+  const details = h("details", { class: "ai-profile-preview" }, h("summary", {}, t("settings.aiProfilePreview")), preview);
+  details.refresh = async () => {
+    if (!details.open) return;
+    const { text } = await api.aiProfile().catch(() => ({ text: "" }));
+    preview.textContent = text || t("settings.aiProfileEmpty");
+  };
+  details.addEventListener("toggle", details.refresh);
+  return h("div", { class: "ai-profile" },
+    h("label", { for: "setting-aiProfile" }, t("settings.aiProfile")),
+    h("textarea", { class: "text-input", id: "setting-aiProfile", name: "aiProfile", rows: 4, maxlength: 2000,
+      placeholder: t("settings.aiProfilePlaceholder") }, settings.aiProfile || ""),
+    h("p", { class: "hint" }, t("settings.aiProfileHint")),
+    details);
 }
 
 // ---------- Import des notes (fichiers exportés par arXivReader, signés : app/notesync.py) ----------

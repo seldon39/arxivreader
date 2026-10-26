@@ -261,6 +261,13 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   le `.bbl` de la compilation (`nobibtex`). Faite pour un état de la source (`state.json` : `compiledAt` ou version
   arXiv, `STRUCTURE_VERSION`) : sinon « stale », refaite au clic.
 
+- Profil joint à l'IA (`ai.reader_profile`, dans la consigne système de chaque demande, toutes tâches) : catégories du
+  feed, mots-clés, articles de l'utilisateur (titre, année, arXiv, début du résumé : `PROFILE_ABSTRACT`), articles et
+  livres de référence, auteurs suivis (au plus `PROFILE_ITEMS` par sorte), texte libre `aiProfile` des réglages
+  (`PROFILE_TEXT` caractères, `<in_their_words>`). Tout est échappé (un titre ne ferme pas le bloc). Aperçu exact :
+  `GET /api/ai/profile` (Réglages → Assistant IA). Vide : aucun bloc, consigne neutre (« The reader is a researcher »).
+  Essai de l'interface dans une copie de l'app : effacer ses `__pycache__` (Python embarqué : bytecode non revérifié).
+
 - Texte invisible (`structure.HIDDEN_STYLE`) : couleur blanche du texte (pas d'un fond : `--ltx-bg-color`,
   `background-color`, `--ltx-fill-color`), police minuscule, masqué, opacité nulle ; marqué `.arx-hidden-text`, compté,
   jamais transmis à l'IA (`ai._render`, qui ne lit pas non plus les dessins). Seule exception : texte blanc d'un dessin
