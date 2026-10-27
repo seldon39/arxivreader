@@ -478,7 +478,8 @@ class Reader {
         if (!on || this.pdfMode) { next.hidden = true; return; }
         // un endroit par paragraphe (texte caché lettre par lettre : une seule étape), dans l'ordre de l'article
         const seen = new Set();
-        spots = [...this.content.querySelectorAll(".arx-hidden-text")].filter((element) => {
+        // seulement ce qui est à l'écran (pas une preuve repliée ni une page en cours de composition)
+        spots = [...this.content.querySelectorAll(".arx-hidden-text")].filter((element) => element.getClientRects().length).filter((element) => {
           const block = element.closest(".ltx_para, p, li, td, figure, .ltx_theorem, svg, section") || element;
           if (seen.has(block)) return false;
           seen.add(block);
@@ -1114,7 +1115,7 @@ class Reader {
     }
     this.scrollToElement(element);
     element.classList.remove("flash");
-    void element.offsetWidth;
+    element.getBoundingClientRect(); // recalcul : l'animation repart (offsetWidth n'existe pas pour un élément SVG)
     element.classList.add("flash");
   }
 
@@ -1356,7 +1357,7 @@ class Reader {
   };
 
   showPreview(link) {
-    if (this.picking) return;
+    if (this.picking || !link.isConnected) return; // lien remplacé entre-temps (réponse de l'IA en cours d'écriture)
     const preview = this.previewFor(link);
     if (!preview) return;
     this.hidePreview();

@@ -482,12 +482,13 @@ def reader_profile(settings=None, items=None):
     by_kind = {kind: [i for i in items if i.get("kind") == kind][:PROFILE_ITEMS] for kind in ("mine", "paper", "book", "author", "keyword")}
 
     def work(item):
-        year = f" ({item['year']})" if item.get("year") else ""
+        year = f" ({clean(item['year'], 12)})" if item.get("year") else ""  # texte libre aussi (API du profil)
         ref = f" [arXiv:{item['ref']}]" if re.fullmatch(r"\d{4}\.\d{4,5}", str(item.get("ref") or "")) else ""
         return f"- {clean(item.get('label'))}{year}{ref}"
 
     lines = []
-    categories = [c for c in settings.get("feedCategories") or [] if isinstance(c, str)]
+    categories = settings.get("feedCategories")
+    categories = [c for c in categories if isinstance(c, str)] if isinstance(categories, list) else []
     if categories:
         lines.append("arXiv categories they follow: " + ", ".join(clean(c, 40) for c in categories[:PROFILE_ITEMS]))
     if by_kind["keyword"]:

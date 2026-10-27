@@ -14,11 +14,12 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    # versions de Python des distributions courantes (Ubuntu 24.04 : 3.12 ; Debian 13 : 3.13) et celle de l'app
+    # versions de Python des distributions courantes (Ubuntu 24.04 : 3.12 ; Debian 13 : 3.13), celle de l'app (3.14)
+    # et la suivante (3.15 : une incompatibilité se voit avant de changer le Python embarqué)
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.12", "3.13", "3.14"]
+        python: ["3.12", "3.13", "3.14", "3.15"]
     steps:
       - uses: actions/checkout@v5
         with:

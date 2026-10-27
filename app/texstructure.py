@@ -17,7 +17,7 @@ import unicodedata
 from .arxiv import extract_ids
 from .structure import (ANNOUNCES_PROOF_BELOW, IMPLICIT_REF, JUSTIFICATION, JUSTIFIES_NEXT, JUSTIFIES_PREVIOUS, NEEDS_PROOF,
                         PROOF_HEADING, PROVING, STRUCTURE_VERSION, classify)
-from .texsource import DOCUMENTCLASS, _expand, _read_archive, _strip_comments, choose_main
+from .texsource import _expand, _read_archive, choose_main
 
 SECTIONS = {"part": 0, "chapter": 0, "section": 1, "subsection": 2, "subsubsection": 3}
 EQUATION_ENVS = {"equation", "align", "gather", "multline", "eqnarray", "flalign", "alignat", "split", "dmath",

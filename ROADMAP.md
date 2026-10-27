@@ -45,6 +45,8 @@ readers, roughly in order of impact. Each one is a GitHub issue with the context
 - [#10](https://github.com/seldon39/arxivreader/issues/10) Split the largest front-end modules.
 - [#11](https://github.com/seldon39/arxivreader/issues/11) Warning icon never shown in notices (good first
   issue).
+- Major updates to plan: MathJax 4 (vendored 3.2.2: new fonts and configuration, formulas to check on many papers) and
+  Python 3.15 for the bundled interpreter (all compiled dependencies already ship 3.15 wheels; Linux CI tests it).
 
 ## What will not change
 

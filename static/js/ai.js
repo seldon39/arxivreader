@@ -136,7 +136,9 @@ export class Assistant {
     // sections : numéro en tête du titre (« 2.1. Titre », « 2.1 Titre », « Appendix A … », « A.1 … »)
     const sections = new Map();
     for (const entry of this.structure.toc || []) {
-      const number = String(entry.title || "").match(/^(?:Appendix\s+|Annexe\s+)?((?:[A-Z]|\d+)(?:\.\d+)*)\.?(?=\s|$)/)?.[1];
+      // lettre seule : annexe (« Appendix A … », « Appendix B: … ») ou « A.1 … », pas « A word on notation »
+      const match = String(entry.title || "").match(/^(?:(?:Appendix|Annexe)\s+([A-Z])(?=[\s.:]|$)|((?:\d+|[A-Z](?=\.\d))(?:\.\d+)*)\.?(?=[\s:]|$))/);
+      const number = match?.[1] || match?.[2];
       if (number && !sections.has(number)) sections.set(number, entry.id);
     }
     // références : étiquette entre crochets (« 12 », « BMMP14 ») ou auteur-année (« Amini et al. (2019) »)
@@ -151,14 +153,17 @@ export class Assistant {
     }
     const quote = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const authorYearRe = authorYear.length ? new RegExp(authorYear.map(([who, year]) =>
-      `(${quote(who)})(\\s*\\(\\s*${year}\\s*\\)|,?\\s+${year})(?![\\p{L}\\p{N}])`).join("|"), "gu") : null;
+      `(?<![\\p{L}\\p{N}])(${quote(who)})(\\s*\\(\\s*${year}\\s*\\)|,?\\s+${year})(?![\\p{L}\\p{N}])`).join("|"), "gu") : null;
     const words = Object.values(KIND_WORDS).join("|");
     // énoncé ou section d'un AUTRE article (« Theorem 3.1 of [12] », « [12, Theorem 3.1] ») : pas relié à celui-ci
-    const elsewhere = "(?![^\\S\\n]*,?[^\\S\\n]+(?:of|in|from|de|du|dans|chez)[^\\S\\n]+(?:\\[|the cited|l'article cité))";
+    const elsewhere = "(?![^\\S\\n]*,?[^\\S\\n]+(?:of|in|from|de|du|dans|chez)[^\\S\\n]+(?:\\[|the cited|l['’]article cité))";
     const notCited = "(?<!\\[[^\\[\\]\\n]{0,80})";
     // pas de \b : il ne connaît que les lettres ASCII (« étape 3 » ne serait jamais repéré)
     const statement = new RegExp(`${notCited}(?<![\\p{L}\\p{N}])(${words})(\\s|&nbsp;| )+(${NUMBER})(?![\\p{L}\\p{N}])${elsewhere}`, "giu");
-    const section = new RegExp(`${notCited}(?<![\\p{L}\\p{N}])(sections?|sect\\.|sec\\.|§|appendix|appendices|annexes?|chapters?|chapitres?)(?:\\s|&nbsp;| )*((?:[A-Z]|\\d+)(?:\\.\\d+)*)(?![\\p{L}\\p{N}]|\\.\\d)${elsewhere}`, "giu");
+    // mot-clé sans casse, numéro avec (« la section a été… » n'est pas l'annexe A) ; espace obligatoire sauf après §
+    const anyCase = (word) => word.replace(/\p{L}/gu, (c) => `[${c.toLowerCase()}${c.toUpperCase()}]`);
+    const sectionWords = ["sections?", "sect\\.", "sec\\.", "appendix", "appendices", "annexes?", "chapters?", "chapitres?"].map(anyCase).join("|");
+    const section = new RegExp(`${notCited}(?<![\\p{L}\\p{N}])(?:(?:${sectionWords})(?:\\s|&nbsp;| )+|§(?:\\s|&nbsp;| )*)((?:[A-Z]|\\d+)(?:\\.\\d+)*)(?![\\p{L}\\p{N}]|\\.\\d)${elsewhere}`, "gu");
     const equation = new RegExp(`\\((${NUMBER})\\)`, "g");
     const bracket = /\[([^\[\]\n]{1,80})\]/g;
     const link = (id, text) => `<a href="#${encodeURIComponent(id)}" class="ai-ref" data-ref="${id.replace(/"/g, "&quot;")}">${text}</a>`;
@@ -180,8 +185,8 @@ export class Assistant {
         const id = byKind.get(`${kind}:${number}`) || byNumber.get(number);
         return id ? link(id, match) : match;
       }),
-      (text) => text.replace(section, (match, _word, number) => {
-        const id = sections.get(number) || sections.get(number.toUpperCase());
+      (text) => text.replace(section, (match, number) => {
+        const id = sections.get(number);
         return id ? link(id, match) : match;
       }),
       (text) => text.replace(equation, (match, number) => {
@@ -190,12 +195,20 @@ export class Assistant {
       }),
       // [12], [3, 5], [3–5], [BMMP14], [12, Theorem 3.1] : chaque étiquette connue devient un lien ; la première doit
       // en être une (« [0, 1] », intervalle écrit hors formule, reste tel quel)
+      // séparateurs : virgule, point-virgule (pas celui d'une entité « &amp; »), tiret de plage ; « [EGA-IV] »,
+      // « [Smith &amp; Jones 2019] » : l'étiquette entière d'abord
       (text) => text.replace(bracket, (match, inside) => {
-        if (!cited.has(inside.split(/[,;–-]/)[0].trim())) return match;
-        return `[${inside.replace(/[^,;–-]+/g, (piece) => {
+        const whole = cited.get(inside.trim());
+        if (whole) return `[${inside.replace(inside.trim(), () => link(whole, inside.trim()))}]`;
+        const pieces = /(?:&(?:amp|lt|gt|quot);|[^,;–])+/g;
+        const labelOf = (piece) => cited.get(piece.trim()) || (/^\s*\S+-\S+\s*$/.test(piece) && piece.trim().split("-").every((p) => cited.has(p)) ? "range" : null);
+        if (!labelOf(inside.match(pieces)?.[0] || "")) return match;
+        return `[${inside.replace(pieces, (piece) => {
           const label = piece.trim();
           const id = cited.get(label);
-          return id ? piece.replace(label, link(id, label)) : piece;
+          if (id) return piece.replace(label, () => link(id, label));
+          if (labelOf(piece) === "range") return piece.replace(label, () => label.split("-").map((p) => link(cited.get(p), p)).join("-"));
+          return piece;
         })}]`;
       }),
       (text) => authorYearRe ? text.replace(authorYearRe, (match, ...groups) => {

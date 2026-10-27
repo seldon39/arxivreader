@@ -2,7 +2,6 @@
 remplacées, extraction sûre de la source d'arXiv, état (à jour, à refaire, échec), conversion réelle si installé."""
 
 import io
-import json
 import pathlib
 import shutil
 import tarfile

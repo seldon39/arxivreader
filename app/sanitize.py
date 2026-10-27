@@ -149,7 +149,6 @@ def _repair_patterns(article):
                 and len(node.parent.find_all(True, recursive=False)) == 1:  # définition seule dans un <g>
             node = node.parent
         after = node.find_next_sibling() if node is not None else None
-        shapes = after.find_all(True, recursive=False) if after is not None and after.name == "g" else []
         if pattern["id"] not in used and _black_surface(after):
             after["fill"] = f"url(#{pattern['id']})"
 

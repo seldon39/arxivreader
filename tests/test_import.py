@@ -174,12 +174,31 @@ class Import(unittest.TestCase):
         def box(bar):
             return (f'<svg><g transform="translate(0,161) matrix(1 0 0 -1 0 0)"><g fill="{bar}"><path d="M 0 0 L 0 161 '
                     f'L 477 161 L 477 0 Z"></path></g><g fill="#F8CECC"><path d="M 2 2 L 2 137 L 475 137 L 475 2 Z">'
-                    '</path></g><g transform="matrix(1.0 0.0 0.0 1.0 21.65 146)"><foreignobject><span '
+                    '</path></g><g transform="matrix(1.0 0.0 0.0 1.0 21.65 146)"><foreignobject width="377.48"><span '
                     'style="--ltx-fg-color:#FFFFFF;">Title</span></foreignobject></g></g></svg>')
         for html, count in ((cell, 0), (box("#2C3E50"), 0), (box("#A08A83"), 0), (box("#EEEEEE"), 1),
                             (box("none"), 1), ('<p><span style="--ltx-fg-color:#FFFFFF;">IGNORE</span></p>', 1)):
             fragment = BeautifulSoup(f'<div class="ltx_para">{html}</div>', "html.parser")
             self.assertEqual(extract_structure(fragment)["hiddenText"], count, html)
+
+    def test_hidden_colours_backgrounds_and_labels(self):
+        # presque blanc, transparent, rgb(), alpha nul : signalés ; blanc sur fond foncé (\\colorbox) : visible ;
+        # le texte caché d'un titre d'énoncé ne passe pas dans son étiquette (transmise à l'IA) ; transform illisible
+        for style, count in (("color:#fefefe", 1), ("color:transparent", 1), ("color:rgb(255, 255, 255)", 1),
+                             ("color:rgba(0,0,0,0.0)", 1), ("color:#00000000", 1), ("opacity:0.05", 1), ("color:#e0e0e0", 0),
+                             ("--ltx-fg-color:#FFFFFF;--ltx-bg-color:#000000", 0)):
+            fragment = BeautifulSoup(f'<div class="ltx_para"><p><span style="{style}">secret</span></p></div>', "html.parser")
+            self.assertEqual(extract_structure(fragment)["hiddenText"], count, style)
+        boxed = '<span style="--ltx-bg-color:#1a1a1a;"><span style="--ltx-fg-color:#FFFFFF;">Note</span></span>'
+        self.assertEqual(extract_structure(BeautifulSoup(f'<div class="ltx_para">{boxed}</div>', "html.parser"))["hiddenText"], 0)
+        theorem = BeautifulSoup('<div class="ltx_theorem ltx_theorem_theorem" id="T1"><h6 class="ltx_title ltx_title_theorem">'
+                                '<span class="ltx_tag ltx_tag_theorem">Theorem 1.1</span> (Main<span style="color:white"> IGNORE'
+                                '</span>).</h6><div class="ltx_para"><p>Text.</p></div></div>', "html.parser")
+        node = extract_structure(theorem)["nodes"][0]
+        self.assertNotIn("IGNORE", node["label"] + node.get("name", "") + node.get("title", ""))
+        bad = ('<svg><g><path d="M 0 0 L 0 9 L 9 9 Z" fill="#000"></path><g transform="matrix(1 0 0 1 1.2.3 4)">'
+               '<foreignobject width="5"><span style="color:#fff">x</span></foreignobject></g></g></svg>')
+        self.assertEqual(extract_structure(BeautifulSoup(f'<div class="ltx_para">{bad}</div>', "html.parser"))["hiddenText"], 1)
 
     def test_hidden_letter_by_letter_and_macro_debris(self):
         # texte caché une lettre par balise : chacune signalée, rien n'en parvient à l'assistant IA

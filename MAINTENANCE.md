@@ -269,12 +269,25 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   (`PROFILE_TEXT` caractères, `<in_their_words>`). Tout est échappé (un titre ne ferme pas le bloc). Aperçu exact :
   `GET /api/ai/profile` (Réglages → Assistant IA). Vide : aucun bloc, consigne neutre (« The reader is a researcher »).
   Essai de l'interface dans une copie de l'app : effacer ses `__pycache__` (Python embarqué : bytecode non revérifié).
+  Renvois des réponses : mot-clé de section sans casse mais numéro en majuscule (« la section a été… » n'est pas l'annexe
+  A), lettre seule de la table des matières seulement pour une annexe ou « A.1 » ; étiquette entre crochets entière
+  d'abord (« [EGA-IV] »), puis morceaux séparés par « , », « ; » (hors entité) ou « – ».
 
-- Texte invisible (`structure.HIDDEN_STYLE`) : couleur blanche du texte (pas d'un fond : `--ltx-bg-color`,
-  `background-color`, `--ltx-fill-color`), police minuscule, masqué, opacité nulle ; marqué `.arx-hidden-text`, compté,
-  jamais transmis à l'IA (`ai._render`, qui ne lit pas non plus les dessins). Seule exception : texte blanc d'un dessin
-  posé sur une forme foncée au même endroit (titre d'un encadré tcolorbox, `_on_dark_shape`, contraste d'au moins
-  2,3). Vérifié sur les 16 articles d'arXiv à consignes cachées recensés par arXiv:2507.06185 (versions citées) : chaque
+- Dépendances (à chaque audit) : `.venv/bin/pip list --outdated` ; avis de sécurité :
+  `gh api -X GET /advisories -f ecosystem=pip -f affects=<paquet>@<version>` pour chaque ligne de requirements.lock ;
+  pdf.js et MathJax (static/vendor, versions dans leurs README) ; Python embarqué (conda-forge) et la CI Linux (3.12 →
+  3.15). Mise à jour : tests, banc du texte caché, puis `./arxivreader lock`.
+
+- Texte invisible (`structure.mark_hidden`, au début de l'analyse : `plain` ne le garde ni dans les étiquettes ni dans
+  les titres) : couleur du texte blanche ou presque (luminance ≥ 0,9), transparente ou d'alpha nul (`_hiding`, `_color` :
+  #rgb(a), #rrggbb(aa), rgb(a)(), quelques noms ; pas la couleur d'un fond : `--ltx-bg-color`, `background-color`,
+  `--ltx-fill-color`), police minuscule, masqué, opacité < 0,1 ; marqué `.arx-hidden-text`, compté, jamais transmis à
+  l'IA (`ai._render`, qui ne lit pas non plus les dessins). Exceptions (texte blanc seulement) : fond foncé posé sur lui
+  ou un parent (`\colorbox`, `_dark_background`) ; dans un dessin, forme foncée qui couvre toute sa largeur, dessinée
+  juste avant dans le même repère (titre d'un encadré tcolorbox, `_on_dark_shape`, contraste d'au moins 2,3). Prudent :
+  une forme illisible au-dessus (déplacée, commandes relatives, image), sans surface, partielle, ou un foreignObject sans
+  largeur, et le texte reste signalé ; formes lues une fois par groupe. L'app n'affiche pas les couleurs de LaTeXML
+  (`--ltx-fg-color` ignoré) : le texte « blanc » y reste lisible, la détection juge l'article d'origine. Vérifié sur les 16 articles d'arXiv à consignes cachées recensés par arXiv:2507.06185 (versions citées) : chaque
   consigne signalée, aucune transmise, aucun autre signalement. Lecteur : « Afficher » va au premier passage, « Suivant »
   aux autres. Figures SVG insérées par `<object data>` : changées en `<img>` au nettoyage (`sanitize._objects_to_images`).
 

@@ -7,7 +7,7 @@ from bs4 import NavigableString, Tag
 
 from .arxiv import ID_RE, extract_ids
 
-STRUCTURE_VERSION = 12  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
+STRUCTURE_VERSION = 13  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
 
 SECTION_LEVELS = {
     "ltx_part": 0, "ltx_chapter": 0, "ltx_section": 1, "ltx_appendix": 1,
@@ -57,81 +57,218 @@ QED_END = re.compile(r"(□|∎|■|\$\\(Box|square|blacksquare|qed|qedsymbol|QE
 # couleur du texte (aussi « --ltx-fg-color », celle que LaTeXML donne au texte), pas celle d'un fond ou d'un trait
 # (« --ltx-fill-color », « background-color », « --ltx-bg-color » d'une cellule \cellcolor{white}, « fill-opacity »… :
 # fond blanc d'un encadré TikZ ou d'un tableau)
-TEXT_COLOR = (r"(?<![\w])(?<!fill-)(?<!stroke-)(?<!background-)(?<!bg-)(?<!border-)(?<!outline-)(?<!flood-)(?<!stop-)"
-              r"(?<!lighting-)color\s*:\s*")
-HIDDEN_STYLE = re.compile(
-    TEXT_COLOR + r"(#fff(fff)?\b|white|rgba?\([^)]*,\s*0\))"
-    r"|font-size\s*:\s*(0*\.\d+|[0-3](\.\d+)?)\s*(px|pt)|font-size\s*:\s*(\d|1\d)(\.\d+)?\s*%"
-    r"|display\s*:\s*none|visibility\s*:\s*hidden|(?<!fill-)(?<!stroke-)(?<!stop-)(?<!flood-)opacity\s*:\s*0(\.0+)?\s*(;|$)",
+TEXT_COLOR = re.compile(r"(?<![\w])(?<!fill-)(?<!stroke-)(?<!background-)(?<!bg-)(?<!border-)(?<!outline-)(?<!flood-)"
+                        r"(?<!stop-)(?<!lighting-)color\s*:\s*([^;]+)", re.I)
+BACKGROUND = re.compile(r"(?<![\w-])(?:--ltx-bg-color|background-color|background)\s*:\s*([^;]+)", re.I)
+# autres façons de cacher : police minuscule, élément masqué, opacité (presque) nulle
+HIDING = re.compile(
+    r"font-size\s*:\s*(0*\.\d+|[0-3](\.\d+)?)\s*(px|pt)|font-size\s*:\s*(\d|1\d)(\.\d+)?\s*%"
+    r"|display\s*:\s*none|visibility\s*:\s*hidden|(?<!fill-)(?<!stroke-)(?<!stop-)(?<!flood-)opacity\s*:\s*0*(\.0\d*)?\s*(;|$)",
     re.I,
 )
-WHITE_TEXT = re.compile(TEXT_COLOR + r"(#fff(fff)?\b|white)", re.I)
-
-DRAWING_POINT = re.compile(r"-?\d+(?:\.\d+)?")
-TRANSLATION = re.compile(r"^\s*matrix\(\s*1(?:\.0+)?\s+0(?:\.0+)?\s+0(?:\.0+)?\s+1(?:\.0+)?\s+(-?[\d.]+)\s+(-?[\d.]+)\s*\)\s*$")
-
-
-def _luminance(color):
-    """Luminance relative (WCAG : 0 noir, 1 blanc) d'une couleur #rrggbb ou #rgb ; None si on ne sait pas la lire."""
-    match = re.fullmatch(r"#([0-9a-f]{3}|[0-9a-f]{6})", (color or "").strip(), re.I)
-    if not match:
-        return None
-    digits = match.group(1)
-    if len(digits) == 3:
-        digits = "".join(c * 2 for c in digits)
-    r, g, b = (c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
-               for c in (int(digits[i:i + 2], 16) / 255 for i in (0, 2, 4)))
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+NAMED_COLORS = {"white": "#ffffff", "snow": "#fffafa", "ghostwhite": "#f8f8ff", "whitesmoke": "#f5f5f5", "ivory": "#fffff0",
+                "azure": "#f0ffff", "mintcream": "#f5fffa", "honeydew": "#f0fff0", "floralwhite": "#fffaf0",
+                "seashell": "#fff5ee", "snowwhite": "#fffafa", "black": "#000000", "transparent": "#00000000"}
+NUMBER = r"-?(?:\d+(?:\.\d*)?|\.\d+)(?:e-?\d+)?"
+TRANSLATION = re.compile(rf"^\s*matrix\(\s*1(?:\.0+)?\s+0(?:\.0+)?\s+0(?:\.0+)?\s+1(?:\.0+)?\s+({NUMBER})\s+({NUMBER})\s*\)\s*$", re.I)
+SHAPES = {"path", "rect", "circle", "ellipse", "polygon", "polyline", "line", "image", "use"}  # <text> ne couvre rien
 
 
-def _fill(element, stop):
-    """Remplissage effectif d'une forme : le sien ou celui du groupe le plus proche (jusqu'au dessin) ; None si
-    transparent ou illisible."""
-    for node in [element, *element.parents]:
-        if node is stop or not isinstance(node, Tag):
-            break
-        if str(node.get("fill-opacity", "1")).strip() in ("0", "0.0"):
+def _color(value):
+    """(luminance relative WCAG, opacité) d'une couleur CSS (#rgb, #rgba, #rrggbb, #rrggbbaa, rgb(), rgba(), quelques
+    noms) ; None si on ne sait pas la lire."""
+    value = NAMED_COLORS.get((value or "").strip().lower(), (value or "").strip().lower()).replace("!important", "").strip()
+    alpha = 1.0
+    match = re.fullmatch(r"#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})", value)
+    if match:
+        digits = match.group(1)
+        if len(digits) in (3, 4):
+            digits = "".join(c * 2 for c in digits)
+        channels = [int(digits[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+        if len(digits) == 8:
+            alpha = int(digits[6:], 16) / 255
+    else:
+        match = re.fullmatch(r"rgba?\(\s*([^)]*)\)", value)
+        if not match:
             return None
-        if node.get("fill"):
-            return None if node["fill"] == "none" else node["fill"]
+        parts = [p for p in re.split(r"[\s,/]+", match.group(1)) if p]
+        if len(parts) not in (3, 4):
+            return None
+        try:
+            channels = [float(p[:-1]) / 100 if p.endswith("%") else float(p) / 255 for p in parts[:3]]
+            if len(parts) == 4:
+                alpha = float(parts[3][:-1]) / 100 if parts[3].endswith("%") else float(parts[3])
+        except ValueError:
+            return None
+    r, g, b = (c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in (min(max(c, 0), 1) for c in channels))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b, alpha
+
+
+def _hiding(style):
+    """Pourquoi un style cache son texte : « color » (blanc ou presque, transparent), « other » (police minuscule,
+    masqué, opacité nulle), None s'il ne le cache pas."""
+    if HIDING.search(style):
+        return "other"
+    for match in TEXT_COLOR.finditer(style):
+        color = _color(match.group(1))
+        if color and (color[1] < 0.1 or color[0] >= 0.9):
+            return "color"
     return None
 
 
-def _moved(shape, common):
-    """Forme déplacée (groupe avec « transform ») par rapport au repère commun avec le texte ?"""
+def _dark_background(element, stop):
+    """Fond foncé posé sur le texte ou un de ses parents (\\colorbox{black}{\\color{white}…}) : texte blanc visible."""
+    for node in [element, *element.parents]:
+        if node is stop or not isinstance(node, Tag) or node.name in ("svg", "body", "article"):
+            return False
+        for match in BACKGROUND.finditer(node.get("style", "")):
+            color = _color(match.group(1).split()[0] if match.group(1).split() else "")
+            if color and color[1] >= 0.5:
+                return color[0] < 0.4
+    return False
+
+
+def _property(node, name):
+    """Valeur d'une propriété de dessin : dans « style » (prioritaire), sinon l'attribut."""
+    match = re.search(rf"(?<![\w-]){name}\s*:\s*([^;]+)", node.get("style", ""), re.I)
+    return (match.group(1) if match else node.get(name, "")).strip().lower() or None
+
+
+def _transparent(value):
+    try:
+        return value is not None and float(value.rstrip("%")) / (100 if value.endswith("%") else 1) < 0.5
+    except ValueError:
+        return False
+
+
+def _box(shape):
+    """Boîte (x0, y0, x1, y1) d'une forme pleine dans son repère ; None si on ne sait pas la lire (commandes relatives,
+    arcs, image…) ; « empty » si elle n'a pas de surface (trait, chemin dégénéré)."""
+    try:
+        if shape.name == "rect":
+            x, y = float(shape.get("x", 0)), float(shape.get("y", 0))
+            w, h = float(shape["width"]), float(shape["height"])
+            return (x, y, x + w, y + h) if w > 0 and h > 0 else "empty"
+        if shape.name in ("circle", "ellipse"):
+            cx, cy = float(shape.get("cx", 0)), float(shape.get("cy", 0))
+            rx = float(shape.get("r") or shape.get("rx"))
+            ry = float(shape.get("r") or shape.get("ry"))
+            return (cx - rx, cy - ry, cx + rx, cy + ry) if rx > 0 and ry > 0 else "empty"
+        if shape.name == "line":
+            return "empty"
+        if shape.name in ("path", "polygon", "polyline"):
+            data = shape.get("d", "") if shape.name == "path" else "M " + shape.get("points", "")
+            if re.search(r"[^MLCQSTZz\d\s,.eE+-]", data):
+                return None  # commandes relatives (l, c…), H, V, arcs : non lues
+            numbers = [float(n) for n in re.findall(NUMBER, data)]
+            if len(numbers) % 2:
+                return None
+            points = list(zip(numbers[0::2], numbers[1::2]))
+            if len(points) < 3:
+                return "empty"
+            xs, ys = [p[0] for p in points], [p[1] for p in points]
+            box = (min(xs), min(ys), max(xs), max(ys))
+            area = abs(sum(x0 * y1 - x1 * y0 for (x0, y0), (x1, y1) in zip(points, points[1:] + points[:1]))) / 2
+            full = (box[2] - box[0]) * (box[3] - box[1])
+            return box if full > 0 and area >= full / 2 else "empty"
+    except (KeyError, TypeError, ValueError):
+        return None
+    return None  # image, use, text : on ne sait pas ce qu'ils couvrent
+
+
+def _moved(shape, parent):
+    """Forme déplacée (« transform ») par rapport au repère du groupe commun avec le texte ?"""
     for node in [shape, *shape.parents]:
-        if node is common:
+        if node is parent:
             return False
         if node.get("transform"):
             return True
     return True
 
 
-def _on_dark_shape(element):
-    """Texte posé dans un dessin (foreignObject LaTeXML) sur une forme foncée dessinée juste avant, au même endroit :
-    titre blanc de la barre d'un encadré tcolorbox. Lu seulement dans le cas que LaTeXML produit (le texte et la
-    forme dans le même repère) ; dans le doute, non (le texte reste signalé)."""
+def _drawing_shapes(parent, svg):
+    """Formes des enfants d'un groupe de dessin, dans l'ordre : [(enfant, [(forme, boîte, remplissage, transparent)])].
+    Calculé une fois par groupe (un dessin a souvent beaucoup d'étiquettes)."""
+    shapes = []
+    for child in parent.children:
+        if not isinstance(child, Tag):
+            continue
+        found = []
+        for shape in ([child] if child.name in SHAPES else []) + child.find_all(SHAPES):
+            if shape.find_parent("foreignobject") is not None:
+                continue
+            moved = _moved(shape, parent)
+            hidden = False
+            fill = None
+            for node in [shape, *shape.parents]:
+                if node is svg or not isinstance(node, Tag):
+                    break
+                if (_property(node, "display") == "none" or _property(node, "visibility") == "hidden"
+                        or _transparent(_property(node, "opacity")) or _transparent(_property(node, "fill-opacity"))):
+                    hidden = True
+                if fill is None:
+                    fill = _property(node, "fill")
+            found.append((shape, None if moved else _box(shape), fill or "#000000", hidden))  # SVG : noir par défaut
+        shapes.append((child, found))
+    return shapes
+
+
+def _on_dark_shape(element, cache):
+    """Texte posé dans un dessin (foreignObject LaTeXML) sur une forme foncée qui le couvre, dessinée avant lui dans le
+    même repère : titre blanc de la barre d'un encadré tcolorbox. Prudent : une forme qu'on ne sait pas lire (déplacée,
+    commandes relatives, image…) au-dessus de la forme foncée, ou une forme claire, et le texte reste signalé."""
     fo = element.find_parent("foreignobject")
     holder = fo.parent if fo else None
     match = TRANSLATION.match(str(holder.get("transform", ""))) if isinstance(holder, Tag) and holder.name == "g" else None
-    if not match:
-        return False
-    x, y = float(match.group(1)), float(match.group(2))
     svg = element.find_parent("svg")
-    for sibling in holder.find_previous_siblings():  # du plus proche (dessiné en dernier, donc au-dessus) au plus loin
-        if not isinstance(sibling, Tag):
-            continue
-        for shape in reversed(([sibling] if sibling.name == "path" else []) + sibling.find_all("path")):
-            if _moved(shape, holder.parent):
+    if not match or svg is None or holder.parent is None:
+        return False
+    try:
+        x, y, width = float(match.group(1)), float(match.group(2)), float(fo.get("width", ""))
+    except ValueError:
+        return False
+    parent = holder.parent
+    if id(parent) not in cache:
+        cache[id(parent)] = _drawing_shapes(parent, svg)
+    shapes = cache[id(parent)]
+    index = next((i for i, (child, _) in enumerate(shapes) if child is holder), None)
+    if index is None:
+        return False
+    for _child, found in reversed(shapes[:index]):  # dessiné juste avant : au-dessus des précédents
+        for _shape, box, fill, hidden in reversed(found):
+            if hidden or fill == "none":
+                continue  # ne couvre rien
+            if box is None:
+                return False  # forme qu'on ne sait pas lire : peut-être au-dessus de la forme foncée
+            if box == "empty":
                 continue
-            numbers = [float(n) for n in DRAWING_POINT.findall(shape.get("d", ""))]
-            xs, ys = numbers[0::2], numbers[1::2]
-            if len(xs) < 3 or not (min(xs) <= x <= max(xs) and min(ys) <= y <= max(ys)):
+            if not (box[0] - 1 <= x and x + width <= box[2] + 1 and box[1] <= y <= box[3]):
+                if box[0] < x + width and x < box[2] and box[1] <= y <= box[3]:
+                    return False  # couvre une partie seulement : on ne sait pas
                 continue
-            luminance = _luminance(_fill(shape, svg))
-            # forme la plus haute sous le texte : elle décide ; blanc lisible dessus (contraste d'au moins 2,3)
-            return luminance is not None and luminance < 0.4
+            color = _color(fill)
+            return color is not None and color[1] >= 0.5 and color[0] < 0.4
     return False
+
+
+def mark_hidden(fragment):
+    """Texte invisible (couleur blanche, police minuscule…) : marqué `arx-hidden-text`, signalé et révélable dans le
+    lecteur, jamais transmis à l'IA ; renvoie le nombre de passages. Sans aucune lettre (\\phantom{0} qui aligne les
+    chiffres d'un tableau), il n'est pas signalé ; une seule lettre suffit (texte caché lettre par lettre). Fait avant le
+    reste de l'analyse : les étiquettes et titres des énoncés (plain) ne gardent pas le texte caché."""
+    hidden = 0
+    cache = {}
+    for element in fragment.select(".arx-hidden-text"):  # nouvelle analyse : marques refaites ci-dessous
+        element["class"] = [c for c in element["class"] if c != "arx-hidden-text"]
+    for element in fragment.find_all(style=True):
+        reason = _hiding(element["style"])
+        if not reason or not re.search(r"[^\W\d_]", element.get_text()):
+            continue
+        if reason == "color" and (_dark_background(element, fragment) or _on_dark_shape(element, cache)):
+            continue  # blanc sur fond foncé (\colorbox, barre d'un encadré) : visible
+        element["class"] = (element.get("class") or []) + ["arx-hidden-text"]
+        hidden += 1
+    return hidden
 
 
 def plain(element):
@@ -140,6 +277,8 @@ def plain(element):
         return str(element)
     if element.name == "math":
         return "$" + element.get("alttext", "") + "$"
+    if "arx-hidden-text" in (element.get("class") or []):
+        return ""  # texte invisible : ni dans les étiquettes ni dans les titres (transmis à l'IA)
     return "".join(plain(child) for child in element.children)
 
 
@@ -217,6 +356,7 @@ def passage_elements(fragment, start_id, end_id, by_id=None):
 def extract_structure(fragment, overrides=None):
     """Analyse la soupe nettoyée (modifiée sur place) et renvoie la structure de l'article.
     `overrides` : emplacements de preuve indiqués à la main ({id d'énoncé: {mode, ref | start, end}})."""
+    hidden = mark_hidden(fragment)
     for element in fragment.find_all(attrs={"data-proof-of": True}):
         del element["data-proof-of"]  # nouvelle analyse : rattachements refaits ci-dessous
     # Preuve placée par LaTeXML dans son énoncé (« \\begin{proof} » avant « \\end{theorem} » dans la source) :
@@ -663,22 +803,6 @@ def extract_structure(fragment, overrides=None):
             "arxiv": list(dict.fromkeys(re.sub(r"^([a-z-]+)\.[A-Z]{2}/", r"\1/", i) for i in extract_ids(text) + arxiv_links)),
             "doi": doi.group(0).rstrip(".,;") if doi else "",
         })
-
-    # Texte invisible (couleur blanche, police minuscule…) : signalé, et révélable dans le lecteur. Sans aucune
-    # lettre (\phantom{0} qui aligne les chiffres d'un tableau), il n'est pas signalé ; une seule lettre suffit (texte
-    # caché lettre par lettre, une balise par lettre : il protège l'assistant IA de consignes cachées)
-    hidden = 0
-    for element in fragment.select(".arx-hidden-text"):  # nouvelle analyse : marques refaites ci-dessous
-        element["class"] = [c for c in element["class"] if c != "arx-hidden-text"]
-    for element in fragment.find_all(style=True):
-        style = element["style"]
-        if not HIDDEN_STYLE.search(style) or not re.search(r"[^\W\d_]", element.get_text()):
-            continue
-        if not HIDDEN_STYLE.search(WHITE_TEXT.sub("", style)) and _on_dark_shape(element):
-            continue  # titre blanc sur la barre foncée d'un encadré (tcolorbox) : visible
-        if "arx-hidden-text" not in (element.get("class") or []):
-            element["class"] = (element.get("class") or []) + ["arx-hidden-text"]
-        hidden += 1
 
     # Définition de macro que LaTeXML n'a pas comprise, imprimée avant le titre (« crcases ## ##{. ») : le lecteur ne
     # la montre pas, l'assistant IA ne la reçoit pas non plus (rien de caché à l'un qui soit lu par l'autre)
