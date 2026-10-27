@@ -290,7 +290,7 @@ button on its card in the library.
 ## PDFs from your computer
 
 Papers that are not on arXiv (journal versions, theses, notes) can be added to the library: "Import a PDF…"
-button next to "Import", or drag PDF files onto the library. Title and authors come from the PDF (its
+button next to "Import", or drag PDF files onto the import bar or the library. Title and authors come from the PDF (its
 metadata, otherwise its first page), shown for checking at import, and can be corrected later from the reader
 or the paper's card ("Edit title and authors"). The PDF is read in the reader with highlights, notes and Claude (questions on a selected passage, or on the whole
 paper from its extracted text). There are no statements, dependencies or bibliography (no TeX source).
@@ -302,7 +302,8 @@ The file stays on the computer, in the library folder.
 ## TeX files (papers or books being written)
 
 The same button ("Import PDF or TeX file…") also takes the main `.tex` file of a document you are writing, to
-proofread it with every feature of the reader. The app compiles it with latexmk (otherwise pdflatex, BibTeX or
+proofread it with every feature of the reader; in the app, the file can also be dragged onto the import bar or the
+library (with the `.pdf` of the same name, it is read as is instead of compiled). The app compiles it with latexmk (otherwise pdflatex, BibTeX or
 Biber, then pdflatex), in a work folder of its own: nothing is written in your folder. It reads statements,
 proofs, dependencies and the bibliography from the source, and Claude receives the TeX source. The `.bib` files
 are looked for in the file's folder, then in your TeX installation; a missing one is reported and can be chosen

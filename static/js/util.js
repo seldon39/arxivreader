@@ -355,6 +355,31 @@ export function chooseFiles(kind) {
   return Promise.resolve(null);
 }
 
+// Chemins des fichiers glissés depuis l'ordinateur et déposés (PDF, fichier TeX principal), donnés par la fenêtre de
+// l'application comme pour chooseFiles (le chemin d'un fichier TeX est gardé pour le recompiler) ; null dans un
+// navigateur (la page n'y voit que le contenu des fichiers). À appeler pendant l'évènement « drop » : sous Windows, les
+// fichiers sont transmis à la fenêtre à ce moment-là.
+export function droppedFilePaths(dataTransfer) {
+  if (window.webkit?.messageHandlers?.arxivreader) {
+    return new Promise((resolve) => {
+      addEventListener("arxivreader:dropped", (event) => resolve(event.detail || []), { once: true });
+      window.webkit.messageHandlers.arxivreader.postMessage({ action: "droppedFiles" });
+    });
+  }
+  if (window.chrome?.webview?.postMessageWithAdditionalObjects && dataTransfer.files?.length) {
+    return new Promise((resolve) => {
+      const onMessage = (event) => {
+        if (event.data?.action !== "dropped") return;
+        window.chrome.webview.removeEventListener("message", onMessage);
+        resolve(event.data.paths || []);
+      };
+      window.chrome.webview.addEventListener("message", onMessage);
+      window.chrome.webview.postMessageWithAdditionalObjects({ action: "droppedFiles" }, dataTransfer.files);
+    });
+  }
+  return Promise.resolve(null);
+}
+
 export const wantsNewTab = (event) => Boolean(event.metaKey || event.ctrlKey || event.button === 1);
 
 // Bouton à bascule à la YouTube (contour au repos, plein une fois activé)

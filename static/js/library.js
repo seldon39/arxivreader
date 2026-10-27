@@ -3,7 +3,7 @@
 import { setFindHandler } from "./find.js";
 import { api } from "./api.js";
 import { t, tn } from "./i18n.js";
-import { chooseFiles, debounce, draggablePaper, droppedPapers, formatDate, h, icons, journalChip, localDrag, mayBePaper, metaDialog, tidyTitle, timeAgo, toast, toastError, withMath } from "./util.js";
+import { chooseFiles, debounce, draggablePaper, droppedFilePaths, droppedPapers, formatDate, h, icons, journalChip, localDrag, mayBePaper, metaDialog, tidyTitle, timeAgo, toast, toastError, withMath } from "./util.js";
 import { importTexFile, unquote } from "./texfile.js";
 import { addToLibrary, dragEnded, dragGroup, fileInFolder, forgetSelected, selectButton, selectionDropped, syncSelection, useSelectionBar } from "./selection.js";
 
@@ -130,6 +130,22 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
   } }, t("library.importPdf"));
   pdfInput.addEventListener("change", () => { importChosen([...pdfInput.files]); pdfInput.value = ""; });
   const form = h("form", { class: "import-box" }, input, submit, pdfButton, pdfInput);
+  // PDF ou fichier TeX glissé depuis l'ordinateur sur la barre d'import : importé comme par le bouton (et non son
+  // chemin écrit dans le champ)
+  const hasFiles = (event) => [...(event.dataTransfer?.types || [])].includes("Files");
+  form.addEventListener("dragover", (event) => {
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    form.classList.add("drop-target");
+  });
+  form.addEventListener("dragleave", (event) => { if (!form.contains(event.relatedTarget)) form.classList.remove("drop-target"); });
+  form.addEventListener("drop", (event) => {
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    form.classList.remove("drop-target");
+    importDropped(event.dataTransfer);
+  });
   const list = h("div", {});
   const heading = h("h2", {});
   const search = h("input", {
@@ -186,6 +202,18 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
   }
 
   const isTex = (item) => /\.(tex|ltx)$/i.test(item.name || "");
+  // Fichiers déposés : par leurs chemins dans la fenêtre de l'application (fichiers TeX compris, comme le bouton
+  // d'import) ; dans un navigateur, le contenu des PDF seulement (un fichier TeX demande son chemin : bouton d'import)
+  async function importDropped(dataTransfer) {
+    const files = [...dataTransfer.files];
+    const paths = await droppedFilePaths(dataTransfer);
+    if (paths?.length) {
+      importChosen(paths.map((path) => ({ path, name: path.split(/[\\/]/).pop() })));
+      return;
+    }
+    if (files.some(isTex)) toast(t("tex.dropHint"));
+    importPdfs(files.filter((file) => !isTex(file)));
+  }
   async function importChosen(items) {
     const texFiles = items.filter(isTex);
     // PDF choisi avec son fichier TeX (même nom, même dossier) : lu tel quel au lieu de compiler
@@ -614,9 +642,7 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
       event.preventDefault();
       list.classList.remove("drop-target");
       if (event.dataTransfer.files?.length) {
-        const dropped = [...event.dataTransfer.files];
-        if (dropped.some(isTex)) toast(t("tex.dropHint"));  // pas de chemin par glisser-déposer : bouton d'import
-        importPdfs(dropped);
+        importDropped(event.dataTransfer);
         return;
       }
       const dropped = droppedPapers(event.dataTransfer);

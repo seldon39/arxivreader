@@ -1305,6 +1305,7 @@ body.has-selection-bar #toast { bottom: 96px; }
 .folder-panel.drop-target .folder-panel-inner { box-shadow: inset 0 0 0 2px var(--accent); }
 /* liste générale visée : cadre rouge pointillé autour des articles (au moins une hauteur de carte) */
 .drop-target:not(.folder):not(.folder-panel) { outline: 2px dashed var(--accent); outline-offset: 4px; border-radius: 8px; min-height: 90px; }
+.import-box.drop-target { min-height: 0; background: var(--accent-soft); }  /* fichiers glissés sur la barre d'import */
 .folder-name-form { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; width: 100%; }
 .folder-name-form .text-input { flex: 1 1 140px; height: 32px; min-width: 0; }
 .folder-name-form .link-button { font-size: 13px; }

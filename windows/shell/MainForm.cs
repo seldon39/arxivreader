@@ -194,7 +194,18 @@ namespace ArxivReader
             core.WebMessageReceived += (s, e) =>
             {
                 // seulement les pages de l'application (pas un contenu data:, blob: ou un cadre d'ailleurs)
-                if (Uri.TryCreate(e.Source, UriKind.Absolute, out var from) && IsApp(from)) Received(e.WebMessageAsJson, core);
+                if (!Uri.TryCreate(e.Source, UriKind.Absolute, out var from) || !IsApp(from)) return;
+                // fichiers déposés sur la page (postMessageWithAdditionalObjects) : leurs chemins, PDF et TeX seulement,
+                // rendus à la page ({"action":"dropped","paths":[…]}), comme ceux de la fenêtre d'import
+                if (Regex.IsMatch(e.WebMessageAsJson, "\"action\"\\s*:\\s*\"droppedFiles\""))
+                {
+                    var paths = ((IEnumerable<object>)e.AdditionalObjects ?? Enumerable.Empty<object>()).OfType<CoreWebView2File>().Select(f => f.Path)
+                        .Where(p => new[] { ".pdf", ".tex", ".ltx" }.Contains(System.IO.Path.GetExtension(p).ToLowerInvariant()));
+                    var json = "[" + string.Join(",", paths.Select(p => "\"" + p.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"")) + "]";
+                    try { core.PostWebMessageAsJson("{\"action\":\"dropped\",\"paths\":" + json + "}"); } catch (Exception) { }
+                    return;
+                }
+                Received(e.WebMessageAsJson, core);
             };
             core.ProcessFailed += (s, e) =>
             {

@@ -302,7 +302,7 @@ depuis arXiv » de sa carte dans la bibliothèque.
 ## PDF de l'ordinateur
 
 Les articles absents d'arXiv (versions publiées, thèses, notes) peuvent rejoindre la bibliothèque : bouton
-« Importer un PDF… » à côté d'« Importer », ou glisser des fichiers PDF sur la bibliothèque. Titre et auteurs
+« Importer un PDF… » à côté d'« Importer », ou glisser des fichiers PDF sur la barre d'import ou la bibliothèque. Titre et auteurs
 viennent du PDF (ses métadonnées, sinon sa première page), sont proposés à la vérification à l'import, et se
 corrigent ensuite depuis le lecteur ou la carte de l'article (« Modifier titre et auteurs »). Le PDF se lit dans le lecteur avec surlignages, notes et Claude (questions sur un passage
 sélectionné, ou sur tout l'article à partir de son texte extrait). Pas d'énoncés, de dépendances ni de
@@ -315,7 +315,9 @@ dossier de la bibliothèque.
 ## Fichiers TeX (articles ou livres en cours d'écriture)
 
 Le même bouton (« Importer un PDF ou un fichier TeX… ») prend aussi le fichier `.tex` principal d'un document en
-cours d'écriture, pour le relire avec toutes les fonctions du lecteur. L'application le compile avec latexmk (sinon
+cours d'écriture, pour le relire avec toutes les fonctions du lecteur ; dans l'application, on peut aussi glisser le
+fichier sur la barre d'import ou la bibliothèque (avec le `.pdf` du même nom, celui-ci est lu tel quel au lieu de
+compiler). L'application le compile avec latexmk (sinon
 pdflatex, BibTeX ou Biber, puis pdflatex), dans un dossier de travail à elle : rien n'est écrit dans votre dossier.
 Énoncés, preuves, dépendances et bibliographie sont lus dans la source, et Claude reçoit la source TeX. Les `.bib`
 sont cherchés dans le dossier du fichier, puis dans votre installation TeX ; un `.bib` introuvable est signalé et

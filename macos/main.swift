@@ -467,6 +467,29 @@ final class TabWindow: NSWindow {
 }
 
 /// Messages de la page (⌘-clic sur un article : nouvel onglet). Intermédiaire faible : WebKit retient son destinataire
+// Fichiers glissés depuis le Finder sur la page : leurs chemins (PDF, fichier TeX principal) sont retenus pour la page,
+// qui les demande au moment du dépôt (droppedFiles), comme ceux de la fenêtre d'import ; le glisser-déposer lui-même
+// reste celui de WebKit (la page choisit où un dépôt importe)
+final class DropWebView: WKWebView {
+    var droppedPaths: [String] = []
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        remember(sender)
+        return super.draggingEntered(sender)
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        remember(sender)
+        return super.performDragOperation(sender)
+    }
+
+    private func remember(_ sender: NSDraggingInfo) {
+        let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self],
+                                                         options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        droppedPaths = urls.map(\.path).filter { ["pdf", "tex", "ltx"].contains(URL(fileURLWithPath: $0).pathExtension.lowercased()) }
+    }
+}
+
 final class MessageProxy: NSObject, WKScriptMessageHandler {
     weak var tab: Tab?
     init(_ tab: Tab) { self.tab = tab }
@@ -476,7 +499,7 @@ final class MessageProxy: NSObject, WKScriptMessageHandler {
 final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
     unowned let app: AppDelegate
     let window: TabWindow
-    let webView: WKWebView
+    let webView: DropWebView
     var pending: String?            // page à ouvrir dès que le serveur répond
     var tested = false
     var titleObserver: NSKeyValueObservation?
@@ -486,7 +509,7 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
         self.app = app
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
-        webView = WKWebView(frame: .zero, configuration: config)
+        webView = DropWebView(frame: .zero, configuration: config)
         window = TabWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 860),
                            styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         super.init()
@@ -530,6 +553,15 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
 
     func received(_ message: WKScriptMessage) {
         if (message.body as? [String: Any])?["action"] as? String == "chooseFolder" { chooseFolder(); return }
+        if (message.body as? [String: Any])?["action"] as? String == "droppedFiles" {
+            // chemins du dernier glisser-déposer, rendus une seule fois (évènement arxivreader:dropped)
+            let paths = webView.droppedPaths
+            webView.droppedPaths = []
+            guard let data = try? JSONSerialization.data(withJSONObject: [paths]),
+                  let json = String(data: data, encoding: .utf8) else { return }
+            webView.evaluateJavaScript("window.dispatchEvent(new CustomEvent('arxivreader:dropped', { detail: \(json)[0] }))")
+            return
+        }
         if let body = message.body as? [String: Any], body["action"] as? String == "chooseFiles" {
             chooseFiles(bib: body["kind"] as? String == "bib")
             return

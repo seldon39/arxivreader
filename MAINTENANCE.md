@@ -273,6 +273,13 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   A), lettre seule de la table des matières seulement pour une annexe ou « A.1 » ; étiquette entre crochets entière
   d'abord (« [EGA-IV] »), puis morceaux séparés par « , », « ; » (hors entité) ou « – ».
 
+- Fichiers glissés depuis l'ordinateur (barre d'import, liste de la bibliothèque : `library.importDropped`) : chemins
+  demandés à la fenêtre (`util.droppedFilePaths`) — Mac : `DropWebView` (main.swift) retient les chemins PDF/TeX du
+  glisser (draggingEntered, performDragOperation), rendus une fois (`droppedFiles` → `arxivreader:dropped`) ; Windows :
+  `postMessageWithAdditionalObjects` (fichiers → `CoreWebView2File.Path`, MainForm.cs). Puis comme le bouton
+  (`importChosen` : PDF par chemin, TeX compilé dans son dossier, `.bib` et `\input` relatifs à lui). Navigateur :
+  contenu des PDF seulement.
+
 - Dépendances (à chaque audit) : `.venv/bin/pip list --outdated` ; avis de sécurité :
   `gh api -X GET /advisories -f ecosystem=pip -f affects=<paquet>@<version>` pour chaque ligne de requirements.lock ;
   pdf.js et MathJax (static/vendor, versions dans leurs README) ; Python embarqué (conda-forge) et la CI Linux (3.12 →
