@@ -286,8 +286,11 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   ou un parent (`\colorbox`, `_dark_background`) ; dans un dessin, forme foncée qui couvre toute sa largeur, dessinée
   juste avant dans le même repère (titre d'un encadré tcolorbox, `_on_dark_shape`, contraste d'au moins 2,3). Prudent :
   une forme illisible au-dessus (déplacée, commandes relatives, image), sans surface, partielle, ou un foreignObject sans
-  largeur, et le texte reste signalé ; formes lues une fois par groupe. L'app n'affiche pas les couleurs de LaTeXML
-  (`--ltx-fg-color` ignoré) : le texte « blanc » y reste lisible, la détection juge l'article d'origine. Vérifié sur les 16 articles d'arXiv à consignes cachées recensés par arXiv:2507.06185 (versions citées) : chaque
+  largeur, et le texte reste signalé ; formes lues une fois par groupe.
+- Couleurs de l'auteur (latexml.css, fin) : `--ltx-fg-color` / `--ltx-bg-color` de LaTeXML, et `mathcolor` /
+  `mathbackground` des formules mis dans ces variables par `amsfix.colorVariables` (sinon MathJax ou le navigateur les
+  figent : noir imposé invisible en mode sombre). Telles quelles en mode clair ; en mode sombre, oklch de même teinte,
+  texte éclairci (luminosité ≥ 0,72, le noir devient blanc), fond assombri (≤ 0,35), sauf dans les dessins (fond blanc). Vérifié sur les 16 articles d'arXiv à consignes cachées recensés par arXiv:2507.06185 (versions citées) : chaque
   consigne signalée, aucune transmise, aucun autre signalement. Lecteur : « Afficher » va au premier passage, « Suivant »
   aux autres. Figures SVG insérées par `<object data>` : changées en `<img>` au nettoyage (`sanitize._objects_to_images`).
 

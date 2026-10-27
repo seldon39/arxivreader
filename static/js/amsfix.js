@@ -471,9 +471,27 @@ function groupFences(closer) {
   return null;
 }
 
+// Couleurs de l'auteur dans une formule (mathcolor, mathbackground) : en variables CSS, comme celles du texte
+// (--ltx-fg-color, --ltx-bg-color), pour que le lecteur les adapte au mode sombre (latexml.css) ; sinon MathJax ou le
+// navigateur les figent (noir sur fond sombre : formule invisible)
+function colorVariables(math) {
+  for (const node of [math, ...math.querySelectorAll("[mathcolor], [mathbackground]")]) {
+    for (const [attribute, variable] of [["mathcolor", "--ltx-fg-color"], ["mathbackground", "--ltx-bg-color"]]) {
+      const value = node.getAttribute(attribute);
+      if (value === null) continue;
+      node.removeAttribute(attribute);
+      if (!/^(#[0-9a-f]{3,8}|[a-z]+|rgba?\([\d\s.,%]+\))$/i.test(value.trim())) continue; // valeur inattendue : sans couleur
+      if (!(node.getAttribute("style") || "").includes(variable)) {
+        node.setAttribute("style", `${variable}:${value.trim()};${node.getAttribute("style") || ""}`);
+      }
+    }
+  }
+}
+
 export function fixMathML(content, macros = []) {
   const authorSized = macros.length ? new RegExp(`\\\\(${macros.join("|")})(?![A-Za-z])`) : null;
   for (const math of content.querySelectorAll("math")) {
+    colorVariables(math);
     attachScripts(math);
     // Lignes d'un gathered/split/aligned : LaTeXML met rowspacing="0pt", TeX laisse \jot (3 pt ≈ 0,3 em)
     math.querySelectorAll('mtable[displaystyle="true"][rowspacing="0pt"]').forEach((table) => table.setAttribute("rowspacing", "0.3em"));
