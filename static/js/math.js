@@ -129,7 +129,6 @@ function convert(MathJax, math) {
   const display = math.getAttribute("display") === "block";
   const node = MathJax.mathml2chtml(math.outerHTML, { display });
   node.dataset.tex = math.getAttribute("alttext") || "";
-  node.classList.add("arx-math");
   math.replaceWith(node);
 }
 

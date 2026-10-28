@@ -169,7 +169,6 @@ def convert(pid):
 BIBDATA = re.compile(r"\\bibliography\s*\{([^{}]+)\}")
 BIBLATEX = re.compile(r"\\(?:addbibresource|printbibliography|bibliography)\b")
 PRINTBIBLIOGRAPHY = re.compile(r"\\printbibliography\s*(?:\[[^\]]*\])?")
-TEX_SPECIAL = re.compile(r"([&%#_$])")
 BIBSTYLE = re.compile(r"\\bibliographystyle\s*\{([^{}]+)\}")
 CITE = re.compile(r"\\(?:no)?cite[a-zA-Z]*\*?\s*(?:\[[^\]]*\]\s*){0,2}\{([^{}]*)\}")
 
@@ -824,12 +823,6 @@ def fix_patterns(fragment):
 def _title(element):
     title = element.select_one(".ltx_title")
     return re.sub(r"\s+", " ", title.get_text(" ", strip=True)) if title else ""
-
-
-def _same_label(title, label):
-    """« Lemma 2.2 . », « Lemma 2.2 (Name). » : l'énoncé « Lemma 2.2 » de la source."""
-    title = re.sub(r"\s*([.:])", r"\1", title).strip()
-    return title == label or title.startswith(label + ".") or title.startswith(label + " ") or title.startswith(label + ":")
 
 
 def align_ids(fragment, tex):

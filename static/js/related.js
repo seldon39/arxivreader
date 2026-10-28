@@ -199,7 +199,7 @@ export async function renderRelated(root, arxivFromRoute = null) {
         return draggablePaper(item, { arxivId: n.arxivId, paperId: n.libraryId, title: n.title });
       }));
       marks();
-      typesetTex([list]).catch(() => {});
+      typesetTex([list]);
     }
     function drawDetail() {
       const n = chosen();
@@ -209,7 +209,7 @@ export async function renderRelated(root, arxivFromRoute = null) {
           n.links ? relation(n) : t("related.closeness", { shared: n.coupling, cocited: n.cocited })].filter(Boolean).join(" · ")),
         h("div", { class: "related-actions" }, ...actions(n, () => { drawList(); drawDetail(); highlight(); })));
       if (!mounted) return;
-      typesetTex([detail]).catch(() => {});
+      typesetTex([detail]);
     }
     // graphe : dessiné une fois la page en place, à la hauteur disponible (voir mountGraph)
     let svg = null, highlight = () => {}, zoomBy = () => {}, fit = () => {};
@@ -287,7 +287,7 @@ export async function renderRelated(root, arxivFromRoute = null) {
       resizing = requestAnimationFrame(mountGraph);
     }).observe(grid);
     refreshMarks = () => { drawList(); drawDetail(); highlight(); };
-    typesetTex([head]).catch(() => {});
+    typesetTex([head]);
   }
 
   // Actions sur l'article choisi : lire, ajouter à la bibliothèque, ranger, repartir de lui

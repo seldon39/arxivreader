@@ -6,14 +6,13 @@ import { t, tn } from "./i18n.js";
 import { h, icons, toast, toastError } from "./util.js";
 
 const selected = new Map(); // identifiant arXiv → { arxivId, paperId, title }
-const listeners = new Set();
 let bar = null;
 const barStack = []; // pages qui affichent la barre (la dernière l'emporte ; une page quittée en retard ne l'éteint pas)
 let filing = false;  // rangement en cours : la barre ne relance rien
 let draggingSelection = false; // glissement en cours de toute la sélection (effacée s'il aboutit)
 const barOptions = () => barStack.at(-1) || null;
 
-const notify = () => { syncSelection(); listeners.forEach((listener) => listener()); drawBar(); };
+const notify = () => { syncSelection(); drawBar(); };
 
 // boutons et cartes affichés mis à jour (une carte gardée hors de la page l'est quand elle revient : syncSelection(carte))
 export function syncSelection(root = document) {
@@ -25,9 +24,6 @@ export function syncSelection(root = document) {
     button.closest(".card, .feed-card")?.classList.toggle("selected", on);
   }
 }
-
-export const selectionSize = () => selected.size;
-export const isSelected = (arxivId) => selected.has(arxivId);
 
 // articles emportés par un glissement : toute la sélection si l'article saisi en fait partie, sinon lui seul
 export const dragGroup = (info) => {
@@ -59,11 +55,6 @@ export function clearSelection() {
   if (!selected.size) return;
   selected.clear();
   notify();
-}
-
-export function onSelectionChange(listener) {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
 }
 
 // Un article : son identifiant arXiv, ou pour un PDF importé (sans identifiant arXiv) celui de la bibliothèque

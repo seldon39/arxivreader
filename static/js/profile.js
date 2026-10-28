@@ -42,7 +42,7 @@ export async function renderProfile(body) {
   const draw = () => {
     container.replaceChildren(...SECTIONS.map((section) => renderSection(section, data, update)),
       h("p", { class: "hint" }, t("profile.referencesNote", { n: data.references || 0 })));
-    typesetTex([container]).catch(() => {});
+    typesetTex([container]);
   };
 
   body.replaceChildren(
@@ -74,7 +74,7 @@ function renderSection(section, data, update) {
       : t("profile.matching", { n: shown.length, total: items.length });
     rows.replaceChildren(...(shown.length ? shown.map((item) => profileRow(item, update))
       : [h("p", { class: "hint" }, t(items.length ? "profile.noMatch" : "profile.empty"))]));
-    typesetTex([rows]).catch(() => {});
+    typesetTex([rows]);
   };
   const search = items.length > 3 && h("input", { class: "text-input profile-search-input", type: "search", value: queries[section.key] || "",
     placeholder: t("profile.filter"), "aria-label": t("profile.filter"), autocomplete: "off", spellcheck: "false",
@@ -198,7 +198,7 @@ function searchForm(section, update) {
         return h("div", { class: "profile-candidate" },
           h("div", { class: "profile-text" }, h("span", {}, withMath(c.label)), h("span", { class: "muted small" }, detail)), pick);
       }) : [h("p", { class: "hint" }, t("profile.noResult"))]));
-      typesetTex([results]).catch(() => {});
+      typesetTex([results]);
     } catch (error) {
       results.replaceChildren(h("p", { class: "notice" }, error.message.includes("429") ? t("feed.error.rateLimited") : t("error.generic", { message: error.message })));
     } finally {

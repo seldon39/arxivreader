@@ -90,7 +90,7 @@ export async function defineMacros(macros = []) {
   holder.className = "tex-macros";
   holder.textContent = `\\(${[...DEFAULT_MACROS, ...macros].join(" ")}\\)`;
   document.body.append(holder);
-  await typesetTex([holder]).catch(() => {});
+  await typesetTex([holder]);
   holder.remove();
 }
 

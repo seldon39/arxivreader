@@ -552,7 +552,7 @@ export class Assistant {
       h("div", { class: "ai-foot" }, this.modelPicker() || h("span", { class: "muted small" }, modelLabel(currentModel())),
         h("span", { class: "spacer" }), h("span", { class: "muted small ai-enter" }, t("ai.enterToSend"))));
     requestAnimationFrame(() => { grow(); if (focus) area.focus(); });
-    typesetTex(chips).catch(() => {});
+    typesetTex(chips);
     return box;
   }
 
@@ -605,7 +605,7 @@ export class Assistant {
       bubble.append(h("blockquote", { class: "note-quote ai-quote zone-quote" }, h("img", { src: exchange.imageUrl || `/api/ai/${exchange.id}/image`, alt: "" })));
     } else if (exchange.quote && !zone) bubble.append(h("blockquote", { class: "note-quote ai-quote" }, exchange.quote));
     if (exchange.question) bubble.append(h("p", { class: "ai-asked" }, exchange.question));
-    typesetTex([bubble]).catch(() => {});
+    typesetTex([bubble]);
     thread.append(bubble, this.renderAnswer(exchange, { reply }));
   }
 
@@ -812,7 +812,7 @@ export class Assistant {
       event.preventDefault(); // la case ne se coche pas et on reste dans le lecteur
       this.navigate(ref.dataset.ref);
     });
-    typesetTex([list]).catch(() => {});
+    typesetTex([list]);
     return h("div", { class: "ai-proposals" },
       h("div", { class: "ai-proposals-head" }, t("ai.proposals.title", { n: proposals.length })),
       list, h("div", { class: "ai-card-actions" }, apply));
@@ -947,7 +947,7 @@ class LiveAnswer {
       added.push(block);
     }
     this.tail.innerHTML = final ? "" : markdownToHtml(blocks[complete] || "", { refs: this.refs });
-    if (added.length) typesetTex(added).catch(() => {});
+    if (added.length) typesetTex(added);
   }
 }
 

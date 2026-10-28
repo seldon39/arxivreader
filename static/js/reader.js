@@ -15,7 +15,6 @@ import { htmlToPdf, htmlWords, pdfToHtml, wordTop } from "./pdfsync.js";
 import { defineMacros, statementElement, statementsContainer } from "./texview.js";
 import { typesetFragment, typesetMath, typesetTex } from "./math.js";
 
-const typesetTexSafe = (element) => typesetTex([element]).catch(() => {});
 import { t } from "./i18n.js";
 import { DEFAULT_FONT_SIZE, READING_WIDTHS, onSettingsChange, saveSettings, settings } from "./settings.js";
 import { debounce, formatDate, h, icons, metaDialog, nativeBridge, navigation, openRoute, plainTitle, titleTex, toast, toastError, toggleIcon, wantsNewTab, withMath } from "./util.js";
@@ -174,7 +173,7 @@ class Reader {
     this.anchors = null;
     if (this.texOnly) {
       await defineMacros(this.structure.macros);
-      await typesetTexSafe(this.content);
+      await typesetTex([this.content]);
       if (this.destroyed) return;
       if (this.startAt) this.showInPdf(this.startAt);
       this.loadCrossLinks();
@@ -438,7 +437,7 @@ class Reader {
       this.panelButton,
     );
     // formules du titre composées par MathJax (une fois la page en place : typesetTex attend son tour)
-    typesetTex([this.toolbarTitle]).catch(() => {});
+    typesetTex([this.toolbarTitle]);
 
     this.toc = h("aside", { class: "toc", "aria-label": t("reader.contents") });
     this.panel = h("aside", { class: "panel", "aria-label": t("reader.panel") });
@@ -511,7 +510,7 @@ class Reader {
         h("div", { class: "ltx_authors" }, paper.authors.join(", ")),
         h("div", { class: "ltx_abstract" }, h("h6", { class: "ltx_title_abstract" }, t("reader.abstract")), h("p", {}, paper.abstract)),
       );
-      typesetTex([this.paperTitle]).catch(() => {});
+      typesetTex([this.paperTitle]);
     } else {
       this.content.innerHTML = html; // HTML nettoyé côté serveur ; scripts bloqués par la CSP
       this.article.append(this.content);
@@ -823,7 +822,7 @@ class Reader {
       const button = editable && h("button", { class: "link-button", type: "button", onclick: () => line.replaceChildren(this.proofEditor(node, draw)) },
         t(node.manual ? "panel.changeProof" : "panel.setProof"));
       line.replaceChildren(h("span", {}, info), button ? " " : "", button || "");
-      if (line.textContent.includes("$")) typesetTex([line]).catch(() => {});
+      if (line.textContent.includes("$")) typesetTex([line]);
     };
     draw();
     return line;
@@ -1226,7 +1225,7 @@ class Reader {
           const element = statementElement({ ...node, tex: found.tex || "" });
           element.removeAttribute("id");
           holder.replaceChildren(element);
-          await typesetTexSafe(holder);
+          await typesetTex([holder]);
           return;
         }
         const html = found.html ? new DOMParser().parseFromString(found.html, "text/html").body.firstElementChild : null;

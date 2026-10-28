@@ -350,7 +350,7 @@ function authorBadge(annotation) {
 
 export function renderNote(element, text) {
   element.innerHTML = markdownToHtml(text);
-  typesetTex([element]).catch(() => {});
+  typesetTex([element]);
 }
 
 export function noteEditor({ value = "", placeholder = "", onSave, autofocus = false }) {
@@ -863,7 +863,7 @@ export class Annotator {
         href: `/api/papers/${encodeURIComponent(this.paperId)}/notes.md?lang=${document.documentElement.lang || "fr"}` }, t("notes.export")),
         h("p", { class: "hint" }, t("notes.exportHint"))));
     }
-    typesetTex([body]).catch(() => {});
+    typesetTex([body]);
   }
 
   noteCard(annotation, element) {

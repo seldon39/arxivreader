@@ -56,10 +56,6 @@ def touch():
     _changed = time.time()
 
 
-def last_change():
-    return _changed
-
-
 def _ensure():
     with db.connect() as connection:
         connection.executescript(SCHEMA)

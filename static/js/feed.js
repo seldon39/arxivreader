@@ -639,7 +639,7 @@ function arxivLinker(item, currentCard, rebuild) {
       const next = rebuild(item);
       currentCard().replaceWith(next);
       next.querySelector(".feed-title-link")?.focus();
-      typesetTex([next]).catch(() => {});
+      typesetTex([next]);
       toast(t("feed.arxivLinked", { id: arxivId, title }), { duration: 6000 });
     } catch (error) {
       toastError(error);
@@ -758,5 +758,5 @@ function showResults(results, { papers, missing }) {
     missing.length ? h("p", { class: "muted small" }, t("import.missing", { list: missing.join(", ") })) : "",
     h("div", { class: "import-actions" }, go, progress),
   );
-  typesetTex([results]).catch(() => {});
+  typesetTex([results]);
 }

@@ -38,7 +38,7 @@ export function openOnboarding({ onDone = null } = {}) {
         h("button", { class: "icon-button", type: "button", title: t("settings.close"), "aria-label": t("settings.close"), html: icons.close, onclick: skip })),
       h("div", { class: "onboarding-body" }, body),
       h("div", { class: "actions onboarding-actions" }, actions)));
-    typesetTex([dlg]).catch(() => {});
+    typesetTex([dlg]);
     dlg.querySelector(".onboarding-body input, .onboarding-actions .primary")?.focus();
   };
   // demande en cours : bouton occupé, et les autres boutons (Retour…) attendent

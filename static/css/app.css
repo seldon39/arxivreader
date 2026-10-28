@@ -600,7 +600,6 @@ svg.graph { color: var(--border-strong); }
 .tool-button { position: relative; width: 38px; height: 38px; padding: 0; justify-content: center; flex: none; }
 .tool-button svg { width: 18px; height: 18px; }
 .tool-button .button-icon { display: inline-flex; }
-.tool-button .tool-count { position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; font-size: 11px; line-height: 18px; }
 .tool-button[aria-expanded="true"] { border-color: var(--focus); }
 .tool-button.spinning svg { animation: spin 1s linear infinite; }
 .feed-status { margin: -4px 0 10px; display: flex; align-items: center; gap: 6px; }
@@ -666,7 +665,6 @@ svg.graph { color: var(--border-strong); }
 .feed-card.compact .feed-authors { font-size: 13px; margin: 2px 0 0; }
 .feed-card.compact :is(.card-meta, .reasons, .feed-abstract, .feed-actions) { display: none; }
 .followed-section .feed-card { border-left: 3px solid var(--k-corollary); }
-.sort-label { margin-right: 2px; }
 .profile-owner { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0 0 22px; }
 .profile-owner .text-input { flex: 0 1 260px; }
 /* rubriques repliables (comme les sections du feed), recherche comme dans un dossier */
@@ -880,29 +878,17 @@ mark.hl.hl-display > mjx-container[display="true"] { margin: .2em 0 !important; 
 .ai-action.compact { height: 30px; font-size: 13px; padding: 0 10px; }
 .ai-ask { display: flex; flex-direction: column; gap: 8px; }
 .ai-question { min-height: 64px; }
-.ai-ask-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.ai-ask-row .spacer { flex: 1; }
-.ai-ask-row .button { height: 32px; padding: 0 12px; font-size: 14px; }
 /* « Envoyer à… » : un lien (il s'ouvre à côté), présenté comme les boutons voisins */
 .ai-share { display: inline-flex; align-items: center; gap: 5px; text-decoration: none; color: inherit; }
 .ai-model { height: 32px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); font: 14px var(--font-ui); padding: 0 6px; }
 /* modèle et niveau de réflexion côte à côte (l'un sous l'autre si le panneau est étroit) */
 .ai-model-picker { display: inline-flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
 .ai-model-picker .ai-model { max-width: 100%; }
-.ai-hint { margin: 0; }
 .ai-chip { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-soft); }
 .ai-chip .ai-quote { grid-column: 1 / -1; }
 .icon-button.small { width: 28px; height: 28px; }
 .icon-button.small svg { width: 16px; height: 16px; }
 .ai-quote { border-left-color: var(--border-strong); max-height: 9em; overflow: auto; }
-.ai-list { display: flex; flex-direction: column; gap: 12px; margin-top: 4px; }
-.ai-card { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px 12px; background: var(--surface); display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.ai-card.status-running { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
-.ai-card-head { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; min-width: 0; }
-.ai-card-head > .ai-icon { color: var(--accent); }
-.ai-card-head .spacer { flex: 1; }
-.ai-card-title { min-width: 0; overflow-wrap: anywhere; }
-.ai-context { margin: 0; }
 .ai-asked { margin: 0; font-size: 14.5px; font-weight: 500; white-space: pre-wrap; }
 .ai-answer { font-size: var(--ai-font-size, 15px); overflow-wrap: anywhere; min-width: 0; }
 .ai-text-size { display: flex; align-items: center; gap: 2px; margin: 2px 0 -4px; }
@@ -921,9 +907,6 @@ mark.hl.hl-display > mjx-container[display="true"] { margin: .2em 0 !important; 
 .md-table th { background: var(--surface-soft); font-family: var(--font-ui); font-weight: 600; }
 .ai-card-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .ai-card-actions .button { height: 30px; padding: 0 10px; font-size: 13px; gap: 6px; }
-.ai-date { white-space: nowrap; }
-.ai-card > .badge { align-self: flex-start; }
-.ai-disclaimer { margin: 0; font-size: 12.5px; color: var(--muted); }
 /* ---------- Onglet IA en conversation : sous-onglets en haut, fil qui défile, saisie en bas ---------- */
 .reader[data-tab="ai"] .panel { overflow: hidden; }
 .panel-body.ai-body { display: flex; flex-direction: column; padding: 0; min-height: 0; overflow: hidden; }
@@ -1020,7 +1003,6 @@ mark.hl.hl-display > mjx-container[display="true"] { margin: .2em 0 !important; 
 .update-pill:hover { background: rgba(255, 255, 255, .28); }
 .ai-setup-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .ai-command { font: 13px var(--font-mono); background: var(--surface); color: var(--text); padding: 3px 8px; border-radius: 6px; user-select: all; }
-.ai-privacy { margin-top: 16px; }
 
 /* Renvoi vers une preuve placée dans une section à part */
 .proof-pointer { display: block; text-align: right; font: 13.5px var(--font-ui); color: var(--link); margin-top: .3em; text-decoration: none; }
@@ -1092,7 +1074,7 @@ dialog.figure-viewer::backdrop { background: rgba(20, 20, 24, .6); -webkit-backd
 
 /* ---------- Style « papier » : listes à filets, métadonnées en texte, peu d'ornements ---------- */
 /* (vient après le reste : ces règles remplacent les cartes et les pastilles) */
-.button, .text-input, .icon-button, .segmented, .kind-filter, .filter-menu, .notice, .ai-card, .feed-tabs a { border-radius: 5px; }
+.button, .text-input, .icon-button, .segmented, .kind-filter, .filter-menu, .notice, .feed-tabs a { border-radius: 5px; }
 
 /* Bibliothèque : titre et import sur une ligne, articles en liste comme une bibliographie */
 .lib-head { display: flex; align-items: baseline; gap: 24px; flex-wrap: wrap; margin-bottom: 8px; }
