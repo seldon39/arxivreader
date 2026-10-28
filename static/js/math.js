@@ -16,7 +16,9 @@ const MACROS = {
   supp: op("supp"), Hom: op("Hom"), End: op("End"), Aut: op("Aut"), Tr: op("Tr"), tr: op("tr"),
   id: op("id"), Id: op("Id"), rank: op("rank"), diag: op("diag"), dist: op("dist"), vol: op("vol"),
   sgn: op("sgn"), Spec: op("Spec"),
-  slashed: ["\\cancel{#1}", 1],  // notation de Feynman (paquet slashed), inconnue de MathJax
+  // lettre barrée comme \not de TeX (glyphe « / » de largeur nulle posé au début de la lettre : même inclinaison, même
+  // place, mesurées sur le PDF de 2610.36240) ; \slashed (notation de Feynman) est inconnue de MathJax
+  arxivslash: ["\\rlap{\\kern0.13em\\raise{0.1em}{/}}#1", 1], slashed: ["\\arxivslash{#1}", 1],
 };
 // Les mêmes en \def : rétablies quand on quitte un article qui les avait redéfinies (MathJax garde les \newcommand
 // d'une page à l'autre)
@@ -78,17 +80,29 @@ function restoreCalligraphic(math) {
   });
 }
 
-// Lettre suivie de la barre combinante U+0338 (\not{D}, \not{\mathcal{D}}) : MathJax pose une petite barre décalée ;
-// TeX trace une longue oblique à travers la lettre, rendue ici par une diagonale (menclose)
+// Lettre suivie de la barre combinante U+0338 (\not{D}, \not{\mathcal{D}}) : la barre se dessine vers la droite (TeX la
+// pose avant la lettre) ; après elle, elle tombe sur l'indice (selon le moteur). Comme TeX : un « / » de largeur nulle au
+// début de la lettre, décalé de 0,13 em et relevé de 0,1 em (mesuré sur le PDF de 2610.36240 : barre raide, centrée
+// sur la lettre, dépassant en haut et en bas) ; même construction que \arxivslash pour le TeX des résumés.
 function slashedLetters(math) {
   math.querySelectorAll("mi").forEach((mi) => {
     const text = mi.textContent;
     if (!/^\p{L}\u0338$/u.test(text)) return;
     mi.textContent = text[0];
-    const strike = document.createElementNS(mi.namespaceURI, "menclose");
-    strike.setAttribute("notation", "updiagonalstrike");
-    mi.replaceWith(strike);
-    strike.append(mi);
+    const ns = mi.namespaceURI;
+    const slash = document.createElementNS(ns, "mi");
+    slash.setAttribute("mathvariant", "normal");
+    slash.textContent = "/";
+    const overlay = document.createElementNS(ns, "mpadded");
+    for (const [name, value] of [["width", "0"], ["lspace", "0.13em"], ["voffset", "0.1em"]]) overlay.setAttribute(name, value);
+    overlay.append(slash);
+    // lettre base d'un indice ou d'un exposant (\not{\mathcal{D}}_m, rattaché par attachScripts) : la barre se met devant
+    // le tout, comme en TeX (dans la base, sa profondeur abaisserait l'indice)
+    const parent = mi.parentElement;
+    const target = /^(msub|msup|msubsup)$/.test(parent?.localName || "") && parent.firstElementChild === mi ? parent : mi;
+    const group = document.createElementNS(ns, "mrow");
+    target.replaceWith(group);
+    group.append(overlay, target);
   });
 }
 
@@ -157,14 +171,14 @@ export function typesetFragment(root) {
 let queue = Promise.resolve();
 
 // \not devant une lettre ou un groupe (\not{\mathcal{D}}, \not D, \not\partial : opérateur de Dirac barré) : MathJax pose
-// la barre après la lettre, sur l'indice ; une diagonale à travers la lettre (\cancel), comme dans le corps de
-// l'article (slashedLetters). Les négations de relation (\not=, \not\in, \not\subset…) restent telles quelles.
+// la barre après la lettre, sur l'indice ; ici la barre de TeX (\arxivslash), comme dans le corps de l'article
+// (slashedLetters). Les négations de relation (\not=, \not\in, \not\subset…) restent telles quelles.
 const NOT_LETTER = /\\not\s*(?=\{|\\math(?:cal|scr|bb|rm|bf|frak|it|sf)\s*\{|\\(?:partial|nabla)(?![A-Za-z])|[A-Za-z](?![A-Za-z]))/g;
 function slashLetters(element) {
   const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     if (!node.data.includes("\\not")) continue;
-    node.data = node.data.replace(NOT_LETTER, "\\cancel ").replace(/\\cancel (\\math[a-z]+\s*\{[^{}]*\}|\\[a-z]+|[A-Za-z])/g, "\\cancel{$1}");
+    node.data = node.data.replace(NOT_LETTER, "\\arxivslash ").replace(/\\arxivslash (\\math[a-z]+\s*\{[^{}]*\}|\\[a-z]+|[A-Za-z])/g, "\\arxivslash{$1}");
   }
 }
 

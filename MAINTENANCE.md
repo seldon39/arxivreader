@@ -295,9 +295,12 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   une forme illisible au-dessus (déplacée, commandes relatives, image), sans surface, partielle, ou un foreignObject sans
   largeur, et le texte reste signalé ; formes lues une fois par groupe.
 - Lettre barrée (`\not{\mathcal{D}}`, `\not D`, `\slashed{D}` : opérateur de Dirac) : LaTeXML laisse la lettre suivie de
-  U+0338, que MathJax ou WebKit posent sur l'indice ; `math.slashedLetters` en fait une diagonale (`menclose
-  updiagonalstrike`), lettre gardée calligraphique (`restoreCalligraphic`) ; dans le TeX des titres, résumés et notes,
-  `slashLetters` change `\not` devant une lettre ou un groupe en `\cancel` (relations `\not=`, `\not\in`… intactes).
+  U+0338, barre qui se dessine vers la droite et tombe sur l'indice. Comme TeX (`\not` posé avant la lettre) :
+  `math.slashedLetters` met devant la lettre — devant tout l'indice si elle en est la base (`attachScripts`) — un « / »
+  de largeur nulle décalé de 0,13 em et relevé de 0,1 em ; lettre gardée calligraphique (`restoreCalligraphic`).
+  Réglé sur le PDF de 2610.36240 (barre centrée à 49 % de la lettre, inclinaison ~69°, indice placé comme pour
+  `\mathcal{D}_m`). Dans le TeX des titres, résumés et notes : `\not` devant une lettre ou un groupe → `\arxivslash`
+  (même construction ; relations `\not=`, `\not\in`… intactes ; `\cancel` de l'auteur intact).
 
 - Couleurs de l'auteur (latexml.css, fin) : `--ltx-fg-color` / `--ltx-bg-color` de LaTeXML, et `mathcolor` /
   `mathbackground` des formules mis dans ces variables par `amsfix.colorVariables` (sinon MathJax ou le navigateur les
