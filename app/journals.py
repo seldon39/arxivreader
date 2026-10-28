@@ -13,7 +13,6 @@ import httpx
 
 from . import db, s2
 from .arxiv import with_retry
-from .config import USER_AGENT
 from .relevance import S2_BATCH, s2_key
 
 # DOI de dépôts de prépublications ou d'archives (arXiv, bioRxiv/medRxiv, SSRN, Zenodo, ResearchGate, Research
@@ -76,7 +75,7 @@ def fetch(keys, api_key=None, timeout=30):
                 f"SELECT key FROM journals WHERE journal IS NOT NULL OR doi IS NOT NULL "
                 f"OR fetched_at > datetime('now', '-{STALE_DAYS} days')")}
         missing = [k for k in keys if k not in fresh]
-        headers = {"User-Agent": USER_AGENT, **({"x-api-key": api_key} if api_key else {})}
+        headers = s2.headers(api_key)
         with httpx.Client(headers=headers, timeout=timeout) as client:
             for start in range(0, len(missing), 500):
                 batch = missing[start:start + 500]

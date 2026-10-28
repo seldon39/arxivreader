@@ -14,7 +14,7 @@ import zlib
 from pathlib import Path
 from contextlib import asynccontextmanager
 from urllib.parse import unquote
-from datetime import date, datetime, timezone
+from datetime import date
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
@@ -125,6 +125,16 @@ async def local_only(request: Request, call_next):
     if request.url.path == "/" or request.url.path.startswith("/static/"):
         response.headers["Cache-Control"] = "no-cache"
     return response
+
+
+def _failed(error):
+    """Service extérieur en échec (arXiv, Semantic Scholar…) : 502, avec le type de l'erreur."""
+    return JSONResponse({"error": f"{type(error).__name__}: {error}"}, status_code=502)
+
+
+def _s2_key(settings=None):
+    """Clé Semantic Scholar de l'utilisateur (réglages déjà lus, sinon lus ici), ou None."""
+    return (db.get_settings() if settings is None else settings).get("s2ApiKey") or None
 
 
 def checked_paper(paper_id):
@@ -289,7 +299,7 @@ def papers():
     key = lambda paper: relevance.s2_key(paper["arxiv_id"])  # noqa: E731
     journals.annotate(papers, key)
     # (aussi pour un article dont arXiv ne donne qu'un DOI : Semantic Scholar en connaît souvent la revue)
-    journals.fetch_later([key(p) for p in papers if not (p.get("journal_ref") or "").strip()], db.get_settings().get("s2ApiKey") or None)
+    journals.fetch_later([key(p) for p in papers if not (p.get("journal_ref") or "").strip()], _s2_key())
     return papers
 
 
@@ -297,7 +307,7 @@ def papers():
 @app.get("/api/papers/relevance")
 async def papers_relevance():
     """Pertinence de chaque article de la bibliothèque pour le profil (tri des dossiers)."""
-    return await run_in_threadpool(relevance.library_relevance, db.get_settings().get("s2ApiKey") or None)
+    return await run_in_threadpool(relevance.library_relevance, _s2_key())
 
 async def _import(body):
     """Article inscrit tout de suite, importé en arrière-plan (jamais une longue requête : WebKit pourrait
@@ -310,7 +320,7 @@ async def _import(body):
     except ArxivError as error:
         return JSONResponse({"error": str(error)}, status_code=400)
     except Exception as error:  # réseau, page inattendue…
-        return JSONResponse({"error": f"{type(error).__name__}: {error}"}, status_code=502)
+        return _failed(error)
 
 
 @app.post("/api/papers")
@@ -344,7 +354,7 @@ async def quick_add(body: QuickAddRequest):
     except ArxivError as error:
         return JSONResponse({"error": str(error)}, status_code=400)
     except Exception as error:
-        return JSONResponse({"error": f"{type(error).__name__}: {error}"}, status_code=502)
+        return _failed(error)
     zotero.touch()
     return paper
 
@@ -356,7 +366,7 @@ def paper(paper_id: str):
         paper = library.ensure_ready(paper_id, timeout=45)  # ajouté d'un clic, import pas fini : attendu (45 s au plus par demande)
     except Exception as error:
         raise HTTPException(502, f"Import impossible : {error}")
-    db.update_paper(paper_id, opened_at=_now())
+    db.update_paper(paper_id, opened_at=feed.now())
     if library.missing_assets(paper_id):  # figures manquantes : redemandées en arrière-plan
         threading.Thread(target=library.repair_assets, args=(paper_id,), daemon=True).start()
     # sans texte pour l'assistant (PDF scanné) : la page joint les pages autour de la question
@@ -438,8 +448,10 @@ def create_folder(body: FolderRequest):
         created = folders.create(body.name, body.papers)
         zotero.touch()
         return created
+    except folders.FolderExists as error:
+        raise HTTPException(409, str(error))
     except folders.FolderError as error:
-        raise HTTPException(409 if "déjà" in str(error) else 400, str(error))
+        raise HTTPException(400, str(error))
 
 
 @app.put("/api/folders/{folder_id}")
@@ -449,8 +461,10 @@ def rename_folder(folder_id: int, body: RenameRequest):
         renamed = folders.rename(folder_id, body.name)
         zotero.touch()
         return renamed
+    except folders.FolderExists as error:
+        raise HTTPException(409, str(error))
     except folders.FolderError as error:
-        raise HTTPException(409 if "déjà" in str(error) else 400, str(error))
+        raise HTTPException(400, str(error))
 
 
 @app.delete("/api/folders/{folder_id}")
@@ -868,7 +882,7 @@ def pdf_arxiv_match(paper_id: str):
     if not localpdf.is_local(paper):
         return {"arxiv": None}
     try:
-        return {"arxiv": localpdf.arxiv_match(paper, db.get_settings().get("s2ApiKey") or None)}
+        return {"arxiv": localpdf.arxiv_match(paper, _s2_key())}
     except (httpx.HTTPError, ValueError, KeyError, TypeError):
         return {"arxiv": None}  # réseau, Semantic Scholar : rien à proposer
 
@@ -924,21 +938,21 @@ async def feed_items(view: str = "arxiv", day: str | None = None):
             raise HTTPException(400, "Bad day")
         # jour pas encore chargé, ou chargé sans les nouvelles versions alors que l'OAI-PMH peut les donner
         stale = day in (settings.get("feed.partialDays") or []) and feed.oai_available(day)
-        if day not in days and day > max(days, default="") and day <= _now()[:10]:
+        if day not in days and day > max(days, default="") and day <= feed.now()[:10]:
             # jour plus récent que tout ce qui est en base : sans doute celui du flux RSS (rapide), d'abord
             try:
-                await run_in_threadpool(feed.refresh_arxiv, settings.get("feedCategories") or None, settings.get("s2ApiKey") or None)
+                await run_in_threadpool(feed.refresh_arxiv, settings.get("feedCategories") or None, _s2_key(settings))
                 days = feed.known_days()
             except Exception:
                 pass  # flux indisponible : par l'OAI-PMH ou l'API ci-dessous
-        if (day not in days or stale) and day <= _now()[:10]:
+        if (day not in days or stale) and day <= feed.now()[:10]:
             try:
                 await run_in_threadpool(feed.fetch_day, day, settings.get("feedCategories") or None,
-                                        settings.get("s2ApiKey") or None)
+                                        _s2_key(settings))
             except httpx.TimeoutException:
                 return JSONResponse({"error": "arxiv-timeout"}, status_code=504)
             except Exception as error:
-                return JSONResponse({"error": f"{type(error).__name__}: {error}"}, status_code=502)
+                return _failed(error)
             days = feed.known_days()
     latest = max((d for d, n in days.items() if n), default=None)
     settings = db.get_settings()
@@ -960,18 +974,18 @@ async def feed_refresh(body: RefreshRequest):
     settings = db.get_settings()
     try:
         if body.view == "recommended":
-            count = await run_in_threadpool(feed.refresh_recommendations, settings.get("s2ApiKey") or None)
+            count = await run_in_threadpool(feed.refresh_recommendations, _s2_key(settings))
         else:
             count = await run_in_threadpool(feed.refresh_arxiv, settings.get("feedCategories") or None,
-                                            settings.get("s2ApiKey") or None)
+                                            _s2_key(settings))
             # citations de vos articles (une fois par jour au plus), en arrière-plan : le feed n'attend pas
-            threading.Thread(target=_quietly, args=(citations.check, settings.get("s2ApiKey") or None), daemon=True).start()
+            threading.Thread(target=_quietly, args=(citations.check, _s2_key(settings)), daemon=True).start()
     except feed.FeedError as error:
         return JSONResponse({"error": str(error)}, status_code=400)
     except httpx.TimeoutException:
         return JSONResponse({"error": "arxiv-timeout"}, status_code=504)
     except Exception as error:  # réseau
-        return JSONResponse({"error": f"{type(error).__name__}: {error}"}, status_code=502)
+        return _failed(error)
     return {"count": count}
 
 
@@ -1013,7 +1027,7 @@ async def related_papers(body: RelatedRequest):
         arxiv_id, _ = parse_arxiv_id(body.query[:500])
     except ArxivError:
         return JSONResponse({"error": "bad-id", "code": "bad-id"}, status_code=400)
-    view = await run_in_threadpool(related.start, arxiv_id, db.get_settings().get("s2ApiKey") or None, body.refresh, body.kept)
+    view = await run_in_threadpool(related.start, arxiv_id, _s2_key(), body.refresh, body.kept)
     return await run_in_threadpool(_related_view, view)
 
 
@@ -1036,11 +1050,11 @@ async def search_arxiv(body: SearchRequest):
     """Recherche dans tout arXiv (pas seulement la bibliothèque) : résultats présentés comme le feed."""
     try:
         return await run_in_threadpool(search.search, [t.model_dump() for t in body.terms[:10]], body.categories[:20],
-                                       body.cross, body.dates, body.sort, body.page, db.get_settings().get("s2ApiKey") or None)
+                                       body.cross, body.dates, body.sort, body.page, _s2_key())
     except search.SearchError as error:
         raise HTTPException(400, str(error))
     except Exception as error:  # réseau, arXiv indisponible
-        return JSONResponse({"error": f"{type(error).__name__}: {error}"}, status_code=502)
+        return _failed(error)
 
 
 @app.put("/api/feed/status")
@@ -1061,7 +1075,7 @@ async def find_arxiv(body: FindArxivRequest):
     except ArxivError as error:
         return JSONResponse({"error": str(error)}, status_code=400)
     except Exception as error:  # réseau
-        return JSONResponse({"error": f"{type(error).__name__}: {error}"}, status_code=502)
+        return _failed(error)
     feed.link_arxiv(item["key"], arxiv_id)
     return {"arxiv_id": arxiv_id, "title": meta.title}  # titre montré pour vérifier qu'on a relié le bon article
 
@@ -1108,7 +1122,7 @@ async def lookup(body: LookupRequest):
     try:
         return await run_in_threadpool(feed.lookup_ids, body.text[:2_000_000])
     except Exception as error:
-        return JSONResponse({"error": f"{type(error).__name__}: {error}"}, status_code=502)
+        return _failed(error)
 
 
 @app.get("/api/profile")
@@ -1129,7 +1143,7 @@ async def add_profile_item(body: ProfileItem):
     key = relevance.s2_key(None, ref) if ref else None
     if key:  # vecteur de sens tout de suite, pour que le tri en tienne compte
         try:
-            await run_in_threadpool(relevance.fetch_embeddings, [key], db.get_settings().get("s2ApiKey") or None)
+            await run_in_threadpool(relevance.fetch_embeddings, [key], _s2_key())
         except Exception:
             pass
     return await run_in_threadpool(get_profile)
@@ -1169,18 +1183,18 @@ def author_categories(item_id: int, paper: str | None = None):
 @app.post("/api/profile/resolve")
 async def resolve_profile_item(body: ResolveRequest):
     try:
-        return await run_in_threadpool(profile.resolve, body.kind, body.query[:500], db.get_settings().get("s2ApiKey") or None)
+        return await run_in_threadpool(profile.resolve, body.kind, body.query[:500], _s2_key())
     except Exception as error:
-        return JSONResponse({"error": f"{type(error).__name__}: {error}"}, status_code=502)
+        return _failed(error)
 
 
 @app.post("/api/profile/prefill")
 async def prefill_profile(body: PrefillRequest):
     db.save_settings({"profileOwner": body.owner.strip()[:200]})
     try:
-        await run_in_threadpool(profile.prefill, body.owner.strip(), db.get_settings().get("s2ApiKey") or None)
+        await run_in_threadpool(profile.prefill, body.owner.strip(), _s2_key())
     except Exception as error:
-        return JSONResponse({"error": f"{type(error).__name__}: {error}"}, status_code=502)
+        return _failed(error)
     return get_profile()
 
 
@@ -1203,7 +1217,7 @@ async def onboarding_find(body: OnboardingFind):
 @app.post("/api/onboarding/suggest")
 async def onboarding_suggest(body: OnboardingSuggest):
     papers = [{**p.model_dump(), "authors": p.authors[:2000]} for p in body.papers[:200]]
-    return await run_in_threadpool(onboarding.suggest, papers, body.owner[:200], db.get_settings().get("s2ApiKey") or None)
+    return await run_in_threadpool(onboarding.suggest, papers, body.owner[:200], _s2_key())
 
 
 @app.post("/api/onboarding/apply")
@@ -1400,5 +1414,3 @@ def index():
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
-def _now():
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")

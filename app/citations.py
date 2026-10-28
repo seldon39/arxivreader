@@ -48,12 +48,12 @@ def _store(connection, paper, cites):
             (key, arxiv_id, feed.tex_text(paper.get("title")),
              json.dumps([a.get("name", "") for a in paper.get("authors") or []], ensure_ascii=False),
              feed.tex_text(paper.get("abstract")), paper.get("publicationDate") or str(paper.get("year") or ""),
-             f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else feed.web_link(paper.get("url")), feed._now(),
-             json.dumps([cites], ensure_ascii=False), feed._now()))
+             f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else feed.web_link(paper.get("url")), feed.now(),
+             json.dumps([cites], ensure_ascii=False), feed.now()))
     else:
         known = json.loads(row["citing"] or "[]")
         connection.execute("UPDATE feed_items SET citing = ?, cited_found = COALESCE(cited_found, ?) WHERE key = ?",
-                           (json.dumps(sorted(set(known) | {cites}), ensure_ascii=False), feed._now(), key))
+                           (json.dumps(sorted(set(known) | {cites}), ensure_ascii=False), feed.now(), key))
     return key
 
 

@@ -20,7 +20,6 @@ from urllib.parse import quote
 import httpx
 
 from . import db, s2
-from .config import USER_AGENT
 from .library import paper_dir, paper_lock, write_atomic, write_atomic_bytes
 from .structure import STRUCTURE_VERSION
 
@@ -30,7 +29,7 @@ MAX_BYTES = 150_000_000
 MAX_PAGES = 2000
 PAGE_CHARS = 200_000   # texte gardé par page, et en tout (l'assistant en lit 400 000) : un PDF piégé (flux énorme)
 TOTAL_CHARS = 800_000  # ne remplit ni la mémoire ni text.json
-S2 = "https://api.semanticscholar.org/graph/v1"
+S2 = s2.GRAPH
 ARXIV_STAMP = re.compile(r"arXiv:\s*(\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?/\d{7})(?:v\d+)?", re.I)
 DOI = re.compile(r"\b(10\.\d{4,9}/[^\s\"<>]+[^\s\"<>.,;:)\]])")
 LINE_NOISE = re.compile(r"\d{4}|©|doi|arxiv|page|journal|vol\.|issn", re.I)
@@ -272,7 +271,7 @@ def _norm(title):
 
 def _s2(path, params, api_key=None):
     """Une seule demande, courte (pas de nouvel essai) : la page l'attend après l'import."""
-    headers = {"User-Agent": USER_AGENT, **({"x-api-key": api_key} if api_key else {})}
+    headers = s2.headers(api_key)
     with httpx.Client(headers=headers, timeout=10) as client:
         response = s2.paced(lambda: client.get(f"{S2}{path}", params=params), api_key)()
     if response.status_code in (404, 429):

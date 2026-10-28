@@ -12,6 +12,10 @@ class FolderError(ValueError):
     pass
 
 
+class FolderExists(FolderError):
+    """Un autre dossier porte déjà ce nom (409 côté serveur)."""
+
+
 def clean_name(name):
     name = " ".join(str(name or "").split())
     if not name or len(name) > MAX_NAME or not name.isprintable():
@@ -42,7 +46,7 @@ def create(name, papers=()):
     name = clean_name(name)
     with db.connect() as connection:
         if _taken(connection, name):
-            raise FolderError("Un dossier porte déjà ce nom")
+            raise FolderExists("Un dossier porte déjà ce nom")
         folder_id = connection.execute("INSERT INTO folders (name) VALUES (?)", (name,)).lastrowid
         connection.executemany("INSERT OR IGNORE INTO folder_papers (folder_id, paper_id) VALUES (?, ?)",
                                [(folder_id, paper_id) for paper_id in papers])
@@ -57,7 +61,7 @@ def rename(folder_id, name):
     name = clean_name(name)
     with db.connect() as connection:
         if _taken(connection, name, exclude=folder_id):
-            raise FolderError("Un dossier porte déjà ce nom")
+            raise FolderExists("Un dossier porte déjà ce nom")
         connection.execute("UPDATE folders SET name = ? WHERE id = ?", (name, folder_id))
     return get(folder_id)
 

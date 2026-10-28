@@ -21,11 +21,11 @@ from .library import paper_dir
 from .relevance import STOPWORDS, _ascii, author_key, followed_author, follows, same_person
 
 KINDS = ("mine", "paper", "book", "author", "keyword")
-S2 = "https://api.semanticscholar.org/graph/v1"
+S2 = s2.GRAPH
 
 
 def _get_s2(path, params, api_key=None):
-    headers = {"User-Agent": USER_AGENT, **({"x-api-key": api_key} if api_key else {})}
+    headers = s2.headers(api_key)
     with httpx.Client(headers=headers, timeout=30) as client:
         response = with_retry(s2.paced(lambda: client.get(f"{S2}{path}", params=params), api_key), retry_on=(429,), delays=(2, 4, 8))
     if response.status_code == 404:

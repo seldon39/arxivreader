@@ -17,9 +17,9 @@ import httpx
 
 from . import db, s2
 from .arxiv import with_retry
-from .config import PAPERS, USER_AGENT
+from .config import PAPERS
 
-S2_BATCH = "https://api.semanticscholar.org/graph/v1/paper/batch"
+S2_BATCH = f"{s2.GRAPH}/paper/batch"
 STOPWORDS = set("""
 a about above after again against all also am an and any are as at be because been before being below between both but by
 can could did do does doing down during each few for from further had has have having here how i if in into is it its
@@ -83,7 +83,7 @@ def author_key(name):
 
 
 def _plain(name):
-    return " ".join(re.sub(r"[^a-z\s]", " ", unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()).split())
+    return " ".join(re.sub(r"[^a-z\s]", " ", _ascii(name).lower()).split())
 
 
 def same_person(name, other):
@@ -159,7 +159,7 @@ def fetch_embeddings(keys, api_key=None, timeout=60):
             )
         }
     missing = [k for k in keys if k not in known]
-    headers = {"User-Agent": USER_AGENT, **({"x-api-key": api_key} if api_key else {})}
+    headers = s2.headers(api_key)
     with httpx.Client(headers=headers, timeout=timeout) as client:
         for start in range(0, len(missing), 500):
             batch = missing[start:start + 500]

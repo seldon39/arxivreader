@@ -28,10 +28,9 @@ import httpx
 
 from . import db, s2
 from .arxiv import fetch_metadata, fetch_titles, with_retry
-from .config import USER_AGENT
 from .feed import tex_text
 
-S2 = "https://api.semanticscholar.org/graph/v1"
+S2 = s2.GRAPH
 FIELDS = "paperId,title,year,citationCount,externalIds,authors"
 NODES = 40
 SECOND = 300        # voisins de second niveau examinés (une requête de plus)
@@ -270,7 +269,7 @@ def fetch(arxiv_id, api_key=None):
     et les articles souvent cités par ces voisins (voisins de second niveau), avec les références de chacun."""
     _step("origin")
     origin = _origin(arxiv_id)
-    headers = {"User-Agent": USER_AGENT, **({"x-api-key": api_key} if api_key else {})}
+    headers = s2.headers(api_key)
     with httpx.Client(headers=headers, timeout=60) as client:
         pid = f"arXiv:{arxiv_id}"
         _step("references")

@@ -479,7 +479,7 @@ def reader_profile(settings=None, items=None):
     items = profile_module.list_items() if items is None else items
     # titres, noms, résumés : venus d'arXiv ou de Semantic Scholar, échappés (aucune balise ne peut fermer le bloc)
     clean = lambda text, size=300: html.escape(" ".join(str(text or "").split())[:size], quote=False)  # noqa: E731
-    by_kind = {kind: [i for i in items if i.get("kind") == kind][:PROFILE_ITEMS] for kind in ("mine", "paper", "book", "author", "keyword")}
+    by_kind = {kind: [i for i in items if i.get("kind") == kind][:PROFILE_ITEMS] for kind in profile_module.KINDS}
 
     def work(item):
         year = f" ({clean(item['year'], 12)})" if item.get("year") else ""  # texte libre aussi (API du profil)

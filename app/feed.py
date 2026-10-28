@@ -91,7 +91,7 @@ def repair_abstracts(batch=50):
                     if found and found.group(1) in broken and summary:
                         connection.execute("UPDATE feed_items SET abstract = ? WHERE key = ?", (tex_text(summary), broken[found.group(1)]))
                         repaired += 1
-    db.save_settings({REPAIR_FLAG: _now()})
+    db.save_settings({REPAIR_FLAG: now()})
     return repaired
 
 
@@ -104,7 +104,7 @@ def _client(headers=None):
     return httpx.Client(headers={"User-Agent": USER_AGENT, **(headers or {})}, follow_redirects=True, timeout=40)
 
 
-def _now():
+def now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
@@ -166,7 +166,7 @@ def _store(connection, item, followed=False, keep_announce=False):
                "journal_ref = COALESCE(excluded.journal_ref, feed_items.journal_ref), doi = COALESCE(excluded.doi, feed_items.doi)"}""",
         {**item, "authors": json.dumps(item["authors"], ensure_ascii=False), "categories": json.dumps(item["categories"]),
          "announce_type": item.get("announce_type"), "in_arxiv": 0 if followed else 1, "followed": 1 if followed else 0,
-         "fetched_at": _now(), "journal_ref": item.get("journal_ref"), "doi": item.get("doi")},
+         "fetched_at": now(), "journal_ref": item.get("journal_ref"), "doi": item.get("doi")},
     )
 
 
@@ -212,7 +212,7 @@ def refresh_arxiv(categories=None, api_key=None):
     vectors = threading.Thread(target=_quietly, args=(relevance.fetch_embeddings, keys, api_key), daemon=True)
     vectors.start()
     vectors.join(EMBEDDING_WAIT)
-    db.save_settings({"feed.arxivRefreshed": _now()})
+    db.save_settings({"feed.arxivRefreshed": now()})
     threading.Thread(target=_complete_refresh, args=(items, categories, api_key), daemon=True).start()
     return len(items)
 
@@ -229,11 +229,11 @@ def _latest_published(categories, api_key):
     for _ in range(LOOKBACK_DAYS):
         iso = day.isoformat()
         if known.get(iso):  # dernière annonce déjà en base : rien de plus à lire
-            db.save_settings({"feed.arxivRefreshed": _now()})
+            db.save_settings({"feed.arxivRefreshed": now()})
             return 0
         count = 0 if iso in known else fetch_day(iso, categories, api_key)  # 0 en base : jour sans annonce
         if count:
-            db.save_settings({"feed.arxivRefreshed": _now()})
+            db.save_settings({"feed.arxivRefreshed": now()})
             # auteurs suivis, résumés : comme après une mise à jour par le flux (revues et vecteurs : déjà faits)
             threading.Thread(target=_complete_refresh, args=([], categories, api_key), daemon=True).start()
             return count
@@ -267,7 +267,7 @@ def _complete_refresh(items, categories, api_key):
             repair_abstracts()
         except Exception:
             pass
-        db.save_settings({"feed.followedRefreshed": _now()})
+        db.save_settings({"feed.followedRefreshed": now()})
     finally:
         _enriching.release()
 
@@ -537,7 +537,7 @@ def refresh_recommendations(api_key=None, limit=60):
                 (key, arxiv_id, tex_text(paper.get("title")),
                  json.dumps([a.get("name", "") for a in paper.get("authors") or []], ensure_ascii=False),
                  tex_text(paper.get("abstract")), paper.get("publicationDate") or str(paper.get("year") or ""),
-                 rank, f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else web_link(paper.get("url")), _now()),
+                 rank, f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else web_link(paper.get("url")), now()),
             )
     try:  # revue de chaque recommandation (déjà dans la réponse)
         for paper in papers:
@@ -551,7 +551,7 @@ def refresh_recommendations(api_key=None, limit=60):
                                     for p in papers], api_key)
     except Exception:
         pass
-    db.save_settings({"feed.s2Refreshed": _now(), "feed.s2Seeds": [len(positives), len(negatives)]})
+    db.save_settings({"feed.s2Refreshed": now(), "feed.s2Seeds": [len(positives), len(negatives)]})
     return len(papers)
 
 

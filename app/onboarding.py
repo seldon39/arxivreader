@@ -21,7 +21,7 @@ FEED_OWNER = re.compile(r"<title>\s*(.+?)['’]s articles on arXiv\s*</title>")
 MAX_AUTHORS = 30  # au-delà (grandes collaborations), un article ne propose pas ses coauteurs
 log = logging.getLogger("arxivreader.onboarding")
 ARXIV_AUTHOR = re.compile(r"(?:arxiv\.org/a/)?([a-z][a-z0-9_]*_\d+)(?:\.atom2?|\.html)?/?$", re.I)
-S2_BATCH = "https://api.semanticscholar.org/graph/v1/paper/batch"
+S2_BATCH = f"{s2.GRAPH}/paper/batch"
 
 
 class OnboardingError(Exception):
@@ -147,7 +147,7 @@ def suggest(papers, owner, api_key=None):
     ids = [f"arXiv:{p['arxivId']}" for p in papers][:100]
     if ids:
         try:
-            headers = {"User-Agent": USER_AGENT, **({"x-api-key": api_key} if api_key else {})}
+            headers = s2.headers(api_key)
             with httpx.Client(headers=headers, timeout=60) as client:
                 response = with_retry(s2.paced(lambda: client.post(S2_BATCH, params={"fields": "references.authors"}, json={"ids": ids}), api_key),
                                       retry_on=(429, 503), delays=(3, 6))

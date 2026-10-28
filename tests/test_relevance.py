@@ -140,7 +140,7 @@ class Namesakes(unittest.TestCase):
         with db.connect() as connection:
             for arxiv_id, categories in papers:
                 item = {"key": arxiv_id, "arxiv_id": arxiv_id, "version": 1, "title": "T", "authors": ["Jan Novák"], "abstract": "",
-                        "categories": categories, "primary_category": categories[0], "announced": feed._now()[:10], "link": ""}
+                        "categories": categories, "primary_category": categories[0], "announced": feed.now()[:10], "link": ""}
                 if arxiv_id != "2610.00004":
                     feed._store(connection, item)
                 feed._store(connection, item, followed=True)

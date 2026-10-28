@@ -10,6 +10,9 @@ précédente, quel que soit le fil qui l'envoie. Sans clé, rien ne change : cha
 import threading
 import time
 
+from .config import USER_AGENT
+
+GRAPH = "https://api.semanticscholar.org/graph/v1"
 INTERVAL = 1.05  # secondes entre deux requêtes (limite d'une clé : 1 par seconde)
 _lock = threading.Lock()
 _next = 0.0  # instant (time.monotonic) à partir duquel la prochaine requête peut partir
@@ -36,3 +39,8 @@ def paced(send, keyed, sleep=time.sleep):
         pace(sleep)
         return send()
     return run
+
+
+def headers(api_key=None):
+    """En-têtes d'une requête à l'API Graph : User-Agent, et la clé de l'utilisateur s'il en a une."""
+    return {"User-Agent": USER_AGENT, **({"x-api-key": api_key} if api_key else {})}

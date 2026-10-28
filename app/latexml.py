@@ -33,7 +33,7 @@ from .sanitize import sanitize_document
 from .structure import STRUCTURE_VERSION, classify, extract_structure
 from .texsource import MAX_FILE_BYTES, MAX_MEMBERS, MAX_TOTAL_BYTES, choose_main
 
-SOURCES = ("local-tex", "tex")
+SOURCES = (texfile.SOURCE, "tex")
 TIMEOUT = 600  # secondes : un livre peut demander plusieurs minutes
 GUIDE = "https://math.nist.gov/~BMiller/LaTeXML/get.html"  # installation (Windows : Perl, puis LaTeXML)
 DIRS = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "~/perl5/bin",
@@ -65,7 +65,7 @@ def html_dir(pid):
 
 def _stamp(paper):
     """Ce dont la version HTML a été faite : compilation du fichier TeX, version de l'article d'arXiv."""
-    if paper["source"] == "local-tex":
+    if texfile.is_tex_file(paper):
         return (texfile.report(paper["id"]) or {}).get("compiledAt") or ""
     return f"v{paper.get('version')}"
 
@@ -213,7 +213,7 @@ def _biblatex_bibliography(paper, cwd, main):
     ceux des commentaires ne comptent pas). True si fait."""
     stem = Path(main).stem
     candidates = [cwd / Path(main).parent / f"{stem}.bbl", *sorted(cwd.rglob("*.bbl"))]
-    if paper["source"] == "local-tex":
+    if texfile.is_tex_file(paper):
         candidates.insert(0, texfile.build_dir(paper["id"]) / f"{stem}.bbl")
     text = next((path.read_text(encoding="utf-8", errors="replace") for path in candidates if path.is_file()), "")
     entries = texstructure._biblatex(text) if "\\entry{" in text else []
@@ -252,7 +252,7 @@ def _bbl(paper, cwd, main):
     """Un .bbl à côté du fichier principal (True), d'après la compilation ou BibTeX."""
     stem = Path(main).stem
     target = cwd / Path(main).parent / f"{stem}.bbl"
-    if paper["source"] == "local-tex":
+    if texfile.is_tex_file(paper):
         built = texfile.build_dir(paper["id"]) / f"{stem}.bbl"
         if built.is_file():
             shutil.copyfile(built, target)
@@ -286,7 +286,7 @@ def _save_state(pid, value):
 
 def _source(paper, work):
     """(dossier où lancer LaTeXML, fichier principal relatif à ce dossier, chemins de recherche en plus)."""
-    if paper["source"] == "local-tex":
+    if texfile.is_tex_file(paper):
         main = Path((texfile._settings(paper["id"]) or {}).get("main") or "")
         if not main.is_file():
             raise LatexmlError(f"missing: {main}")
