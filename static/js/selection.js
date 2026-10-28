@@ -51,14 +51,14 @@ export function forgetSelected(keep) {
   if (changed) notify();
 }
 
-export function clearSelection() {
+function clearSelection() {
   if (!selected.size) return;
   selected.clear();
   notify();
 }
 
 // Un article : son identifiant arXiv, ou pour un PDF importé (sans identifiant arXiv) celui de la bibliothèque
-export const paperKey = (item) => item.arxivId || item.paperId;
+const paperKey = (item) => item.arxivId || item.paperId;
 const unique = (items) => items.filter((item, i) => items.findIndex((other) => paperKey(other) === paperKey(item)) === i);
 
 // Bouton « sélectionner » d'une carte (avec les autres boutons de la carte) ; la carte est marquée sélectionnée

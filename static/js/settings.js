@@ -35,7 +35,7 @@ export const settings = { ...DEFAULTS };
 const listeners = new Set();
 
 // Langue du système (macOS, navigateur) : français s'il vient en premier parmi les deux, sinon anglais
-export function systemLanguage() {
+function systemLanguage() {
   const first = (navigator.languages || [navigator.language || ""]).find((tag) => /^(fr|en)\b/i.test(tag)) || "";
   return /^fr/i.test(first) ? "fr" : "en";
 }
@@ -60,7 +60,7 @@ export function onSettingsChange(fn) {
   return () => listeners.delete(fn);
 }
 
-export function applySettings() {
+function applySettings() {
   const root = document.documentElement;
   if (settings.theme === "auto") delete root.dataset.theme;
   else root.dataset.theme = settings.theme;

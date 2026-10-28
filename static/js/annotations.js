@@ -348,7 +348,7 @@ function authorBadge(annotation) {
 
 // ---------- Éditeur de note (Markdown + LaTeX) ----------
 
-export function renderNote(element, text) {
+function renderNote(element, text) {
   element.innerHTML = markdownToHtml(text);
   typesetTex([element]);
 }
@@ -572,7 +572,7 @@ export class Annotator {
       const button = h("button", { type: "button", class: `state-option state-${state}`, "aria-pressed": String(this.stateOf(id) === state) },
         t(`notes.state.${state}`));
       button.addEventListener("click", async () => {
-        try { await this.setState(id, state); draw(); } catch (error) { toast(error.message, { error: true }); }
+        try { await this.setState(id, state); draw(); } catch (error) { toastError(error); }
       });
       return button;
     }));
@@ -672,7 +672,7 @@ export class Annotator {
         if (mark) this.openHighlight(annotation.id, mark, true);
       }
     } catch (error) {
-      toast(t("error.generic", { message: error.message }), { error: true });
+      toastError(error);
     }
   }
 

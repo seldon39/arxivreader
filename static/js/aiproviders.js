@@ -97,7 +97,7 @@ export function modelLabel(model) {
 export const authorName = (author) => NAMES[author] || t("ai.local");
 
 // Page de Google AI Studio où créer une clé d'API Gemini
-export const GEMINI_KEY_URL = "https://aistudio.google.com/apikey";
+const GEMINI_KEY_URL = "https://aistudio.google.com/apikey";
 
 export function setupNotice(status, onRetry) {
   const provider = status.provider || "claude";

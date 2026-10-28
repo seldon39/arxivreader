@@ -2,8 +2,8 @@
 // panneau (énoncés, dépendances, graphe) et les aperçus. L'article lui-même se lit dans le PDF.
 
 import { DEFAULT_MACROS, typesetTex } from "./math.js";
+import { escapeHtml } from "./util.js";
 
-const escape = (text) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 // Contenu d'un groupe {…} à partir de `start` (accolade ouvrante) : [contenu, fin]
 function braced(text, start) {
@@ -31,7 +31,7 @@ function replaceCommand(text, names, f) {
 }
 
 // TeX d'un énoncé → HTML : formules gardées pour MathJax ($…$, \[…\], environnements), texte mis en forme
-export function texToHtml(tex, { labels = {}, nodes = new Map(), bib = new Map(), equations = {} } = {}) {
+function texToHtml(tex, { labels = {}, nodes = new Map(), bib = new Map(), equations = {} } = {}) {
   let text = tex.replace(/\\label\s*(\[[^\]]*\])?\s*\{[^}]*\}/g, "");
   const refText = (keys, command) => keys.split(",").map((key) => {
     const node = nodes.get(labels[key.trim()]);
@@ -51,7 +51,7 @@ export function texToHtml(tex, { labels = {}, nodes = new Map(), bib = new Map()
   const keep = (match) => { maths.push(match); return `\u0000${maths.length - 1}\u0000`; };
   text = text.replace(/\\begin\{(equation|align|gather|multline|eqnarray|flalign|alignat)(\*?)\}[\s\S]*?\\end\{\1\2\}/g, keep)
     .replace(/\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$(?:\\.|[^$\\])+\$/g, keep);
-  text = escape(text);
+  text = escapeHtml(text);
   text = replaceCommand(text, "emph|textit|textsl", (arg) => `<em>${arg}</em>`);
   text = replaceCommand(text, "textbf", (arg) => `<strong>${arg}</strong>`);
   text = replaceCommand(text, "textrm|textup|text|mbox|textnormal|textsc", (arg) => arg);
@@ -63,7 +63,7 @@ export function texToHtml(tex, { labels = {}, nodes = new Map(), bib = new Map()
     .replace(/~/g, " ")
     .replace(/\\(?:begin|end)\{[^}]*\}/g, " ")
     .replace(/\n\s*\n/g, "</p><p>");
-  text = text.replace(/\u0000(\d+)\u0000/g, (_, i) => escape(maths[Number(i)]));
+  text = text.replace(/\u0000(\d+)\u0000/g, (_, i) => escapeHtml(maths[Number(i)]));
   return `<p>${text}</p>`;
 }
 
@@ -73,8 +73,8 @@ export function statementElement(node, context) {
   element.className = `ltx_theorem ltx_theorem_${node.kind}`;
   if (node.id) element.id = node.id;
   element.dataset.kind = node.kind;
-  element.innerHTML = `<h6 class="ltx_title ltx_title_theorem"><span class="ltx_tag ltx_tag_theorem">${escape(node.label)}</span>`
-    + `${node.name ? ` (${escape(node.name)})` : ""}.</h6><div class="ltx_para">${texToHtml(node.tex || "", context)}</div>`;
+  element.innerHTML = `<h6 class="ltx_title ltx_title_theorem"><span class="ltx_tag ltx_tag_theorem">${escapeHtml(node.label)}</span>`
+    + `${node.name ? ` (${escapeHtml(node.name)})` : ""}.</h6><div class="ltx_para">${texToHtml(node.tex || "", context)}</div>`;
   return element;
 }
 

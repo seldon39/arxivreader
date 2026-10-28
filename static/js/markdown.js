@@ -3,21 +3,20 @@
 // Les formules ($…$, $$…$$, \(…\), \[…\]) sont laissées telles quelles pour MathJax.
 // Tout le texte est échappé : seules les balises produites ici peuvent apparaître.
 
+import { escapeHtml } from "./util.js";
+
 const MATH = /(\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\$[^$\n]+?\$|\\\([\s\S]+?\\\))/g;
 
-function escape(text) {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
 
 function inline(text, math, refs) {
-  let html = escape(text);
+  let html = escapeHtml(text);
   html = html.replace(/`([^`]+)`/g, (_, code) => `<code>${code}</code>`);
   html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   html = html.replace(/(^|[^\w*])\*([^*\s][^*]*?)\*(?!\w)/g, "$1<em>$2</em>");
   html = html.replace(/(^|[^\w])_([^_\s][^_]*?)_(?!\w)/g, "$1<em>$2</em>");
   html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
   if (refs) html = linkOutside(html, refs);
-  return html.replace(/\u0000(\d+)\u0000/g, (_, i) => escape(math[Number(i)]));
+  return html.replace(/\u0000(\d+)\u0000/g, (_, i) => escapeHtml(math[Number(i)]));
 }
 
 // Renvois (« Lemma 2.3 », « (2.11) ») transformés en liens, hors balises, code et liens existants
@@ -57,7 +56,7 @@ export function markdownToHtml(source, { refs } = {}) {
       flushParagraph(); flushList();
       const code = [];
       while (++i < lines.length && !/^```/.test(lines[i])) code.push(lines[i]);
-      out.push(`<pre><code>${escape(code.join("\n").replace(/\u0000(\d+)\u0000/g, (_, k) => math[Number(k)]))}</code></pre>`);
+      out.push(`<pre><code>${escapeHtml(code.join("\n").replace(/\u0000(\d+)\u0000/g, (_, k) => math[Number(k)]))}</code></pre>`);
       continue;
     }
     if (/^\s*\|.*\|\s*$/.test(line) && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i + 1] || "") && lines[i + 1].includes("-")) {

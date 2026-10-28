@@ -17,7 +17,7 @@ import { typesetFragment, typesetMath, typesetTex } from "./math.js";
 
 import { t } from "./i18n.js";
 import { DEFAULT_FONT_SIZE, READING_WIDTHS, onSettingsChange, saveSettings, settings } from "./settings.js";
-import { debounce, formatDate, h, icons, metaDialog, nativeBridge, navigation, openRoute, plainTitle, titleTex, toast, toastError, toggleIcon, wantsNewTab, withMath } from "./util.js";
+import { debounce, escapeRegExp, formatDate, h, icons, metaDialog, nativeBridge, navigation, openRoute, plainTitle, titleTex, toast, toastError, toggleIcon, wantsNewTab, withMath } from "./util.js";
 import { chooseBibFor, texChecks } from "./texfile.js";
 import { htmlFlow, rememberView, wantsHtml } from "./latexml.js";
 
@@ -533,9 +533,9 @@ class Reader {
 
     this.root.append(toolbar, this.toc, this.paneResizer("toc"), this.scroller, this.panel, this.paneResizer("panel"),
       h("div", { class: "scrim", onclick: () => this.closeDrawers() }));
-    // Police « comme l'article » : celle du paquet de police de la source TeX
     if (settings.panelWidth) this.root.style.setProperty("--panel-w", `${settings.panelWidth}px`);
     if (settings.tocWidth) this.root.style.setProperty("--toc-w", `${settings.tocWidth}px`);
+    // Police « comme l'article » : celle du paquet de police de la source TeX
     if (settings.paperFont === "auto") this.root.dataset.paperFont = this.structure.tex?.font || "lm";
     view.replaceChildren(this.root);
   }
@@ -634,7 +634,7 @@ class Reader {
         button.setAttribute("aria-label", label());
         toast(t(paper.in_library ? "feed.added" : "feed.removed"));
       } catch (error) {
-        toast(error.message, { error: true });
+        toastError(error);
       }
     });
     return button;
@@ -834,7 +834,7 @@ class Reader {
         this.setStructure(body ? await api.setProof(this.paper.id, node.id, body) : await api.clearProof(this.paper.id, node.id));
         toast(t("pick.saved", { label: node.label }));
       } catch (error) {
-        toast(t("error.generic", { message: error.message }), { error: true });
+        toastError(error);
       }
     };
     const sections = this.structure.toc.filter((s) => s.id !== "bib" && !/bibliograph/i.test(s.id));
@@ -921,7 +921,7 @@ class Reader {
       this.setStructure(await api.setProof(this.paper.id, node.id, { mode: "passage", start: start.id, end: end.id }));
       toast(t("pick.saved", { label: node.label }));
     } catch (error) {
-      toast(t("error.generic", { message: error.message }), { error: true });
+      toastError(error);
     }
     this.select(node.id, { tab: "dependencies", openPanel: true });
   }
@@ -1257,7 +1257,7 @@ class Reader {
           const paper = await api.importPaper(arxivId);
           toast(`${t("reader.import")} ✓ ${paper.title}`);
         } catch (error) {
-          toast(error.message, { error: true });
+          toastError(error);
         }
       },
     }, `${t("reader.import")} arXiv:${arxivId}`)));
@@ -1265,7 +1265,6 @@ class Reader {
 
   // Identifiants arXiv des références (repérés par l'analyse) : liens qui ouvrent l'article dans l'application
   linkArxivReferences() {
-    const escape = (text) => text.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
     for (const item of this.content.querySelectorAll(".ltx_bibitem[id]")) {
       const ids = this.bib.get(item.id)?.arxiv || [];
       if (!ids.length) continue;
@@ -1276,7 +1275,7 @@ class Reader {
         link.title = t("reader.readArxiv");
       }
       // ancien identifiant : écrit aussi avec sa sous-catégorie dans le texte (math.DG/0404494 pour math/0404494)
-      const written = (id) => escape(id).replace(/^([a-z-]+)\\\//, "$1(?:\\.[A-Z]{2})?\\/");
+      const written = (id) => escapeRegExp(id).replace(/^([a-z-]+)\\\//, "$1(?:\\.[A-Z]{2})?\\/");
       const pattern = new RegExp(`(?:arXiv:\\s*)?(?<![\\w.])(${ids.map(written).join("|")})(?:v\\d+)?(?![\\w])`, "g");
       const walker = document.createTreeWalker(item, NodeFilter.SHOW_TEXT,
         { acceptNode: (node) => (node.parentElement.closest("a, math") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
@@ -1332,7 +1331,7 @@ class Reader {
       const app = Boolean(nativeBridge); // navigateur : pas de fenêtre ouverte après un await
       openRoute(`#/paper/${encodeURIComponent(paper.id)}`, app, front);
     } catch (error) {
-      toast(error.message, { error: true });
+      toastError(error);
     } finally {
       delete link.dataset.loading;
     }
@@ -1783,38 +1782,27 @@ class Reader {
       next.focus();
     });
 
-    const hoverable = 'a[href^="#"], .ltx_note_mark';
-    this.scroller.addEventListener("mouseover", (event) => {
-      const link = event.target.closest(hoverable);
-      if (!link || !this.content.contains(link) || link.contains(event.relatedTarget)) return; // dans le même renvoi
-      if (this.previewBox && this.previewLink === link) { clearTimeout(this.hideTimer); return; }
-      clearTimeout(this.hideTimer);
-      clearTimeout(this.showTimer);
-      this.showTimer = setTimeout(() => this.showPreview(link), 220);
-    });
-    this.scroller.addEventListener("mouseout", (event) => {
-      const link = event.target.closest(hoverable);
-      if (link && !link.contains(event.relatedTarget)) {
+    // aperçu au survol d'un renvoi : dans l'article, et dans les réponses de l'IA (énoncés, équations, sections, références)
+    const SHOW_DELAY = 220; // ms : un passage de la souris ne l'ouvre pas
+    const hoverPreviews = (host, selector, accept = () => true) => {
+      host.addEventListener("mouseover", (event) => {
+        const link = event.target.closest(selector);
+        if (!link || !accept(link) || link.contains(event.relatedTarget)) return; // dans le même renvoi
+        if (this.previewBox && this.previewLink === link) { clearTimeout(this.hideTimer); return; }
+        clearTimeout(this.hideTimer);
         clearTimeout(this.showTimer);
-        this.scheduleHide();
-      }
-    });
-    // renvois des réponses de l'IA (énoncés, équations, sections, références) : même aperçu au survol
-    this.panel.addEventListener("mouseover", (event) => {
-      const link = event.target.closest("a.ai-ref");
-      if (!link || link.contains(event.relatedTarget)) return;
-      if (this.previewBox && this.previewLink === link) { clearTimeout(this.hideTimer); return; }
-      clearTimeout(this.hideTimer);
-      clearTimeout(this.showTimer);
-      this.showTimer = setTimeout(() => this.showPreview(link), 220);
-    });
-    this.panel.addEventListener("mouseout", (event) => {
-      const link = event.target.closest("a.ai-ref");
-      if (link && !link.contains(event.relatedTarget)) {
-        clearTimeout(this.showTimer);
-        this.scheduleHide();
-      }
-    });
+        this.showTimer = setTimeout(() => this.showPreview(link), SHOW_DELAY);
+      });
+      host.addEventListener("mouseout", (event) => {
+        const link = event.target.closest(selector);
+        if (link && !link.contains(event.relatedTarget)) {
+          clearTimeout(this.showTimer);
+          this.scheduleHide();
+        }
+      });
+    };
+    hoverPreviews(this.scroller, 'a[href^="#"], .ltx_note_mark', (link) => this.content.contains(link));
+    hoverPreviews(this.panel, "a.ai-ref");
 
     const onKey = (event) => {
       if (event.target.closest?.("input, textarea, select, [contenteditable]")) return;
@@ -1860,7 +1848,6 @@ class Reader {
     this.cleanups.push(() => document.removeEventListener("keydown", onKey), () => removeEventListener("resize", onResize), unsubscribe);
   }
 
-  // PDF importé : titre et auteurs (lus dans le fichier, parfois mal), corrigés à la main
   // surlignages et zones du PDF ; une zone peut partir vers l'assistant s'il lit les images (Claude, Gemini)
   makePdfNotes() {
     setTimeout(() => { if (this.assistant && !this.assistant.status) this.assistant.refreshStatus(); }, 0);
@@ -1909,7 +1896,7 @@ class Reader {
         this.paintBookmarks();
         this.annotator.onChange();
         toast(t("bookmarks.added"));
-      } catch (error) { toast(t("error.generic", { message: error.message }), { error: true }); }
+      } catch (error) { toastError(error); }
     } });
   }
 
@@ -1925,7 +1912,7 @@ class Reader {
             ...(was ? { version: this.paper.version } : {}) }));
           this.paintBookmarks();
           this.annotator.onChange();
-        } catch (error) { toast(t("error.generic", { message: error.message }), { error: true }); }
+        } catch (error) { toastError(error); }
       },
       onDelete: async () => {
         try {
@@ -1933,7 +1920,7 @@ class Reader {
           this.annotator.items = this.annotator.items.filter((a) => a !== annotation);
           this.paintBookmarks();
           this.annotator.onChange();
-        } catch (error) { toast(t("error.generic", { message: error.message }), { error: true }); }
+        } catch (error) { toastError(error); }
       } });
   }
 
@@ -2061,6 +2048,7 @@ class Reader {
     } catch { return 1; }
   }
 
+  // PDF importé : titre et auteurs (lus dans le fichier, parfois mal), corrigés à la main
   async editMeta() {
     const edited = await metaDialog({ title: this.paper.title, authors: this.paper.authors });
     if (edited) {
@@ -2072,7 +2060,7 @@ class Reader {
         document.title = plainTitle(paper.title);
         toast(t("reader.metaSaved"));
       } catch (error) {
-        toast(error.message, { error: true });
+        toastError(error);
       }
     }
   }

@@ -22,7 +22,7 @@ function summary(report) {
 const changedHere = (report) => Boolean(report && (report.fromZotero || report.removedHere || report.folders));
 const held = (report) => Boolean(report?.held);
 // cause d'un échec, dans la langue de la page (le message du serveur seulement pour une erreur imprévue)
-export function zoteroError(code, message = "") {
+function zoteroError(code, message = "") {
   const key = `zotero.err.${code}`;
   return t(key) !== key ? t(key) : t("zotero.err.unexpected", { message });
 }

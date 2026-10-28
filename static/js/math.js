@@ -163,11 +163,6 @@ export function typesetFragment(root) {
   refreshStylesheet(window.MathJax);
 }
 
-// Texte contenant du TeX entre $…$ (titres, résumés, notes) : mise en forme par MathJax.
-// Les demandes passent une à une (MathJax garde un état partagé), les éléments déjà retirés de la page
-// sont ignorés, et MathJax oublie ensuite les formules traitées (sinon sa liste grossit sans fin).
-let queue = Promise.resolve();
-
 // \not devant une lettre ou un groupe (\not{\mathcal{D}}, \not D, \not\partial : opérateur de Dirac barré) : MathJax pose
 // la barre après la lettre, sur l'indice ; ici la barre de TeX (\arxivslash), comme dans le corps de l'article
 // (slashedLetters). Les négations de relation (\not=, \not\in, \not\subset…) restent telles quelles.
@@ -180,6 +175,10 @@ function slashLetters(element) {
   }
 }
 
+// Texte contenant du TeX entre $…$ (titres, résumés, notes) : mise en forme par MathJax.
+// Les demandes passent une à une (MathJax garde un état partagé), les éléments déjà retirés de la page
+// sont ignorés, et MathJax oublie ensuite les formules traitées (sinon sa liste grossit sans fin).
+let queue = Promise.resolve();
 export function typesetTex(elements) {
   queue = queue.then(async () => {
     const live = elements.filter((element) => element?.isConnected);

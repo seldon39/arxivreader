@@ -6,7 +6,7 @@
 import { t } from "./i18n.js";
 import { h, icons } from "./util.js";
 
-export const isBookmark = (annotation) => annotation.kind === "bookmark";
+const isBookmark = (annotation) => annotation.kind === "bookmark";
 export const inPdf = (annotation) => Boolean(annotation.target?.pdf);
 
 // version de l'article quand le marque-page a été posé, si elle n'est plus la même

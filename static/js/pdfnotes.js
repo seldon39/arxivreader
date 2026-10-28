@@ -10,7 +10,7 @@ import { api } from "./api.js";
 import { COLORS } from "./annotations.js";
 import { closeBookmarkUi } from "./bookmarks.js";
 import { t } from "./i18n.js";
-import { h, icons, toast } from "./util.js";
+import { h, icons, toast, toastError } from "./util.js";
 
 
 // passage d'un document recompilé : retrouvé par son texte, aux espaces près, s'il est assez long pour être sans ambiguïté
@@ -550,7 +550,7 @@ export class PdfNotes {
       }
     } catch (error) {
       this.hideToolbar();
-      toast(t("error.generic", { message: error.message }), { error: true });
+      toastError(error);
     }
   }
 
@@ -567,7 +567,7 @@ export class PdfNotes {
         if (mark) this.annotator.openHighlight(annotation.id, this.anchor(mark.getBoundingClientRect()), true);
       }
     } catch (error) {
-      toast(t("error.generic", { message: error.message }), { error: true });
+      toastError(error);
     }
   }
 

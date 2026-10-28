@@ -9,7 +9,7 @@ import { markdownToHtml } from "./markdown.js";
 import { typesetTex } from "./math.js";
 import { t, tn } from "./i18n.js";
 import { DEFAULT_AI_FONT_SIZE, saveSettings, settings } from "./settings.js";
-import { h, icons, plainTitle, toast, toastError } from "./util.js";
+import { escapeHtml, escapeRegExp, h, icons, plainTitle, toast, toastError } from "./util.js";
 
 // « Envoyer à… » : nouvelle conversation dans l'application (Claude) ou le site (ChatGPT, Gemini) de
 // l'assistant choisi, pré-remplie avec les références de l'article ; Gemini ne sait pas recevoir de texte par
@@ -144,16 +144,14 @@ export class Assistant {
     // références : étiquette entre crochets (« 12 », « BMMP14 ») ou auteur-année (« Amini et al. (2019) »)
     const cited = new Map();
     const authorYear = [];
-    const escape = (text) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     for (const item of this.structure.bibliography || []) {
       const label = String(item.label || "").trim().replace(/^\[(.*)\]$/, "$1");
       const year = label.match(/^(.*\p{L}.*?)[\s,]*\(?((?:1[89]|20)\d\d[a-z]?)\)?$/u);
-      if (year) authorYear.push([escape(year[1].trim()), year[2], item.id]);
-      if (label && !cited.has(escape(label))) cited.set(escape(label), item.id);
+      if (year) authorYear.push([escapeHtml(year[1].trim()), year[2], item.id]);
+      if (label && !cited.has(escapeHtml(label))) cited.set(escapeHtml(label), item.id);
     }
-    const quote = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const authorYearRe = authorYear.length ? new RegExp(authorYear.map(([who, year]) =>
-      `(?<![\\p{L}\\p{N}])(${quote(who)})(\\s*\\(\\s*${year}\\s*\\)|,?\\s+${year})(?![\\p{L}\\p{N}])`).join("|"), "gu") : null;
+      `(?<![\\p{L}\\p{N}])(${escapeRegExp(who)})(\\s*\\(\\s*${year}\\s*\\)|,?\\s+${year})(?![\\p{L}\\p{N}])`).join("|"), "gu") : null;
     const words = Object.values(KIND_WORDS).join("|");
     // énoncé ou section d'un AUTRE article (« Theorem 3.1 of [12] », « [12, Theorem 3.1] ») : pas relié à celui-ci
     const elsewhere = "(?![^\\S\\n]*,?[^\\S\\n]+(?:of|in|from|de|du|dans|chez)[^\\S\\n]+(?:\\[|the cited|l['’]article cité))";
@@ -354,7 +352,7 @@ export class Assistant {
       await this.annotator.appendNote(id, `${header}${asked}\n\n${parseProposals(exchange.answer).text.trim()}`);
       toast(id ? t("ai.savedBlock", { label: node.label }) : t("ai.savedGeneral"));
     } catch (error) {
-      toast(t("error.generic", { message: error.message }), { error: true });
+      toastError(error);
     }
   }
 
@@ -865,7 +863,7 @@ export class Assistant {
 
 // Réponse de Claude : texte, et propositions d'annotations (bloc ```annotations``` en JSON, retiré du texte).
 // Pendant l'écriture, le bloc commencé est simplement masqué.
-export function parseProposals(answer) {
+function parseProposals(answer) {
   const match = answer.match(/```annotations[^\n]*\n([\s\S]*?)(```|$)/);
   if (!match) return { text: answer, items: [] };
   const text = answer.slice(0, match.index).trimEnd() + answer.slice(match.index + match[0].length);

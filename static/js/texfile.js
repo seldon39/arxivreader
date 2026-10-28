@@ -20,7 +20,7 @@ async function pickBib(name) {
 }
 
 // Étapes d'une compilation (fenêtre d'import) : [{state: ok | warn | error, text, detail, action}]
-export function texSteps(report, { onChooseBib = null } = {}) {
+function texSteps(report, { onChooseBib = null } = {}) {
   const steps = [];
   const included = Math.max(0, report.files - 1);
   steps.push({ state: "ok", text: t("tex.sourceRead", { main: fileName(report.main), files: included, figures: report.figures }) });

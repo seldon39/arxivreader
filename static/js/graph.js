@@ -16,7 +16,7 @@ const ABBREVIATIONS = {
     claim: "Claim", remark: "Rem", example: "Ex", notation: "Not", problem: "Q", other: "" },
 };
 
-export function shortLabel(node) {
+function shortLabel(node) {
   const number = node.label.match(/(\d+(?:\.\d+)*[a-z]?|[A-Z](?:\.\d+)+)\s*$/);
   if (!number) return node.label.length > 12 ? `${node.label.slice(0, 11)}…` : node.label;
   const abbreviation = ABBREVIATIONS[getLanguage()][node.kind] ?? "";

@@ -95,7 +95,7 @@ navDrop('.topnav a[href="#/related"]', async (papers) => {
 });
 
 // Pastille sur « Feed » : nouveaux articles d'auteurs suivis pas encore vus
-export async function refreshAlerts() {
+async function refreshAlerts() {
   let count = 0;
   try { count = (await api.alerts()).unseen.length; } catch { return; }
   const link = document.querySelector('.topnav a[href="#/feed"]');

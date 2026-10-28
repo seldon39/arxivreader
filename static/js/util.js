@@ -2,6 +2,11 @@
 
 import { t } from "./i18n.js";
 
+// Texte inséré dans du HTML : les caractères qui ouvrent une balise, une entité ou ferment un attribut
+export const escapeHtml = (text) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+// Texte cherché tel quel dans une expression régulière
+export const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+
 // Attributs « vrai ou faux » : présents seulement si la valeur est vraie (0 ou "" ne les posent pas)
 const BOOLEAN_ATTRIBUTES = new Set(["disabled", "checked", "hidden", "open", "selected", "required", "readonly", "multiple", "autofocus"]);
 
@@ -223,11 +228,9 @@ export function titleTex(title) {
 // Dernière page de liste visitée (bibliothèque ou onglet du feed) : où revient la flèche du lecteur
 export const navigation = { listHash: "#/" };
 
-// Titre d'article en texte simple (onglets, titre de la fenêtre) : formules réduites à leurs symboles
-const SUPERSCRIPTS = { 0: "⁰", 1: "¹", 2: "²", 3: "³", 4: "⁴", 5: "⁵", 6: "⁶", 7: "⁷", 8: "⁸", 9: "⁹", n: "ⁿ" };
 // Glisser-déposer d'un article (bibliothèque, feed, recherche) vers un dossier, aussi d'une fenêtre de
 // l'application à l'autre : son identifiant (type propre à arXivReader) et un lien arXiv ordinaire
-export const PAPER_DRAG = "application/x-arxivreader-paper";
+const PAPER_DRAG = "application/x-arxivreader-paper";
 // articles glissés depuis cette fenêtre (le temps du glissement) ; d'une autre fenêtre : inconnus ici
 export let localDrag = null;
 
@@ -289,6 +292,8 @@ export function journalChip(publishedIn) {
     t("journal.chip", { ref: text.length > 48 ? `${text.slice(0, 46)}…` : text }));
 }
 
+// Titre d'article en texte simple (onglets, titre de la fenêtre) : formules réduites à leurs symboles
+const SUPERSCRIPTS = { 0: "⁰", 1: "¹", 2: "²", 3: "³", 4: "⁴", 5: "⁵", 6: "⁶", 7: "⁷", 8: "⁸", 9: "⁹", n: "ⁿ" };
 export function plainTitle(title) {
   return titleTex(title).split(/(\$[^$]*\$|\\\(.*?\\\))/).map((part, i) => {
     if (!(i % 2)) return part;

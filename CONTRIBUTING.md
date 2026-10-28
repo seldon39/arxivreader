@@ -106,6 +106,9 @@ screens, and on several papers — a fix for one paper's LaTeXML output often br
   ([#8](https://github.com/seldon39/arxivreader/issues/8)). Comments explain *why* (a LaTeXML quirk, a WebKit
   pitfall), not what the line does.
 - **Interface strings** go in `static/js/i18n.js`, in both French and English, with the same placeholders.
+- **Shared helpers**: use them rather than writing the logic again — `escapeHtml`, `escapeRegExp`, `toastError`
+  (`static/js/util.js`); `s2.headers(api_key)` and `s2.GRAPH` for Semantic Scholar; in `app/main.py`,
+  `_failed(error)` (502 when an outside service fails) and `_s2_key()`.
 - **Dependencies**: `requirements.txt` lists what is wanted, `requirements.lock` the exact tested versions. Add
   or update one deliberately, run the tests, then `./arxivreader lock`.
 - **Settings**: a new value of a setting must also be accepted by the server (`SETTING_CHOICES` in
