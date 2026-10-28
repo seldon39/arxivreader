@@ -295,12 +295,13 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   une forme illisible au-dessus (déplacée, commandes relatives, image), sans surface, partielle, ou un foreignObject sans
   largeur, et le texte reste signalé ; formes lues une fois par groupe.
 - Lettre barrée (`\not{\mathcal{D}}`, `\not D`, `\slashed{D}` : opérateur de Dirac) : LaTeXML laisse la lettre suivie de
-  U+0338, barre qui se dessine vers la droite et tombe sur l'indice. Comme TeX (`\not` posé avant la lettre) :
-  `math.slashedLetters` met devant la lettre — devant tout l'indice si elle en est la base (`attachScripts`) — un « / »
-  de largeur nulle décalé de 0,13 em et relevé de 0,1 em ; lettre gardée calligraphique (`restoreCalligraphic`).
-  Réglé sur le PDF de 2610.36240 (barre centrée à 49 % de la lettre, inclinaison ~69°, indice placé comme pour
-  `\mathcal{D}_m`). Dans le TeX des titres, résumés et notes : `\not` devant une lettre ou un groupe → `\arxivslash`
-  (même construction ; relations `\not=`, `\not\in`… intactes ; `\cancel` de l'auteur intact).
+  U+0338 ; dans la police, cette barre (celle de ≠) recouvre le caractère qui la précède, et collée à la lettre ou suivie
+  d'un indice mal rattaché elle tombe sur l'indice. `math.slashedLetters` pose la même barre sur un fantôme de la lettre
+  (`mphantom`), sans largeur, devant la lettre — devant tout l'indice si elle en est la base (`attachScripts`) : glyphe
+  et place de la police, aucune mesure à la main ; indice placé comme pour `\mathcal{D}_m`. Lettre gardée
+  calligraphique (`restoreCalligraphic`). TeX des titres, résumés et notes : `\not` devant une lettre ou un groupe →
+  `\arxivslash` (`\rlap{\phantom{#1}\mathrm{U+0338}}#1`, même rendu ; `\not` de MathJax et `\unicode` posent mal la
+  barre) ; relations `\not=`, `\not\in`… et `\cancel` de l'auteur intacts. Vérifié sur 2610.36240 contre le PDF.
 
 - Couleurs de l'auteur (latexml.css, fin) : `--ltx-fg-color` / `--ltx-bg-color` de LaTeXML, et `mathcolor` /
   `mathbackground` des formules mis dans ces variables par `amsfix.colorVariables` (sinon MathJax ou le navigateur les

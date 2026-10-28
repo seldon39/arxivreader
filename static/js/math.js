@@ -16,9 +16,9 @@ const MACROS = {
   supp: op("supp"), Hom: op("Hom"), End: op("End"), Aut: op("Aut"), Tr: op("Tr"), tr: op("tr"),
   id: op("id"), Id: op("Id"), rank: op("rank"), diag: op("diag"), dist: op("dist"), vol: op("vol"),
   sgn: op("sgn"), Spec: op("Spec"),
-  // lettre barrée comme \not de TeX (glyphe « / » de largeur nulle posé au début de la lettre : même inclinaison, même
-  // place, mesurées sur le PDF de 2610.36240) ; \slashed (notation de Feynman) est inconnue de MathJax
-  arxivslash: ["\\rlap{\\kern0.13em\\raise{0.1em}{/}}#1", 1], slashed: ["\\arxivslash{#1}", 1],
+  // lettre barrée par la barre de négation de la police (celle de ≠, U+0338), posée sur un fantôme de la lettre sans
+  // prendre de place (slashedLetters) ; \slashed (notation de Feynman) est inconnue de MathJax
+  arxivslash: ["\\rlap{\\phantom{#1}\\mathrm{\u0338}}#1", 1], slashed: ["\\arxivslash{#1}", 1],
 };
 // Les mêmes en \def : rétablies quand on quitte un article qui les avait redéfinies (MathJax garde les \newcommand
 // d'une page à l'autre)
@@ -80,24 +80,24 @@ function restoreCalligraphic(math) {
   });
 }
 
-// Lettre suivie de la barre combinante U+0338 (\not{D}, \not{\mathcal{D}}) : la barre se dessine vers la droite (TeX la
-// pose avant la lettre) ; après elle, elle tombe sur l'indice (selon le moteur). Comme TeX : un « / » de largeur nulle au
-// début de la lettre, décalé de 0,13 em et relevé de 0,1 em (mesuré sur le PDF de 2610.36240 : barre raide, centrée
-// sur la lettre, dépassant en haut et en bas) ; même construction que \arxivslash pour le TeX des résumés.
+// Lettre suivie de la barre combinante U+0338 (\not{D}, \not{\mathcal{D}}) : dans la police, la barre recouvre le caractère
+// qui la précède ; collée à la lettre dans un même <mi>, ou suivie d'un indice mal rattaché, elle tombe sur l'indice
+// (selon le moteur). Ici la même barre (glyphe de ≠, comme en TeX) est posée sur un fantôme de la lettre, sans largeur,
+// devant la lettre — devant tout l'indice si elle en est la base (attachScripts), qui reste placé comme sans barre.
 function slashedLetters(math) {
   math.querySelectorAll("mi").forEach((mi) => {
     const text = mi.textContent;
     if (!/^\p{L}\u0338$/u.test(text)) return;
     mi.textContent = text[0];
     const ns = mi.namespaceURI;
+    const phantom = document.createElementNS(ns, "mphantom");
+    phantom.append(mi.cloneNode(true));
     const slash = document.createElementNS(ns, "mi");
     slash.setAttribute("mathvariant", "normal");
-    slash.textContent = "/";
+    slash.textContent = "\u0338";
     const overlay = document.createElementNS(ns, "mpadded");
-    for (const [name, value] of [["width", "0"], ["lspace", "0.13em"], ["voffset", "0.1em"]]) overlay.setAttribute(name, value);
-    overlay.append(slash);
-    // lettre base d'un indice ou d'un exposant (\not{\mathcal{D}}_m, rattaché par attachScripts) : la barre se met devant
-    // le tout, comme en TeX (dans la base, sa profondeur abaisserait l'indice)
+    overlay.setAttribute("width", "0");
+    overlay.append(phantom, slash);
     const parent = mi.parentElement;
     const target = /^(msub|msup|msubsup)$/.test(parent?.localName || "") && parent.firstElementChild === mi ? parent : mi;
     const group = document.createElementNS(ns, "mrow");
