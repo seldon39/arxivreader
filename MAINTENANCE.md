@@ -294,6 +294,11 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   juste avant dans le même repère (titre d'un encadré tcolorbox, `_on_dark_shape`, contraste d'au moins 2,3). Prudent :
   une forme illisible au-dessus (déplacée, commandes relatives, image), sans surface, partielle, ou un foreignObject sans
   largeur, et le texte reste signalé ; formes lues une fois par groupe.
+- Lettre barrée (`\not{\mathcal{D}}`, `\not D`, `\slashed{D}` : opérateur de Dirac) : LaTeXML laisse la lettre suivie de
+  U+0338, que MathJax ou WebKit posent sur l'indice ; `math.slashedLetters` en fait une diagonale (`menclose
+  updiagonalstrike`), lettre gardée calligraphique (`restoreCalligraphic`) ; dans le TeX des titres, résumés et notes,
+  `slashLetters` change `\not` devant une lettre ou un groupe en `\cancel` (relations `\not=`, `\not\in`… intactes).
+
 - Couleurs de l'auteur (latexml.css, fin) : `--ltx-fg-color` / `--ltx-bg-color` de LaTeXML, et `mathcolor` /
   `mathbackground` des formules mis dans ces variables par `amsfix.colorVariables` (sinon MathJax ou le navigateur les
   figent : noir imposé invisible en mode sombre). Telles quelles en mode clair ; en mode sombre, oklch de même teinte,

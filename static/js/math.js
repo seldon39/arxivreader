@@ -16,6 +16,7 @@ const MACROS = {
   supp: op("supp"), Hom: op("Hom"), End: op("End"), Aut: op("Aut"), Tr: op("Tr"), tr: op("tr"),
   id: op("id"), Id: op("Id"), rank: op("rank"), diag: op("diag"), dist: op("dist"), vol: op("vol"),
   sgn: op("sgn"), Spec: op("Spec"),
+  slashed: ["\\cancel{#1}", 1],  // notation de Feynman (paquet slashed), inconnue de MathJax
 };
 // Les mêmes en \def : rétablies quand on quitte un article qui les avait redéfinies (MathJax garde les \newcommand
 // d'une page à l'autre)
@@ -67,10 +68,27 @@ function scriptToLatin(text) {
 
 function restoreCalligraphic(math) {
   math.querySelectorAll("mi.ltx_font_mathcaligraphic").forEach((mi) => {
-    const latin = scriptToLatin(mi.textContent.trim());
+    const text = mi.textContent.trim();
+    // lettre barrée par \not (\not{\mathcal{D}} : opérateur de Dirac) : LaTeXML laisse la lettre latine suivie de la
+    // barre combinante U+0338 ; elle reste calligraphique (pas le script de mathvariant="script")
+    const latin = scriptToLatin(text) || (/^[A-Z]\u0338?$/.test(text) ? text : null);
     if (!latin) return;
     mi.textContent = latin;
     mi.setAttribute("mathvariant", "-tex-calligraphic");
+  });
+}
+
+// Lettre suivie de la barre combinante U+0338 (\not{D}, \not{\mathcal{D}}) : MathJax pose une petite barre décalée ;
+// TeX trace une longue oblique à travers la lettre, rendue ici par une diagonale (menclose)
+function slashedLetters(math) {
+  math.querySelectorAll("mi").forEach((mi) => {
+    const text = mi.textContent;
+    if (!/^\p{L}\u0338$/u.test(text)) return;
+    mi.textContent = text[0];
+    const strike = document.createElementNS(mi.namespaceURI, "menclose");
+    strike.setAttribute("notation", "updiagonalstrike");
+    mi.replaceWith(strike);
+    strike.append(mi);
   });
 }
 
@@ -93,6 +111,7 @@ function relationSpacing(math) {
 
 function convert(MathJax, math) {
   restoreCalligraphic(math);
+  slashedLetters(math);
   relationSpacing(math);
   const display = math.getAttribute("display") === "block";
   const node = MathJax.mathml2chtml(math.outerHTML, { display });
@@ -136,10 +155,24 @@ export function typesetFragment(root) {
 // Les demandes passent une à une (MathJax garde un état partagé), les éléments déjà retirés de la page
 // sont ignorés, et MathJax oublie ensuite les formules traitées (sinon sa liste grossit sans fin).
 let queue = Promise.resolve();
+
+// \not devant une lettre ou un groupe (\not{\mathcal{D}}, \not D, \not\partial : opérateur de Dirac barré) : MathJax pose
+// la barre après la lettre, sur l'indice ; une diagonale à travers la lettre (\cancel), comme dans le corps de
+// l'article (slashedLetters). Les négations de relation (\not=, \not\in, \not\subset…) restent telles quelles.
+const NOT_LETTER = /\\not\s*(?=\{|\\math(?:cal|scr|bb|rm|bf|frak|it|sf)\s*\{|\\(?:partial|nabla)(?![A-Za-z])|[A-Za-z](?![A-Za-z]))/g;
+function slashLetters(element) {
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (!node.data.includes("\\not")) continue;
+    node.data = node.data.replace(NOT_LETTER, "\\cancel ").replace(/\\cancel (\\math[a-z]+\s*\{[^{}]*\}|\\[a-z]+|[A-Za-z])/g, "\\cancel{$1}");
+  }
+}
+
 export function typesetTex(elements) {
   queue = queue.then(async () => {
     const live = elements.filter((element) => element?.isConnected);
     if (!live.length) return;
+    live.forEach(slashLetters);
     const MathJax = await loadMathJax();
     await MathJax.typesetPromise(live);
     MathJax.typesetClear?.(live);
