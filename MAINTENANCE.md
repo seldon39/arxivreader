@@ -295,13 +295,14 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   une forme illisible au-dessus (déplacée, commandes relatives, image), sans surface, partielle, ou un foreignObject sans
   largeur, et le texte reste signalé ; formes lues une fois par groupe.
 - Lettre barrée (`\not{\mathcal{D}}`, `\not D`, `\slashed{D}` : opérateur de Dirac) : LaTeXML laisse la lettre suivie de
-  U+0338 ; dans la police, cette barre (celle de ≠) recouvre le caractère qui la précède, et collée à la lettre ou suivie
-  d'un indice mal rattaché elle tombe sur l'indice. `math.slashedLetters` pose la même barre sur un fantôme de la lettre
-  (`mphantom`), sans largeur, devant la lettre — devant tout l'indice si elle en est la base (`attachScripts`) : glyphe
-  et place de la police, aucune mesure à la main ; indice placé comme pour `\mathcal{D}_m`. Lettre gardée
-  calligraphique (`restoreCalligraphic`). TeX des titres, résumés et notes : `\not` devant une lettre ou un groupe →
-  `\arxivslash` (`\rlap{\phantom{#1}\mathrm{U+0338}}#1`, même rendu ; `\not` de MathJax et `\unicode` posent mal la
-  barre) ; relations `\not=`, `\not\in`… et `\cancel` de l'auteur intacts. Vérifié sur 2610.36240 contre le PDF.
+  U+0338, barre combinante que **Chrome dessine sur la lettre et WebKit après elle** (sur l'indice). `math.slashedLetters`
+  la remplace par la même barre non combinante de la police, ⧸ U+29F8 (barre de `\not` et de ≠ : hauteur 0,716 em,
+  profondeur 0,215 em, boîte de la largeur d'un « = »), sans largeur, au début de la lettre — comme TeX place `\not` ;
+  devant tout l'indice si la lettre en est la base (`attachScripts`), qui reste placé comme pour `\mathcal{D}_m`.
+  Lettre gardée calligraphique (`restoreCalligraphic`). TeX des titres, résumés et notes : `\not` devant une lettre
+  ou un groupe → `\arxivslash` (`\rlap{\mathrm{⧸}}#1`) ; `\not` de MathJax pose la barre sur l'indice, `\unicode`
+  la prend dans une police de secours ; relations `\not=`, `\not\in`… et `\cancel` de l'auteur intacts. Vérifié
+  sur 2610.36240 **dans WebKit (copie de l'app, ARXIVREADER_EVAL + WINDOWSHOT) et dans Chrome**.
 
 - Couleurs de l'auteur (latexml.css, fin) : `--ltx-fg-color` / `--ltx-bg-color` de LaTeXML, et `mathcolor` /
   `mathbackground` des formules mis dans ces variables par `amsfix.colorVariables` (sinon MathJax ou le navigateur les

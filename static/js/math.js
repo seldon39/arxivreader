@@ -16,9 +16,9 @@ const MACROS = {
   supp: op("supp"), Hom: op("Hom"), End: op("End"), Aut: op("Aut"), Tr: op("Tr"), tr: op("tr"),
   id: op("id"), Id: op("Id"), rank: op("rank"), diag: op("diag"), dist: op("dist"), vol: op("vol"),
   sgn: op("sgn"), Spec: op("Spec"),
-  // lettre barrée par la barre de négation de la police (celle de ≠, U+0338), posée sur un fantôme de la lettre sans
-  // prendre de place (slashedLetters) ; \slashed (notation de Feynman) est inconnue de MathJax
-  arxivslash: ["\\rlap{\\phantom{#1}\\mathrm{\u0338}}#1", 1], slashed: ["\\arxivslash{#1}", 1],
+  // lettre barrée par la barre de \not et de ≠ (⧸, U+29F8 : même glyphe que U+0338 mais non combinant), sans largeur,
+  // au début de la lettre comme en TeX (slashedLetters) ; \slashed (notation de Feynman) est inconnue de MathJax
+  arxivslash: ["\\rlap{\\mathrm{\u29F8}}#1", 1], slashed: ["\\arxivslash{#1}", 1],
 };
 // Les mêmes en \def : rétablies quand on quitte un article qui les avait redéfinies (MathJax garde les \newcommand
 // d'une page à l'autre)
@@ -80,24 +80,23 @@ function restoreCalligraphic(math) {
   });
 }
 
-// Lettre suivie de la barre combinante U+0338 (\not{D}, \not{\mathcal{D}}) : dans la police, la barre recouvre le caractère
-// qui la précède ; collée à la lettre dans un même <mi>, ou suivie d'un indice mal rattaché, elle tombe sur l'indice
-// (selon le moteur). Ici la même barre (glyphe de ≠, comme en TeX) est posée sur un fantôme de la lettre, sans largeur,
-// devant la lettre — devant tout l'indice si elle en est la base (attachScripts), qui reste placé comme sans barre.
+// Lettre suivie de la barre combinante U+0338 (\not{D}, \not{\mathcal{D}}) : ce caractère combinant est placé
+// différemment selon le moteur (Chrome le dessine sur la lettre, WebKit après elle, sur l'indice). On le remplace par
+// la même barre non combinante de la police (⧸, U+29F8 : celle de \not et de ≠, hauteur 0,716 em, profondeur 0,215 em),
+// sans largeur, au début de la lettre — exactement comme TeX place \not ; devant tout l'indice si la lettre en est la
+// base (attachScripts), qui reste placé comme sans barre.
 function slashedLetters(math) {
   math.querySelectorAll("mi").forEach((mi) => {
     const text = mi.textContent;
     if (!/^\p{L}\u0338$/u.test(text)) return;
     mi.textContent = text[0];
     const ns = mi.namespaceURI;
-    const phantom = document.createElementNS(ns, "mphantom");
-    phantom.append(mi.cloneNode(true));
     const slash = document.createElementNS(ns, "mi");
     slash.setAttribute("mathvariant", "normal");
-    slash.textContent = "\u0338";
+    slash.textContent = "\u29F8";
     const overlay = document.createElementNS(ns, "mpadded");
     overlay.setAttribute("width", "0");
-    overlay.append(phantom, slash);
+    overlay.append(slash);
     const parent = mi.parentElement;
     const target = /^(msub|msup|msubsup)$/.test(parent?.localName || "") && parent.firstElementChild === mi ? parent : mi;
     const group = document.createElementNS(ns, "mrow");
