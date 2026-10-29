@@ -254,12 +254,14 @@ a.button.primary { text-decoration: none; }
 .pane-resizer:hover::after, .pane-resizer:focus-visible::after { background: var(--accent); }
 .pane-resizer:focus-visible { outline: none; }
 .reader[data-panel="closed"] .panel-resizer, .reader[data-toc="closed"] .toc-resizer { display: none; }
-/* Pendant le glissement : le volet passe par-dessus l'article, rien d'autre ne réagit */
-.reader.resizing { cursor: col-resize; user-select: none; -webkit-user-select: none; }
-.reader.resizing .paper-scroll { pointer-events: none; }
+/* Pendant le glissement : le volet passe par-dessus l'article, rien d'autre ne réagit. Curseur et clics : un voile sur
+   la fenêtre, pas des propriétés héritées posées sur .reader (tout l'article serait recalculé : ~400 ms au départ) */
+.resize-shield { position: fixed; inset: 0; z-index: 1000; cursor: col-resize; }
 .reader.resizing .toc, .reader.resizing .panel { z-index: 4; box-shadow: var(--shadow); }
 .reader.resizing .pane-resizer::after { background: var(--accent); }
-.reader.resizing .panel > .ai-body { align-self: flex-end; } /* fil de l'IA à sa largeur de départ, collé au bord droit (reader.paneResizer) */
+/* Onglet IA, pendant le glissement : seules les réponses visibles sont recomposées ; les autres gardent leur dernière
+   hauteur (contain-intrinsic-size: auto), le fil ne saute pas (reader.paneResizer) */
+.reader.resizing .ai-answer { content-visibility: auto; }
 .reader[data-toc="closed"] .toc, .reader[data-panel="closed"] .panel { visibility: hidden; border: 0; padding: 0; }
 /* Recherche dans l'article (⌘F) : barre collée sous la barre d'outils, à droite */
 /* Renvois vers un article de la bibliothèque */
@@ -890,7 +892,7 @@ mark.hl.hl-display > mjx-container[display="true"] { margin: .2em 0 !important; 
 .icon-button.small svg { width: 16px; height: 16px; }
 .ai-quote { border-left-color: var(--border-strong); max-height: 9em; overflow: auto; }
 .ai-asked { margin: 0; font-size: 14.5px; font-weight: 500; white-space: pre-wrap; }
-.ai-answer { font-size: var(--ai-font-size, 15px); overflow-wrap: anywhere; min-width: 0; }
+.ai-answer { font-size: var(--ai-font-size, 15px); overflow-wrap: anywhere; min-width: 0; contain-intrinsic-size: auto 500px; }
 .ai-text-size { display: flex; align-items: center; gap: 2px; margin: 2px 0 -4px; }
 .ai-text-size .spacer { flex: 1; }
 .ai-text-size .zoom-reset { min-width: 48px; height: 28px; font-size: 12px; }

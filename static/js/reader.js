@@ -28,7 +28,6 @@ const PICKABLE = [".ltx_para", ".ltx_theorem", ".ltx_proof", ".ltx_equation", ".
   .map((c) => `${c}[id]`).join(", ");
 const MEDIUM = 900;
 const AI_PANEL_W = 420; // largeur par défaut du panneau dans l'onglet IA (réponses plus lisibles), sans largeur choisie
-const AI_REFIT = 100; // ms entre deux mises en page du fil de l'IA pendant qu'on règle la largeur du panneau (paneResizer)
 
 // `at` : énoncé à afficher à l'ouverture (« #/paper/<id>/<énoncé> », renvoi depuis un autre article)
 export async function renderReader(view, paperId, at, isCurrent = () => true) {
@@ -547,8 +546,8 @@ class Reader {
   // Pendant le glissement, la grille ne bouge pas : le volet s'étend par-dessus l'article (marge négative),
   // ce qui ne recompose que le volet (moins d'une milliseconde, contre plus de 100 ms pour l'article
   // entier). L'article n'est recomposé qu'une fois, au relâchement, à la même position de lecture.
-  // Onglet IA : le fil des réponses (long, plein de formules : ~50 ms par mise en page) suit la poignée, mais
-  // n'est recomposé qu'au plus toutes les 200 ms (et quand elle s'arrête) : la poignée reste fluide.
+  // Onglet IA : le fil des réponses suit la poignée ; seules les réponses visibles sont recomposées (CSS
+  // `.reader.resizing .ai-answer`, les autres gardent leur hauteur), sinon ~50 ms par image.
   paneResizer(which) {
     const isPanel = which === "panel";
     const pane = isPanel ? this.panel : this.toc;
@@ -567,12 +566,10 @@ class Reader {
       const [min, max] = limits();
       return Math.round(Math.min(max, Math.max(min, width)));
     };
-    const frozen = () => (isPanel && this.panel.dataset.tab === "ai" ? pane.querySelector(".ai-body") : null);
     const commit = (width) => {
       this.keepReadingPosition(() => {
         pane.style[margin] = "";
         handle.style[margin] = "";
-        frozen()?.style.removeProperty("width");
         if (isPanel) this.applyPanelWidth(width);
         else if (width === null) this.root.style.removeProperty(variable);
         else this.root.style.setProperty(variable, `${width}px`);
@@ -592,47 +589,35 @@ class Reader {
       let width = null; // rien n'est appliqué pour un simple clic
       let x = startX;
       let frame = 0;
-      let body = null; // fil de l'IA, à largeur fixée pendant le glissement
-      let bodyStart = 0;
-      let fitted = 0;
-      let catchUp = 0;
-      const fitBody = () => {
-        clearTimeout(catchUp);
-        fitted = performance.now();
-        body.style.width = `${bodyStart + width - start}px`;
-      };
+      // dès l'appui (pas au premier mouvement) : la mise en place (~0,2 s, réponses de l'IA hors écran mises de côté)
+      // a lieu avant que rien ne bouge ; voile sur la fenêtre : curseur, et rien d'autre ne réagit
+      this.root.classList.add("resizing");
+      const shield = document.body.appendChild(h("div", { class: "resize-shield" }));
       const draw = () => {
         frame = 0;
         width = clamp(isPanel ? box.right - x : x - box.left);
         const shift = start - width; // négatif : le volet s'étend par-dessus l'article
         pane.style[margin] = `${shift}px`;
         handle.style[margin] = `${shift - 5}px`;
-        if (!body) return;
-        clearTimeout(catchUp);
-        if (performance.now() - fitted >= AI_REFIT) fitBody();
-        else catchUp = setTimeout(fitBody, AI_REFIT);
       };
       const move = (e) => {
         x = e.clientX;
         if (width === null && Math.abs(x - startX) <= 2) return;
-        if (width === null) {
-          this.root.classList.add("resizing");
-          body = frozen();
-          if (body) body.style.width = `${(bodyStart = body.offsetWidth)}px`;
-        }
         if (!frame) frame = requestAnimationFrame(draw); // au plus un calcul par image
       };
       const up = () => {
-        handle.removeEventListener("pointermove", move);
-        handle.removeEventListener("pointerup", up);
-        handle.removeEventListener("pointercancel", up);
+        removeEventListener("pointermove", move);
+        removeEventListener("pointerup", up);
+        removeEventListener("pointercancel", up);
         if (frame) { cancelAnimationFrame(frame); draw(); }
-        clearTimeout(catchUp);
+        shield.remove();
         if (width !== null) commit(width);
+        else this.root.classList.remove("resizing"); // simple clic
       };
-      handle.addEventListener("pointermove", move);
-      handle.addEventListener("pointerup", up);
-      handle.addEventListener("pointercancel", up);
+      // sur la fenêtre : reçus même si la capture du pointeur échoue (le voile serait sinon la cible, sans fin du glissement)
+      addEventListener("pointermove", move);
+      addEventListener("pointerup", up);
+      addEventListener("pointercancel", up);
     });
     handle.addEventListener("keydown", (event) => {
       const step = event.shiftKey ? 80 : 24;

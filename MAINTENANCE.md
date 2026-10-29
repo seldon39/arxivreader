@@ -324,8 +324,13 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
 - Fluidité de l'onglet IA (mesurée le 29/10/2026 dans WebKit, 21 réponses longues, 64 000 px de fil) : le fil est en
   `contain: strict` (défilement 23 → 17 ms par image) ; la variable `--ai-scrollbar` n'est posée que si elle change
   (posée à chaque défilement, elle refaisait le style de tout le fil) ; pendant le glissement de la poignée du panneau,
-  le fil suit la poignée mais n'est recomposé qu'au plus toutes les 100 ms (`AI_REFIT`, `paneResizer` : 54 → 17 ms
-  par image en médiane). Figé jusqu'au relâchement (1.11.12), il laissait un grand vide en élargissant : écarté.
+  le fil suit la poignée à chaque image, mais seules les réponses visibles sont recomposées : `.reader.resizing
+  .ai-answer { content-visibility: auto }`, les autres gardent leur dernière hauteur (`contain-intrinsic-size: auto`),
+  le fil ne saute pas (54 → 16 ms par image, écart au bord du panneau 0 px). Écartés : fil figé jusqu'au relâchement
+  (1.11.12, grand vide en élargissant), recomposé toutes les 100–200 ms (le vide restait visible un instant). La mise
+  en place a lieu dès l'appui ; curseur et clics bloqués par un voile (`.resize-shield`), pas par des propriétés
+  héritées posées sur `.reader` (tout l'article recalculé : ~400 ms au départ du glissement) ; mouvements écoutés sur
+  la fenêtre (le voile ne doit jamais rester).
   Premier passage sur l'onglet IA (1,6 s → 0,46 s) : MathJax en `adaptiveCSS: false` (`math.js`), sinon il ajoute des
   règles à sa feuille de style pour chaque caractère nouveau d'une réponse, et WebKit recalcule tout l'article (~1 s) ;
   et l'onglet IA est marqué sur le panneau (`data-tab`), pas sur la racine du lecteur (sinon ~180 ms de recalcul de
