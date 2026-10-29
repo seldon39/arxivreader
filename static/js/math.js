@@ -40,7 +40,9 @@ function loadMathJax() {
         autoload: { html: [] } },
       startup: { typeset: false, ready: () => { window.MathJax.startup.defaultReady(); resolve(window.MathJax); } },
       options: { enableMenu: false, menuOptions: { settings: { assistiveMml: false } } },
-      chtml: { fontURL: `${BASE}/fonts/woff-v2`, scale: 1, matchFontHeight: false, mtextInheritFont: true },
+      // adaptiveCSS: false : les règles de tous les caractères posées au départ, d'un coup. Sinon MathJax en ajoute à
+      // chaque caractère nouveau (première réponse de l'IA affichée…) et WebKit recalcule tout l'article (~1 s)
+      chtml: { fontURL: `${BASE}/fonts/woff-v2`, scale: 1, matchFontHeight: false, mtextInheritFont: true, adaptiveCSS: false },
     };
     const script = document.createElement("script");
     script.src = `${BASE}/tex-mml-chtml.js`;

@@ -324,8 +324,13 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
 - Fluidité de l'onglet IA (mesurée le 29/10/2026 dans WebKit, 21 réponses longues, 64 000 px de fil) : le fil est en
   `contain: strict` (défilement 23 → 17 ms par image) ; la variable `--ai-scrollbar` n'est posée que si elle change
   (posée à chaque défilement, elle refaisait le style de tout le fil) ; pendant le glissement de la poignée du panneau,
-  le fil suit la poignée mais n'est recomposé qu'au plus toutes les 200 ms (`AI_REFIT`, `paneResizer` : 54 → 19 ms
-  par image en médiane). Figé jusqu'au relâchement (1.11.12), il laissait un grand vide en élargissant : écarté. Écarté :
+  le fil suit la poignée mais n'est recomposé qu'au plus toutes les 100 ms (`AI_REFIT`, `paneResizer` : 54 → 17 ms
+  par image en médiane). Figé jusqu'au relâchement (1.11.12), il laissait un grand vide en élargissant : écarté.
+  Premier passage sur l'onglet IA (1,6 s → 0,46 s) : MathJax en `adaptiveCSS: false` (`math.js`), sinon il ajoute des
+  règles à sa feuille de style pour chaque caractère nouveau d'une réponse, et WebKit recalcule tout l'article (~1 s) ;
+  et l'onglet IA est marqué sur le panneau (`data-tab`), pas sur la racine du lecteur (sinon ~180 ms de recalcul de
+  l'article à chaque passage) ; sa largeur par défaut (`AI_PANEL_W`) n'est posée que sans largeur choisie
+  (`applyPanelWidth`). Écarté :
   `content-visibility: auto` sur les réponses (aussi rapide, mais hauteurs estimées : la position gardée de chaque
   sous-onglet tomberait ailleurs, et WebKit ne compense pas les sauts en remontant). Le relâchement coûte encore
   ~250 ms : recomposition de l'article entier à la nouvelle largeur.

@@ -27,7 +27,8 @@ const WIDE = 1280;
 const PICKABLE = [".ltx_para", ".ltx_theorem", ".ltx_proof", ".ltx_equation", ".ltx_equationgroup", ".ltx_figure", ".ltx_table"]
   .map((c) => `${c}[id]`).join(", ");
 const MEDIUM = 900;
-const AI_REFIT = 200; // ms entre deux mises en page du fil de l'IA pendant qu'on règle la largeur du panneau (paneResizer)
+const AI_PANEL_W = 420; // largeur par défaut du panneau dans l'onglet IA (réponses plus lisibles), sans largeur choisie
+const AI_REFIT = 100; // ms entre deux mises en page du fil de l'IA pendant qu'on règle la largeur du panneau (paneResizer)
 
 // `at` : énoncé à afficher à l'ouverture (« #/paper/<id>/<énoncé> », renvoi depuis un autre article)
 export async function renderReader(view, paperId, at, isCurrent = () => true) {
@@ -534,7 +535,7 @@ class Reader {
 
     this.root.append(toolbar, this.toc, this.paneResizer("toc"), this.scroller, this.panel, this.paneResizer("panel"),
       h("div", { class: "scrim", onclick: () => this.closeDrawers() }));
-    if (settings.panelWidth) this.root.style.setProperty("--panel-w", `${settings.panelWidth}px`);
+    this.applyPanelWidth();
     if (settings.tocWidth) this.root.style.setProperty("--toc-w", `${settings.tocWidth}px`);
     // Police « comme l'article » : celle du paquet de police de la source TeX
     if (settings.paperFont === "auto") this.root.dataset.paperFont = this.structure.tex?.font || "lm";
@@ -566,13 +567,14 @@ class Reader {
       const [min, max] = limits();
       return Math.round(Math.min(max, Math.max(min, width)));
     };
-    const frozen = () => (isPanel && this.root.dataset.tab === "ai" ? pane.querySelector(".ai-body") : null);
+    const frozen = () => (isPanel && this.panel.dataset.tab === "ai" ? pane.querySelector(".ai-body") : null);
     const commit = (width) => {
       this.keepReadingPosition(() => {
         pane.style[margin] = "";
         handle.style[margin] = "";
         frozen()?.style.removeProperty("width");
-        if (width === null) this.root.style.removeProperty(variable);
+        if (isPanel) this.applyPanelWidth(width);
+        else if (width === null) this.root.style.removeProperty(variable);
         else this.root.style.setProperty(variable, `${width}px`);
         this.root.classList.remove("resizing");
       });
@@ -1505,12 +1507,23 @@ class Reader {
     if (graph) this.centerGraph(graph);
   }
 
-  // Panneau élargi pour l'onglet IA, sans perdre l'endroit où l'on lit
+  // Onglet IA : marqué sur le panneau, pas sur la racine (tout l'article serait recalculé : ~180 ms à chaque passage) ;
+  // panneau plus large si l'on n'a pas choisi de largeur, sans perdre l'endroit où l'on lit
   setPanelWide(wide) {
-    if ((this.root.dataset.tab === "ai") === wide) return;
-    const apply = () => { if (wide) this.root.dataset.tab = "ai"; else delete this.root.dataset.tab; };
-    if (this.figures && this.root.dataset.panel === "open" && innerWidth >= MEDIUM) this.keepReadingPosition(apply);
+    if ((this.panel.dataset.tab === "ai") === wide) return;
+    const apply = () => {
+      if (wide) this.panel.dataset.tab = "ai"; else delete this.panel.dataset.tab;
+      this.applyPanelWidth();
+    };
+    if (!settings.panelWidth && this.figures && this.root.dataset.panel === "open" && innerWidth >= MEDIUM) this.keepReadingPosition(apply);
     else apply();
+  }
+
+  // Largeur du panneau : celle choisie à la poignée (`width`, sinon celle des réglages), sinon celle par défaut
+  applyPanelWidth(width = settings.panelWidth) {
+    const value = width || (this.panel.dataset.tab === "ai" ? AI_PANEL_W : null);
+    if (value) this.root.style.setProperty("--panel-w", `${value}px`);
+    else this.root.style.removeProperty("--panel-w");
   }
 
   nodeItem(node) {

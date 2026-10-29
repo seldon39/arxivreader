@@ -220,7 +220,6 @@ a.button.primary { text-decoration: none; }
 }
 .reader[data-toc="closed"] { --toc-col: 0px; }
 .reader[data-panel="closed"] { --panel-col: 0px; }
-.reader[data-tab="ai"] { --panel-w: 420px; } /* réponses de Claude : panneau plus large */
 .reader-toolbar {
   grid-area: bar; position: sticky; top: var(--topbar-h); z-index: 15; height: var(--toolbar-h); display: flex; align-items: center; gap: 4px; padding: 0 8px;
   background: var(--surface); border-bottom: 1px solid var(--border); min-width: 0;
@@ -909,7 +908,7 @@ mark.hl.hl-display > mjx-container[display="true"] { margin: .2em 0 !important; 
 .ai-card-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .ai-card-actions .button { height: 30px; padding: 0 10px; font-size: 13px; gap: 6px; }
 /* ---------- Onglet IA en conversation : sous-onglets en haut, fil qui défile, saisie en bas ---------- */
-.reader[data-tab="ai"] .panel { overflow: hidden; }
+.panel[data-tab="ai"] { overflow: hidden; }
 .panel-body.ai-body { display: flex; flex-direction: column; padding: 0; min-height: 0; overflow: hidden; }
 .ai-body > .notice { margin: 8px 10px 0; }
 .ai-topbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 7px 8px 7px 10px; border-bottom: 1px solid var(--border); flex: none; }
