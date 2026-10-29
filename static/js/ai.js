@@ -149,7 +149,7 @@ export class Assistant {
     this.onChange();
   }
 
-  // Autres assistants prêts : la relecture croisée n'est proposée qu'avec eux
+  // Autres assistants prêts : choix de l'assistant sous la saisie, relecture croisée
   async loadPartners() {
     const provider = providerOf(currentModel());
     if (this.partnersFor === provider) return;
@@ -439,7 +439,7 @@ export class Assistant {
     const status = this.status;
     this.live = null;
     const exchanges = this.exchanges.filter((e) => this.viewOf(e) === view);
-    if (view === "review") this.loadPartners();
+    this.loadPartners();
     const notice = status && !status.loggedIn ? setupNotice(status, () => { this.status = null; this.onChange(); }) : null;
 
     const content = h("div", { class: "ai-thread-content" });
@@ -546,7 +546,7 @@ export class Assistant {
           t(cross ? "ai.launch.cross" : `ai.launch.${task}`));
       // « Refaire » une relecture : retour au champ des questions sans rien lancer
       const cancel = relaunch && h("button", { class: "button", type: "button", onclick: () => { this.relaunch = false; this.onChange(); } }, t("ai.cancelRedo"));
-      const picker = this.modelPicker() || h("span", { class: "muted small" }, modelLabel(currentModel()));
+      const picker = this.modelPicker(cross?.provider) || h("span", { class: "muted small" }, modelLabel(currentModel()));
       return h("div", { class: "ai-bottom" }, view === "review" && this.partners?.length ? this.reviewMode(cross) : null,
         cancel ? h("div", { class: "ai-launch-row" }, launch, cancel) : launch,
         cross ? this.reviewers(picker, cross) : h("div", { class: "ai-foot" }, picker), footer);
@@ -569,7 +569,7 @@ export class Assistant {
     this.partners.map((p) => h("option", { value: p.provider, selected: p === partner }, authorName(p.provider))));
     const [model, effort] = modelControls(partner, () => this.onChange());
     return h("div", { class: "ai-reviewers" },
-      h("span", { class: "ai-reviewer" }, t("ai.reviewer1", { name: authorName(providerOf(currentModel())) })), h("div", {}, picker),
+      h("span", { class: "ai-reviewer" }, t("ai.reviewer1")), h("div", {}, picker),
       h("span", { class: "ai-reviewer" }, t("ai.reviewer2")), h("div", {}, choose, model, effort));
   }
 
@@ -665,13 +665,36 @@ export class Assistant {
       button(icons.minus, "ai.textSmaller", -1), value, button(icons.plus, "ai.textLarger", 1));
   }
 
-  // Choix du modèle et du niveau de réflexion (liste du compte connecté), sous la saisie
-  modelPicker() {
+  // Choix de l'assistant (ceux qui sont prêts ; un seul : affiché quand même, on voit qui répond), de son modèle et
+  // du niveau de réflexion, sous la saisie ; communs aux sous-onglets et aux réglages. `exclude` : assistant du second
+  // relecteur (relecture croisée)
+  modelPicker(exclude = null) {
     const [model, effort] = modelControls(this.status, () => {
       if (this.status) this.status.model = currentModel();
       this.onChange();
     });
-    return model ? h("span", { class: "ai-model-picker" }, model, effort) : null;
+    const current = providerOf(currentModel());
+    const options = [...new Set([current, ...(this.partners || []).map((p) => p.provider)])].filter((p) => p !== exclude);
+    const assistant = options.length > 0 && h("select", { class: "ai-model", "aria-label": t("ai.assistant"), title: t("ai.assistant"),
+      onchange: (event) => this.switchAssistant(event.target.value) },
+    options.map((p) => h("option", { value: p, selected: p === current }, authorName(p))));
+    return model || assistant ? h("span", { class: "ai-model-picker" }, assistant, model, effort) : null;
+  }
+
+  // Autre assistant choisi (même réglage que dans les réglages) : son état est déjà connu (assistants prêts), et
+  // l'ancien rejoint la liste des autres, sans nouvelle vérification. État posé avant le réglage : l'enregistrer
+  // redessine le panneau aussitôt (reader, onSettingsChange)
+  switchAssistant(provider) {
+    const previous = this.status;
+    const next = this.partners?.find((p) => p.provider === provider);
+    this.partners = [...(this.partners || []).filter((p) => p !== next), ...(previous?.loggedIn ? [previous] : [])];
+    this.partnersFor = provider;
+    partnersCache = { provider, at: Date.now(), list: Promise.resolve(this.partners) };
+    if (next) {
+      this.status = next;
+      this.statusFor = modelOf(provider);
+    }
+    saveSettings({ aiProvider: provider });
   }
 
   // ---------- Échanges ----------

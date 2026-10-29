@@ -340,6 +340,11 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   sous-onglet tomberait ailleurs, et WebKit ne compense pas les sauts en remontant). Le relâchement coûte encore
   ~250 ms : recomposition de l'article entier à la nouvelle largeur.
 
+- Choix de l'assistant dans l'onglet IA (`Assistant.modelPicker`) : même réglage `aiProvider` que les réglages ; la
+  liste vient de l'état de l'assistant choisi et de `/api/ai/partners` (les autres, prêts). Changer d'assistant
+  (`switchAssistant`) reprend leurs états déjà connus, posés avant d'enregistrer le réglage : l'enregistrement
+  redessine le panneau aussitôt (`reader`, `onSettingsChange`), qui relancerait sinon les vérifications.
+
 - Relecture croisée (`ai.cross_review`, appelée par la route de l'IA quand la demande porte `second`) : relectures
   des deux assistants en parallèle, comparaison par le second, synthèse par le premier ; toutes les demandes passent
   par `build_prompt` (même texte, sans le texte invisible ; limite d'article propre à chaque assistant). Les

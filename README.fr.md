@@ -416,7 +416,7 @@ il suffit de la fermer et d'aller dans le feed.
   conversation dans l'application ou le site de l'assistant, avec les références de l'article, et copie son texte
   complet dans le presse-papiers.
 - **Relecture croisée**, quand un deuxième assistant est prêt (Claude, Codex, Gemini ou un modèle local) :
-  *Relecture simple* | *Relecture croisée* au-dessus du bouton de l'onglet *Relecture*, puis le modèle et le niveau
+  *Relecture simple* | *Relecture croisée* au-dessus du bouton de l'onglet *Relecture*, puis l'assistant, le modèle et le niveau
   de réflexion de chaque relecteur. Les deux assistants relisent l'article chacun de leur côté, le second compare
   les deux relectures, le premier répond à cette comparaison et rédige la synthèse : chaque point porte l'étiquette
   *Les deux*, le nom de l'assistant qui l'a seul relevé, *Désaccord* (les deux positions, et ce qui trancherait) ou
@@ -424,10 +424,10 @@ il suffit de la fermer et d'aller dans le feed.
   assistants, sans son texte invisible. Une relecture faite, *Refaire* rouvre ce même choix (simple ou croisée,
   relecteurs), avec *Annuler* pour revenir aux questions.
 - Réponses en direct, formules rendues, renvois (« Lemma 2.3 », « (2.11) ») cliquables ; *Ajouter à mes
-  notes* les copie dans la note de l'énoncé ou de la preuve (sinon dans la fiche de lecture). Modèle
-  (Opus, Fable, Sonnet, Haiku… selon votre abonnement) et niveau de réflexion au choix, dans l'onglet IA ou
-  les réglages ; de même pour Codex et Gemini, d'après la liste de votre compte ou de votre clé. Les réponses
-  sont conservées avec l'article.
+  notes* les copie dans la note de l'énoncé ou de la preuve (sinon dans la fiche de lecture). Assistant (parmi
+  ceux connectés), modèle (Opus, Fable, Sonnet, Haiku… selon votre abonnement) et niveau de réflexion au choix sous
+  le champ de chaque sous-onglet de l'IA, un même choix partagé avec les réglages ; de même pour Codex et Gemini,
+  d'après la liste de votre compte ou de votre clé. Les réponses sont conservées avec l'article.
 - **Annotations proposées par Claude** : bouton *Annoter* sur un énoncé, ou toute demande du type « surligne… /
   annote… ». Claude joint une liste d'annotations (passages cités mot pour mot, couleur, note ; notes sur un
   énoncé ou une preuve) : chaque passage est retrouvé dans l'article, vous cochez ce que vous gardez,

@@ -396,7 +396,7 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   bottom right go to the start or the end of the thread; each tab reopens where you left it. *⋯* under an answer:
   copy the exchange, or delete it (question and answer; a summary or review goes with the questions about it).
 - **Cross-review**, when a second assistant is ready (Claude, Codex, Gemini or a local model): *Single review* |
-  *Cross-review* above the button of the *Review* tab, then each reviewer's model and reasoning level. Both
+  *Cross-review* above the button of the *Review* tab, then each reviewer's assistant, model and reasoning level. Both
   assistants review the paper on their own, the second compares the two reviews, the first answers that comparison
   and writes the synthesis: each point is tagged *Both*, with the name of the assistant that raised it alone,
   *Disagreement* (both positions, and what would settle it) or *Withdrawn*. The earlier steps stay folded above it.
@@ -406,9 +406,9 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   assistant's app or website, with the paper's reference, and copies its full text to the clipboard.
 - Answers stream live, formulas are rendered, references ("Lemma 2.3", "(2.11)") are clickable;
   *Add to my notes* copies them into the note of the statement or proof (otherwise into the reading sheet).
-  Model (Opus, Fable, Sonnet, Haiku… depending on your subscription) and reasoning level chosen in the AI tab
-  or the settings; likewise for Codex and Gemini, from the list of your account or key. Answers are kept
-  with the paper.
+  Assistant (among those connected), model (Opus, Fable, Sonnet, Haiku… depending on your subscription) and
+  reasoning level chosen under the field of each AI sub-tab, one choice shared with the settings; likewise for Codex
+  and Gemini, from the list of your account or key. Answers are kept with the paper.
 - **Annotations suggested by Claude**: *Annotate* button on a statement, or any request such as
   "highlight… / annotate…". Claude attaches a list of annotations (passages quoted word for word, colour,
   note; notes on a statement or a proof): each passage is located in the paper, you tick what you keep,
