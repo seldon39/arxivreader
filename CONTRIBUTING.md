@@ -33,7 +33,8 @@ These are not negotiable; a change that weakens one of them will not be merged.
   foreign hosts, cross-site requests and non-JSON writes. Data lives in the user's library folder.
 - **The AI assistant has no tools and no network**, and sees only the paper. Text hidden in a paper (white,
   tiny, invisible) is flagged to the reader and never sent to the assistant (`app/structure.py`, `app/ai.py`):
-  it can carry prompt injections. The reader's profile (`ai.reader_profile`) goes into the system prompt with titles
+  it can carry prompt injections. Every request goes through `ai.build_prompt`, including the four of a
+  cross-review (second assistant too). The reader's profile (`ai.reader_profile`) goes into the system prompt with titles
   and names escaped; it adapts answers, never the rules (a review stays as critical for everyone).
 - **No telemetry, no accounts.** The only network calls are the services listed in `MAINTENANCE.md` §6 (arXiv,
   Semantic Scholar, Zotero, GitHub releases, the AI provider the user chose).

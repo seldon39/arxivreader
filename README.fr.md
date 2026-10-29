@@ -415,6 +415,13 @@ il suffit de la fermer et d'aller dans le feed.
   questions posées dessus). Le bouton ↗ en haut (*Envoyer à Claude*, ou à ChatGPT, à Gemini) ouvre une nouvelle
   conversation dans l'application ou le site de l'assistant, avec les références de l'article, et copie son texte
   complet dans le presse-papiers.
+- **Relecture croisée**, quand un deuxième assistant est prêt (Claude, Codex, Gemini ou un modèle local) :
+  *Relecture simple* | *Relecture croisée* au-dessus du bouton de l'onglet *Relecture*, puis le modèle et le niveau
+  de réflexion de chaque relecteur. Les deux assistants relisent l'article chacun de leur côté, le second compare
+  les deux relectures, le premier répond à cette comparaison et rédige la synthèse : chaque point porte l'étiquette
+  *Les deux*, le nom de l'assistant qui l'a seul relevé, *Désaccord* (les deux positions, et ce qui trancherait) ou
+  *Retiré*. Les étapes précédentes restent repliées au-dessus. 4 demandes ; l'article part chez les deux
+  assistants, sans son texte invisible.
 - Réponses en direct, formules rendues, renvois (« Lemma 2.3 », « (2.11) ») cliquables ; *Ajouter à mes
   notes* les copie dans la note de l'énoncé ou de la preuve (sinon dans la fiche de lecture). Modèle
   (Opus, Fable, Sonnet, Haiku… selon votre abonnement) et niveau de réflexion au choix, dans l'onglet IA ou

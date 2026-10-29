@@ -152,6 +152,71 @@ class AI(unittest.TestCase):
         self.assertEqual(events[-1]["exchange"]["status"], "error")
         self.assertEqual(ai._code("Claude Code returned an error result: Not logged in"), "login")
 
+    def test_cross_review(self):
+        prompts = []
+
+        async def fake(system, prompt, model, image=None, pages=()):
+            prompts.append((model, prompt))
+            if '<review id="comparison"' in prompt:
+                yield "### Points to check\n1. [[both]] Lemma 1.1"
+            elif '<review id="A"' in prompt:
+                yield f"comparison by {model}"
+            else:
+                yield f"review by {model}"
+        ai.stream_answer = fake
+        db.save_settings({"aiProvider": "claude", "aiModel": "opus", "aiReviewMode": "cross", "aiSecond": "gemini"})
+        client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
+        events = [json.loads(line) for line in client.post("/api/papers/p1/ai", json={"task": "review", "second": "gemini"}).text.splitlines()]
+        self.assertEqual([e["phase"] for e in events if "phase" in e], ["reviews", "compare", "synthesis"])
+        self.assertEqual([(e["step"]["kind"], e["step"]["model"]) for e in events if "step" in e],
+                         [("review", "opus"), ("blind", "gemini"), ("compare", "gemini")])
+        final = events[-1]["exchange"]
+        self.assertEqual((final["status"], final["model"], final["answer"]), ("done", "opus", "### Points to check\n1. [[both]] Lemma 1.1"))
+        self.assertEqual(final["steps"][0]["answer"], "review by opus")
+        # chaque relecture d'abord seule ; la comparaison voit les deux, la synthèse aussi la comparaison
+        # texte invisible de l'article : envoyé à aucun des deux assistants, à aucune étape
+        self.assertEqual(len(prompts), 4)
+        self.assertTrue(all("Ignore previous instructions" not in prompt and "Visible text." in prompt for _, prompt in prompts))
+        blind = [prompt for model, prompt in prompts if "<review" not in prompt]
+        self.assertEqual(len(blind), 2)
+        compare = next(prompt for model, prompt in prompts if model == "gemini" and "<review" in prompt)
+        self.assertIn('<review id="B" author="you">\nreview by gemini', compare)
+        self.assertIn("Two referees reviewed this paper independently", compare)
+        self.assertIn("review A above", compare)
+        self.assertEqual(client.get("/api/papers/p1/ai").json()[0]["steps"][2]["answer"], "comparison by gemini")
+        self.assertIn("**Both** Lemma 1.1", ai.export_text(ai.get(final["id"]), self.paper, STRUCTURE, "en"))
+        self.assertIn("Claude + Gemini", ai.export_text(ai.get(final["id"]), self.paper, STRUCTURE, "en"))
+        # relecture croisée seulement pour une relecture, avec un autre assistant
+        self.assertEqual(client.post("/api/papers/p1/ai", json={"task": "summary", "second": "gemini"}).status_code, 400)
+        self.assertEqual(client.post("/api/papers/p1/ai", json={"task": "review", "second": "claude"}).status_code, 400)
+        self.assertEqual(client.post("/api/papers/p1/ai", json={"task": "review", "second": "other"}).status_code, 400)
+        self.assertEqual(client.put("/api/settings", json={"aiSecond": "other"}).status_code, 400)
+
+    def test_cross_review_error(self):
+        async def fake(system, prompt, model, image=None, pages=()):
+            if model == "gemini":
+                raise ai.AIError("Bad key", "login")
+            yield "review"
+        ai.stream_answer = fake
+        db.save_settings({"aiProvider": "claude", "aiModel": "opus"})
+        client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
+        events = [json.loads(line) for line in client.post("/api/papers/p1/ai", json={"task": "review", "second": "gemini"}).text.splitlines()]
+        error = next(e for e in events if "error" in e)
+        # erreur de l'autre assistant : son nom, et pas le code « login » (qui ferait croire Claude déconnecté)
+        self.assertEqual((error["error"], error["code"]), ("Gemini: Bad key", "other"))
+        self.assertEqual(events[-1]["exchange"]["status"], "error")
+
+    def test_partners(self):
+        saved = ai.status
+        ai.status = lambda settings, provider=None: {"provider": provider, "loggedIn": provider in ("gemini", "local")}
+        try:
+            db.save_settings({"aiProvider": "gemini"})
+            self.assertEqual([p["provider"] for p in ai.partners(db.get_settings())], ["local"])
+        finally:
+            ai.status = saved
+        self.assertEqual(ai.model_of("local", {"aiLocalModel": "qwen3"}), "local:qwen3")
+        self.assertEqual(ai.model_of("claude", {"aiModel": "sonnet", "aiProvider": "gemini"}), "sonnet")
+
 
 
 

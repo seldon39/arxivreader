@@ -32,6 +32,8 @@ readers, roughly in order of impact. Each one is a GitHub issue with the context
   or partial conversion of very long documents; line spacing inside multi-line TikZ nodes.
 - AI tab as a conversation (Questions, Summary and Review threads, field at the bottom, ↩ Reply, ↑ ↓): done in
   1.11.0. Next: pass the whole chain of follow-ups to the assistant, not only the previous exchange.
+- Cross-review by two assistants (independent reviews, comparison, tagged synthesis): done in 1.11.11. Next:
+  a third assistant to write the synthesis, when there is one.
 - AI answers adapted to the reader (profile and a free "Your profile" field sent with every request): done in
   1.11.4. Next: a "Link with my work" action that sends the reader's own papers in full when they fit.
 - [#12](https://github.com/seldon39/arxivreader/issues/12) Cancelling a related-papers build should interrupt

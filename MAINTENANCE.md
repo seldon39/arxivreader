@@ -321,6 +321,16 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   `PAPER_LIMIT` part réduit à son début et à une fenêtre autour de la question (`ai._focus`, `ai._window`), sauf
   résumé et relecture. Un article sous la limite part toujours entier.
 
+- Relecture croisée (`ai.cross_review`, appelée par la route de l'IA quand la demande porte `second`) : relectures
+  des deux assistants en parallèle, comparaison par le second, synthèse par le premier ; toutes les demandes passent
+  par `build_prompt` (même texte, sans le texte invisible ; limite d'article propre à chaque assistant). Les
+  relectures jointes vont dans des balises `<review>`, déclarées « à analyser » dans `SYSTEM`. Étapes enregistrées
+  dans la colonne `steps` de l'échange (la synthèse), marqueurs `[[both]]`, `[[a]]`, `[[b]]`, `[[dispute]]`,
+  `[[withdrawn]]` montrés en étiquettes (`LiveAnswer.html`, posées après le Markdown) et écrits en clair dans les
+  notes, la copie et l'export (`ai._marker_words`). Une erreur du second assistant porte son nom et le code
+  « other » : un code « login » ferait croire le premier déconnecté. Assistants prêts : `/api/ai/partners`
+  (`ai.partners`, vérifiés en parallèle ; gardés deux minutes par la page).
+
 - Fichiers TeX importés (`texfile.py`) : compilés dans `<temp>/arxivreader-tex/<id>`, jamais dans le dossier de
   l'utilisateur (latexmk `-outdir`). latexmk retient qu'un `.bib` manquait et ne relance plus BibTeX : après un
   `.bib` manquant, son état (`.fdb_latexmk`) est effacé. Les énoncés qui ont un `\label` ont un identifiant tiré de

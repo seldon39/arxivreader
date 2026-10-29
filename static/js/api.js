@@ -113,6 +113,7 @@ export const api = {
   setProof: (id, nodeId, body) => request("PUT", `/api/papers/${encodeURIComponent(id)}/proofs/${encodeURIComponent(nodeId)}`, body),
   clearProof: (id, nodeId) => request("DELETE", `/api/papers/${encodeURIComponent(id)}/proofs/${encodeURIComponent(nodeId)}`),
   aiStatus: () => request("GET", "/api/ai/status"),
+  aiPartners: () => request("GET", "/api/ai/partners"),
   aiProfile: () => request("GET", "/api/ai/profile"),
   updates: () => request("GET", "/api/updates"),
   checkUpdates: () => request("POST", "/api/updates/check", {}),

@@ -395,6 +395,12 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   at the top, the field at the bottom; Return sends, Shift+Return starts a new line. ↑ and ↓ buttons at the top and
   bottom right go to the start or the end of the thread; each tab reopens where you left it. *⋯* under an answer:
   copy the exchange, or delete it (question and answer; a summary or review goes with the questions about it).
+- **Cross-review**, when a second assistant is ready (Claude, Codex, Gemini or a local model): *Single review* |
+  *Cross-review* above the button of the *Review* tab, then each reviewer's model and reasoning level. Both
+  assistants review the paper on their own, the second compares the two reviews, the first answers that comparison
+  and writes the synthesis: each point is tagged *Both*, with the name of the assistant that raised it alone,
+  *Disagreement* (both positions, and what would settle it) or *Withdrawn*. The earlier steps stay folded above it.
+  4 requests; the paper goes to both assistants, without its hidden text.
   The ↗ button at the top (*Send to Claude*, or to ChatGPT, to Gemini) opens a new conversation in the
   assistant's app or website, with the paper's reference, and copies its full text to the clipboard.
 - Answers stream live, formulas are rendered, references ("Lemma 2.3", "(2.11)") are clickable;

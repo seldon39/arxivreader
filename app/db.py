@@ -149,6 +149,8 @@ def init():
         columns = {row["name"] for row in db.execute("PRAGMA table_info(ai_exchanges)")}
         if "applied" not in columns:  # annotations proposées par la réponse déjà appliquées à l'article
             db.execute("ALTER TABLE ai_exchanges ADD COLUMN applied INTEGER DEFAULT 0")
+        if "steps" not in columns:  # relecture croisée : étapes avant la synthèse (JSON)
+            db.execute("ALTER TABLE ai_exchanges ADD COLUMN steps TEXT")
 
 
 @contextmanager

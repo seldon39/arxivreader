@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import contextlib
 import json
 import mimetypes
 import os
@@ -220,6 +221,7 @@ class AIRequest(BaseModel):
     image: str | None = None  # zone du PDF (PNG en base64) : tâches « zone » et « transcribe »
     page: int | None = None  # page de la zone, sinon page du PDF qu'on lit (livre trop long : fenêtre autour d'elle)
     pages: list[dict] = []  # PDF sans texte : [{"page", "image" (JPEG en base64)}] autour de la question
+    second: str | None = None  # relecture croisée : l'autre assistant (claude, codex, gemini, local)
 
 
 class FindArxivRequest(BaseModel):
@@ -621,6 +623,12 @@ async def ai_status():
     return await run_in_threadpool(ai.status, db.get_settings())
 
 
+@app.get("/api/ai/partners")
+async def ai_partners():
+    """Autres assistants prêts, pour la relecture croisée (aucun : elle n'est pas proposée)."""
+    return await run_in_threadpool(ai.partners, db.get_settings())
+
+
 @app.get("/api/ai/profile")
 def ai_profile():
     """Ce que l'IA reçoit du profil avec chaque demande (aperçu dans les réglages)."""
@@ -668,31 +676,43 @@ async def ask_ai(paper_id: str, body: AIRequest):
         return JSONResponse({"error": "Bad page image"}, status_code=400)
     try:
         model = ai.current_model(settings)
+        cross = body.second is not None
+        if cross and (body.task != "review" or body.second not in providers.PROVIDERS
+                      or body.second == providers.provider_of(model)):
+            raise ai.AIError("Bad cross-review")
         if image and not ai.reads_images(model):
             raise ai.AIError("This assistant cannot read images")
-        if not ai.reads_images(model):
+        if not ai.reads_images(model) and not cross:
             pages = []  # sans images : la question part sans les pages (comme avant)
-        system, prompt = await run_in_threadpool(ai.build_prompt, paper, structure, body.task, target, quote, question,
-                                                 parent, settings.get("language", "fr"), ai.paper_limit(model), zone,
-                                                 [number for number, _ in pages], max(1, body.page) if body.page else None)
+        if cross:  # quatre demandes, préparées au fil de la relecture (ai.cross_review)
+            events = ai.cross_review(paper, structure, model, ai.model_of(body.second, settings), settings.get("language", "fr"), pages)
+        else:
+            system, prompt = await run_in_threadpool(ai.build_prompt, paper, structure, body.task, target, quote, question,
+                                                     parent, settings.get("language", "fr"), ai.paper_limit(model), zone,
+                                                     [number for number, _ in pages], max(1, body.page) if body.page else None)
+            events = ({"delta": text} async for text in ai.stream_answer(system, prompt, model, image, [data for _, data in pages]))
     except ai.AIError as error:
         return JSONResponse({"error": str(error)}, status_code=400)
     exchange = ai.create(paper_id, body.task, target, quote, question, parent["id"] if parent else None, model, image)
 
     async def lines():
-        answer = []
+        answer, steps = [], []
         status = "stopped"  # si la page interrompt la réponse
         try:
             yield json.dumps({"exchange": exchange}) + "\n"
-            async for text in ai.stream_answer(system, prompt, model, image, [data for _, data in pages]):
-                answer.append(text)
-                yield json.dumps({"delta": text}) + "\n"
+            async with contextlib.aclosing(events) as stream:
+                async for event in stream:
+                    if "delta" in event:
+                        answer.append(event["delta"])
+                    if "step" in event:
+                        steps.append(event["step"])
+                    yield json.dumps(event) + "\n"
             status = "done"
         except ai.AIError as error:
             status = "error"
             yield json.dumps({"error": str(error), "code": error.code}) + "\n"
         finally:
-            final = ai.finish(exchange["id"], "".join(answer), status)
+            final = ai.finish(exchange["id"], "".join(answer), status, steps)
         yield json.dumps({"done": True, "exchange": final}) + "\n"
 
     return StreamingResponse(lines(), media_type="application/x-ndjson", headers={"Cache-Control": "no-store"})
@@ -1350,7 +1370,8 @@ def update_settings(values: dict):
                "feedCategories", "feedTypes", "s2ApiKey", "feedSort", "feedSortS2", "aiModel", "notifyFollowed",
                "aiProvider", "aiLocalUrl", "aiLocalModel", "checkUpdates", "aiFontSize", "notifyCitations", "readerView",
                "citingCollapsed", "followedCollapsed", "geminiApiKey", "aiGeminiModel", "profileOpen",
-               "aiClaudeEffort", "aiCodexModel", "aiCodexEffort", "aiGeminiEffort", "zoteroApiKey", "zoteroAutoSync", "onboarded", "aiProfile"}
+               "aiClaudeEffort", "aiCodexModel", "aiCodexEffort", "aiGeminiEffort", "zoteroApiKey", "zoteroAutoSync", "onboarded", "aiProfile",
+               "aiReviewMode", "aiSecond"}
     values = {k: v for k, v in values.items() if k in allowed}
     if not all(_valid_setting(k, v) for k, v in values.items()):
         raise HTTPException(400, "Bad setting")
@@ -1367,6 +1388,7 @@ SETTING_CHOICES = {
     "paperFont": {"auto", "charter", "lm"}, "mathRenderer": {"mathjax", "native"},
     "aiProvider": set(providers.PROVIDERS), "readerView": {"html", "pdf"},
     "feedSort": {"relevance", "arxiv"}, "feedSortS2": {"relevance", "s2"},
+    "aiReviewMode": {"single", "cross"}, "aiSecond": set(providers.PROVIDERS),  # relecture : simple ou croisée, et avec qui
 }
 BOOLEAN_SETTINGS = {"proofsCollapsed", "tocOpen", "panelOpen", "marginMarks", "notifyFollowed", "checkUpdates", "notifyCitations",
                     "citingCollapsed", "followedCollapsed", "zoteroAutoSync", "onboarded"}
