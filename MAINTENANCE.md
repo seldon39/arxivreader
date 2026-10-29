@@ -321,6 +321,14 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   `PAPER_LIMIT` part réduit à son début et à une fenêtre autour de la question (`ai._focus`, `ai._window`), sauf
   résumé et relecture. Un article sous la limite part toujours entier.
 
+- Fluidité de l'onglet IA (mesurée le 29/10/2026 dans WebKit, 21 réponses longues, 64 000 px de fil) : le fil est en
+  `contain: strict` (défilement 23 → 17 ms par image) ; la variable `--ai-scrollbar` n'est posée que si elle change
+  (posée à chaque défilement, elle refaisait le style de tout le fil) ; pendant le glissement de la poignée du panneau,
+  le fil garde sa largeur et n'est recomposé qu'au relâchement (`paneResizer`, 54 → 19 ms par image). Écarté :
+  `content-visibility: auto` sur les réponses (aussi rapide, mais hauteurs estimées : la position gardée de chaque
+  sous-onglet tomberait ailleurs, et WebKit ne compense pas les sauts en remontant). Le relâchement coûte encore
+  ~250 ms : recomposition de l'article entier à la nouvelle largeur.
+
 - Relecture croisée (`ai.cross_review`, appelée par la route de l'IA quand la demande porte `second`) : relectures
   des deux assistants en parallèle, comparaison par le second, synthèse par le premier ; toutes les demandes passent
   par `build_prompt` (même texte, sans le texte invisible ; limite d'article propre à chaque assistant). Les

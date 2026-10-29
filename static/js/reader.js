@@ -545,6 +545,8 @@ class Reader {
   // Pendant le glissement, la grille ne bouge pas : le volet s'étend par-dessus l'article (marge négative),
   // ce qui ne recompose que le volet (moins d'une milliseconde, contre plus de 100 ms pour l'article
   // entier). L'article n'est recomposé qu'une fois, au relâchement, à la même position de lecture.
+  // Onglet IA : le fil des réponses (long, plein de formules : ~50 ms par image) garde aussi sa largeur
+  // jusqu'au relâchement.
   paneResizer(which) {
     const isPanel = which === "panel";
     const pane = isPanel ? this.panel : this.toc;
@@ -563,10 +565,12 @@ class Reader {
       const [min, max] = limits();
       return Math.round(Math.min(max, Math.max(min, width)));
     };
+    const frozen = () => (isPanel && this.root.dataset.tab === "ai" ? pane.querySelector(".ai-body") : null);
     const commit = (width) => {
       this.keepReadingPosition(() => {
         pane.style[margin] = "";
         handle.style[margin] = "";
+        frozen()?.style.removeProperty("width");
         if (width === null) this.root.style.removeProperty(variable);
         else this.root.style.setProperty(variable, `${width}px`);
         this.root.classList.remove("resizing");
@@ -595,7 +599,11 @@ class Reader {
       const move = (e) => {
         x = e.clientX;
         if (width === null && Math.abs(x - startX) <= 2) return;
-        if (width === null) this.root.classList.add("resizing");
+        if (width === null) {
+          this.root.classList.add("resizing");
+          const body = frozen();
+          if (body) body.style.width = `${body.offsetWidth}px`;
+        }
         if (!frame) frame = requestAnimationFrame(draw); // au plus un calcul par image
       };
       const up = () => {

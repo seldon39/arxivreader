@@ -465,6 +465,7 @@ export class Assistant {
     if (!(view in this.seen)) this.seen[view] = last;
     const down = h("button", { class: "ai-jump down", type: "button", title: t("ai.toBottom"), "aria-label": t("ai.toBottom"), html: ARROW_DOWN, hidden: true,
       onclick: () => thread.scrollTo({ top: thread.scrollHeight, behavior: "smooth" }) }, dot);
+    let scrollbar = null;
     const update = () => {
       if (!thread.isConnected) return;
       const atBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 24;
@@ -473,8 +474,10 @@ export class Assistant {
       up.hidden = thread.scrollTop < 24;
       down.hidden = atBottom;
       dot.hidden = atBottom || this.seen[view] === last;
-      // barre de défilement classique (Windows) : les boutons restent à sa gauche
-      frame.style.setProperty("--ai-scrollbar", `${thread.offsetWidth - thread.clientWidth}px`);
+      // barre de défilement classique (Windows) : les boutons restent à sa gauche ; posée seulement si elle change
+      // (à chaque défilement, elle referait le style de tout le fil)
+      const width = thread.offsetWidth - thread.clientWidth;
+      if (width !== scrollbar) frame.style.setProperty("--ai-scrollbar", `${(scrollbar = width)}px`);
     };
     thread.addEventListener("scroll", update, { passive: true });
     // formules mises en forme après coup, images : le fil grandit ; s'il était en bas, il y reste
