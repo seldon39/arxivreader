@@ -110,6 +110,7 @@ export class Assistant {
     this.positions = {};      // position de lecture de chaque sous-onglet ({ top, atBottom })
     this.seen = {};           // échanges vus en bas de chaque sous-onglet (pastille du bouton ↓)
     this.partners = null;     // autres assistants prêts (relecture croisée)
+    this.relaunch = false;    // Relecture : barre de lancement rouverte par « Refaire » (simple ou croisée)
     this.refs = this.buildRefs();
   }
 
@@ -535,15 +536,19 @@ export class Assistant {
   bottomBar(view, exchanges, focus) {
     const running = Boolean(this.running);
     const footer = h("p", { class: "ai-footnote", title: t(`ai.privacy.${providerOf(currentModel())}`) }, t("ai.footnote"));
-    if (view !== "questions" && !this.lastDocument(view, exchanges) && !exchanges.some((e) => e.status === "running")) {
+    const relaunch = view === "review" && this.relaunch && !running;
+    if (view !== "questions" && (!this.lastDocument(view, exchanges) || relaunch) && !exchanges.some((e) => e.status === "running")) {
       const task = view === "summary" ? "summary" : "review";
       const cross = view === "review" && this.crossPartner();
       const launch = running
         ? h("button", { class: "button ai-launch", type: "button", onclick: () => this.stop() }, t("ai.stop"))
-        : h("button", { class: "button primary ai-launch", type: "button", onclick: () => this.ask({ task, second: cross?.provider }) },
+        : h("button", { class: "button primary ai-launch", type: "button", onclick: () => { this.relaunch = false; this.ask({ task, second: cross?.provider }); } },
           t(cross ? "ai.launch.cross" : `ai.launch.${task}`));
+      // « Refaire » une relecture : retour au champ des questions sans rien lancer
+      const cancel = relaunch && h("button", { class: "button", type: "button", onclick: () => { this.relaunch = false; this.onChange(); } }, t("ai.cancelRedo"));
       const picker = this.modelPicker() || h("span", { class: "muted small" }, modelLabel(currentModel()));
-      return h("div", { class: "ai-bottom" }, view === "review" && this.partners?.length ? this.reviewMode(cross) : null, launch,
+      return h("div", { class: "ai-bottom" }, view === "review" && this.partners?.length ? this.reviewMode(cross) : null,
+        cancel ? h("div", { class: "ai-launch-row" }, launch, cancel) : launch,
         cross ? this.reviewers(picker, cross) : h("div", { class: "ai-foot" }, picker), footer);
     }
     return h("div", { class: "ai-bottom" }, this.askBox(view, exchanges, focus), footer);
@@ -695,13 +700,19 @@ export class Assistant {
   }
 
   // Résumé ou relecture : le document, pleine largeur ; « Refaire » sur le plus récent
-  // (relecture croisée : refaite avec le même second assistant, ses étapes repliées au-dessus de la synthèse)
+  // Relecture, un autre assistant prêt : « Refaire » rouvre la barre de lancement (simple ou croisée, relecteurs) ;
+  // sinon refaite telle quelle (relecture croisée : même second assistant), ses étapes repliées au-dessus de la synthèse
   renderDocument(thread, exchange, latest) {
     const second = secondOf(exchange);
+    const choose = exchange.task === "review" && this.partners?.length;
+    const again = () => {
+      if (!choose) { this.ask({ task: exchange.task, second: second && providerOf(second) }); return; }
+      this.relaunch = !this.relaunch;
+      this.onChange();
+    };
     const redo = latest && exchange.status !== "running" && !this.running
-      ? h("button", { class: "button small-button", type: "button", title: t(`ai.redo.${exchange.task}`),
-        onclick: () => this.ask({ task: exchange.task, second: second && providerOf(second) }) },
-      h("span", { class: "ai-icon", html: icons.refresh }), t("ai.redo")) : null;
+      ? h("button", { class: "button small-button", type: "button", title: t(`ai.redo.${exchange.task}`), "aria-pressed": choose ? this.relaunch : undefined,
+        onclick: again }, h("span", { class: "ai-icon", html: icons.refresh }), t("ai.redo")) : null;
     const answer = this.renderAnswer(exchange, { reply: false, document: true });
     const who = answer.querySelector(".ai-who");
     who?.append(h("span", { class: "spacer" }), redo || "");

@@ -400,7 +400,8 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   assistants review the paper on their own, the second compares the two reviews, the first answers that comparison
   and writes the synthesis: each point is tagged *Both*, with the name of the assistant that raised it alone,
   *Disagreement* (both positions, and what would settle it) or *Withdrawn*. The earlier steps stay folded above it.
-  4 requests; the paper goes to both assistants, without its hidden text.
+  4 requests; the paper goes to both assistants, without its hidden text. Once a review is there, *Redo* opens the
+  same choice again (single or cross-review, reviewers), with *Cancel* to go back to the questions.
   The ↗ button at the top (*Send to Claude*, or to ChatGPT, to Gemini) opens a new conversation in the
   assistant's app or website, with the paper's reference, and copies its full text to the clipboard.
 - Answers stream live, formulas are rendered, references ("Lemma 2.3", "(2.11)") are clickable;

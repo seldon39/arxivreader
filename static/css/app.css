@@ -993,6 +993,9 @@ mark.hl.hl-display > mjx-container[display="true"] { margin: .2em 0 !important; 
 .ai-enter { white-space: nowrap; }
 .ai-footnote { margin: 0; font-size: 11px; color: var(--muted); }
 .ai-launch { width: 100%; justify-content: center; height: 38px; font-size: 14px; }
+.ai-launch-row { display: flex; gap: 8px; }
+.ai-launch-row .ai-launch { flex: 1; width: auto; }
+.ai-launch-row .button:not(.ai-launch) { height: 38px; }
 /* Relecture croisée : sorte de relecture, les deux relecteurs, étiquettes des points et étapes repliées */
 .ai-mode { display: flex; }
 .ai-reviewers { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px 10px; }
