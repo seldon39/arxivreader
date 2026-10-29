@@ -324,7 +324,8 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
 - Fluidité de l'onglet IA (mesurée le 29/10/2026 dans WebKit, 21 réponses longues, 64 000 px de fil) : le fil est en
   `contain: strict` (défilement 23 → 17 ms par image) ; la variable `--ai-scrollbar` n'est posée que si elle change
   (posée à chaque défilement, elle refaisait le style de tout le fil) ; pendant le glissement de la poignée du panneau,
-  le fil garde sa largeur et n'est recomposé qu'au relâchement (`paneResizer`, 54 → 19 ms par image). Écarté :
+  le fil suit la poignée mais n'est recomposé qu'au plus toutes les 200 ms (`AI_REFIT`, `paneResizer` : 54 → 19 ms
+  par image en médiane). Figé jusqu'au relâchement (1.11.12), il laissait un grand vide en élargissant : écarté. Écarté :
   `content-visibility: auto` sur les réponses (aussi rapide, mais hauteurs estimées : la position gardée de chaque
   sous-onglet tomberait ailleurs, et WebKit ne compense pas les sauts en remontant). Le relâchement coûte encore
   ~250 ms : recomposition de l'article entier à la nouvelle largeur.
