@@ -193,8 +193,9 @@ class Setup(unittest.TestCase):
             calls.append(argv)
             return subprocess.CompletedProcess(argv, 1 if "fail" in argv[0] else 0, "", "not logged in")
         ai._claude_models.update(email="a@b", models=[{"value": "opus"}], at=1.0)
+        # environnement fixé : sinon la recherche de Node (Windows : « node --version ») passerait aussi par ce run
         with unittest.mock.patch.object(ai.subprocess, "run", run), unittest.mock.patch.object(ai, "cli_path", return_value="/bin/claude"), \
-             unittest.mock.patch.object(providers, "find", return_value="/bin/codex"):
+             unittest.mock.patch.object(providers, "find", return_value="/bin/codex"), unittest.mock.patch.object(providers, "_environment", return_value={}):
             ai.logout("claude")
             ai.logout("codex")
             self.assertEqual(calls, [["/bin/claude", "auth", "logout"], ["/bin/codex", "logout"]])
