@@ -263,6 +263,7 @@ def _keep_secret(key, value):
     try:
         keystore.put(key, value or "")
     except keystore.KeystoreError:
+        _secrets().pop(key, None)  # celle de la base, nouvelle, et non l'ancienne du trousseau
         return False
     if value:
         _secrets()[key] = value

@@ -31,6 +31,7 @@ class Token(unittest.TestCase):
         self.assertEqual(client.get("/api/settings").status_code, 403)  # autre programme de l'ordinateur
         self.assertEqual(client.get("/").status_code, 200)  # page et fichiers statiques : rien de privé
         self.assertEqual(client.get("/?t=wrong", follow_redirects=False).status_code, 403)
+        self.assertEqual(client.get("/?t=fauxé", follow_redirects=False).status_code, 403)  # non ASCII : refusé, pas d'erreur
         response = client.get("/?t=s3cret", follow_redirects=False)
         self.assertEqual((response.status_code, response.headers["location"]), (303, "/"))
         cookie = response.headers["set-cookie"].lower()
@@ -98,8 +99,13 @@ class Keychain(unittest.TestCase):
         self.assertEqual(self.stored_in_db(), {"zoteroApiKey": "zot-key"})  # rien de perdu
         self.assertEqual(db.get_settings()["zoteroApiKey"], "zot-key")
         self.refuse = False
-        db.init()  # trousseau de nouveau disponible : la clé y passe au démarrage suivant
-        self.assertEqual(self.store, {"zoteroApiKey": "zot-key"})
+        db.save_settings({"geminiApiKey": "old"})  # dans le trousseau (et en mémoire)
+        self.refuse = True
+        db.save_settings({"geminiApiKey": "new"})  # refusée par le trousseau : la nouvelle, de la base, sert
+        self.assertEqual(db.get_settings()["geminiApiKey"], "new")
+        self.refuse = False
+        db.init()  # trousseau de nouveau disponible : les clés y passent au démarrage suivant
+        self.assertEqual(self.store, {"zoteroApiKey": "zot-key", "geminiApiKey": "new"})
         self.assertEqual(self.stored_in_db(), {})
 
     @unittest.skipUnless(sys.platform == "win32", "gestionnaire d'identifiants de Windows")

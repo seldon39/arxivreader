@@ -126,14 +126,14 @@ async def local_only(request: Request, call_next):
     if TOKEN:
         given = request.query_params.get("t") if request.url.path == "/" else None
         if given is not None:
-            if not hmac.compare_digest(given, TOKEN):
+            if not _same_token(given):
                 return PlainTextResponse("Forbidden token", status_code=403)
             response = RedirectResponse("/", status_code=303)
             response.set_cookie(TOKEN_COOKIE, TOKEN, httponly=True, samesite="strict", path="/")
             return response
         if request.url.path.startswith("/api/"):
             sent = request.cookies.get(TOKEN_COOKIE) or request.headers.get("x-arxivreader-token") or ""
-            if not hmac.compare_digest(sent, TOKEN):
+            if not _same_token(sent):
                 return PlainTextResponse("Forbidden token", status_code=403)
     # Une page d'un autre site ne peut pas non plus déclencher l'API (même en GET : <img src=…>) ;
     # les navigateurs récents indiquent l'origine de la requête dans Sec-Fetch-Site.
@@ -157,6 +157,11 @@ async def local_only(request: Request, call_next):
     if request.url.path == "/" or request.url.path.startswith("/static/"):
         response.headers["Cache-Control"] = "no-cache"
     return response
+
+
+def _same_token(given):
+    """Comparaison en temps constant ; en octets : un texte non ASCII (jeton faux) est refusé, pas une erreur."""
+    return hmac.compare_digest(given.encode("utf-8", "replace"), TOKEN.encode())
 
 
 def _failed(error):
