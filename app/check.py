@@ -18,7 +18,7 @@ from pathlib import Path
 
 import httpx
 
-from . import alerts, db, feed, onboarding, search, updates
+from . import alerts, db, feed, keystore, onboarding, search, updates
 from .arxiv import fetch_metadata, with_retry
 from .config import LIBRARY, USER_AGENT
 from .version import VERSION
@@ -229,6 +229,9 @@ def problems(report):
 
 
 def main(argv):
+    # lancée à la main ou par la tâche hebdomadaire, toujours sur la vraie bibliothèque : ses clés d'API sont dans le
+    # trousseau (rien à changer dans une tâche installée par une version précédente)
+    keystore.ENABLED = sys.platform in ("darwin", "win32")
     report = run(baseline="--notify" in argv)
     marks = {"ok": "✓", "skipped": "–", "changed": "✗", "failed": "✗"}
     for r in report["results"]:

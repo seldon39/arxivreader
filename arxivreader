@@ -78,7 +78,7 @@ if [ "${1:-}" = "check" ]; then
   <array><string>$INSTALLED/python/bin/python3</string><string>-m</string><string>app.check</string><string>--notify</string></array>
   <key>WorkingDirectory</key><string>$INSTALLED/arxivreader</string>
   <key>EnvironmentVariables</key>
-  <dict><key>ARXIVREADER_LIBRARY</key><string>$SUPPORT</string><key>ARXIVREADER_KEYCHAIN</key><string>1</string><key>PYTHONDONTWRITEBYTECODE</key><string>1</string></dict>
+  <dict><key>ARXIVREADER_LIBRARY</key><string>$SUPPORT</string><key>PYTHONDONTWRITEBYTECODE</key><string>1</string></dict>
   <key>StartCalendarInterval</key><dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
   <key>StandardOutPath</key><string>$HOME/Library/Logs/arXivReader-check.log</string>
   <key>StandardErrorPath</key><string>$HOME/Library/Logs/arXivReader-check.log</string>
@@ -96,7 +96,6 @@ PLIST
     exit 0
   fi
   [ -d "$SUPPORT" ] && export ARXIVREADER_LIBRARY="${ARXIVREADER_LIBRARY:-$SUPPORT}"  # réglages (clés) de l'application
-  export ARXIVREADER_KEYCHAIN=1  # clés d'API dans le trousseau (app/keystore.py)
   exec .venv/bin/python -m app.check "${@:2}"
 fi
 

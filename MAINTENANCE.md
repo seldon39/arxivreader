@@ -350,7 +350,7 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   `security` (commande d'écriture sur l'entrée standard, jamais en argument), Windows par CredWriteW ; une entrée
   par clé et par bibliothèque (chemin résumé), donc une copie d'essai ne touche jamais les vraies clés. `db`
   les lit et les écrit à la place de la base, les y migre au démarrage, et s'y replie si le trousseau refuse.
-  Tâche hebdomadaire installée avant la 1.11.17 : relancer `./arxivreader check --weekly` (variable ajoutée).
+  `app.check` (vérification, à la main ou chaque semaine) l'active lui-même dans `main()`.
 
 - Comptes des assistants (réglages, `accountControls`) : changer de compte = étape « switch » d'`open_setup`
   (déconnexion puis connexion dans le Terminal ou l'invite de commandes) ; se déconnecter = `/api/ai/logout`
