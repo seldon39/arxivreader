@@ -473,7 +473,11 @@ mais n'a pas été essayée avec un vrai compte.
 
 ## Sécurité
 
-- Serveur sur `127.0.0.1` seulement ; noms d'hôte étrangers et requêtes d'autres sites refusés.
+- Serveur sur `127.0.0.1` seulement ; noms d'hôte étrangers et requêtes d'autres sites refusés. Chaque lancement
+  tire au hasard un jeton de session que seule la fenêtre de l'application possède : aucun autre programme de
+  l'ordinateur (autre compte, application confinée) n'atteint par lui votre bibliothèque, vos clés ou vos comptes IA.
+- Clés d'API (Gemini, Semantic Scholar, Zotero) dans le trousseau de macOS (Windows : gestionnaire d'identifiants),
+  pas dans la base ; celles enregistrées par une version précédente y passent au lancement suivant.
 - HTML des articles nettoyé (scripts, formulaires, liens `javascript:` retirés) et politique CSP qui
   interdit tout script venant de l'article.
 - Données (base SQLite + un dossier par article) dans `~/Library/Application Support/arXivReader` pour

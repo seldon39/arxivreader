@@ -158,6 +158,18 @@ def _write(path, text):
     os.replace(temporary, path)
 
 
+def forget_gemini_cli():
+    """Restes de l'ancienne connexion à Gemini par son outil en ligne de commande (avant l'API, octobre 2026) :
+    script de connexion, réglages et consignes de l'outil, dossier de travail vide. Retirés au démarrage."""
+    folder = LIBRARY / "ai"
+    for name in ("setup-gemini.command", "setup-gemini.cmd", "gemini-settings.json", "gemini-system.md"):
+        (folder / name).unlink(missing_ok=True)
+    try:
+        (folder / "gemini").rmdir()  # seulement vide : rien d'autre n'y est jamais effacé
+    except OSError:
+        pass
+
+
 def _workdir(name):
     folder = LIBRARY / "ai" / name  # vide : rien à lire, même si un outil restait actif
     folder.mkdir(parents=True, exist_ok=True)

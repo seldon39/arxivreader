@@ -22,6 +22,10 @@ DB_PATH = LIBRARY / "arxivreader.db"
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("ARXIVREADER_PORT", "8710"))  # autre port possible pour les tests
+# Jeton de session, tiré au hasard à chaque lancement par la fenêtre (ou le lanceur) : sans lui, l'API refuse les
+# requêtes (main.local_only). Absent (tests, essais), l'API ne le demande pas.
+TOKEN = os.environ.get("ARXIVREADER_TOKEN") or None
+TOKEN_FILE = LIBRARY / "server.token"  # pour rouvrir une fenêtre sur un serveur déjà lancé (lanceurs)
 
 USER_AGENT = "arXivReader/0.1 (personal reader)"
 

@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import contextlib
+import hmac
 import json
 import mimetypes
 import os
@@ -20,14 +21,14 @@ from datetime import date
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import (ai, alerts, annotations, notesync, citations, crossrefs, db, export, feed, folders, journals, latexml, library, localpdf, onboarding, profile, providers, related, texfile,
                relevance, search, updates, zotero)
 from .arxiv import ArxivError, fetch_metadata, parse_arxiv_id
-from .config import HOST, PORT, STATIC
+from .config import HOST, PORT, STATIC, TOKEN, TOKEN_FILE
 
 # Types des fichiers servis fixés ici : sous Windows, le registre en donne parfois d'autres (.js en
 # text/plain), et le navigateur refuse alors de charger les modules de la page
@@ -39,6 +40,7 @@ for _type, _extensions in {"text/javascript": (".js", ".mjs"), "text/css": (".cs
 
 ALLOWED_HOSTS = {f"{HOST}:{PORT}", f"localhost:{PORT}"}
 ALLOWED_ORIGINS = {f"http://{h}" for h in ALLOWED_HOSTS}
+TOKEN_COOKIE = "arxivreader"
 PAPER_ID = re.compile(r"[A-Za-z0-9.\-_]+")          # comparés en entier (fullmatch)
 ASSET_NAME = re.compile(r"[0-9a-f]{16}(\.[a-z]+)?")
 
@@ -61,6 +63,8 @@ CSP = (
 @asynccontextmanager
 async def lifespan(_app):
     db.init()
+    _write_token()
+    providers.forget_gemini_cli()
     ai.stop_running()
     library.clean_cache()
     threading.Thread(target=localpdf.redetect_all, daemon=True).start()  # PDF importés : titre et auteurs relus
@@ -86,6 +90,18 @@ async def lifespan(_app):
             await asyncio.wait_for(task, 5)
         except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
             pass
+    if TOKEN:
+        TOKEN_FILE.unlink(missing_ok=True)
+
+
+def _write_token():
+    """Jeton de la session dans la bibliothèque, lisible par l'utilisateur seul : un lanceur qui trouve le serveur déjà
+    lancé ouvre la page avec lui."""
+    if not TOKEN:
+        return
+    TOKEN_FILE.unlink(missing_ok=True)
+    with os.fdopen(os.open(TOKEN_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w", encoding="utf-8") as handle:
+        handle.write(TOKEN)
 
 
 def _watch_parent(parent):
@@ -104,6 +120,21 @@ async def local_only(request: Request, call_next):
     # d'écriture venant d'autres sites.
     if request.headers.get("host", "").lower() not in ALLOWED_HOSTS:
         return PlainTextResponse("Forbidden host", status_code=403)
+    # Jeton de la session (config.TOKEN) : la fenêtre ouvre « /?t=<jeton> », qui le dépose dans un cookie que seule la
+    # page envoie ; l'API le demande ensuite (ou l'en-tête X-ArXivReader-Token, pour les fenêtres elles-mêmes). Un autre
+    # programme de l'ordinateur (autre compte, application confinée) n'atteint ni la bibliothèque ni les clés
+    if TOKEN:
+        given = request.query_params.get("t") if request.url.path == "/" else None
+        if given is not None:
+            if not hmac.compare_digest(given, TOKEN):
+                return PlainTextResponse("Forbidden token", status_code=403)
+            response = RedirectResponse("/", status_code=303)
+            response.set_cookie(TOKEN_COOKIE, TOKEN, httponly=True, samesite="strict", path="/")
+            return response
+        if request.url.path.startswith("/api/"):
+            sent = request.cookies.get(TOKEN_COOKIE) or request.headers.get("x-arxivreader-token") or ""
+            if not hmac.compare_digest(sent, TOKEN):
+                return PlainTextResponse("Forbidden token", status_code=403)
     # Une page d'un autre site ne peut pas non plus déclencher l'API (même en GET : <img src=…>) ;
     # les navigateurs récents indiquent l'origine de la requête dans Sec-Fetch-Site.
     if request.url.path.startswith("/api/") and request.headers.get("sec-fetch-site") not in (None, "same-origin", "none"):

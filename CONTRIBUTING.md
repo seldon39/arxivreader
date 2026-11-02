@@ -30,7 +30,9 @@ problem helps most, with the TeX distribution and its year (`latexmk -v`, `pdfla
 These are not negotiable; a change that weakens one of them will not be merged.
 
 - **Local first.** The server listens on 127.0.0.1 only; the `local_only` middleware (`app/main.py`) refuses
-  foreign hosts, cross-site requests and non-JSON writes. Data lives in the user's library folder.
+  foreign hosts, cross-site requests, non-JSON writes and, when the launcher set one (`ARXIVREADER_TOKEN`), any
+  `/api/` request without the session token (cookie set by `/?t=`, or the `X-ArXivReader-Token` header). Data
+  lives in the user's library folder.
 - **The AI assistant has no tools and no network**, and sees only the paper. Text hidden in a paper (white,
   tiny, invisible) is flagged to the reader and never sent to the assistant (`app/structure.py`, `app/ai.py`):
   it can carry prompt injections. Every request goes through `ai.build_prompt`, including the four of a
@@ -39,7 +41,8 @@ These are not negotiable; a change that weakens one of them will not be merged.
 - **No telemetry, no accounts.** The only network calls are the services listed in `MAINTENANCE.md` §6 (arXiv,
   Semantic Scholar, Zotero, GitHub releases, the AI provider the user chose).
 - **The user's keys** (Semantic Scholar, Gemini, Zotero) are typed by the user in the settings; they never
-  appear in code, logs or error messages.
+  appear in code, logs or error messages, and are stored in the system keychain (`app/keystore.py`, with
+  `ARXIVREADER_KEYCHAIN=1`), never passed as a program argument.
 - **Zotero: no item is ever deleted or trashed.** Only the "arXivReader" collection and its sub-collections are
   modified (a sub-collection is removed when its folder is deleted in arXivReader; the papers stay in Zotero).
 - **No long requests from the page**: anything slow (imports, related-papers graphs, compiling a TeX file) runs in

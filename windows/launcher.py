@@ -13,6 +13,7 @@ ARXIVREADER_START=#/feed ouvre cette page.
 import ctypes
 import hashlib
 import os
+import secrets
 import socket
 import subprocess
 import sys
@@ -182,8 +183,12 @@ def main():
             port = int(port_file.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             port = PREFERRED_PORT
+        try:  # jeton de la session de ce serveur (écrit par lui, app.main._write_token)
+            token = (library / "server.token").read_text(encoding="utf-8").strip()
+        except OSError:
+            token = ""
         if browser and listening(port):
-            open_window(browser, library, f"http://127.0.0.1:{port}/{route}", new_window=False)
+            open_window(browser, library, f"http://127.0.0.1:{port}/?t={token}{route}", new_window=False)
         if headless:
             sys.exit(3)  # lancé par la fenêtre : un autre serveur (version précédente ?) tient la bibliothèque
         return
@@ -191,6 +196,9 @@ def main():
     port = free_port(PREFERRED_PORT)
     os.environ["ARXIVREADER_PORT"] = str(port)  # lus par app.config à l'import
     os.environ["ARXIVREADER_LIBRARY"] = str(library)
+    if not headless:  # dans le navigateur : jeton de la session et clés dans le gestionnaire d'identifiants (sinon : la fenêtre)
+        os.environ.setdefault("ARXIVREADER_TOKEN", secrets.token_hex(32))
+        os.environ.setdefault("ARXIVREADER_KEYCHAIN", "1")
     log = log_to(library)
 
     try:
@@ -200,7 +208,8 @@ def main():
         message(tr("arXivReader n'a pas pu démarrer :\n", "arXivReader could not start:\n") + repr(error), error=True)
         raise
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", access_log=False))
-    url = f"http://127.0.0.1:{port}/{route}"
+    token = os.environ.get("ARXIVREADER_TOKEN")
+    url = f"http://127.0.0.1:{port}/?t={token}{route}" if token else f"http://127.0.0.1:{port}/{route}"
 
     def run_browser():
         start = time.monotonic()

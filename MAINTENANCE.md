@@ -340,6 +340,18 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   sous-onglet tomberait ailleurs, et WebKit ne compense pas les sauts en remontant). Le relâchement coûte encore
   ~250 ms : recomposition de l'article entier à la nouvelle largeur.
 
+- Jeton de session (`config.TOKEN`, `ARXIVREADER_TOKEN`) : tiré au hasard par la fenêtre Mac (`main.swift`), la
+  fenêtre Windows (`Program.cs`), le lanceur Windows en mode navigateur (`launcher.py`) et `./arxivreader` ; la page
+  s'ouvre par `/?t=<jeton>` (cookie HttpOnly, SameSite=Strict, puis redirection vers `/`), les fenêtres envoient
+  l'en-tête `X-ArXivReader-Token`. Le serveur l'écrit dans `server.token` (lisible par l'utilisateur seul, retiré à
+  l'arrêt) pour qu'un lanceur rouvre une fenêtre. Sans la variable (tests, essais), l'API ne le demande pas. Essai
+  dans une copie de l'app : `curl` sans le jeton doit répondre 403.
+- Clés d'API dans le trousseau (`app/keystore.py`, seulement avec `ARXIVREADER_KEYCHAIN=1`) : macOS par l'outil
+  `security` (commande d'écriture sur l'entrée standard, jamais en argument), Windows par CredWriteW ; une entrée
+  par clé et par bibliothèque (chemin résumé), donc une copie d'essai ne touche jamais les vraies clés. `db`
+  les lit et les écrit à la place de la base, les y migre au démarrage, et s'y replie si le trousseau refuse.
+  Tâche hebdomadaire installée avant la 1.11.17 : relancer `./arxivreader check --weekly` (variable ajoutée).
+
 - Comptes des assistants (réglages, `accountControls`) : changer de compte = étape « switch » d'`open_setup`
   (déconnexion puis connexion dans le Terminal ou l'invite de commandes) ; se déconnecter = `/api/ai/logout`
   (`ai.logout` : `claude auth logout`, `codex logout`). Autre compte Claude : sa liste de modèles est relue

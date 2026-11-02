@@ -19,6 +19,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var port = 8720
     var quitting = false
     var origin: String { "http://127.0.0.1:\(port)" }
+    // jeton de la session, tiré au hasard : le serveur ne répond qu'aux pages qui l'ont (cookie déposé par « /?t= »)
+    let token = (0..<32).map { _ in String(format: "%02x", UInt8.random(in: 0...255)) }.joined()
     // bibliothèque : ~/Library/Application Support/arXivReader (ARXIVREADER_LIBRARY pour essayer sur une copie)
     let support = ProcessInfo.processInfo.environment["ARXIVREADER_LIBRARY"].map { URL(fileURLWithPath: $0, isDirectory: true) }
         ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -65,6 +67,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         env["ARXIVREADER_PORT"] = String(port)
         env["ARXIVREADER_LIBRARY"] = support.path
         env["ARXIVREADER_WATCH_PARENT"] = "1"  // s'arrête seul si l'application disparaît sans l'arrêter
+        env["ARXIVREADER_TOKEN"] = token
+        env["ARXIVREADER_KEYCHAIN"] = "1"  // clés d'API dans le trousseau de session (app/keystore.py)
         env["PYTHONNOUSERSITE"] = "1"
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         // fuseaux horaires : ceux de macOS (le Python embarqué garde en dur le chemin de l'ordinateur où il a été
@@ -101,6 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let url = URL(string: "\(origin)/api/settings") else { return }
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 2)
         request.httpMethod = "GET"
+        request.setValue(token, forHTTPHeaderField: "X-ArXivReader-Token")
         URLSession.shared.dataTask(with: request) { [weak self] _, response, _ in
             DispatchQueue.main.async {
                 guard let self, !self.quitting, self.server?.isRunning == true else { return }
@@ -537,7 +542,8 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
     func load(_ route: String) {
         if app.serverReady {
             pending = nil
-            guard let url = URL(string: "\(app.origin)/\(route)") ?? URL(string: "\(app.origin)/") else { return }
+            // « /?t=<jeton> » dépose le cookie de la session puis renvoie à « / » (la route, après #, est gardée)
+            guard let url = URL(string: "\(app.origin)/?t=\(app.token)\(route)") ?? URL(string: "\(app.origin)/?t=\(app.token)") else { return }
             webView.load(URLRequest(url: url))
         } else {
             pending = route

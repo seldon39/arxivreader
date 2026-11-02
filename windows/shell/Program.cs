@@ -61,6 +61,15 @@ namespace ArxivReader
     {
         readonly string library;
         readonly IntPtr job = Job.Create();
+        // jeton de la session, tiré au hasard : le serveur ne répond qu'aux pages qui l'ont (cookie déposé par « /?t= »)
+        public readonly string Token = NewToken();
+
+        static string NewToken()
+        {
+            var bytes = new byte[32];
+            using (var random = RandomNumberGenerator.Create()) random.GetBytes(bytes);
+            return BitConverter.ToString(bytes).Replace("-", "").ToLowerInvariant();
+        }
         Process process;
         bool stopping, ready;
 
@@ -80,6 +89,8 @@ namespace ArxivReader
             var info = new ProcessStartInfo(exe) { UseShellExecute = false, CreateNoWindow = true };
             info.EnvironmentVariables["ARXIVREADER_LIBRARY"] = library;
             info.EnvironmentVariables["ARXIVREADER_NO_BROWSER"] = "1";
+            info.EnvironmentVariables["ARXIVREADER_TOKEN"] = Token;
+            info.EnvironmentVariables["ARXIVREADER_KEYCHAIN"] = "1";  // clés d'API dans le gestionnaire d'identifiants
             process = Process.Start(info);
             Job.Assign(job, process);
             var launched = process;

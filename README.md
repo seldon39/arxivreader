@@ -452,7 +452,11 @@ but has not been tried with a real account.
 
 ## Security
 
-- Server on `127.0.0.1` only; foreign host names and requests from other sites are refused.
+- Server on `127.0.0.1` only; foreign host names and requests from other sites are refused. Each launch draws a
+  random session token that only the app's window has: no other program on the computer (another user account,
+  a sandboxed app) can reach your library, your keys or your AI accounts through it.
+- API keys (Gemini, Semantic Scholar, Zotero) are kept in the macOS keychain (Windows: Credential Manager), not in
+  the database; keys saved by an earlier version are moved there at the next launch.
 - Paper HTML is cleaned (scripts, forms, `javascript:` links removed) and a CSP policy forbids any script
   coming from the paper.
 - Data (SQLite database + one folder per paper) in `~/Library/Application Support/arXivReader` for the app,

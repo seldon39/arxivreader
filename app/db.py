@@ -4,6 +4,7 @@ import json
 import sqlite3
 from contextlib import contextmanager
 
+from . import keystore
 from .config import DB_PATH, LIBRARY
 
 SCHEMA = """
@@ -151,6 +152,7 @@ def init():
             db.execute("ALTER TABLE ai_exchanges ADD COLUMN applied INTEGER DEFAULT 0")
         if "steps" not in columns:  # relecture croisée : étapes avant la synthèse (JSON)
             db.execute("ALTER TABLE ai_exchanges ADD COLUMN steps TEXT")
+    _move_secrets()
 
 
 @contextmanager
@@ -218,12 +220,67 @@ def delete_paper(paper_id):
 def get_settings():
     with connect() as db:
         rows = db.execute("SELECT key, value FROM settings").fetchall()
-    return {r["key"]: json.loads(r["value"]) for r in rows}
+    return {**{r["key"]: json.loads(r["value"]) for r in rows}, **_secrets()}
 
 
 def save_settings(values):
+    values = dict(values)
+    stored = []  # clés passées au trousseau : retirées de la base
+    if keystore.ENABLED:
+        for key in keystore.SECRET_KEYS:
+            if key in values and _keep_secret(key, values[key]):
+                stored.append(key)
+                del values[key]
     with connect() as db:
         db.executemany(
             "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             [(k, json.dumps(v)) for k, v in values.items()],
         )
+        db.executemany("DELETE FROM settings WHERE key = ?", [(key,) for key in stored])
+
+
+# ---------- Clés d'API dans le trousseau du système (keystore) ----------
+
+_cache = None  # clés lues dans le trousseau, une fois
+
+
+def _secrets():
+    global _cache
+    if _cache is None:
+        _cache = {}
+        for key in keystore.SECRET_KEYS if keystore.ENABLED else ():
+            try:
+                value = keystore.get(key)
+            except keystore.KeystoreError:
+                value = None  # trousseau illisible : celle de la base s'il y en a une
+            if value:
+                _cache[key] = value
+    return _cache
+
+
+def _keep_secret(key, value):
+    """Clé enregistrée (vide : retirée) dans le trousseau ; False s'il refuse : elle reste dans la base."""
+    try:
+        keystore.put(key, value or "")
+    except keystore.KeystoreError:
+        return False
+    if value:
+        _secrets()[key] = value
+    else:
+        _secrets().pop(key, None)
+    return True
+
+
+def _move_secrets():
+    """Clés encore dans la base (versions précédentes, trousseau un moment indisponible) : passées au trousseau."""
+    if not keystore.ENABLED:
+        return
+    with connect() as db:
+        rows = db.execute("SELECT key, value FROM settings WHERE key IN (%s)" % ",".join("?" * len(keystore.SECRET_KEYS)),
+                          keystore.SECRET_KEYS).fetchall()
+    left = {row["key"]: json.loads(row["value"]) for row in rows}
+    filled = {key: value for key, value in left.items() if value}
+    if filled:
+        save_settings(filled)  # plus récentes que celles du trousseau (sinon elles n'y seraient pas restées)
+    with connect() as db:  # vides : rien à garder
+        db.executemany("DELETE FROM settings WHERE key = ?", [(key,) for key, value in left.items() if not value])

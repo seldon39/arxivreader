@@ -51,6 +51,8 @@ namespace ArxivReader
         }
 
         string Origin => $"http://127.0.0.1:{port}";
+        // page de l'application : « /?t=<jeton> » dépose le cookie de la session puis renvoie à « / » (la route est gardée)
+        string Page(string route) => $"{Origin}/?t={server.Token}{route}";
 
         public MainForm(string library, Server server, EventWaitHandle show)
         {
@@ -225,7 +227,7 @@ namespace ArxivReader
                     // autres processus (carte graphique, utilitaires) : le moteur les relance seul
                 }
             };
-            core.Navigate($"{Origin}/{route}");
+            core.Navigate(Page(route));
         }
 
         // Serveur arrêté de lui-même : comme sur le Mac, le relancer (les onglets rouvrent leur page) ou quitter
@@ -248,7 +250,7 @@ namespace ArxivReader
                 return;
             }
             foreach (var tab in tabs)
-                try { tab.View.CoreWebView2?.Navigate($"{Origin}/{tab.Route}"); } catch (Exception) { }
+                try { tab.View.CoreWebView2?.Navigate(Page(tab.Route)); } catch (Exception) { }
             restarting = false;
         }
 
