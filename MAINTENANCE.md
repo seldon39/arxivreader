@@ -340,6 +340,13 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   sous-onglet tomberait ailleurs, et WebKit ne compense pas les sauts en remontant). Le relâchement coûte encore
   ~250 ms : recomposition de l'article entier à la nouvelle largeur.
 
+- Comptes des assistants (réglages, `accountControls`) : changer de compte = étape « switch » d'`open_setup`
+  (déconnexion puis connexion dans le Terminal ou l'invite de commandes) ; se déconnecter = `/api/ai/logout`
+  (`ai.logout` : `claude auth logout`, `codex logout`). Autre compte Claude : sa liste de modèles est relue
+  (`_claude_status` compare l'adresse). Les onglets IA ouverts oublient l'état des assistants (événement
+  `arxivreader:ai-accounts`). Ne jamais lancer une déconnexion pendant un essai : la connexion Claude est celle de
+  Claude Code sur la machine.
+
 - Choix de l'assistant dans l'onglet IA (`Assistant.modelPicker`) : même réglage `aiProvider` que les réglages ; la
   liste vient de l'état de l'assistant choisi et de `/api/ai/partners` (les autres, prêts). Changer d'assistant
   (`switchAssistant`) reprend leurs états déjà connus, posés avant d'enregistrer le réglage : l'enregistrement

@@ -5,7 +5,7 @@ import { api } from "./api.js";
 import { applyStatic, setAIName, setLanguage, t } from "./i18n.js";
 import { updatesSection } from "./updates.js";
 import { ZOTERO_KEY, zoteroSection } from "./zotero.js";
-import { chooseFolder, h, icons, toast } from "./util.js";
+import { chooseFolder, h, icons, toast, toastError } from "./util.js";
 
 export const DEFAULT_FONT_SIZE = 18;
 export const DEFAULT_AI_FONT_SIZE = 15; // réponses de l'IA
@@ -123,10 +123,31 @@ async function renderAISettings(holder, keepFocus = null) {
     effortChoice && h("label", { class: "row", hidden: effortChoice.hidden }, h("span", {}, t("ai.effort")), effortChoice),
     effortChoice && h("p", { class: "hint" }, t("settings.effortHint")),
   ];
+  const again = () => { dispatchEvent(new Event("arxivreader:ai-accounts")); renderAISettings(holder); };
   line.replaceWith(...fields.filter(Boolean), ...choices.filter(Boolean),
-    status.loggedIn ? h("p", { class: "hint ai-ready" }, `✓ ${t("settings.aiReady")}`)
-      : setupNotice({ ...status, provider }, () => renderAISettings(holder)));
+    ...(status.loggedIn ? accountControls(provider, status, again) : [setupNotice({ ...status, provider }, again)]));
   if (keepFocus && !holder.contains(document.activeElement)) holder.querySelector(`[name="${keepFocus}"]`)?.focus();
+}
+
+// Assistant prêt : le compte connecté, et en changer ou s'en déconnecter (Claude, Codex : commandes de leur outil ;
+// Gemini : la clé, celle d'un autre compte Google la remplace ; modèle local : sans compte)
+function accountControls(provider, status, again) {
+  const account = provider === "claude" ? [status.email, status.subscription && t("settings.aiPlan", { plan: status.subscription[0].toUpperCase() + status.subscription.slice(1) })].filter(Boolean).join(" · ")
+    : provider === "codex" ? t("settings.aiAccount.chatgpt") : "";
+  const ready = h("p", { class: "hint ai-ready" }, `✓ ${t("settings.aiReady")}`, account && h("span", { class: "muted" }, ` · ${account}`));
+  if (provider === "gemini") {
+    const remove = h("button", { class: "button small-button", type: "button",
+      onclick: () => saveSettings({ geminiApiKey: "" }).then(again) }, t("settings.geminiRemove"));
+    return [ready, h("p", { class: "hint" }, t("settings.geminiOther")), h("div", { class: "ai-setup-actions" }, remove)];
+  }
+  if (provider === "local") return [ready];
+  const check = h("button", { class: "button small-button", type: "button", hidden: true, onclick: again }, t("ai.login.check"));
+  const change = h("button", { class: "button small-button", type: "button", onclick: () => api.aiSetup(provider, "switch")
+    .then(() => { toast(t("ai.setup.opened")); check.hidden = false; }, toastError) }, t("settings.aiSwitch"));
+  const logout = h("button", { class: "button small-button", type: "button", onclick: () => api.aiLogout(provider).then(again, toastError) },
+    t("settings.aiLogout"));
+  return [ready, h("div", { class: "ai-setup-actions" }, change, logout, check),
+    provider === "claude" && h("p", { class: "hint" }, t("settings.claudeShared"))].filter(Boolean);
 }
 
 // Serveur local : sur ce Mac seulement (même règle que le serveur, qui refuse le reste)

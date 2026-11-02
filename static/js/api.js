@@ -119,6 +119,7 @@ export const api = {
   checkUpdates: () => request("POST", "/api/updates/check", {}),
   dismissUpdate: (version) => request("POST", "/api/updates/dismiss", { version }),
   aiSetup: (provider, step) => request("POST", "/api/ai/setup", { provider, step }),
+  aiLogout: (provider) => request("POST", "/api/ai/logout", { provider }),
   aiExchanges: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/ai`),
   exportAI: (exchangeId) => request("GET", `/api/ai/${exchangeId}/export`),
   paperText: (paperId) => request("GET", `/api/papers/${encodeURIComponent(paperId)}/text`),

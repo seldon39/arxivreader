@@ -427,6 +427,11 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
 
 ### Other assistants (Settings → AI assistant)
 
+- **Accounts**: once an assistant is ready, the settings show the account in use (Claude: address and plan) with
+  *Change account…* (Claude, Codex: logs out, then back in with the other account, in Terminal) and *Log out*;
+  for Gemini, *Remove key*, or paste the key of another Google account. The Claude connection is shared with
+  Claude Code on the same computer. A local model has no account.
+
 For a colleague without a Claude subscription, the AI tab also works with:
 
 - **Codex** (OpenAI, ChatGPT account): `npm install -g @openai/codex`, then `codex login`. Called through

@@ -76,6 +76,9 @@ function withTags(text, names, tag) {
 // leurs programmes (Claude, Codex) ou interroge Gemini ; une seule à la fois
 const PARTNERS_TTL = 120_000;
 let partnersCache = null;  // { provider, at, list (promesse) }
+// compte changé ou déconnecté dans les réglages : états des assistants revérifiés au prochain affichage de l'onglet
+let accounts = 0;
+addEventListener("arxivreader:ai-accounts", () => { partnersCache = null; accounts++; });
 function readyPartners(provider) {
   if (partnersCache?.provider !== provider || Date.now() - partnersCache.at > PARTNERS_TTL) {
     partnersCache = { provider, at: Date.now(), list: api.aiPartners().catch(() => []) };
@@ -475,6 +478,11 @@ export class Assistant {
   }
 
   renderPanel(body, { focus = false } = {}) {
+    if (this.accounts !== accounts) { // compte changé dans les réglages
+      this.accounts = accounts;
+      this.status = null;
+      this.partnersFor = null;
+    }
     if ((!this.status && !this.checking) || this.statusFor !== currentModel()) this.refreshStatus(); // assistant changé dans les réglages
     body.classList.add("ai-body");
     const view = this.view;

@@ -447,6 +447,11 @@ il suffit de la fermer et d'aller dans le feed.
 
 ### Autres assistants (Réglages → Assistant IA)
 
+- **Comptes** : un assistant prêt, les réglages montrent le compte utilisé (Claude : adresse et abonnement), avec
+  *Changer de compte…* (Claude, Codex : déconnexion puis reconnexion avec l'autre compte, dans le Terminal) et
+  *Se déconnecter* ; pour Gemini, *Retirer la clé*, ou coller celle d'un autre compte Google. La connexion Claude est
+  partagée avec Claude Code sur le même ordinateur. Un modèle local n'a pas de compte.
+
 Pour un collègue sans abonnement Claude, l'onglet IA fonctionne aussi avec :
 
 - **Codex** (OpenAI, compte ChatGPT) : `npm install -g @openai/codex`, puis `codex login`. Appelé par

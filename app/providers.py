@@ -168,6 +168,7 @@ def _workdir(name):
 # commandes fixées ici, jamais reçues de la page
 SETUP = {
     ("codex", "login"): "codex login",
+    ("codex", "switch"): "codex logout && codex login",  # changer de compte (réglages)
     ("codex", "missing"): "npm install -g @openai/codex && codex login",
     ("local", "login"): "ollama pull qwen3",
     ("local", "missing"): "OLLAMA_CONTEXT_LENGTH=32768 ollama serve",
@@ -177,10 +178,12 @@ WINDOWS_SETUP = {("local", "missing"): "set OLLAMA_CONTEXT_LENGTH=32768 && ollam
 
 def _open_setup_windows(provider, step, claude_cli):
     """Comme open_setup, dans une invite de commandes (cmd.exe) qui reste ouverte à la fin."""
-    if provider == "claude" and step in ("login", "missing"):
+    if provider == "claude" and step in ("login", "missing", "switch"):
         if not claude_cli:
             raise OSError("claude-agent-sdk is missing")
         command = f'"{claude_cli}" auth login --claudeai && "{claude_cli}" auth status --text'
+        if step == "switch":  # changer de compte : déconnexion d'abord
+            command = f'"{claude_cli}" auth logout && {command}'
     elif (provider, step) in SETUP:
         command = WINDOWS_SETUP.get((provider, step), SETUP[provider, step])
         # npm, codex… sont des scripts .cmd : appelés sans « call », ils termineraient le script avant la suite
@@ -190,7 +193,7 @@ def _open_setup_windows(provider, step, claude_cli):
     folder = LIBRARY / "ai"
     folder.mkdir(parents=True, exist_ok=True)
     script = folder / f"setup-{provider}.cmd"
-    shown = "claude auth login" if provider == "claude" else command
+    shown = ("claude auth logout && claude auth login" if step == "switch" else "claude auth login") if provider == "claude" else command
     # fins de ligne \r\n : ajoutées par l'écriture en mode texte de Windows
     _write(script, "@echo off\nchcp 65001 >nul\n"
                    f'set "PATH={_search_path()}"\n'
@@ -207,11 +210,13 @@ def _open_setup_windows(provider, step, claude_cli):
 def open_setup(provider, step, claude_cli=None):
     if WINDOWS:
         return _open_setup_windows(provider, step, claude_cli)
-    if provider == "claude" and step in ("login", "missing"):
+    if provider == "claude" and step in ("login", "missing", "switch"):
         if not claude_cli:
             raise OSError("claude-agent-sdk is missing")
-        command = (f"env -u ANTHROPIC_API_KEY {shlex.quote(claude_cli)} auth login --claudeai && "
-                   f"env -u ANTHROPIC_API_KEY {shlex.quote(claude_cli)} auth status --text")
+        claude = f"env -u ANTHROPIC_API_KEY {shlex.quote(claude_cli)}"
+        command = f"{claude} auth login --claudeai && {claude} auth status --text"
+        if step == "switch":  # changer de compte : déconnexion d'abord
+            command = f"{claude} auth logout && {command}"
     elif (provider, step) in SETUP:
         command = SETUP[provider, step]
     else:
@@ -219,7 +224,7 @@ def open_setup(provider, step, claude_cli=None):
     folder = LIBRARY / "ai"
     folder.mkdir(parents=True, exist_ok=True)
     script = folder / f"setup-{provider}.command"
-    shown = "claude auth login" if provider == "claude" else command
+    shown = ("claude auth logout && claude auth login" if step == "switch" else "claude auth login") if provider == "claude" else command
     # codex : sans Node assez récent, un message clair plutôt qu'une erreur de JavaScript
     node_check = ("" if provider != "codex" else
                   "major=$(node -p 'process.versions.node.split(\".\")[0]' 2>/dev/null || echo 0)\n"

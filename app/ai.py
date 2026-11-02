@@ -736,8 +736,32 @@ def _claude_status():
         info = json.loads(result.stdout or "{}")
     except (OSError, subprocess.TimeoutExpired, ValueError):
         info = {}
+    email = info.get("email")
+    if email != _claude_models.get("email"):  # autre compte : sa liste de modèles est relue
+        _claude_models.update(email=email, at=0.0, models=None, failed=0.0)
     return {"available": True, "loggedIn": bool(info.get("loggedIn")), "authMethod": info.get("authMethod"),
-            "subscription": info.get("subscriptionType")}
+            "subscription": info.get("subscriptionType"), "email": email}
+
+
+def logout(provider):
+    """Déconnexion de Claude ou de Codex (réglages). Gemini : sa clé est retirée dans les réglages ; modèle local :
+    sans compte."""
+    if provider == "claude":
+        cli, argv, env = cli_path(), ["auth", "logout"], _environment()
+    elif provider == "codex":
+        cli, argv, env = providers.find("codex"), ["logout"], providers._environment()
+    else:
+        raise ValueError(provider)
+    if not cli:
+        raise AIError("Not installed", "missing")
+    try:
+        result = subprocess.run([cli, *argv], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30, env=env)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise AIError(str(error))
+    if result.returncode != 0:
+        raise AIError((result.stderr or result.stdout).strip()[:300] or "Logout failed")
+    if provider == "claude":
+        _claude_models.update(email=None, at=0.0, models=None, failed=0.0)
 
 
 async def stream_answer(system, prompt, model, image=None, pages=()):

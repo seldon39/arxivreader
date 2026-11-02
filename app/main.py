@@ -191,6 +191,10 @@ class SetupRequest(BaseModel):
     step: str  # login (connexion) ou missing (installation)
 
 
+class LogoutRequest(BaseModel):
+    provider: str  # claude, codex
+
+
 class AppliedRequest(BaseModel):
     applied: bool
 
@@ -644,6 +648,18 @@ def ai_setup(body: SetupRequest):
         raise HTTPException(400, "Unknown setup step")
     except OSError as error:
         return JSONResponse({"error": str(error)}, status_code=500)
+    return {"ok": True}
+
+
+@app.post("/api/ai/logout")
+async def ai_logout(body: LogoutRequest):
+    """Déconnexion de Claude ou de Codex (réglages) ; changer de compte : /api/ai/setup, étape « switch »."""
+    try:
+        await run_in_threadpool(ai.logout, body.provider)
+    except ValueError:
+        raise HTTPException(400, "Unknown assistant")
+    except ai.AIError as error:
+        return _failed(error)
     return {"ok": True}
 
 

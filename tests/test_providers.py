@@ -5,6 +5,7 @@ import json
 import os
 import pathlib
 import stat
+import subprocess
 import sys
 import tempfile
 import threading
@@ -174,10 +175,35 @@ class Setup(unittest.TestCase):
             self.assertEqual(opened[0][:3], ["open", "-a", "Terminal"])
             providers.open_setup("claude", "login", "/path with space/claude")
             self.assertIn("'/path with space/claude' auth login --claudeai", (providers.LIBRARY / "ai" / "setup-claude.command").read_text())
+            # changer de compte : déconnexion, puis connexion
+            providers.open_setup("claude", "switch", "/bin/claude")
+            text = (providers.LIBRARY / "ai" / "setup-claude.command").read_text()
+            self.assertIn("/bin/claude auth logout && env -u ANTHROPIC_API_KEY /bin/claude auth login --claudeai", text)
+            providers.open_setup("codex", "switch")
+            self.assertIn("codex logout && codex login", (providers.LIBRARY / "ai" / "setup-codex.command").read_text())
             with self.assertRaises(ValueError):  # commandes fixées d'avance, rien d'autre
                 providers.open_setup("codex", "rm -rf ~")
         finally:
             providers.LIBRARY, providers.subprocess.run = saved
+
+    def test_logout(self):
+        calls = []
+
+        def run(argv, **kw):
+            calls.append(argv)
+            return subprocess.CompletedProcess(argv, 1 if "fail" in argv[0] else 0, "", "not logged in")
+        ai._claude_models.update(email="a@b", models=[{"value": "opus"}], at=1.0)
+        with unittest.mock.patch.object(ai.subprocess, "run", run), unittest.mock.patch.object(ai, "cli_path", return_value="/bin/claude"), \
+             unittest.mock.patch.object(providers, "find", return_value="/bin/codex"):
+            ai.logout("claude")
+            ai.logout("codex")
+            self.assertEqual(calls, [["/bin/claude", "auth", "logout"], ["/bin/codex", "logout"]])
+            self.assertIsNone(ai._claude_models["models"])  # liste des modèles du compte relue ensuite
+            with self.assertRaises(ValueError):
+                ai.logout("gemini")
+        with unittest.mock.patch.object(ai.subprocess, "run", run), unittest.mock.patch.object(ai, "cli_path", return_value="/fail/claude"):
+            with self.assertRaises(ai.AIError):
+                ai.logout("claude")
 
     @unittest.mock.patch.object(providers, "WINDOWS", True)
     def test_command_prompt_script(self):
@@ -198,6 +224,10 @@ class Setup(unittest.TestCase):
             providers.open_setup("codex", "missing")  # npm et codex sont des .cmd : « call », sinon le script s'arrête
             self.assertIn("call npm install -g @openai/codex && call codex login", (library / "ai" / "setup-codex.cmd").read_text(encoding="utf-8"))
             self.assertIn("set OPENAI_API_KEY=", text)
+            providers.open_setup("codex", "switch")
+            self.assertIn("call codex logout && call codex login", (library / "ai" / "setup-codex.cmd").read_text(encoding="utf-8"))
+            providers.open_setup("claude", "switch", r"C:\claude.exe")
+            self.assertIn('"C:\\claude.exe" auth logout && "C:\\claude.exe" auth login --claudeai', (library / "ai" / "setup-claude.cmd").read_text(encoding="utf-8"))
             with self.assertRaises(ValueError):
                 providers.open_setup("codex", "rm -rf ~")
 
