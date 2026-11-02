@@ -139,6 +139,7 @@ class Reader {
       inPdf: () => this.pdfMode,
       contextPages: (center, signal) => this.contextPages(center, signal),
       currentPage: () => this.pdf?.frame.contentWindow?.PDFViewerApplication?.pdfViewer?.currentPageNumber || null,
+      readingChapter: () => this.readingChapter(),
       equationIds: () => [...this.content.querySelectorAll(".ltx_tag_equation")].map((tag) => {
         const row = tag.closest("tr[id], table[id], .ltx_equation[id]");
         return row ? [tag.textContent.trim(), row.id] : null;
@@ -1175,6 +1176,15 @@ class Reader {
     this.panel.querySelectorAll(".node-item.current").forEach((el) => el.classList.remove("current"));
     if (theorem) this.panel.querySelector(`.node-item[data-id="${CSS.escape(theorem.id)}"]`)?.classList.add("current");
     this.savePosition(anchor.id);
+  }
+
+  // Livre : chapitre de l'endroit lu (onglet IA : résumé, relecture de ce chapitre par défaut) ; dans le PDF : aucun
+  readingChapter() {
+    const ids = new Set((this.structure.chapters || []).map((c) => c.id));
+    for (let element = this.pdfMode ? null : this.currentAnchor(); element; element = element.parentElement?.closest("[id]")) {
+      if (ids.has(element.id)) return element.id;
+    }
+    return null;
   }
 
   restorePosition() {

@@ -16,7 +16,7 @@ import unicodedata
 
 from .arxiv import extract_ids
 from .structure import (ANNOUNCES_PROOF_BELOW, IMPLICIT_REF, JUSTIFICATION, JUSTIFIES_NEXT, JUSTIFIES_PREVIOUS, NEEDS_PROOF,
-                        PROOF_HEADING, PROVING, STRUCTURE_VERSION, classify)
+                        PROOF_HEADING, PROVING, STRUCTURE_VERSION, assign_chapters, classify)
 from .texsource import _expand, _read_archive, choose_main
 
 SECTIONS = {"part": 0, "chapter": 0, "section": 1, "subsection": 2, "subsubsection": 3}
@@ -346,7 +346,7 @@ def extract(text, bbl=""):
             if command == "part" and not star:
                 parts += 1
                 anchors = [f"part.{parts}"]
-            toc.append({"id": section_id, "level": level, "title": numbered + plain(title), "anchors": anchors})
+            toc.append({"id": section_id, "level": level, "kind": command, "title": numbered + plain(title), "anchors": anchors})
             section_of_level[level] = section_id
             for deeper in range(level + 1, 4):
                 section_of_level.pop(deeper, None)
@@ -537,14 +537,14 @@ def extract(text, bbl=""):
 
     equations = {key: {"label": "", "owner": found[1]} for key, found in labels.items() if found[0] == "equation"}
     preamble = text[:begin] if begin >= 0 else ""
-    return {
+    return assign_chapters({
         "labels": {key: (found[1] if found[0] == "theorem" else None) for key, found in labels.items()},
         "macros": macros(preamble),
         "version": STRUCTURE_VERSION, "source": "tex", "toc": toc, "book": book,
         "nodes": [{k: v for k, v in nodes[n].items() if k not in ("insideProof", "chain")} for n in order],
         "proofBlocks": [{"id": p["id"], "of": p["of"], "anchors": []} for p in proofs.values()],
         "equations": equations, "bibliography": bibliography(body + "\n" + bbl), "hiddenText": 0,
-    }
+    })
 
 
 def implicit_dependencies(body, nodes, order, proofs, spans, refs, labels, text_equations, use, add):

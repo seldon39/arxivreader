@@ -358,6 +358,12 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
 - **Long documents** (books, beyond about 150 pages): the assistant receives the beginning (contents, introduction,
   notation) and a window around the question (the page of the region or the page being read, otherwise the
   statement or the quoted passage), more before than after; omitted pages are marked. A paper is always sent whole.
+- **Books, chapter by chapter**: in a book (arXiv HTML or TeX file with chapters), the *Summary* and *Review* tabs
+  have a *Chapter* menu (the chapter being read by default, ✓ for those already done), each chapter with its own
+  thread. The assistant reads that chapter only, with the book's contents and, from other chapters, statements only
+  (no proofs): those the chapter uses, and those that depend on it, directly or in a chain. The review then checks
+  the uses (*Uses from other chapters*) and says which later statements an error would affect (*Impact on other
+  chapters*). Both lists are shown, clickable, before the request is sent.
 - **Statements and proofs**: the note icon in the margin (on hover) opens a note and, for a statement,
   the reading state *understood / to review / checked* (shown in the title and in the list of statements).
 - **Notes without a passage**: right-click → "Add note", in HTML (on the paragraph; in a statement or proof, its

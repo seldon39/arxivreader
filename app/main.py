@@ -262,6 +262,7 @@ class AIRequest(BaseModel):
     page: int | None = None  # page de la zone, sinon page du PDF qu'on lit (livre trop long : fenêtre autour d'elle)
     pages: list[dict] = []  # PDF sans texte : [{"page", "image" (JPEG en base64)}] autour de la question
     second: str | None = None  # relecture croisée : l'autre assistant (claude, codex, gemini, local)
+    chapter: str | None = None  # livre : résumé ou relecture d'un seul chapitre
 
 
 class FindArxivRequest(BaseModel):
@@ -729,6 +730,11 @@ async def ask_ai(paper_id: str, body: AIRequest):
     try:
         model = ai.current_model(settings)
         cross = body.second is not None
+        chapter = body.chapter or None
+        if chapter and (body.task not in ("summary", "review") or chapter not in {c["id"] for c in structure.get("chapters", [])}):
+            raise ai.AIError("Unknown chapter")
+        if chapter:
+            target = chapter  # gardé avec l'échange : le document de ce chapitre
         if cross and (body.task != "review" or body.second not in providers.PROVIDERS
                       or body.second == providers.provider_of(model)):
             raise ai.AIError("Bad cross-review")
@@ -737,11 +743,13 @@ async def ask_ai(paper_id: str, body: AIRequest):
         if not ai.reads_images(model) and not cross:
             pages = []  # sans images : la question part sans les pages (comme avant)
         if cross:  # quatre demandes, préparées au fil de la relecture (ai.cross_review)
-            events = ai.cross_review(paper, structure, model, ai.model_of(body.second, settings), settings.get("language", "fr"), pages)
+            events = ai.cross_review(paper, structure, model, ai.model_of(body.second, settings), settings.get("language", "fr"), pages,
+                                     chapter)
         else:
             system, prompt = await run_in_threadpool(ai.build_prompt, paper, structure, body.task, target, quote, question,
                                                      parent, settings.get("language", "fr"), ai.paper_limit(model), zone,
-                                                     [number for number, _ in pages], max(1, body.page) if body.page else None)
+                                                     [number for number, _ in pages], max(1, body.page) if body.page else None,
+                                                     chapter=chapter)
             events = ({"delta": text} async for text in ai.stream_answer(system, prompt, model, image, [data for _, data in pages]))
     except ai.AIError as error:
         return JSONResponse({"error": str(error)}, status_code=400)

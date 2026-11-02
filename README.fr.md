@@ -374,6 +374,12 @@ il suffit de la fermer et d'aller dans le feed.
 - **Documents longs** (livres, au-delà de 150 pages environ) : l'assistant reçoit le début (sommaire, introduction,
   notations) et une fenêtre autour de la question (page de la zone ou page qu'on lit, sinon énoncé ou passage cité),
   plus avant qu'après ; les pages omises sont signalées. Un article part toujours en entier.
+- **Livres, chapitre par chapitre** : dans un livre (HTML d'arXiv ou fichier TeX à chapitres), les onglets *Résumé*
+  et *Relecture* ont un menu *Chapitre* (par défaut celui qu'on lit, ✓ pour ceux déjà faits), chaque chapitre avec son
+  fil. L'assistant lit ce chapitre seul, avec le sommaire du livre et, des autres chapitres, les énoncés seuls (sans
+  preuve) : ceux que le chapitre utilise, et ceux qui en dépendent, directement ou en chaîne. La relecture vérifie
+  alors ces usages (*Uses from other chapters*) et dit quels énoncés suivants une erreur toucherait (*Impact on other
+  chapters*). Les deux listes sont montrées, cliquables, avant l'envoi.
 - **Énoncés et preuves** : l'icône de note en marge (au survol) ouvre une note et, pour un énoncé,
   l'état de lecture *compris / à revoir / vérifié* (affiché dans le titre et la liste des énoncés).
 - **Notes sans passage** : clic droit → « Ajouter une note », en HTML (sur le paragraphe ; dans un énoncé ou une

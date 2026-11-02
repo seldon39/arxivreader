@@ -1002,6 +1002,12 @@ mark.hl.hl-display > mjx-container[display="true"] { margin: .2em 0 !important; 
 .ai-footnote { margin: 0; font-size: 11px; color: var(--muted); }
 .ai-launch { width: 100%; justify-content: center; height: 38px; font-size: 14px; }
 .ai-launch-row { display: flex; gap: 8px; }
+/* Livre : chapitre du résumé ou de la relecture, et les énoncés d'autres chapitres joints (onglet IA) */
+.ai-chapterbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 13px; color: var(--muted); }
+.ai-chapterbar select { flex: 1; min-width: 0; }
+.ai-uses-title { margin-top: 12px; font-size: 13px; color: var(--muted); }
+.ai-uses { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 6px; }
+.ai-uses a.ai-ref { font-size: 13px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); text-decoration: none; }
 .ai-launch-row .ai-launch { flex: 1; width: auto; }
 .ai-launch-row .button:not(.ai-launch) { height: 38px; }
 /* Relecture croisée : sorte de relecture, les deux relecteurs, étiquettes des points et étapes repliées */

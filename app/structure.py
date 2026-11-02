@@ -7,7 +7,7 @@ from bs4 import NavigableString, Tag
 
 from .arxiv import ID_RE, extract_ids
 
-STRUCTURE_VERSION = 13  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
+STRUCTURE_VERSION = 14  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
 
 SECTION_LEVELS = {
     "ltx_part": 0, "ltx_chapter": 0, "ltx_section": 1, "ltx_appendix": 1,
@@ -397,13 +397,13 @@ def extract_structure(fragment, overrides=None):
     toc = []
     for element in fragment.find_all(True):
         classes = element.get("class") or []
-        level = next((SECTION_LEVELS[c] for c in classes if c in SECTION_LEVELS), None)
-        if level is None:
+        kind = next((c for c in classes if c in SECTION_LEVELS), None)
+        if kind is None:
             continue
         heading = element.find(re.compile(r"^h[1-6]$"))
         if heading is None:
             continue
-        toc.append({"id": ensure_id(element, "sec"), "level": level, "title": squash(plain(heading))})
+        toc.append({"id": ensure_id(element, "sec"), "level": SECTION_LEVELS[kind], "kind": kind[4:], "title": squash(plain(heading))})
 
     # Énoncés
     nodes = {}
@@ -813,14 +813,43 @@ def extract_structure(fragment, overrides=None):
         if re.search(r"#[#\d]", tex) and not para.find(class_="ltx_note") and "arx-macro-debris" not in classes:
             para["class"] = classes + ["arx-macro-debris"]
 
-    return {
+    return assign_chapters({
         "version": STRUCTURE_VERSION,
         "toc": toc,
         "nodes": [nodes[n] for n in order],
         "equations": equations,
         "bibliography": bibliography,
         "hiddenText": hidden,
-    }
+    })
+
+
+def assign_chapters(structure):
+    """Livre (au moins deux chapitres, HTML ou source TeX) : `book`, liste des chapitres (`chapters`) et chapitre de
+    chaque énoncé (`chapter`), d'après l'ordre du sommaire. Une annexe de premier niveau d'un livre est un chapitre."""
+    toc = structure.get("toc", [])
+    chapters = [entry for entry in toc if entry.get("kind") == "chapter"]
+    if len(chapters) < 2:
+        structure["chapters"] = []
+        return structure
+
+    def is_chapter(entry):
+        return entry.get("kind") == "chapter" or (entry.get("kind") == "appendix" and "." not in entry["id"])
+
+    structure["book"] = True
+    owner, current = {}, None
+    for entry in toc:
+        if is_chapter(entry):
+            current = entry["id"]
+        elif entry.get("level", 9) == 0:  # partie : hors de tout chapitre
+            current = None
+        owner[entry["id"]] = current
+    structure["chapters"] = [{"id": entry["id"], "title": entry.get("title", "")} for entry in toc if is_chapter(entry)]
+    for node in structure.get("nodes", []):
+        section = node.get("section") or ""
+        while section and section not in owner:  # sous-section absente du sommaire : la section qui la contient
+            section = section.rpartition(".")[0]
+        node["chapter"] = owner.get(section)
+    return structure
 
 
 EQUATION_CLASSES = {"ltx_equation", "ltx_equationgroup", "ltx_eqn_row", "ltx_eqn_table"}

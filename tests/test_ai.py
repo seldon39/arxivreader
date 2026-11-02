@@ -363,3 +363,89 @@ class LongDocuments(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+BOOK = """<article><h1 class="ltx_title ltx_title_document">A short book</h1>
+<section class="ltx_chapter" id="Ch1"><h2 class="ltx_title">Chapter 1 Basics</h2>
+<section class="ltx_section" id="Ch1.S1"><h3 class="ltx_title">1.1 Start</h3>
+<div class="ltx_theorem ltx_theorem_lemma" id="Thmlemma1"><h6 class="ltx_title ltx_title_theorem">Lemma 1.1.1.</h6>
+<p>Every basic object is nice.</p></div></section></section>
+<section class="ltx_chapter" id="Ch2"><h2 class="ltx_title">Chapter 2 Core</h2>
+<section class="ltx_section" id="Ch2.S1"><h3 class="ltx_title">2.1 Main</h3>
+<div class="ltx_theorem ltx_theorem_theorem" id="Thmtheorem1"><h6 class="ltx_title ltx_title_theorem">Theorem 2.1.1.</h6>
+<p>Core objects are nice, by <a href="#Thmlemma1" class="ltx_ref">Lemma 1.1.1</a>.</p></div>
+<p>Text only in chapter two.</p></section></section>
+<section class="ltx_chapter" id="Ch3"><h2 class="ltx_title">Chapter 3 Uses</h2>
+<section class="ltx_section" id="Ch3.S1"><h3 class="ltx_title">3.1 Application</h3>
+<div class="ltx_theorem ltx_theorem_corollary" id="Thmcorollary1"><h6 class="ltx_title ltx_title_theorem">Corollary 3.1.1.</h6>
+<p>Applied objects are nice, by <a href="#Thmtheorem1" class="ltx_ref">Theorem 2.1.1</a>.</p></div>
+<div class="ltx_theorem ltx_theorem_corollary" id="Thmcorollary2"><h6 class="ltx_title ltx_title_theorem">Corollary 3.1.2.</h6>
+<p>Even more, by <a href="#Thmcorollary1" class="ltx_ref">Corollary 3.1.1</a>.</p></div></section></section></article>"""
+
+
+class Chapters(unittest.TestCase):
+    def setUp(self):
+        from bs4 import BeautifulSoup
+        from app.structure import extract_structure
+        self.saved = (db.DB_PATH, db.LIBRARY, library.PAPERS, ai.stream_answer)
+        self.tmp = pathlib.Path(tempfile.mkdtemp())
+        db.DB_PATH, db.LIBRARY, library.PAPERS = self.tmp / "test.db", self.tmp, self.tmp / "papers"
+        db.init()
+        folder = library.PAPERS / "b1"
+        folder.mkdir(parents=True)
+        (folder / "content.html").write_text(BOOK, encoding="utf-8")
+        self.structure = extract_structure(BeautifulSoup(BOOK, "html.parser"))
+        (folder / "structure.json").write_text(json.dumps(self.structure), encoding="utf-8")
+        db.save_paper({"id": "b1", "arxiv_id": "2601.00002", "version": 1, "title": "A short book", "authors": ["A. B."],
+                       "abstract": "", "categories": ["math.DG"], "source": "arxiv-html", "in_library": 1})
+        self.paper = db.get_paper("b1")
+
+    def tearDown(self):
+        db.DB_PATH, db.LIBRARY, library.PAPERS, ai.stream_answer = self.saved
+
+    def test_html_book_has_chapters(self):
+        self.assertTrue(self.structure["book"])
+        self.assertEqual([c["id"] for c in self.structure["chapters"]], ["Ch1", "Ch2", "Ch3"])
+        self.assertEqual({n["label"]: n["chapter"] for n in self.structure["nodes"]},
+                         {"Lemma 1.1.1": "Ch1", "Theorem 2.1.1": "Ch2", "Corollary 3.1.1": "Ch3", "Corollary 3.1.2": "Ch3"})
+
+    def test_chapter_review_prompt(self):
+        system, prompt = ai.build_prompt(self.paper, self.structure, "review", "Ch2", language="en", chapter="Ch2")
+        self.assertIn("Text only in chapter two.", prompt)
+        self.assertNotIn("Applied objects are nice", prompt.split("</paper>")[0])  # le chapitre seul
+        used = prompt.split("<used_statements>")[1].split("</used_statements>")[0]
+        self.assertIn('label="Lemma 1.1.1"', used)
+        self.assertIn("Every basic object is nice.", used)
+        dependent = prompt.split("<dependent_statements>")[1].split("</dependent_statements>")[0]
+        self.assertIn('label="Corollary 3.1.1" chapter="Chapter 3 Uses" depends_on="Theorem 2.1.1"', dependent)
+        self.assertIn('label="Corollary 3.1.2" chapter="Chapter 3 Uses" depends_on="Corollary 3.1.1"', dependent)  # par une chaîne
+        self.assertIn("### Impact on other chapters", prompt)
+        self.assertIn("Chapter 1 Basics", prompt.split("<contents>")[1])
+        with self.assertRaises(ai.AIError):
+            ai.build_prompt(self.paper, self.structure, "ask", question="?", chapter="Ch2")  # seulement résumé, relecture
+
+    def test_chapter_request(self):
+        async def fake(system, prompt, model, image=None, pages=()):
+            yield "ok"
+        ai.stream_answer = fake
+        client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
+        self.assertEqual(client.post("/api/papers/b1/ai", json={"task": "summary", "chapter": "Nope"}).status_code, 400)
+        events = [json.loads(line) for line in client.post("/api/papers/b1/ai", json={"task": "summary", "chapter": "Ch3"}).text.splitlines()]
+        self.assertEqual((events[-1]["exchange"]["target"], events[-1]["exchange"]["status"]), ("Ch3", "done"))
+
+    def test_tex_book_chapters(self):
+        from app import texsource, texstructure
+        source = ("\\documentclass{book}\n\\newtheorem{theorem}{Theorem}[chapter]\n\\begin{document}\n"
+                  "\\chapter{One}\\label{c1}\n\\begin{theorem}\\label{t1}First.\\end{theorem}\n"
+                  "% \\chapter{commented}\n"
+                  "\\chapter{Two}\nOnly here.\n\\begin{theorem}By Theorem~\\ref{t1}.\\end{theorem}\n\\end{document}\n")
+        source = texsource._strip_comments(source)  # comme la source enregistrée (texsource._expand)
+        structure = texstructure.extract(source)
+        self.assertEqual(len(structure["chapters"]), 2)
+        second = structure["chapters"][1]["id"]
+        text = ai._chapter_text(None, {}, structure, ai._tex_text(source), second)
+        self.assertTrue(text.startswith("\\chapter{Two}"))
+        self.assertIn("Only here.", text)
+        self.assertNotIn("First.", text)
+        used, dependents, own = ai.chapter_links(structure, second)
+        self.assertEqual([n["label"] for n in used], ["Theorem 1.1"])

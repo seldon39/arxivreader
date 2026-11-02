@@ -90,10 +90,12 @@ export class Assistant {
   // `inPdf()` : article lu dans son PDF (la consigne mentionne alors les zones) ; `contextPages(center)` : pages du
   // PDF autour de `center` (page affichée si null), en images, pour un article sans texte (scan)
   constructor({ paper, structure, find, navigate, annotator, onChange, equationIds, inPdf = () => false, contextPages = null,
-    currentPage = null }) {
+    currentPage = null, readingChapter = () => null }) {
     this.paper = paper;
     this.inPdf = inPdf;
     this.currentPage = currentPage;  // page du PDF qu'on lit
+    this.readingChapter = readingChapter;  // livre : chapitre de l'endroit lu (résumé, relecture de ce chapitre par défaut)
+    this.chapterOf = {};      // livre : chapitre choisi dans Résumé, Relecture (null : tout le livre)
     this.contextPages = contextPages;
     this.equationIds = equationIds;
     this.structure = structure;
@@ -119,6 +121,7 @@ export class Assistant {
 
   setStructure(structure) {
     this.structure = structure;
+    this.chapterOf = {};
     this.byId = new Map(structure.nodes.map((n) => [n.id, n]));
     this.refs = this.buildRefs();
   }
@@ -321,18 +324,19 @@ export class Assistant {
   }
 
   // `second` : relecture croisée avec cet assistant (claude, codex, gemini, local)
-  async ask({ task, target = null, quote = null, question = null, parent = null, zone = null, second = null }) {
+  async ask({ task, target = null, quote = null, question = null, parent = null, zone = null, second = null, chapter = null }) {
     if (!this.canAsk()) return;
     const controller = new AbortController();
     if (zone) quote = zone.quote || null;
-    const local = { id: `local-${Date.now()}`, startedAt: Date.now(), task, target, quote, question, parent_id: parent?.id ?? null, answer: "", status: "running",
+    const local = { id: `local-${Date.now()}`, startedAt: Date.now(), task, target: chapter || target, quote, question, parent_id: parent?.id ?? null, answer: "", status: "running",
       imageUrl: zone?.image || null, second: second && modelOf(second), steps: second ? [] : null, phase: null,
       model: this.status?.model || currentModel(), created_at: new Date().toISOString().slice(0, 19).replace("T", " ") };
     this.exchanges.push(local);
     let finish;
     this.running = { exchange: local, controller, finished: new Promise((resolve) => { finish = resolve; }) };
     this.view = this.viewOf(local);
-    this.positions[this.view] = { top: 0, atBottom: true };
+    if (this.byChapter(this.view)) this.chapterOf[this.view] = this.chapterOfExchange(local);
+    this.positions[this.place(this.view)] = { top: 0, atBottom: true };
     this.onChange({ show: true });
     let frame = 0;
     const redraw = () => {
@@ -345,7 +349,7 @@ export class Assistant {
       // PDF sans texte (scan) : l'assistant voit les pages autour de la zone (sinon de la page affichée)
       const pages = this.paper.noText && task !== "transcribe" && this.readsImages() && this.contextPages
         ? await this.contextPages(zone?.page ?? null, controller.signal).catch(() => []) : [];
-      await streamAI(this.paper.id, { task, target, quote, question, parent_id: parent?.id ?? null, ...image, pages, ...(second ? { second } : {}) }, (event) => {
+      await streamAI(this.paper.id, { task, target, quote, question, parent_id: parent?.id ?? null, ...image, pages, ...(second ? { second } : {}), ...(chapter ? { chapter } : {}) }, (event) => {
         if (event.exchange) Object.assign(local, event.exchange, { answer: local.answer, steps: local.steps });
         if (event.delta) { local.answer += event.delta; redraw(); }
         if (event.phase) local.phase = event.phase;  // ligne d'attente : mise à jour chaque seconde
@@ -460,6 +464,8 @@ export class Assistant {
   }
 
   title(exchange) {
+    const chapter = ["summary", "review"].includes(exchange.task) && this.chapterOfExchange(exchange);
+    if (chapter) return t(`ai.title.${exchange.task}Chapter`, { label: this.chapterTitle(chapter) });
     const node = this.byId.get(exchange.target);
     const label = node?.label || "";
     return t(`ai.title.${exchange.task}`, { label });
@@ -471,10 +477,70 @@ export class Assistant {
 
   // fil d'un échange : celui de son premier ancêtre (résumé, relecture, sinon questions)
   viewOf(exchange) {
+    const root = this.rootOf(exchange);
+    return root?.task === "summary" ? "summary" : root?.task === "review" ? "review" : "questions";
+  }
+
+  rootOf(exchange) {
     const byId = new Map(this.exchanges.map((e) => [e.id, e]));
     let root = exchange;
     for (let depth = 0; root?.parent_id && byId.has(root.parent_id) && depth < 50; depth++) root = byId.get(root.parent_id);
-    return root?.task === "summary" ? "summary" : root?.task === "review" ? "review" : "questions";
+    return root;
+  }
+
+  // ---------- Livre : résumé, relecture d'un chapitre ----------
+
+  get chapters() { return this.structure.chapters || []; }
+
+  chapterTitle(id) { return this.chapters.find((c) => c.id === id)?.title || ""; }
+
+  // chapitre d'un résumé ou d'une relecture, et des questions posées dessus ; null : tout le livre
+  chapterOfExchange(exchange) {
+    const target = this.rootOf(exchange)?.target;
+    return this.chapters.some((c) => c.id === target) ? target : null;
+  }
+
+  // Résumé, Relecture d'un livre : un chapitre à la fois ; position de lecture gardée par chapitre
+  byChapter(view) { return view !== "questions" && this.chapters.length >= 2; }
+
+  place(view, chapter = this.chapterOf[view]) { return this.byChapter(view) ? `${view}:${chapter || ""}` : view; }
+
+  // Énoncés d'autres chapitres que le chapitre utilise, et ceux qui en dépendent, directement ou par une chaîne :
+  // comme ai.chapter_links (ce que l'assistant reçoit), montrés avant l'envoi
+  chapterLinks(chapter) {
+    const own = new Set(this.structure.nodes.filter((n) => n.chapter === chapter).map((n) => n.id));
+    const used = new Set([...own].flatMap((id) => this.byId.get(id)?.uses || []).filter((id) => this.byId.has(id) && !own.has(id)));
+    const reached = new Set();
+    const todo = [...own];
+    while (todo.length) {
+      for (const user of this.byId.get(todo.pop())?.usedBy || []) {
+        if (this.byId.has(user) && !own.has(user) && !reached.has(user)) { reached.add(user); todo.push(user); }
+      }
+    }
+    const inOrder = (set) => this.structure.nodes.filter((n) => set.has(n.id));
+    return [inOrder(used), inOrder(reached)];
+  }
+
+  // Avant l'envoi : les énoncés joints, cliquables (aperçu au survol, comme les renvois des réponses)
+  chapterLinksBox(chapter) {
+    const [used, dependents] = this.chapterLinks(chapter);
+    const short = (title) => (title.length > 28 ? `${title.slice(0, 27)}…` : title);
+    const chips = (nodes) => (nodes.length ? h("div", { class: "ai-uses" }, nodes.map((n) => h("a", { href: `#${n.id}`, class: "ai-ref", dataset: { ref: n.id },
+      onclick: (event) => { event.preventDefault(); this.navigate(n.id); } }, n.label, h("span", { class: "muted" }, ` · ${short(this.chapterTitle(n.chapter))}`))))
+      : h("div", { class: "ai-uses muted small" }, t("ai.uses.none")));
+    return [h("div", { class: "ai-uses-title" }, t("ai.uses.before")), chips(used), h("div", { class: "ai-uses-title" }, t("ai.uses.after")), chips(dependents)];
+  }
+
+  // Sous les sous-onglets : chapitre du résumé ou de la relecture (✓ : déjà fait), ou tout le livre (son début)
+  chapterBar(view) {
+    const task = view === "summary" ? "summary" : "review";
+    const done = new Set(this.exchanges.filter((e) => e.task === task && e.status === "done" && typeof e.id === "number").map((e) => this.chapterOfExchange(e) || ""));
+    const mark = (id) => (done.has(id) ? "  ✓" : "");
+    const select = h("select", { class: "ai-model", "aria-label": t("ai.chapter"), title: t("ai.chapter"),
+      onchange: () => { this.chapterOf[view] = select.value || null; this.onChange(); } },
+    h("option", { value: "", selected: !this.chapterOf[view] }, t("ai.wholeBook") + mark("")),
+    this.chapters.map((c) => h("option", { value: c.id, selected: c.id === this.chapterOf[view] }, c.title + mark(c.id))));
+    return h("div", { class: "ai-chapterbar" }, h("span", {}, t("ai.chapter")), select);
   }
 
   renderPanel(body, { focus = false } = {}) {
@@ -488,7 +554,12 @@ export class Assistant {
     const view = this.view;
     const status = this.status;
     this.live = null;
-    const exchanges = this.exchanges.filter((e) => this.viewOf(e) === view);
+    const book = this.byChapter(view);
+    if (book && !(view in this.chapterOf)) this.chapterOf[view] = this.readingChapter() || null;
+    const chapter = book ? this.chapterOf[view] : null;
+    const place = this.place(view);
+    this.shown = place;
+    const exchanges = this.exchanges.filter((e) => this.viewOf(e) === view && (!book || this.chapterOfExchange(e) === chapter));
     this.loadPartners();
     const notice = status && !status.loggedIn ? setupNotice(status, () => { this.status = null; this.onChange(); }) : null;
 
@@ -503,8 +574,12 @@ export class Assistant {
         : this.renderExchange(content, e, { reply: false })));
       else {
         const cross = view === "review" && this.crossPartner();
-        content.append(h("div", { class: "ai-empty ai-empty-doc" }, h("div", { class: "ai-empty-title" }, t(cross ? "ai.title.cross" : `ai.title.${view}`)),
-          h("p", {}, cross ? t("ai.intro.cross", { a: modelLabel(currentModel()), b: modelLabel(modelOf(cross.provider)) }) : t(`ai.intro.${view}`))));
+        const label = chapter && this.chapterTitle(chapter);
+        const title = chapter ? t(cross ? "ai.title.crossChapter" : `ai.title.${view}Chapter`, { label }) : t(cross ? "ai.title.cross" : `ai.title.${view}`);
+        const intro = cross ? t("ai.intro.cross", { a: modelLabel(currentModel()), b: modelLabel(modelOf(cross.provider)) })
+          : t(chapter ? "ai.intro.chapter" : `ai.intro.${view}`);
+        content.append(h("div", { class: "ai-empty ai-empty-doc" }, h("div", { class: "ai-empty-title" }, title), h("p", {}, intro),
+          chapter ? this.chapterLinksBox(chapter) : null));
       }
     }
 
@@ -513,18 +588,18 @@ export class Assistant {
       onclick: () => thread.scrollTo({ top: 0, behavior: "smooth" }) });
     const dot = h("span", { class: "ai-jump-dot", hidden: true });
     const last = exchanges.length ? exchanges[exchanges.length - 1].id : null;
-    if (!(view in this.seen)) this.seen[view] = last;
+    if (!(place in this.seen)) this.seen[place] = last;
     const down = h("button", { class: "ai-jump down", type: "button", title: t("ai.toBottom"), "aria-label": t("ai.toBottom"), html: ARROW_DOWN, hidden: true,
       onclick: () => thread.scrollTo({ top: thread.scrollHeight, behavior: "smooth" }) }, dot);
     let scrollbar = null;
     const update = () => {
       if (!thread.isConnected) return;
       const atBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 24;
-      this.positions[view] = { top: thread.scrollTop, atBottom };
-      if (atBottom) this.seen[view] = last;
+      this.positions[place] = { top: thread.scrollTop, atBottom };
+      if (atBottom) this.seen[place] = last;
       up.hidden = thread.scrollTop < 24;
       down.hidden = atBottom;
-      dot.hidden = atBottom || this.seen[view] === last;
+      dot.hidden = atBottom || this.seen[place] === last;
       // barre de défilement classique (Windows) : les boutons restent à sa gauche ; posée seulement si elle change
       // (à chaque défilement, elle referait le style de tout le fil)
       const width = thread.offsetWidth - thread.clientWidth;
@@ -535,7 +610,7 @@ export class Assistant {
     this.threadObserver?.disconnect(); // fil du rendu précédent
     this.threadObserver = new ResizeObserver(() => {
       if (!thread.isConnected) return;
-      if (this.positions[view]?.atBottom) thread.scrollTop = thread.scrollHeight;
+      if (this.positions[place]?.atBottom) thread.scrollTop = thread.scrollHeight;
       update();
     });
     this.threadObserver.observe(content);
@@ -543,10 +618,10 @@ export class Assistant {
     this.updateJumps = update;
 
     const frame = h("div", { class: "ai-frame" }, thread, up, down);
-    body.append(this.viewBar(), ...(notice ? [notice] : []), frame, this.bottomBar(view, exchanges, focus));
+    body.append(this.viewBar(), book ? this.chapterBar(view) : "", ...(notice ? [notice] : []), frame, this.bottomBar(view, exchanges, focus));
     // position de lecture : celle laissée ; la première fois, le document depuis le haut, sinon la dernière réponse
     requestAnimationFrame(() => {
-      const kept = this.positions[view];
+      const kept = this.positions[place];
       const first = view !== "questions" && exchanges.length === 1;
       thread.scrollTop = kept ? (kept.atBottom ? thread.scrollHeight : kept.top) : first ? 0 : thread.scrollHeight;
       update();
@@ -556,7 +631,7 @@ export class Assistant {
   // le fil suit la réponse qui s'écrit, si l'on est en bas
   followAnswer() {
     if (!this.thread?.isConnected) return;
-    if (this.positions[this.view]?.atBottom !== false) this.thread.scrollTop = this.thread.scrollHeight;
+    if (this.positions[this.shown]?.atBottom !== false) this.thread.scrollTop = this.thread.scrollHeight;
     this.updateJumps?.();
   }
 
@@ -589,11 +664,12 @@ export class Assistant {
     const relaunch = view === "review" && this.relaunch && !running;
     if (view !== "questions" && (!this.lastDocument(view, exchanges) || relaunch) && !exchanges.some((e) => e.status === "running")) {
       const task = view === "summary" ? "summary" : "review";
+      const chapter = this.byChapter(view) ? this.chapterOf[view] : null;
       const cross = view === "review" && this.crossPartner();
       const launch = running
         ? h("button", { class: "button ai-launch", type: "button", onclick: () => this.stop() }, t("ai.stop"))
-        : h("button", { class: "button primary ai-launch", type: "button", onclick: () => { this.relaunch = false; this.ask({ task, second: cross?.provider }); } },
-          t(cross ? "ai.launch.cross" : `ai.launch.${task}`));
+        : h("button", { class: "button primary ai-launch", type: "button", onclick: () => { this.relaunch = false; this.ask({ task, second: cross?.provider, chapter }); } },
+          t(cross ? "ai.launch.cross" : chapter ? `ai.launch.${task}Chapter` : `ai.launch.${task}`));
       // « Refaire » une relecture : retour au champ des questions sans rien lancer
       const cancel = relaunch && h("button", { class: "button", type: "button", onclick: () => { this.relaunch = false; this.onChange(); } }, t("ai.cancelRedo"));
       const picker = this.modelPicker(cross?.provider) || h("span", { class: "muted small" }, modelLabel(currentModel()));
@@ -794,7 +870,7 @@ export class Assistant {
     const second = secondOf(exchange);
     const choose = exchange.task === "review" && this.partners?.length;
     const again = () => {
-      if (!choose) { this.ask({ task: exchange.task, second: second && providerOf(second) }); return; }
+      if (!choose) { this.ask({ task: exchange.task, second: second && providerOf(second), chapter: this.chapterOfExchange(exchange) }); return; }
       this.relaunch = !this.relaunch;
       this.onChange();
     };
@@ -802,6 +878,8 @@ export class Assistant {
       ? h("button", { class: "button small-button", type: "button", title: t(`ai.redo.${exchange.task}`), "aria-pressed": choose ? this.relaunch : undefined,
         onclick: again }, h("span", { class: "ai-icon", html: icons.refresh }), t("ai.redo")) : null;
     const answer = this.renderAnswer(exchange, { reply: false, document: true });
+    const chapter = this.chapterOfExchange(exchange);  // livre : le chapitre du document, dans son en-tête
+    if (chapter) answer.querySelector(".ai-who span:not(.ai-who-dot)")?.append(` · ${this.chapterTitle(chapter)}`);
     const who = answer.querySelector(".ai-who");
     who?.append(h("span", { class: "spacer" }), redo || "");
     if (exchange.steps?.length) who?.after(this.stepsFold(exchange));

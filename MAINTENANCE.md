@@ -374,6 +374,16 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   « other » : un code « login » ferait croire le premier déconnecté. Assistants prêts : `/api/ai/partners`
   (`ai.partners`, vérifiés en parallèle ; gardés deux minutes par la page).
 
+- Livres, résumé et relecture par chapitre : `structure.assign_chapters` (HTML d'arXiv et `texstructure`) marque
+  `book`, liste `chapters` (chapitres et annexes de premier niveau, d'après le `kind` des entrées du sommaire) et pose
+  `chapter` sur chaque énoncé. La demande porte `chapter` (résumé ou relecture seulement, sinon 400) ; `build_prompt`
+  n'envoie que ce chapitre (`_chapter_text` : élément du HTML, sinon n-ième `\chapter` de la source développée),
+  le sommaire et `_chapter_context` : énoncés d'autres chapitres utilisés (`<used_statements>`) et qui en dépendent,
+  en chaîne par `usedBy` (`<dependent_statements>`, avec `depends_on`), énoncés seuls, au plus `CHAPTER_STATEMENTS`.
+  Consignes `CHAPTER_PROMPTS`, et `CHAPTER_SYNTHESIS` pour une relecture croisée. Côté page (`ai.js`) : menu
+  `chapterBar`, fils par chapitre (`chapterOf`, positions par `place`), listes `chapterLinksBox` ; chapitre lu par
+  défaut : `reader.readingChapter`.
+
 - Fichiers TeX importés (`texfile.py`) : compilés dans `<temp>/arxivreader-tex/<id>`, jamais dans le dossier de
   l'utilisateur (latexmk `-outdir`). latexmk retient qu'un `.bib` manquait et ne relance plus BibTeX : après un
   `.bib` manquant, son état (`.fdb_latexmk`) est effacé. Les énoncés qui ont un `\label` ont un identifiant tiré de
