@@ -307,7 +307,9 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
 - Couleurs de l'auteur (latexml.css, fin) : `--ltx-fg-color` / `--ltx-bg-color` de LaTeXML, et `mathcolor` /
   `mathbackground` des formules mis dans ces variables par `amsfix.colorVariables` (sinon MathJax ou le navigateur les
   figent : noir imposé invisible en mode sombre). Telles quelles en mode clair ; en mode sombre, oklch de même teinte,
-  texte éclairci (luminosité ≥ 0,72, le noir devient blanc), fond assombri (≤ 0,35), sauf dans les dessins (fond blanc). Vérifié sur les 16 articles d'arXiv à consignes cachées recensés par arXiv:2507.06185 (versions citées) : chaque
+  texte éclairci (luminosité ≥ 0,72, le noir devient blanc), fond assombri (≤ 0,35 ; blanc ou presque : transparent, c'est la couleur de la
+  page), filets `\rule` éclaircis comme le texte ; jamais dans les dessins ni leurs étiquettes HTML (`.figure-card`, fond
+  blanc : du texte noir y deviendrait blanc sur blanc). Vérifié sur les 16 articles d'arXiv à consignes cachées recensés par arXiv:2507.06185 (versions citées) : chaque
   consigne signalée, aucune transmise, aucun autre signalement. Lecteur : « Afficher » va au premier passage, « Suivant »
   aux autres. Figures SVG insérées par `<object data>` : changées en `<img>` au nettoyage (`sanitize._objects_to_images`).
 

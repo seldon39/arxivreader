@@ -239,20 +239,27 @@ a.ams-title:hover { text-decoration: underline; }
    \textcolor, \colorbox, \cellcolor (--ltx-fg-color, --ltx-bg-color de LaTeXML) et couleurs des formules (mathcolor,
    mises dans les mêmes variables par fixMathML). Telles quelles sur fond clair ; en mode sombre, même teinte, texte
    éclairci et fond assombri (le noir imposé devient blanc, un bleu foncé un bleu clair), sauf dans les dessins, toujours
-   sur fond blanc. Texte invisible révélé : sa propre couleur (app.css, !important). */
+   sur fond blanc (étiquettes comprises : sorties du SVG, elles sont dans la carte du dessin). Fond blanc ou presque
+   (\colorbox{white}, couleur de la page) : transparent ; filet (\rule, dessiné par son fond) : éclairci comme le texte. Texte invisible révélé : sa propre couleur (app.css, !important). */
 :is(.paper-content, .preview, .dep-card) [style*="--ltx-fg-color"] { color: var(--ltx-fg-color); }
 :is(.paper-content, .preview, .dep-card) [style*="--ltx-bg-color"] { background-color: var(--ltx-bg-color); }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) :is(.paper-content, .preview, .dep-card) [style*="--ltx-fg-color"]:not(svg *) {
+  :root:not([data-theme="light"]) :is(.paper-content, .preview, .dep-card) .ltx_rule[style*="--ltx-bg-color"]:not(svg *, .figure-card *) {
+    background-color: oklch(from var(--ltx-bg-color) max(l, 1.05 - l, 0.72) c h);
+  }
+  :root:not([data-theme="light"]) :is(.paper-content, .preview, .dep-card) [style*="--ltx-fg-color"]:not(svg *, .figure-card *) {
     color: oklch(from var(--ltx-fg-color) max(l, 1.05 - l, 0.72) c h);
   }
-  :root:not([data-theme="light"]) :is(.paper-content, .preview, .dep-card) [style*="--ltx-bg-color"]:not(svg *) {
-    background-color: oklch(from var(--ltx-bg-color) min(l, 1.05 - l, 0.35) c h);
+  :root:not([data-theme="light"]) :is(.paper-content, .preview, .dep-card) [style*="--ltx-bg-color"]:not(svg *, .figure-card *) {
+    background-color: oklch(from var(--ltx-bg-color) min(l, 1.05 - l, 0.35) c h / clamp(0, (0.97 - l) * 30, alpha));
   }
 }
-:root[data-theme="dark"] :is(.paper-content, .preview, .dep-card) [style*="--ltx-fg-color"]:not(svg *) {
+:root[data-theme="dark"] :is(.paper-content, .preview, .dep-card) .ltx_rule[style*="--ltx-bg-color"]:not(svg *, .figure-card *) {
+  background-color: oklch(from var(--ltx-bg-color) max(l, 1.05 - l, 0.72) c h);
+}
+:root[data-theme="dark"] :is(.paper-content, .preview, .dep-card) [style*="--ltx-fg-color"]:not(svg *, .figure-card *) {
   color: oklch(from var(--ltx-fg-color) max(l, 1.05 - l, 0.72) c h);
 }
-:root[data-theme="dark"] :is(.paper-content, .preview, .dep-card) [style*="--ltx-bg-color"]:not(svg *) {
-  background-color: oklch(from var(--ltx-bg-color) min(l, 1.05 - l, 0.35) c h);
+:root[data-theme="dark"] :is(.paper-content, .preview, .dep-card) [style*="--ltx-bg-color"]:not(svg *, .figure-card *) {
+  background-color: oklch(from var(--ltx-bg-color) min(l, 1.05 - l, 0.35) c h / clamp(0, (0.97 - l) * 30, alpha));
 }
