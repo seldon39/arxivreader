@@ -35,8 +35,11 @@ readers, roughly in order of impact. Each one is a GitHub issue with the context
 - Cross-review by two assistants (independent reviews, comparison, tagged synthesis): done in 1.11.11. Next:
   a third assistant to write the synthesis, when there is one.
 - Books: summary and review chapter by chapter, with the statements of other chapters the chapter uses and those
-  that depend on it (statements only): done in 1.11.18. Next: a parallel, chapter by chapter LaTeXML conversion of
-  long books (about 4–5 times faster).
+  that depend on it (statements only): done in 1.11.18.
+- Faster HTML conversion of long documents (idea, to be decided): LaTeXML run in parallel on blocks of about 20
+  pages or more, cut at the nearest section or chapter (counters taken from the PDF compilation, cross-references,
+  macros and one bibliography kept across blocks), then put back together as one page; for books and long papers,
+  about 4–5 times faster in a first test. Falls back to the whole-document conversion if a block fails.
 - AI answers adapted to the reader (profile and a free "Your profile" field sent with every request): done in
   1.11.4. Next: a "Link with my work" action that sends the reader's own papers in full when they fit.
 - [#12](https://github.com/seldon39/arxivreader/issues/12) Cancelling a related-papers build should interrupt
