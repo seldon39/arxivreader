@@ -198,8 +198,11 @@ table.ltx_eqn_table { width: 100%; border-collapse: collapse; margin: .55em 0; d
 .figure-label .ltx_foreignobject_container, .figure-label .ltx_foreignobject_content { display: inline-block; }
 /* étiquette faite d'un texte de largeur fixée (minipage, \parbox : encadré tcolorbox, mention en bas de page) : il va
    à la ligne comme dans TeX, ses paragraphes l'un sous l'autre (sinon une seule ligne, réduite en un trait) */
-.figure-label :is(.ltx_minipage, .ltx_parbox) { white-space: normal; line-height: 1.25; }
-.figure-label :is(.ltx_minipage, .ltx_parbox) > .ltx_p { display: block; }
+.figure-label :is(.ltx_minipage, .ltx_parbox) { display: inline-block; white-space: normal; line-height: 1.25; }
+.figure-label :is(.ltx_minipage, .ltx_parbox) > .ltx_p,
+.figure-label :is(.ltx_minipage, .ltx_parbox) :is(.ltx_para, .ltx_itemize, .ltx_enumerate, .ltx_description, .ltx_item, .ltx_paragraph) { display: block; }
+/* puce sur la ligne de son texte (ici tout est en span : :first-of-type tomberait sur la puce) */
+.figure-label :is(.ltx_minipage, .ltx_parbox) .ltx_item > .ltx_tag + .ltx_para { display: inline; }
 svg.figure-overlay { display: none; }
 .figure-baseline { display: inline-block; width: 0; height: 0; vertical-align: baseline; }
 

@@ -390,7 +390,8 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   du PDF pour les ancres (`subsection.2.3.10`…) et le texte cherché. Changer ce calcul : augmenter `PAGES_VERSION`.
 
 - Dessins TikZ, étiquettes faites d'un paragraphe (minipage, `\parbox` : encadré tcolorbox) : le texte va à la ligne
-  (`white-space: normal`), posé par le haut de sa boîte et tenu dans la plus petite forme du dessin qui le contient
+  (`white-space: normal`, boîte en `inline-block` même quand LaTeXML en fait un `ltx_inline-sectional-block` ; paragraphes
+  et listes en blocs, puce sur la ligne de son texte : tout y est en `span`), posé par le haut de sa boîte et tenu dans la plus petite forme du dessin qui le contient
   (`figures.shapesOf`, même marge à droite qu'à gauche, police réduite d'un quart au plus s'il est trop haut) ; dessins
   « remember picture, overlay » (1 × 1 sans trait) masqués (`figure-overlay`), comme sur arXiv.
 
