@@ -437,14 +437,15 @@ class Chapters(unittest.TestCase):
         from app import texsource, texstructure
         source = ("\\documentclass{book}\n\\newtheorem{theorem}{Theorem}[chapter]\n\\begin{document}\n"
                   "\\chapter{One}\\label{c1}\n\\begin{theorem}\\label{t1}First.\\end{theorem}\n"
-                  "% \\chapter{commented}\n"
-                  "\\chapter{Two}\nOnly here.\n\\begin{theorem}By Theorem~\\ref{t1}.\\end{theorem}\n\\end{document}\n")
+                  "% \\chapter{commented}\n\\iffalse\n\\chapter{Old} Hidden draft.\n\\fi\n"
+                  "\\chapter[Short [x]]{Two}\nOnly here.\n\\begin{theorem}By Theorem~\\ref{t1}.\\end{theorem}\n\\end{document}\n")
         source = texsource._strip_comments(source)  # comme la source enregistrée (texsource._expand)
         structure = texstructure.extract(source)
         self.assertEqual(len(structure["chapters"]), 2)
         second = structure["chapters"][1]["id"]
-        text = ai._chapter_text(None, {}, structure, ai._tex_text(source), second)
-        self.assertTrue(text.startswith("\\chapter{Two}"))
+        text = ai._chapter_text(None, {}, structure, ai.tex_body(source), second)
+        self.assertTrue(text.startswith("\\chapter[Short [x]]{Two}"))
+        self.assertNotIn("Hidden draft", text)
         self.assertIn("Only here.", text)
         self.assertNotIn("First.", text)
         used, dependents, own = ai.chapter_links(structure, second)

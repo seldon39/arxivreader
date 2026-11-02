@@ -389,7 +389,13 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   le menu, `statementsChosen`) ; pendant une recherche, plus de menu : tout le livre, rangé par chapitre.
   Pages dans le PDF d'un livre lu en HTML : LaTeXML numérote sections et énoncés à la suite (« 7 », « 7.10 », annexes
   « 9.B.1 »), le PDF par chapitre (« 2.3 », « 2.3.10 », « A.2.1 ») ; `texstructure._book_sections` refait les numéros
-  du PDF pour les ancres (`subsection.2.3.10`…) et le texte cherché. Changer ce calcul : augmenter `PAGES_VERSION`.
+  du PDF pour les ancres (`subsection.2.3.10`…) et le texte cherché ; les numéros des énoncés seulement si le livre les
+  numérote d'après la section du HTML (`_numbered_by_section`, sinon un « Theorem 1.4 » numéroté par chapitre irait à
+  `subsection.1.1.4`), avec le libellé d'origine en repli de la recherche. Changer ce calcul : augmenter `PAGES_VERSION`.
+  Texte d'un chapitre TeX : compté et découpé sur `ai.tex_body` (source sans texte masqué, comme pour tout le
+  document : `strip_hidden`). Énoncés joints : au plus `limit / 4` caractères en tout, balises de données neutralisées
+  (`DATA_TAGS`) ; titre du chapitre réduit à une ligne sans balise dans la consigne. Brouillon et « Edit » : un par fil
+  (`Assistant.draft`, clé `place`) ; choix de chapitre gardé quand la structure est refaite (preuve indiquée).
 
 - Dessins TikZ, étiquettes faites d'un paragraphe (minipage, `\parbox` : encadré tcolorbox) : le texte va à la ligne
   (`white-space: normal`, boîte en `inline-block` même quand LaTeXML en fait un `ltx_inline-sectional-block` ; paragraphes

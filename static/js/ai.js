@@ -121,7 +121,10 @@ export class Assistant {
 
   setStructure(structure) {
     this.structure = structure;
-    this.chapterOf = {};
+    // choix de chapitre gardés s'ils existent encore (une preuve indiquée refait la structure, pas les chapitres)
+    const ids = new Set((structure.chapters || []).map((c) => c.id));
+    for (const view of Object.keys(this.chapterOf || {})) if (this.chapterOf[view] && !ids.has(this.chapterOf[view])) delete this.chapterOf[view];
+    this.chapterOf ||= {};
     this.byId = new Map(structure.nodes.map((n) => [n.id, n]));
     this.refs = this.buildRefs();
   }
@@ -376,7 +379,9 @@ export class Assistant {
   // passage, zone du PDF) ; envoyée de nouveau, elle remplace l'échange, réponse comprise
   editable(exchange) {
     const view = this.viewOf(exchange);
-    const last = this.exchanges.filter((e) => this.viewOf(e) === view && !["summary", "review"].includes(e.task)).at(-1);
+    const place = this.place(view, this.chapterOfExchange(exchange));
+    const last = this.exchanges.filter((e) => this.viewOf(e) === view && this.place(view, this.chapterOfExchange(e)) === place
+      && !["summary", "review"].includes(e.task)).at(-1);
     return exchange === last && ["ask", "passage", "zone"].includes(exchange.task) && (exchange.task !== "zone" || exchange.imageUrl || exchange.image);
   }
 
@@ -388,7 +393,7 @@ export class Assistant {
       await this.running?.finished;
     }
     const view = this.viewOf(exchange);
-    const pending = view === "questions" ? this.pending : (this.docPending[view] ||= { question: "" });
+    const pending = this.draft(view, this.chapterOfExchange(exchange));
     Object.assign(pending, { question: exchange.question || "", replaces: exchange });
     if (view === "questions") {
       const zone = exchange.task === "zone"
@@ -505,6 +510,11 @@ export class Assistant {
 
   place(view, chapter = this.chapterOf[view]) { return this.byChapter(view) ? `${view}:${chapter || ""}` : view; }
 
+  // question en cours de saisie (et « Edit » en cours) : une par fil, donc par chapitre dans un livre
+  draft(view, chapter = this.chapterOf[view]) {
+    return view === "questions" ? this.pending : (this.docPending[this.place(view, chapter)] ||= { question: "" });
+  }
+
   // Énoncés d'autres chapitres que le chapitre utilise, et ceux qui en dépendent, directement ou par une chaîne :
   // comme ai.chapter_links (ce que l'assistant reçoit), montrés avant l'envoi
   chapterLinks(chapter) {
@@ -537,7 +547,7 @@ export class Assistant {
     const done = new Set(this.exchanges.filter((e) => e.task === task && e.status === "done" && typeof e.id === "number").map((e) => this.chapterOfExchange(e) || ""));
     const mark = (id) => (done.has(id) ? "  ✓" : "");
     const select = h("select", { class: "ai-model", "aria-label": t("ai.chapter"), title: t("ai.chapter"),
-      onchange: () => { this.chapterOf[view] = select.value || null; this.onChange(); } },
+      onchange: () => { this.chapterOf[view] = select.value || null; this.focusChapter = true; this.onChange(); } },
     h("option", { value: "", selected: !this.chapterOf[view] }, t("ai.wholeBook") + mark("")),
     this.chapters.map((c) => h("option", { value: c.id, selected: c.id === this.chapterOf[view] }, c.title + mark(c.id))));
     return h("div", { class: "ai-chapterbar" }, h("span", {}, t("ai.chapter")), select);
@@ -619,6 +629,10 @@ export class Assistant {
 
     const frame = h("div", { class: "ai-frame" }, thread, up, down);
     body.append(this.viewBar(), book ? this.chapterBar(view) : "", ...(notice ? [notice] : []), frame, this.bottomBar(view, exchanges, focus));
+    if (this.focusChapter) { // menu du chapitre changé au clavier : il garde le focus (panneau refait, attaché ensuite)
+      this.focusChapter = false;
+      requestAnimationFrame(() => body.querySelector(".ai-chapterbar select")?.focus({ preventScroll: true }));
+    }
     // position de lecture : celle laissée ; la première fois, le document depuis le haut, sinon la dernière réponse
     requestAnimationFrame(() => {
       const kept = this.positions[place];
@@ -700,7 +714,7 @@ export class Assistant {
   }
 
   askBox(view, exchanges, focus) {
-    const pending = view === "questions" ? this.pending : (this.docPending[view] ||= { question: "" });
+    const pending = this.draft(view);
     const placeholder = view === "questions" ? "ai.placeholder" : `ai.placeholder.${view}`;
     const area = h("textarea", { class: "ai-question", rows: 1, placeholder: t(placeholder), "aria-label": t(placeholder) });
     area.value = pending.question;

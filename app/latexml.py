@@ -712,7 +712,7 @@ def _store(pid, html, out):
     structure = extract_structure(fragment, annotations.proof_overrides(pid))
     structure["source"] = "latexml"
     structure["tex"] = tex.get("tex")
-    structure["book"] = tex.get("book", False)
+    structure["book"] = tex.get("book", False) or structure.get("book", False)
     structure["compiledAt"] = tex.get("compiledAt")  # adresse du PDF de cette compilation
     structure["macros"] = tex.get("macros", [])  # macros de l'auteur, pour MathJax (comme la vue PDF)
     folder = html_dir(pid)

@@ -1184,7 +1184,7 @@ class Reader {
   // Livre : chapitre de l'endroit lu (onglet IA : résumé, relecture de ce chapitre par défaut) ; dans le PDF : aucun
   readingChapter() {
     const ids = new Set((this.structure.chapters || []).map((c) => c.id));
-    for (let element = this.pdfMode ? null : this.currentAnchor(); element; element = element.parentElement?.closest("[id]")) {
+    for (let element = this.pdfMode ? this.find(this.readingId || this.startAt) : this.currentAnchor(); element; element = element.parentElement?.closest("[id]")) {
       if (ids.has(element.id)) return element.id;
     }
     return null;
@@ -1562,10 +1562,12 @@ class Reader {
     if (this.structure.book && !this.onlyIds && this.bookChapters().size > 1) {
       // tant qu'on n'a pas choisi dans le menu, il suit la lecture (à chaque retour sur l'onglet)
       if (!this.statementsChosen) this.statementsChapter = this.chapterOfReading() || this.statementsChapter || this.chapters.keys().next().value;
-      const selected = this.selected && this.chapterOfNode(this.selected);
+      // énoncé choisi ailleurs (texte, graphe) : son chapitre, une fois ; un choix fait ensuite dans le menu est gardé
+      const selected = this.selected && this.selected !== this.statementsFollowed && this.chapterOfNode(this.selected);
+      this.statementsFollowed = this.selected;
       if (selected && this.statementsChapter) this.statementsChapter = selected;
       chapterMenu = h("select", { class: "chapter-select statements-chapter", "aria-label": t("graph.chapter"), title: t("graph.chapter"),
-        onchange: () => { this.statementsChapter = chapterMenu.value; this.statementsChosen = true; draw(); } },
+        onchange: () => { this.statementsChapter = chapterMenu.value; this.statementsChosen = true; draw(); chapterMenu.focus(); } },
       h("option", { value: "" }, t("panel.allChapters", { n: this.nodes.length })),
       [...this.chapters].map(([id, chapter]) => h("option", { value: id }, `${chapter.title || id} (${chapter.ids.size})`)));
       chapterMenu.value = this.statementsChapter || "";

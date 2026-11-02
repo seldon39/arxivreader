@@ -45,6 +45,7 @@ function layoutFigure(card) {
   const svg = card.querySelector(":scope > svg");
   const labels = card.querySelectorAll(":scope > .figure-label");
   const scale = viewBoxScale(svg);
+  let shapes = null; // formes du dessin, calculées une fois par mise en page (seulement s'il y a un paragraphe)
   const box = svg.viewBox?.baseVal;
   let minX = 0;
   let minY = 0;
@@ -67,11 +68,13 @@ function layoutFigure(card) {
     // son encadré (arXiv le laisse déborder).
     let shape = null;
     if (label.paragraph) {
-      const shapes = shapesOf(svg, scale).filter((s) => s.left <= boxLeft + 1 && boxLeft < s.right && s.top <= boxTop + 1 && boxTop < s.bottom);
-      shape = shapes.sort((p, q) => (p.right - p.left) * (p.bottom - p.top) - (q.right - q.left) * (q.bottom - q.top))[0]
-        || { left: 0, right: svg.getBoundingClientRect().width, top: 0, bottom: Infinity };
-      const margin = Math.max(4, boxLeft - shape.left);
-      const room = Math.max(40, shape.right - margin - boxLeft);
+      shapes ||= shapesOf(svg, scale);
+      const around = shapes.filter((s) => s.left <= boxLeft + 1 && boxLeft < s.right && s.top <= boxTop + 1 && boxTop < s.bottom);
+      shape = around.sort((p, q) => (p.right - p.left) * (p.bottom - p.top) - (q.right - q.left) * (q.bottom - q.top))[0];
+      // aucune forme autour (légende posée à côté d'un tracé) : la largeur de TeX, ou jusqu'au bord du dessin
+      const margin = shape ? Math.max(4, boxLeft - shape.left) : 0;
+      const room = shape ? Math.max(40, shape.right - margin - boxLeft) : Math.max(boxWidth, svg.getBoundingClientRect().width - boxLeft);
+      shape ||= { left: 0, right: Infinity, top: 0, bottom: Infinity };
       for (const paragraph of label.querySelectorAll(".ltx_minipage, .ltx_parbox")) paragraph.style.maxWidth = `${room}px`;
       const floor = fontSize * 0.75;
       for (let i = 0; i < 8 && boxTop + label.offsetHeight > shape.bottom - Math.min(margin, 6) && fontSize > floor; i++) {

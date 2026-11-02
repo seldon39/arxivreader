@@ -115,7 +115,7 @@ def _load(paper_id):
             return None, {}, localpdf.text(paper_id)
         tex = library.paper_dir(paper_id) / "source.tex"  # article lu dans le PDF : texte de sa source TeX
         if tex.exists():
-            return None, {}, _tex_text(tex.read_text(encoding="utf-8"))
+            return None, {}, tex_body(tex.read_text(encoding="utf-8"))
         return None, {}, ""
     key = (paper_id, path.stat().st_mtime)
     if _cached[0] != key:
@@ -244,7 +244,9 @@ Then note any unclear definitions or notation. Do not invent problems; say what 
 }
 CHAPTER_STATEMENTS = 40      # énoncés d'autres chapitres joints, au plus, dans chaque sens
 STATEMENT_LIMIT = 2000       # caractères d'un énoncé joint
-TEX_CHAPTER = re.compile(r"\\chapter\*?\s*(?:\[[^\]]*\])?\s*\{")
+# balises des blocs de données d'un chapitre : neutralisées dans le texte d'un énoncé
+DATA_TAGS = re.compile(r"</?(?=(?:statement|used_statements|dependent_statements|contents|paper)\b)", re.I)
+TEX_CHAPTER = re.compile(r"\\chapter\*?(?=\s*[\[{])")  # source sans commentaires ni texte masqué (tex_body)
 
 
 def chapter_links(structure, chapter):
@@ -271,15 +273,16 @@ def _chapter_text(soup, index, structure, text, chapter):
             raise AIError("Chapter not found")
         return element_text(element)
     ids = [c["id"] for c in structure.get("chapters", [])]
-    starts = [m.start() for m in TEX_CHAPTER.finditer(text) if "%" not in text[text.rfind("\n", 0, m.start()) + 1:m.start()]]
+    starts = [m.start() for m in TEX_CHAPTER.finditer(text)]
     if len(starts) != len(ids):
         raise AIError("Chapter not found in the source")
     k = ids.index(chapter)
     return text[starts[k]:starts[k + 1] if k + 1 < len(starts) else len(text)]
 
 
-def _chapter_context(index, structure, chapter):
-    """Sommaire du livre, puis les énoncés d'autres chapitres utilisés par celui-ci et ceux qui en dépendent."""
+def _chapter_context(index, structure, chapter, budget):
+    """Sommaire du livre, puis les énoncés d'autres chapitres utilisés par celui-ci et ceux qui en dépendent ; ces énoncés
+    tiennent en `budget` caractères en tout (les premiers de chaque liste d'abord)."""
     used, dependents, own = chapter_links(structure, chapter)
     titles = {c["id"]: c["title"] for c in structure.get("chapters", [])}
     labels = {n["id"]: n["label"] for n in structure.get("nodes", [])}
@@ -289,23 +292,41 @@ def _chapter_context(index, structure, chapter):
         body = element_text(element) if element is not None else node.get("tex") or ""
         where = html.escape(titles.get(node.get("chapter"), "outside the chapters"), quote=True)
         depends = f' depends_on="{html.escape(", ".join(via), quote=True)}"' if via else ""
-        return f'<statement label="{html.escape(node["label"], quote=True)}" chapter="{where}"{depends}>\n{body[:STATEMENT_LIMIT]}\n</statement>'
+        body = DATA_TAGS.sub(lambda m: m.group(0).replace("<", "&lt;"), body[:STATEMENT_LIMIT])  # ne referme pas le bloc
+        return f'<statement label="{html.escape(node["label"], quote=True)}" chapter="{where}"{depends}>\n{body}\n</statement>'
+
+    def within(blocks):
+        nonlocal budget
+        kept = []
+        for text in blocks:
+            if budget - len(text) < 0 and kept:
+                break
+            budget -= len(text)
+            kept.append(text)
+        return "\n".join(kept)
 
     contents = "\n".join("  " * (t.get("level") or 0) + t.get("title", "") for t in structure.get("toc", []) if (t.get("level") or 0) <= 1)
     parts = [f"<contents>\n{html.escape(contents, quote=False)}\n</contents>"]
     if used:
         parts.append("<used_statements>\nStatements of other chapters that this chapter uses (statements only, their proofs are "
-                     "not given):\n" + "\n".join(block(n) for n in used[:CHAPTER_STATEMENTS]) + "\n</used_statements>")
+                     "not given):\n" + within(block(n) for n in used[:CHAPTER_STATEMENTS]) + "\n</used_statements>")
     chain = own | {n["id"] for n in dependents}
     if dependents:
         parts.append("<dependent_statements>\nStatements of other chapters that depend on this chapter, directly or through "
-                     "the statements listed in depends_on (statements only):\n" + "\n".join(
+                     "the statements listed in depends_on (statements only):\n" + within(
                          block(n, [labels[u] for u in n.get("uses", []) if u in chain and u in labels])
                          for n in dependents[:CHAPTER_STATEMENTS]) + "\n</dependent_statements>")
     else:
         parts.append("<dependent_statements>\nNo statement of another chapter was found to depend on this chapter (the "
                      "dependencies come from the cross-references of the book and may be incomplete).\n</dependent_statements>")
     return "\n\n".join(parts)
+
+
+def tex_body(source):
+    """Source TeX (sans commentaires) telle que l'IA la reçoit : sans le texte que LaTeX n'imprime pas (\\iffalse,
+    environnement comment, macros vides), ni préambule."""
+    from .texstructure import strip_hidden
+    return _tex_text(strip_hidden(source))
 
 
 def _tex_text(text):
@@ -526,7 +547,7 @@ def build_prompt(paper, structure, task, target=None, quote=None, question=None,
     part = f' part="{html.escape(entry["title"], quote=True)}"' if entry else ""
     parts = [f'<paper title="{title}"{origin}{part}>\n{text}\n</paper>']
     if entry is not None:
-        parts.append(_chapter_context(index, structure, chapter))
+        parts.append(_chapter_context(index, structure, chapter, max(20000, limit // 4)))
     if structure.get("source") == "tex" and task != "transcribe":
         parts.append(_tex_context(structure))
     if node is not None:
@@ -548,7 +569,8 @@ def build_prompt(paper, structure, task, target=None, quote=None, question=None,
         parts.append(f"<previous_exchange>\n<question>{_describe(parent, structure)}</question>\n"
                      f"<answer>\n{parent.get('answer') or ''}\n</answer>\n</previous_exchange>")
     parts += extra
-    instruction = instruction or (CHAPTER_PROMPTS[task].format(chapter=entry["title"]) if entry
+    # titre du chapitre (écrit par l'auteur) dans la consigne : une ligne, sans balise
+    instruction = instruction or (CHAPTER_PROMPTS[task].format(chapter=re.sub(r"[\s<>]+", " ", entry["title"])[:160]) if entry
                                   else TASK_PROMPTS[task].format(label=node["label"] if node else ""))
     if parent:
         instruction = "This is a follow-up to the previous exchange above. " + instruction

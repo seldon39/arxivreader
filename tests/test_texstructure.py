@@ -117,6 +117,26 @@ class PdfSpotsTest(unittest.TestCase):
         self.assertEqual((located["S3.SS2"], located["S3"]), (2, 2))
         self.assertEqual((located["chapter9.A2.SS1"], located["chapter9"]), (4, 4))
 
+    def test_book_numbered_by_chapter_kept(self):
+        """Livre dont les énoncés sont numérotés par chapitre (« Theorem 2.1 » en section 3 du HTML, 2.1 du PDF) :
+        aucun numéro refait (subsection.2.1.1 est une autre page)."""
+        import io
+        import pypdf
+        from pypdf.generic import Destination, Fit
+        from app.texstructure import pages_for
+        writer = pypdf.PdfWriter()
+        for _ in range(3):
+            writer.add_blank_page(width=612, height=792)
+        for name, page in (("theorem.2.1", 1), ("subsection.2.1.1", 2)):
+            writer.add_named_destination_object(Destination(name, writer.pages[page].indirect_reference, Fit.xyz(left=0, top=400)))
+        buffer = io.BytesIO()
+        writer.write(buffer)
+        toc = [("chapter1", "Chapter 1 One", "chapter", 0), ("S1", "1 Start", "section", 1), ("S2", "2 More", "section", 1),
+               ("chapter2", "Chapter 2 Two", "chapter", 0), ("S3", "3 Next", "section", 1)]
+        structure = {"book": True, "toc": [{"id": i, "title": t, "kind": k, "level": level} for i, t, k, level in toc],
+                     "nodes": [{"id": "S3.Thm1", "kind": "theorem", "label": "Theorem 2.1", "section": "S3"}]}
+        self.assertEqual(pages_for(structure, buffer.getvalue())["pages"]["S3.Thm1"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

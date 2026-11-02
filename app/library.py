@@ -392,7 +392,7 @@ def ensure_pdf(paper):
     return path
 
 
-PAGES_VERSION = 2  # calcul des pages (texstructure.pages_for) changé : pages.json refaits
+PAGES_VERSION = 3  # calcul des pages (texstructure.pages_for) changé : pages.json refaits
 
 
 def pdf_pages(paper):

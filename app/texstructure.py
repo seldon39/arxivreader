@@ -800,6 +800,8 @@ def locate_pages(structure, pdf_bytes):
                 page, top = next((destinations[a] for a in item.get("anchors", []) if a in destinations), (None, None))
                 if page is None:
                     page = _search(page_texts(), item, previous, contents)
+                if page is None and item.get("fallback"):  # numéro du PDF refait introuvable : celui du HTML
+                    page = _search(page_texts(), {**item, "label": item["fallback"]}, previous, contents)
                 item["page"] = page
                 if top is not None:
                     item["top"] = top
@@ -872,6 +874,7 @@ def pages_for(structure, pdf_bytes):
     {"pages": {id: page}, "tops": {id: hauteur dans la page}} (hauteur connue seulement par les ancres)."""
     items = {"nodes": [], "toc": [], "proofBlocks": []}
     renumbered = _book_sections(structure)
+    by_section = _numbered_by_section(structure, renumbered)
     for node in structure.get("nodes", []):
         label = node["label"]
         number = (re.search(r"(\S+)$", label) or [None, ""])[1].rstrip(".")
@@ -880,12 +883,13 @@ def pages_for(structure, pdf_bytes):
         section = node.get("section") or ""
         while section and section not in renumbered:
             section = section.rpartition(".")[0]
-        own = re.match(r"^(?:[^\d\s]\S*\s+)?(\d+(?:\.[A-Z])?)\.(\d+)\b", label)  # « Proposition 7.10 » ou « 7.9 », titre éventuel après
-        if section and own and own.group(1) == renumbered[section][0]:
+        own = STATEMENT_NUMBER.match(label)
+        fallback = None
+        if by_section and section and own and own.group(1) == renumbered[section][0]:
             pdf = f"{renumbered[section][1]}.{own.group(2)}"
             anchors = [f"{word}.{pdf}" for word in [*words, "subsection"]] + anchors
-            label = f"{label[:own.start(1)]}{pdf}{label[own.end(2):]}"
-        items["nodes"].append({"id": node["id"], "label": label, "anchors": anchors})
+            label, fallback = f"{label[:own.start(1)]}{pdf}{label[own.end(2):]}", label  # sans ancre : l'un puis l'autre
+        items["nodes"].append({"id": node["id"], "label": label, "fallback": fallback, "anchors": anchors})
     for section in structure.get("toc", []):
         title = section.get("title", "")
         number = re.match(r"^(?:Chapter\s+|Appendix\s+)?([\dA-Z]+(?:\.[\dA-Z]+)*)\.?\s", title)  # « Chapter 2 Spaces… », « Appendix 9.B … »
@@ -903,6 +907,25 @@ def pages_for(structure, pdf_bytes):
     located = [item for item in items["nodes"] + items["toc"] if item.get("page")]
     return {"pages": {item["id"]: item["page"] for item in located},
             "tops": {item["id"]: item["top"] for item in located if item.get("top") is not None}}
+
+
+STATEMENT_NUMBER = re.compile(r"^(?:[^\d\s]\S*\s+)?(\d+(?:\.[A-Z])?)\.(\d+)\b")  # « Proposition 7.10 » ou « 7.9 », titre éventuel après
+
+
+def _numbered_by_section(structure, renumbered):
+    """Énoncés numérotés d'après la section du HTML (« 7.10 » en section 7) et non d'après leur chapitre (« 2.10 ») :
+    décidé sur les sections dont le numéro du HTML diffère de celui de leur chapitre (seules à trancher)."""
+    votes = {True: 0, False: 0}
+    for node in structure.get("nodes", []):
+        section = node.get("section") or ""
+        while section and section not in renumbered:
+            section = section.rpartition(".")[0]
+        own = STATEMENT_NUMBER.match(node.get("label", ""))
+        if section and own:
+            html_number, pdf_number = renumbered[section]
+            if html_number != pdf_number.partition(".")[0]:
+                votes[own.group(1) == html_number] += 1
+    return votes[True] > votes[False]
 
 
 def _book_sections(structure):
