@@ -363,7 +363,11 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   thread. The assistant reads that chapter only, with the book's contents and, from other chapters, statements only
   (no proofs): those the chapter uses, and those that depend on it, directly or in a chain. The review then checks
   the uses (*Uses from other chapters*) and says which later statements an error would affect (*Impact on other
-  chapters*). Both lists are shown, clickable, before the request is sent.
+  chapters*). Both lists are shown, clickable, before the request is sent. The *Statements* tab also shows one
+  chapter at a time (*Chapter* menu in place of the chapter's title: the chapter being read until you choose, or
+  the whole book); a search covers the whole book. Read in the PDF, a
+  statement chosen in the panel opens at its page even when arXiv's HTML numbers it differently from the PDF
+  (*Proposition 7.10* there, *2.3.10* in the PDF).
 - **Statements and proofs**: the note icon in the margin (on hover) opens a note and, for a statement,
   the reading state *understood / to review / checked* (shown in the title and in the list of statements).
 - **Notes without a passage**: right-click → "Add note", in HTML (on the paragraph; in a statement or proof, its

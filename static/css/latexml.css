@@ -196,6 +196,11 @@ table.ltx_eqn_table { width: 100%; border-collapse: collapse; margin: .55em 0; d
   white-space: nowrap; line-height: 1; text-indent: 0; text-align: left; color: #000; font-family: var(--paper-font);
 }
 .figure-label .ltx_foreignobject_container, .figure-label .ltx_foreignobject_content { display: inline-block; }
+/* étiquette faite d'un texte de largeur fixée (minipage, \parbox : encadré tcolorbox, mention en bas de page) : il va
+   à la ligne comme dans TeX, ses paragraphes l'un sous l'autre (sinon une seule ligne, réduite en un trait) */
+.figure-label :is(.ltx_minipage, .ltx_parbox) { white-space: normal; line-height: 1.25; }
+.figure-label :is(.ltx_minipage, .ltx_parbox) > .ltx_p { display: block; }
+svg.figure-overlay { display: none; }
 .figure-baseline { display: inline-block; width: 0; height: 0; vertical-align: baseline; }
 
 /* ---- Notes de bas de page : affichées au survol ---- */

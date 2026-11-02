@@ -871,20 +871,64 @@ def pages_for(structure, pdf_bytes):
     """Pages du PDF des énoncés et sections d'une structure lue dans la version HTML :
     {"pages": {id: page}, "tops": {id: hauteur dans la page}} (hauteur connue seulement par les ancres)."""
     items = {"nodes": [], "toc": [], "proofBlocks": []}
+    renumbered = _book_sections(structure)
     for node in structure.get("nodes", []):
-        number = (re.search(r"(\S+)$", node["label"]) or [None, ""])[1].rstrip(".")
+        label = node["label"]
+        number = (re.search(r"(\S+)$", label) or [None, ""])[1].rstrip(".")
         words = ANCHOR_WORDS.get(node["kind"], []) + ["theorem", "thm"]
         anchors = [f"{word}.{number}" for word in words] if re.fullmatch(r"[\dA-Za-z.]+", number or "") else []
-        items["nodes"].append({"id": node["id"], "label": node["label"], "anchors": anchors})
+        section = node.get("section") or ""
+        while section and section not in renumbered:
+            section = section.rpartition(".")[0]
+        own = re.match(r"^(?:[^\d\s]\S*\s+)?(\d+(?:\.[A-Z])?)\.(\d+)\b", label)  # « Proposition 7.10 » ou « 7.9 », titre éventuel après
+        if section and own and own.group(1) == renumbered[section][0]:
+            pdf = f"{renumbered[section][1]}.{own.group(2)}"
+            anchors = [f"{word}.{pdf}" for word in [*words, "subsection"]] + anchors
+            label = f"{label[:own.start(1)]}{pdf}{label[own.end(2):]}"
+        items["nodes"].append({"id": node["id"], "label": label, "anchors": anchors})
     for section in structure.get("toc", []):
-        number = re.match(r"^([\dA-Z]+(?:\.\d+)*)\.?\s", section.get("title", ""))
+        title = section.get("title", "")
+        number = re.match(r"^(?:Chapter\s+|Appendix\s+)?([\dA-Z]+(?:\.[\dA-Z]+)*)\.?\s", title)  # « Chapter 2 Spaces… », « Appendix 9.B … »
         command = SECTION_COMMANDS.get(section.get("level"), "section")
+        if section.get("kind") in ("chapter", "appendix") and number:
+            command = section["kind"]
         anchors = [f"{command}.{number.group(1)}", f"appendix.{number.group(1)}"] if number else []
-        items["toc"].append({"id": section["id"], "title": section.get("title", ""), "level": section.get("level"), "anchors": anchors})
+        if section["id"] in renumbered and number:
+            pdf = renumbered[section["id"]][1]
+            anchors = [f"{'appendix' if section.get('kind') == 'chapter' else 'section'}.{pdf}"] + anchors
+            title = re.sub(r"^(?:Chapter|Appendix)\s+", "", title)
+            title = f"{pdf}{title[len(number.group(1)) if title.startswith(number.group(1)) else 0:]}"
+        items["toc"].append({"id": section["id"], "title": title, "level": section.get("level"), "anchors": anchors})
     locate_pages(items, pdf_bytes)
     located = [item for item in items["nodes"] + items["toc"] if item.get("page")]
     return {"pages": {item["id"]: item["page"] for item in located},
             "tops": {item["id"]: item["top"] for item in located if item.get("top") is not None}}
+
+
+def _book_sections(structure):
+    """Livre dont LaTeXML numérote les sections à la suite (« 7 », 7e section du livre, et ses énoncés « 7.10 ») quand
+    le PDF les numérote dans leur chapitre (« 2.3 », « 2.3.10 », ancres section.2.3, subsection.2.3.10…) :
+    {id de section ou de chapitre: (numéro du HTML, numéro du PDF)}. Chapitres d'annexes : LaTeXML les numérote à la
+    suite (« Chapter 9 », sections « Appendix 9.B »), le PDF par lettre (annexe A, section A.2)."""
+    renumbered, chapter, count, letter, letters = {}, None, 0, None, 0
+    for entry in structure.get("toc", []) if structure.get("book") else []:
+        title = entry.get("title", "")
+        number = re.match(r"^(?:Chapter\s+)?(\d+)\.?\s", title)
+        appendix = re.match(r"^Appendix\s+(\d+)\.([A-Z])\.?\s", title)
+        if entry.get("kind") == "chapter" or entry.get("level") == 0:
+            chapter = number.group(1) if number and entry.get("kind") == "chapter" else None
+            chapter_id, count, letter = entry["id"], 0, None
+        elif appendix and chapter == appendix.group(1):
+            if letter is None:
+                letter, letters = chr(ord("A") + letters), letters + 1
+                renumbered[chapter_id] = (chapter, letter)
+            count += 1
+            renumbered[entry["id"]] = (f"{chapter}.{appendix.group(2)}", f"{letter}.{count}")
+        elif entry.get("kind") == "section" and number and chapter:
+            count += 1
+            renumbered[entry["id"]] = (number.group(1), f"{chapter}.{count}")
+    # sections déjà numérotées dans leur chapitre (« 1 », « 2 »… recommençant à chaque chapitre) : rien à refaire
+    return renumbered if any(html.rpartition(".")[2] != pdf.rpartition(".")[2] for html, pdf in renumbered.values()) else {}
 
 
 def _search(texts, item, start=1, skip=frozenset()):

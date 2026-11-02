@@ -392,6 +392,9 @@ def ensure_pdf(paper):
     return path
 
 
+PAGES_VERSION = 2  # calcul des pages (texstructure.pages_for) changé : pages.json refaits
+
+
 def pdf_pages(paper):
     """{"pages": {id d'énoncé ou de section: page du PDF}, "tops": {id: hauteur dans la page}} ;
     calculé une fois par PDF et gardé (pages.json)."""
@@ -405,7 +408,7 @@ def pdf_pages(paper):
     if path is None:
         return None
     cache = paper_dir(paper["id"]) / "pages.json"
-    stamp = f"{path.stat().st_mtime}:{STRUCTURE_VERSION}:tops"
+    stamp = f"{path.stat().st_mtime}:{STRUCTURE_VERSION}:{PAGES_VERSION}"
     if cache.exists():
         saved = json.loads(cache.read_text(encoding="utf-8"))
         if saved.get("stamp") == stamp:

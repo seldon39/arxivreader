@@ -349,7 +349,10 @@ class Reader {
       const text = await this.pdf.text();
       const word = text && this.htmlText && pdfToHtml(text, this.htmlText, location);
       const target = word?.node.parentElement?.closest("[id]") || this.htmlSpot(location);
-      if (target && this.content.contains(target)) this.savePosition(target.id);
+      if (target && this.content.contains(target)) {
+        this.readingId = target.id;
+        this.savePosition(target.id);
+      }
     }, 800);
     this.pdf.onMove(follow);
   }
@@ -1554,9 +1557,24 @@ class Reader {
     const search = h("input", { class: "text-input", type: "search", value: this.search, placeholder: t("panel.filter"), "aria-label": t("panel.filter") });
     const kinds = [...new Set(this.nodes.map((n) => n.kind))];
     const list = h("div", {});
+    // Livre : un chapitre à la fois (par défaut celui qu'on lit ; celui de l'énoncé choisi), ou tout le livre
+    let chapterMenu = null;
+    if (this.structure.book && !this.onlyIds && this.bookChapters().size > 1) {
+      // tant qu'on n'a pas choisi dans le menu, il suit la lecture (à chaque retour sur l'onglet)
+      if (!this.statementsChosen) this.statementsChapter = this.chapterOfReading() || this.statementsChapter || this.chapters.keys().next().value;
+      const selected = this.selected && this.chapterOfNode(this.selected);
+      if (selected && this.statementsChapter) this.statementsChapter = selected;
+      chapterMenu = h("select", { class: "chapter-select statements-chapter", "aria-label": t("graph.chapter"), title: t("graph.chapter"),
+        onchange: () => { this.statementsChapter = chapterMenu.value; this.statementsChosen = true; draw(); } },
+      h("option", { value: "" }, t("panel.allChapters", { n: this.nodes.length })),
+      [...this.chapters].map(([id, chapter]) => h("option", { value: id }, `${chapter.title || id} (${chapter.ids.size})`)));
+      chapterMenu.value = this.statementsChapter || "";
+    }
     const draw = () => {
       const needle = this.search.trim().toLowerCase();
-      const shown = this.nodes.filter((n) => (!this.kindFilter.size || this.kindFilter.has(n.kind))
+      // une recherche porte sur tout le livre (résultats rangés par chapitre) ; sinon, le chapitre du menu
+      const chapter = chapterMenu && !needle && this.statementsChapter ? this.chapters.get(this.statementsChapter)?.ids : null;
+      const shown = this.nodes.filter((n) => (!chapter || chapter.has(n.id)) && (!this.kindFilter.size || this.kindFilter.has(n.kind))
         && (!needle || `${n.label} ${n.name}`.toLowerCase().includes(needle)) && (!this.onlyIds || this.onlyIds.has(n.id)));
       const sections = new Map(this.structure.toc.map((s) => [s.id, s]));
       const groups = new Map();
@@ -1565,9 +1583,12 @@ class Reader {
         if (!groups.has(top)) groups.set(top, []);
         groups.get(top).push(node);
       }
-      list.replaceChildren(...[...groups].map(([sectionId, items]) => h("div", {},
-        h("div", { class: "node-group" }, withMath(sections.get(sectionId)?.title ?? "")),
+      // le menu prend la place du titre du chapitre montré (tout le livre : au-dessus des chapitres)
+      const menu = chapterMenu && !needle;
+      list.replaceChildren(...(menu && !chapter ? [chapterMenu] : []), ...[...groups].map(([sectionId, items]) => h("div", {},
+        menu && chapter ? chapterMenu : h("div", { class: "node-group" }, withMath(sections.get(sectionId)?.title ?? "")),
         h("div", { class: "node-list" }, items.map((n) => this.nodeItem(n))))));
+      if (menu && chapter && !groups.size) list.replaceChildren(chapterMenu);  // filtres : aucun énoncé du chapitre
     };
     search.addEventListener("input", () => { this.search = search.value; draw(); });
     const filters = h("div", { class: "filters" }, search, kinds.map((kind) => {
@@ -1658,19 +1679,9 @@ class Reader {
   // énoncés d'autres chapitres qu'il utilise directement ; un graphe de tout le livre serait illisible
   graphNodes() {
     if (!this.structure.book) return this.nodes;
-    const sections = new Map(this.structure.toc.map((s) => [s.id, s]));
-    const chapterOf = (node) => this.topSection(node.section, sections);
-    if (!this.chapters) {
-      this.chapters = new Map();
-      for (const node of this.nodes) {
-        const id = chapterOf(node);
-        if (!this.chapters.has(id)) this.chapters.set(id, { title: sections.get(id)?.title || "", ids: new Set() });
-        this.chapters.get(id).ids.add(node.id);
-      }
-      this.chapterNodes = new Map();  // mêmes tableaux d'un affichage à l'autre : disposition du graphe gardée
-    }
+    this.bookChapters();
     const selected = this.selected && this.byId.get(this.selected);
-    if (selected && (!this.graphChapter || !this.chapters.get(this.graphChapter)?.ids.has(selected.id))) this.graphChapter = chapterOf(selected);
+    if (selected && (!this.graphChapter || !this.chapters.get(this.graphChapter)?.ids.has(selected.id))) this.graphChapter = this.chapterOfNode(selected.id);
     if (!this.chapters.has(this.graphChapter)) this.graphChapter = this.chapters.keys().next().value;
     if (!this.chapterNodes.has(this.graphChapter)) {
       const own = this.chapters.get(this.graphChapter)?.ids || new Set();
@@ -1680,6 +1691,35 @@ class Reader {
         : { ...n, uses: [], usedBy: n.usedBy.filter((id) => own.has(id)) })));
     }
     return this.chapterNodes.get(this.graphChapter);
+  }
+
+  // Livre : énoncés par chapitre (section de premier niveau), dans l'ordre du livre ; onglets Énoncés et Graphe
+  bookChapters() {
+    if (!this.chapters) {
+      const sections = new Map(this.structure.toc.map((s) => [s.id, s]));
+      this.chapters = new Map();
+      for (const node of this.nodes) {
+        const id = this.topSection(node.section, sections);
+        if (!this.chapters.has(id)) this.chapters.set(id, { title: sections.get(id)?.title || "", ids: new Set() });
+        this.chapters.get(id).ids.add(node.id);
+      }
+      this.chapterNodes = new Map();  // mêmes tableaux d'un affichage à l'autre : disposition du graphe gardée
+    }
+    return this.chapters;
+  }
+
+  chapterOfNode(id) {
+    for (const [chapter, { ids }] of this.bookChapters()) if (ids.has(id)) return chapter;
+    return null;
+  }
+
+  // chapitre de l'endroit lu (dans le PDF : dernier endroit retrouvé dans le HTML), s'il a des énoncés
+  chapterOfReading() {
+    const element = this.find(this.pdfMode ? this.readingId || this.startAt : this.currentAnchor()?.id);
+    const section = element?.closest("section[id]")?.id;
+    if (!section) return null;
+    const chapter = this.topSection(section, new Map(this.structure.toc.map((s) => [s.id, s])));
+    return this.bookChapters().has(chapter) ? chapter : null;
   }
 
   chapterSelect() {

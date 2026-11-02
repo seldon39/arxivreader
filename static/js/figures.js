@@ -23,6 +23,24 @@ function viewBoxScale(svg) {
   return box && box.width ? width / box.width : 1;
 }
 
+// Formes du dessin (encadrés, cadres), en pixels depuis le coin du dessin : un paragraphe posé dans l'une y reste
+function shapesOf(svg, scale) {
+  const box = svg.viewBox?.baseVal;
+  const shapes = [];
+  for (const element of svg.querySelectorAll("path, rect")) {
+    let bbox;
+    try { bbox = element.getBBox(); } catch { continue; }
+    if (bbox.width < 1 || bbox.height < 1) continue;
+    const matrix = matrixTo(svg, element);
+    const corners = [[bbox.x, bbox.y], [bbox.x + bbox.width, bbox.y], [bbox.x, bbox.y + bbox.height], [bbox.x + bbox.width, bbox.y + bbox.height]]
+      .map(([x, y]) => matrix.transformPoint(new DOMPoint(x, y)));
+    const xs = corners.map((p) => (p.x - (box?.x || 0)) * scale);
+    const ys = corners.map((p) => (p.y - (box?.y || 0)) * scale);
+    shapes.push({ left: Math.min(...xs), right: Math.max(...xs), top: Math.min(...ys), bottom: Math.max(...ys) });
+  }
+  return shapes;
+}
+
 function layoutFigure(card) {
   const svg = card.querySelector(":scope > svg");
   const labels = card.querySelectorAll(":scope > .figure-label");
@@ -44,7 +62,24 @@ function layoutFigure(card) {
     let left = boxLeft;
     let top = boxTop;
     const { metrics } = label;
-    if (metrics && boxWidth > 0) {
+    // Paragraphe (minipage, \parbox) : dans la plus petite forme qui le contient (encadré), avec la même marge à droite
+    // qu'à gauche ; trop haut, police réduite (au plus d'un quart). LaTeXML compte parfois le texte plus large que
+    // son encadré (arXiv le laisse déborder).
+    let shape = null;
+    if (label.paragraph) {
+      const shapes = shapesOf(svg, scale).filter((s) => s.left <= boxLeft + 1 && boxLeft < s.right && s.top <= boxTop + 1 && boxTop < s.bottom);
+      shape = shapes.sort((p, q) => (p.right - p.left) * (p.bottom - p.top) - (q.right - q.left) * (q.bottom - q.top))[0]
+        || { left: 0, right: svg.getBoundingClientRect().width, top: 0, bottom: Infinity };
+      const margin = Math.max(4, boxLeft - shape.left);
+      const room = Math.max(40, shape.right - margin - boxLeft);
+      for (const paragraph of label.querySelectorAll(".ltx_minipage, .ltx_parbox")) paragraph.style.maxWidth = `${room}px`;
+      const floor = fontSize * 0.75;
+      for (let i = 0; i < 8 && boxTop + label.offsetHeight > shape.bottom - Math.min(margin, 6) && fontSize > floor; i++) {
+        fontSize = Math.max(floor, fontSize * 0.95);
+        label.style.fontSize = `${fontSize}px`;
+      }
+    }
+    if (metrics && boxWidth > 0 && !shape) {
       // plus large que la boîte de TeX : réduite d'autant (au plus de moitié)
       const width = label.offsetWidth;
       if (width > boxWidth * 1.02) {
@@ -55,6 +90,12 @@ function layoutFigure(card) {
       // ligne de base : à la hauteur prévue par TeX (hauteur / (hauteur + profondeur) de la boîte)
       const baseline = boxTop + boxHeight * (metrics.height / (metrics.height + metrics.depth || 1));
       top = baseline - label.baselineMark.offsetTop;
+    }
+    // paragraphe : posé par le haut de sa boîte, comme arXiv (par sa dernière ligne, l'écart d'interligne avec TeX
+    // s'accumulerait en haut : texte trop bas, hors du cadre)
+    if (shape) {
+      left = boxLeft;
+      top = boxTop;
     }
     // étiquette tournée (« \\subset » vertical d'un diagramme…) : centrée sur sa boîte, tournée du même angle
     const { a, b } = label.matrix;
@@ -113,6 +154,13 @@ export function sizeToText(root, basePt = 10) {
 export function prepareFigures(root) {
   const cards = [];
   for (const svg of root.querySelectorAll("svg.ltx_picture")) {
+    // dessin posé sur la page et non dans le texte (TikZ « remember picture, overlay » : mention en bas de la première
+    // page d'un chapitre…) : LaTeXML en fait un dessin de 1 × 1 sans trait, dont le texte tomberait n'importe où
+    // dans le paragraphe ; arXiv ne le montre pas non plus
+    if (Number(svg.getAttribute("width")) <= 1 && Number(svg.getAttribute("height")) <= 1 && !svg.querySelector(DRAWING)) {
+      svg.classList.add("figure-overlay");
+      continue;
+    }
     const card = document.createElement("span");
     card.className = "figure-card";
     // Dessin centré dans la source (\centering, diagramme seul sur sa ligne) : bloc centré, sans retrait
@@ -156,6 +204,12 @@ export function prepareFigures(root) {
       const upright = Math.abs(label.matrix.b) < 1e-6 && Math.abs(label.matrix.c) < 1e-6;
       if (upright && em("height") >= 0 && em("depth") >= 0) label.metrics = { height: em("height"), depth: em("depth") };
       label.append(...fo.childNodes);
+      label.paragraph = Boolean(label.querySelector(".ltx_minipage, .ltx_parbox"));
+      // largeur d'une boîte en pt (\parbox) : en em, pour suivre l'échelle du dessin comme le reste de l'étiquette
+      for (const box of label.querySelectorAll(":is(.ltx_minipage, .ltx_parbox)[style*='pt']")) {
+        const width = box.style.width.match(/^([\d.]+)pt$/);
+        if (width) box.style.width = `${(parseFloat(width[1]) / (label.basePx * 0.75)).toFixed(3)}em`;
+      }
       // repère de hauteur nulle posé sur la ligne de base du texte
       label.baselineMark = document.createElement("span");
       label.baselineMark.className = "figure-baseline";
@@ -190,7 +244,7 @@ export function openFigure(target, { closeLabel = "Close", onLink = null } = {})
     const originals = target.querySelectorAll(":scope > .figure-label");
     card.querySelectorAll(":scope > .figure-label").forEach((label, i) => {
       Object.assign(label, { matrix: originals[i].matrix, geometry: originals[i].geometry, basePx: originals[i].basePx,
-        metrics: originals[i].metrics, baselineMark: label.querySelector(":scope > .figure-baseline") });
+        metrics: originals[i].metrics, paragraph: originals[i].paragraph, baselineMark: label.querySelector(":scope > .figure-baseline") });
     });
     card.classList.remove("centered");
     frame.append(card);

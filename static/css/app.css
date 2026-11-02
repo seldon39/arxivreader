@@ -1588,6 +1588,8 @@ body.related-expanded { overflow: hidden; }
 .tex-check.ok .tex-dot { color: var(--k-corollary); }
 .tex-check.warn .tex-dot { color: #d99a2b; }
 .tex-check.error .tex-dot { color: var(--accent); }
+/* Énoncés d'un livre : menu du chapitre, à la place de son titre au-dessus de la liste */
+.statements-chapter.chapter-select { display: block; width: 100%; max-width: none; margin: 10px 0 6px; padding: 5px 8px; font-size: 14px; }
 .chapter-select { font: inherit; font-size: 13px; max-width: 220px; padding: 3px 6px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg); color: var(--text); }
 .icon-button.spinning svg { animation: spin 1s linear infinite; }
 

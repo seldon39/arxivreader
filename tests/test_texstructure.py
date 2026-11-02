@@ -93,6 +93,30 @@ class PdfSpotsTest(unittest.TestCase):
         self.assertEqual(located["pages"], {"S2.Thm3": 2, "S2": 2})
         self.assertEqual(located["tops"], {"S2.Thm3": 500, "S2": 700})
 
+    def test_book_numbered_by_chapter(self):
+        """Livre lu dans le HTML d'arXiv : LaTeXML numérote sections et énoncés à la suite (« 3 », « 3.2 », annexe
+        « 9.B.1 »), le PDF dans leur chapitre (« 2.1 », « 2.1.2 », annexe « A.1.1 »)."""
+        import io
+        import pypdf
+        from pypdf.generic import Destination, Fit
+        from app.texstructure import pages_for
+        writer = pypdf.PdfWriter()
+        for _ in range(4):
+            writer.add_blank_page(width=612, height=792)
+        for name, page in (("subsection.2.1.2", 1), ("section.2.1", 1), ("subsection.A.1.1", 3), ("appendix.A", 3)):
+            writer.add_named_destination_object(Destination(name, writer.pages[page].indirect_reference, Fit.xyz(left=0, top=400)))
+        buffer = io.BytesIO()
+        writer.write(buffer)
+        toc = [("chapter1", "Chapter 1 Calculus", "chapter", 0), ("S1", "1 Curves", "section", 1), ("S2", "2 Manifolds", "section", 1),
+               ("chapter2", "Chapter 2 Mappings", "chapter", 0), ("S3", "3 Topology", "section", 1),
+               ("chapter9", "Chapter 9 A primer", "chapter", 0), ("chapter9.A2", "Appendix 9.B Seminorms", "appendix", 1)]
+        structure = {"book": True, "toc": [{"id": i, "title": t, "kind": k, "level": level} for i, t, k, level in toc],
+                     "nodes": [{"id": "S3.SS2", "kind": "lemma", "label": "Lemma 3.2", "section": "S3"},
+                               {"id": "chapter9.A2.SS1", "kind": "definition", "label": "Definition 9.B.1", "section": "chapter9.A2"}]}
+        located = pages_for(structure, buffer.getvalue())["pages"]
+        self.assertEqual((located["S3.SS2"], located["S3"]), (2, 2))
+        self.assertEqual((located["chapter9.A2.SS1"], located["chapter9"]), (4, 4))
+
 
 if __name__ == "__main__":
     unittest.main()

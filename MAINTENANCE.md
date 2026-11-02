@@ -182,7 +182,7 @@ services doivent être *aussi stricts* que les vrais : un faux trop permissif a 
 test du cas ; vérifier que le repli fonctionne si le service tombe.
 
 **Caches à invalider** quand leur calcul change : `STRUCTURE_VERSION` (`structure.py`, ré-analyse des articles
-importés), `FORMAT` (`related.py`, graphes gardés quinze jours), index Zotero (`zoteroIndexVersion`, remis à zéro
+importés), `PAGES_VERSION` (`library.py`, pages des énoncés dans le PDF), `FORMAT` (`related.py`, graphes gardés quinze jours), index Zotero (`zoteroIndexVersion`, remis à zéro
 par `_forget_all`).
 
 ## 7. WebKit et macOS
@@ -382,7 +382,17 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   en chaîne par `usedBy` (`<dependent_statements>`, avec `depends_on`), énoncés seuls, au plus `CHAPTER_STATEMENTS`.
   Consignes `CHAPTER_PROMPTS`, et `CHAPTER_SYNTHESIS` pour une relecture croisée. Côté page (`ai.js`) : menu
   `chapterBar`, fils par chapitre (`chapterOf`, positions par `place`), listes `chapterLinksBox` ; chapitre lu par
-  défaut : `reader.readingChapter`.
+  défaut : `reader.readingChapter`. Onglet Énoncés d'un livre : menu `statements-chapter` à la place du titre du
+  chapitre (`bookChapters`, commun avec le graphe ; `statementsChapter` suit `chapterOfReading` jusqu'à un choix dans
+  le menu, `statementsChosen`) ; pendant une recherche, plus de menu : tout le livre, rangé par chapitre.
+  Pages dans le PDF d'un livre lu en HTML : LaTeXML numérote sections et énoncés à la suite (« 7 », « 7.10 », annexes
+  « 9.B.1 »), le PDF par chapitre (« 2.3 », « 2.3.10 », « A.2.1 ») ; `texstructure._book_sections` refait les numéros
+  du PDF pour les ancres (`subsection.2.3.10`…) et le texte cherché. Changer ce calcul : augmenter `PAGES_VERSION`.
+
+- Dessins TikZ, étiquettes faites d'un paragraphe (minipage, `\parbox` : encadré tcolorbox) : le texte va à la ligne
+  (`white-space: normal`), posé par le haut de sa boîte et tenu dans la plus petite forme du dessin qui le contient
+  (`figures.shapesOf`, même marge à droite qu'à gauche, police réduite d'un quart au plus s'il est trop haut) ; dessins
+  « remember picture, overlay » (1 × 1 sans trait) masqués (`figure-overlay`), comme sur arXiv.
 
 - Fichiers TeX importés (`texfile.py`) : compilés dans `<temp>/arxivreader-tex/<id>`, jamais dans le dossier de
   l'utilisateur (latexmk `-outdir`). latexmk retient qu'un `.bib` manquait et ne relance plus BibTeX : après un
