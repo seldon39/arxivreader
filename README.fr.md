@@ -412,7 +412,9 @@ il suffit de la fermer et d'aller dans le feed.
   onglet). Le plus ancien en haut, la saisie en bas ; Entrée envoie, Maj+Entrée va à la ligne. Boutons ↑ et ↓ en
   haut et en bas à droite : début ou fin du fil ; chaque onglet se rouvre là où on l'a laissé. *⋯* sous une
   réponse : copier l'échange, ou le supprimer (question et réponse ; un résumé ou une relecture part avec les
-  questions posées dessus). Le bouton ↗ en haut (*Envoyer à Claude*, ou à ChatGPT, à Gemini) ouvre une nouvelle
+  questions posées dessus). *✎ Modifier*, au survol sous la dernière question envoyée : arrête la réponse si elle
+  arrive encore et remet la question dans le champ (avec son passage ou sa zone du PDF) ; l'envoyer remplace
+  l'échange, réponse comprise. Le bouton ↗ en haut (*Envoyer à Claude*, ou à ChatGPT, à Gemini) ouvre une nouvelle
   conversation dans l'application ou le site de l'assistant, avec les références de l'article, et copie son texte
   complet dans le presse-papiers.
 - **Relecture croisée**, quand un deuxième assistant est prêt (Claude, Codex, Gemini ou un modèle local) :

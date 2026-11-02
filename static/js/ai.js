@@ -326,7 +326,8 @@ export class Assistant {
       imageUrl: zone?.image || null, second: second && modelOf(second), steps: second ? [] : null, phase: null,
       model: this.status?.model || currentModel(), created_at: new Date().toISOString().slice(0, 19).replace("T", " ") };
     this.exchanges.push(local);
-    this.running = { exchange: local, controller };
+    let finish;
+    this.running = { exchange: local, controller, finished: new Promise((resolve) => { finish = resolve; }) };
     this.view = this.viewOf(local);
     this.positions[this.view] = { top: 0, atBottom: true };
     this.onChange({ show: true });
@@ -356,11 +357,52 @@ export class Assistant {
     if (local.status === "running") local.status = local.error ? "error" : "done";
     if (local.error && ["login", "missing", "offline"].includes(local.errorCode)) this.status = { ...(this.status || {}), loggedIn: false };
     this.running = null;
+    finish();
     this.onChange();
   }
 
   stop() {
     this.running?.controller.abort();
+  }
+
+  // Question qu'on peut modifier (« Edit ») : la dernière envoyée dans son fil, posée depuis le champ (question,
+  // passage, zone du PDF) ; envoyée de nouveau, elle remplace l'échange, réponse comprise
+  editable(exchange) {
+    const view = this.viewOf(exchange);
+    const last = this.exchanges.filter((e) => this.viewOf(e) === view && !["summary", "review"].includes(e.task)).at(-1);
+    return exchange === last && ["ask", "passage", "zone"].includes(exchange.task) && (exchange.task !== "zone" || exchange.imageUrl || exchange.image);
+  }
+
+  // « Edit » : réponse en cours arrêtée (et enregistrée), question remise dans le champ avec son contexte (passage,
+  // zone du PDF, échange auquel elle répond) ; l'envoi la remplace (l'ancien échange est supprimé, discard)
+  async edit(exchange) {
+    if (this.running?.exchange === exchange) {
+      this.stop();
+      await this.running?.finished;
+    }
+    const view = this.viewOf(exchange);
+    const pending = view === "questions" ? this.pending : (this.docPending[view] ||= { question: "" });
+    Object.assign(pending, { question: exchange.question || "", replaces: exchange });
+    if (view === "questions") {
+      const zone = exchange.task === "zone"
+        ? { image: exchange.imageUrl || await dataUrl(`/api/ai/${exchange.id}/image`), page: this.currentPage?.() || 1, quote: exchange.quote } : null;
+      Object.assign(pending, { quote: exchange.task === "passage" ? exchange.quote : null, zone,
+        parent: exchange.parent_id ? this.exchanges.find((e) => e.id === exchange.parent_id) || null : null });
+    }
+    this.view = view;
+    this.onChange({ focus: true });
+  }
+
+  // Échange remplacé par sa question modifiée : supprimé, et retiré du fil, avant le nouvel envoi
+  async discard(exchange) {
+    try {
+      if (typeof exchange.id === "number") await api.deleteAIExchange(exchange.id);
+    } catch (error) {
+      toastError(error);
+      return false;
+    }
+    this.exchanges = this.exchanges.filter((e) => e !== exchange);
+    return true;
   }
 
   // Supprime un échange (question et réponse) ; un résumé ou une relecture part avec les questions posées sur lui
@@ -594,18 +636,23 @@ export class Assistant {
         const doc = this.lastDocument(view, exchanges);
         if (!question || !doc) { area.focus(); return; }
         if (!this.canAsk()) return;
-        pending.question = "";
-        this.ask({ task: "ask", question, parent: doc });
+        const { replaces } = pending;
+        Object.assign(pending, { question: "", replaces: null });
+        afterDiscard(replaces, () => this.ask({ task: "ask", question, parent: doc }));
         return;
       }
       if (!question && !pending.quote && !pending.zone) { area.focus(); return; }
       if (!this.canAsk()) return;
-      const { quote, zone, parent } = pending;
-      Object.assign(pending, { quote: null, parent: null, question: "", zone: null });
-      if (zone) this.ask({ task: "zone", zone, question: question || null, parent });
-      else if (quote && !question) this.ask({ task: "passage", quote, parent });
-      else this.ask({ task: quote ? "passage" : "ask", quote, question, parent });
+      const { quote, zone, parent, replaces } = pending;
+      Object.assign(pending, { quote: null, parent: null, question: "", zone: null, replaces: null });
+      afterDiscard(replaces, () => {
+        if (zone) this.ask({ task: "zone", zone, question: question || null, parent });
+        else if (quote && !question) this.ask({ task: "passage", quote, parent });
+        else this.ask({ task: quote ? "passage" : "ask", quote, question, parent });
+      });
     };
+    // question modifiée : l'ancien échange supprimé d'abord (rien n'est envoyé si la suppression échoue)
+    const afterDiscard = (replaces, go) => (replaces ? this.discard(replaces).then((ok) => ok && go()) : go());
     // Entrée envoie ; Maj + Entrée va à la ligne (et rien pendant la composition d'un caractère : accents, IME)
     area.addEventListener("keydown", (event) => {
       // keyCode 229 : Entrée qui valide un caractère composé (WebKit ne met pas toujours isComposing)
@@ -614,6 +661,13 @@ export class Assistant {
     const chips = [];
     const chip = (label, onRemove, removeKey, ...content) => h("div", { class: "ai-chip" }, label,
       h("button", { class: "icon-button small", type: "button", title: t(removeKey), "aria-label": t(removeKey), html: icons.close, onclick: onRemove }), ...content);
+    if (pending.replaces) {
+      chips.push(chip(h("div", { class: "ai-reply-to" }, h("div", { class: "ai-reply-who" }, `✎ ${t("ai.editing")}`)), () => {
+        Object.assign(pending, { replaces: null, question: "", quote: null, zone: null, parent: null });
+        this.onChange({ focus: true });
+      }, "ai.cancelEdit"));
+      chips[chips.length - 1].classList.add("reply");
+    }
     if (view === "questions") {
       if (pending.parent) {
         chips.push(chip(h("div", { class: "ai-reply-to" }, h("div", { class: "ai-reply-who" }, `↩ ${t("ai.replyTo", { who: modelLabel(pending.parent.model), time: timeOf(pending.parent) })}`),
@@ -719,7 +773,10 @@ export class Assistant {
     } else if (exchange.quote && !zone) bubble.append(h("blockquote", { class: "note-quote ai-quote" }, exchange.quote));
     if (exchange.question) bubble.append(h("p", { class: "ai-asked" }, exchange.question));
     typesetTex([bubble]);
-    thread.append(bubble, this.renderAnswer(exchange, { reply }));
+    // « Edit » sous la bulle, au survol (arrête la réponse en cours, remet la question dans le champ)
+    const edit = this.editable(exchange) && h("button", { class: "ai-edit", type: "button", title: t("ai.editHint"), onclick: () => this.edit(exchange) },
+      `✎ ${t("ai.edit")}`);
+    thread.append(edit ? h("div", { class: "ai-q" }, bubble, edit) : bubble, this.renderAnswer(exchange, { reply }));
   }
 
   // Résumé ou relecture : le document, pleine largeur ; « Refaire » sur le plus récent
@@ -1040,6 +1097,17 @@ function timeOf(exchange) {
 }
 
 // début d'une réponse, sur une ligne (rappel de la réponse à laquelle on répond) ; formules gardées entières
+// Image enregistrée (zone du PDF d'un échange) en data URL : la question modifiée repart avec elle
+async function dataUrl(url) {
+  const blob = await (await fetch(url)).blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 function excerpt(answer, length = 160) {
   let text = parseProposals(answer || "").text.replace(/\$\$/g, "$").replace(/\\[()[\]]/g, "$");
   // Markdown retiré hors des formules seulement (« $x_1$ » garde son indice)

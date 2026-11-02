@@ -395,6 +395,8 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   at the top, the field at the bottom; Return sends, Shift+Return starts a new line. ↑ and ↓ buttons at the top and
   bottom right go to the start or the end of the thread; each tab reopens where you left it. *⋯* under an answer:
   copy the exchange, or delete it (question and answer; a summary or review goes with the questions about it).
+  *✎ Edit*, on hover under the last question sent: stops the answer if it is still coming and puts the question back
+  in the field (with its passage or PDF region); sending it replaces the exchange, answer included.
 - **Cross-review**, when a second assistant is ready (Claude, Codex, Gemini or a local model): *Single review* |
   *Cross-review* above the button of the *Review* tab, then each reviewer's assistant, model and reasoning level. Both
   assistants review the paper on their own, the second compares the two reviews, the first answers that comparison
