@@ -1,6 +1,6 @@
-pdf.js 6.4.299 (Mozilla, licence Apache 2.0 : LICENSE), archive officielle pdfjs-6.4.299-dist.zip
-(github.com/mozilla/pdf.js, sha256 f2245eb7ef3f674c872fe568a177bfec15874f5c034613e55d8e307f93ebd86d).
-Gardés : build/pdf.mjs, build/pdf.worker.mjs, web/ (viewer, cmaps, polices, iccs, wasm, images),
+pdf.js 6.5.438 (Mozilla, licence Apache 2.0 : LICENSE), archive officielle pdfjs-6.5.438-dist.zip
+(github.com/mozilla/pdf.js, sha256 fcbe9ba21d9911843e3502adc178a7f549a524a4055f887bedc942e5490c6ba1).
+Gardés : build/pdf.mjs, build/pdf.worker.mjs, build/pdf.renderer.mjs (dessin des pages dans un worker, 6.5), web/ (viewer, cmaps, polices, iccs, wasm, images),
 traductions fr et en-US. Retirés : cartes de source (.map), débogueur, PDF d'exemple, bac à sable des
 scripts de PDF (pdf.sandbox.mjs, quickjs : les scripts des PDF sont désactivés), autres langues.
 Réglages du lecteur : static/js/pdfview.js (événement « webviewerloaded »).
