@@ -710,6 +710,14 @@ def list_ai(paper_id: str):
     return ai.list_for(paper_id)
 
 
+@app.get("/api/papers/{paper_id}/ai/coverage")
+async def ai_coverage(paper_id: str):
+    """Livre : part du document que l'assistant choisi reçoit pour un résumé ou une relecture de tout le livre."""
+    paper = checked_paper(paper_id)
+    structure = library.load_structure(paper_id) or {}
+    return await run_in_threadpool(ai.coverage, paper, structure, ai.current_model(db.get_settings()))
+
+
 @app.post("/api/papers/{paper_id}/ai")
 async def ask_ai(paper_id: str, body: AIRequest):
     """Réponse de Claude en direct : une ligne JSON par morceau de texte, puis l'échange enregistré."""

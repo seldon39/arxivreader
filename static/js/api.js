@@ -121,6 +121,7 @@ export const api = {
   aiSetup: (provider, step) => request("POST", "/api/ai/setup", { provider, step }),
   aiLogout: (provider) => request("POST", "/api/ai/logout", { provider }),
   aiExchanges: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/ai`),
+  aiCoverage: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/ai/coverage`),
   exportAI: (exchangeId) => request("GET", `/api/ai/${exchangeId}/export`),
   paperText: (paperId) => request("GET", `/api/papers/${encodeURIComponent(paperId)}/text`),
   setAIApplied: (exchangeId, applied) => request("PUT", `/api/ai/${exchangeId}/applied`, { applied }),

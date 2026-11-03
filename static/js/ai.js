@@ -542,13 +542,28 @@ export class Assistant {
   }
 
   // Sous les sous-onglets : chapitre du résumé ou de la relecture (✓ : déjà fait), ou tout le livre (son début)
+  // « Tout le livre » : rien de plus s'il tient dans ce que l'assistant reçoit, sinon ses premières pages lues
+  wholeBookLabel() {
+    const model = this.status?.model || currentModel();
+    if (this.coverage?.model !== model) {
+      this.coverage = { model };
+      api.aiCoverage(this.paper.id).then((found) => {
+        if (this.coverage?.model !== model) return;
+        this.coverage = { model, ...found };
+        if (!found.whole) this.onChange();
+      }).catch(() => {});
+    }
+    const { whole, pages } = this.coverage;
+    return whole !== false ? t("ai.wholeBook") : pages ? t("ai.wholeBookPages", { n: pages }) : t("ai.wholeBookStart");
+  }
+
   chapterBar(view) {
     const task = view === "summary" ? "summary" : "review";
     const done = new Set(this.exchanges.filter((e) => e.task === task && e.status === "done" && typeof e.id === "number").map((e) => this.chapterOfExchange(e) || ""));
     const mark = (id) => (done.has(id) ? "  ✓" : "");
     const select = h("select", { class: "ai-model", "aria-label": t("ai.chapter"), title: t("ai.chapter"),
       onchange: () => { this.chapterOf[view] = select.value || null; this.focusChapter = true; this.onChange(); } },
-    h("option", { value: "", selected: !this.chapterOf[view] }, t("ai.wholeBook") + mark("")),
+    h("option", { value: "", selected: !this.chapterOf[view] }, this.wholeBookLabel() + mark("")),
     this.chapters.map((c) => h("option", { value: c.id, selected: c.id === this.chapterOf[view] }, c.title + mark(c.id))));
     return h("div", { class: "ai-chapterbar" }, h("span", {}, t("ai.chapter")), select);
   }

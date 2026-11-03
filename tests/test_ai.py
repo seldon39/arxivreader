@@ -433,6 +433,21 @@ class Chapters(unittest.TestCase):
         events = [json.loads(line) for line in client.post("/api/papers/b1/ai", json={"task": "summary", "chapter": "Ch3"}).text.splitlines()]
         self.assertEqual((events[-1]["exchange"]["target"], events[-1]["exchange"]["status"]), ("Ch3", "done"))
 
+    def test_whole_book_coverage(self):
+        """« Tout le livre » : rien s'il tient dans la limite ; sinon ses premières pages, au prorata ou par repères."""
+        import unittest.mock
+        paper = {"id": "x", "comment": "200 pages"}
+        with unittest.mock.patch.object(ai, "_load", return_value=(None, {}, "a" * 1000)), \
+                unittest.mock.patch.object(ai, "paper_limit", return_value=2000):
+            self.assertEqual(ai.coverage(paper, {}, "m"), {"whole": True})
+        with unittest.mock.patch.object(ai, "_load", return_value=(None, {}, "a" * 8000)), \
+                unittest.mock.patch.object(ai, "paper_limit", return_value=2000):
+            self.assertEqual(ai.coverage(paper, {}, "m"), {"whole": False, "pages": 50})
+        pdf_text = "\n\n".join(f"[page {n}]\n" + "b" * 900 for n in range(1, 11))  # PDF importé : texte par page
+        with unittest.mock.patch.object(ai, "_load", return_value=(None, {}, pdf_text)), \
+                unittest.mock.patch.object(ai, "paper_limit", return_value=3000):
+            self.assertEqual(ai.coverage({"id": "x"}, {}, "m"), {"whole": False, "pages": 4})
+
     def test_tex_book_chapters(self):
         from app import texsource, texstructure
         source = ("\\documentclass{book}\n\\newtheorem{theorem}{Theorem}[chapter]\n\\begin{document}\n"

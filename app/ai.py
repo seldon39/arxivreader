@@ -827,6 +827,36 @@ def paper_limit(model):
     return providers.LOCAL_LIMIT if providers.provider_of(model) == "local" else PAPER_LIMIT
 
 
+def coverage(paper, structure, model):
+    """Résumé ou relecture de tout un document : lu en entier par `model`, sinon le nombre de ses premières pages qu'il
+    reçoit ({"pages": n} ; n à peu près, au prorata du texte, sauf pour un PDF importé dont le texte est par page)."""
+    text = _load(paper["id"])[2]
+    limit = paper_limit(model)
+    if len(text) <= limit:
+        return {"whole": True}
+    marks = re.findall(r"^\[page (\d+)\]$", text[:limit], re.M)  # PDF importé : repères de page dans le texte
+    if marks:
+        return {"whole": False, "pages": int(marks[-1])}
+    total = _page_count(paper, structure)
+    return {"whole": False, "pages": max(1, round(total * limit / len(text))) if total else None}
+
+
+def _page_count(paper, structure):
+    """Pages du document : d'après le commentaire d'arXiv (« 260 pages »), le PDF s'il est là, sinon la structure."""
+    found = re.search(r"(\d+)\s*pages", paper.get("comment") or "")
+    if found:
+        return int(found.group(1))
+    pdf = library.paper_dir(paper["id"]) / "paper.pdf"
+    if pdf.exists():
+        try:
+            import pypdf
+            return len(pypdf.PdfReader(str(pdf)).pages)
+        except Exception:
+            pass
+    pages = [item.get("page") or 0 for item in structure.get("nodes", []) + structure.get("toc", [])]
+    return max(pages, default=0) or None
+
+
 def assistant_name(model):
     if providers.provider_of(model) == "local":
         return model.split(":", 1)[1] or "IA"

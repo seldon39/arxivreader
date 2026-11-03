@@ -376,7 +376,7 @@ il suffit de la fermer et d'aller dans le feed.
   plus avant qu'après ; les pages omises sont signalées. Un article part toujours en entier.
 - **Livres, chapitre par chapitre** : dans un livre (HTML d'arXiv ou fichier TeX à chapitres), les onglets *Résumé*
   et *Relecture* ont un menu *Chapitre* (par défaut celui qu'on lit, ✓ pour ceux déjà faits), chaque chapitre avec son
-  fil. L'assistant lit ce chapitre seul, avec le sommaire du livre et, des autres chapitres, les énoncés seuls (sans
+  fil ; *Tout le livre* indique combien de premières pages l'assistant reçoit quand le livre dépasse ce qu'il lit. L'assistant lit ce chapitre seul, avec le sommaire du livre et, des autres chapitres, les énoncés seuls (sans
   preuve) : ceux que le chapitre utilise, et ceux qui en dépendent, directement ou en chaîne. La relecture vérifie
   alors ces usages (*Uses from other chapters*) et dit quels énoncés suivants une erreur toucherait (*Impact on other
   chapters*). Les deux listes sont montrées, cliquables, avant l'envoi. L'onglet *Énoncés* montre lui aussi un

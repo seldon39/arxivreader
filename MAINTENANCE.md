@@ -391,7 +391,9 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   en chaîne par `usedBy` (`<dependent_statements>`, avec `depends_on`), énoncés seuls, au plus `CHAPTER_STATEMENTS`.
   Consignes `CHAPTER_PROMPTS`, et `CHAPTER_SYNTHESIS` pour une relecture croisée. Côté page (`ai.js`) : menu
   `chapterBar`, fils par chapitre (`chapterOf`, positions par `place`), listes `chapterLinksBox` ; chapitre lu par
-  défaut : `reader.readingChapter`. Onglet Énoncés d'un livre : menu `statements-chapter` à la place du titre du
+  défaut : `reader.readingChapter`. « Tout le livre » : `ai.coverage` (`/api/papers/{id}/ai/coverage`, assistant
+  choisi) — rien s'il tient dans `paper_limit`, sinon ses premières pages (prorata du texte et du nombre de pages :
+  commentaire d'arXiv, PDF, structure ; repères `[page n]` d'un PDF importé). Onglet Énoncés d'un livre : menu `statements-chapter` à la place du titre du
   chapitre (`bookChapters`, commun avec le graphe ; `statementsChapter` suit `chapterOfReading` jusqu'à un choix dans
   le menu, `statementsChosen`) ; pendant une recherche, plus de menu : tout le livre, rangé par chapitre.
   Pages dans le PDF d'un livre lu en HTML : LaTeXML numérote sections et énoncés à la suite (« 7 », « 7.10 », annexes
