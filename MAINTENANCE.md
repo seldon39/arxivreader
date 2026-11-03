@@ -287,7 +287,10 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
 - Dépendances (à chaque audit) : `.venv/bin/pip list --outdated` ; avis de sécurité :
   `gh api -X GET /advisories -f ecosystem=pip -f affects=<paquet>@<version>` pour chaque ligne de requirements.lock ;
   pdf.js et MathJax (static/vendor, versions dans leurs README) ; Python embarqué (conda-forge) et la CI Linux (3.12 →
-  3.15). Mise à jour : tests, banc du texte caché, puis `./arxivreader lock`.
+  3.15). Mise à jour : tests, banc du texte caché, puis `./arxivreader lock`. Python embarqué = celui de `.venv`
+  (`build.sh` en refait une copie conda-forge de même version) : environnement conda à part,
+  `conda create -p ~/miniforge3/envs/arxivreader -c conda-forge python=3.14.X`, puis `.venv` refait dessus
+  (`python3 -m venv .venv`, `pip install -r requirements.lock`) ; jamais le Python de base de miniforge.
 
 - Texte invisible (`structure.mark_hidden`, au début de l'analyse : `plain` ne le garde ni dans les étiquettes ni dans
   les titres) : couleur du texte blanche ou presque (luminance ≥ 0,9), transparente ou d'alpha nul (`_hiding`, `_color` :
