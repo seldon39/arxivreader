@@ -165,7 +165,11 @@ def _same_token(given):
 
 
 def _failed(error):
-    """Service extérieur en échec (arXiv, Semantic Scholar…) : 502, avec le type de l'erreur."""
+    """Service extérieur en échec (arXiv, Semantic Scholar…) : 502, avec le type de l'erreur. Connexion impossible
+    (pas de réseau, adresse introuvable : Mac qui sort de veille, Wi-Fi qui se reconnecte) : code « offline », que la
+    page traduit en clair (et le feed réessaie de lui-même)."""
+    if isinstance(error, httpx.ConnectError):
+        return JSONResponse({"code": "offline", "error": f"{type(error).__name__}: {error}"}, status_code=502)
     return JSONResponse({"error": f"{type(error).__name__}: {error}"}, status_code=502)
 
 

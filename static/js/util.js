@@ -121,7 +121,8 @@ export function metaDialog({ title, authors, heading = null, note = null, cancel
 }
 
 export function toastError(error) {
-  toast(t("error.generic", { message: error?.message || String(error) }), { error: true, duration: 6000 });
+  toast(error?.code === "offline" ? t("error.offline") : t("error.generic", { message: error?.message || String(error) }),
+    { error: true, duration: 6000 });
 }
 
 export function debounce(fn, delay) {

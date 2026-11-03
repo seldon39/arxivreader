@@ -153,6 +153,10 @@ préversions `windows-v1.9.15`… `windows-v1.9.21` et `windows-latest` restent 
 
 ## 6. Services extérieurs : ce qui peut changer, où regarder
 
+Service injoignable (pas de réseau, adresse introuvable : sortie de veille, Wi-Fi qui se reconnecte) : `main._failed`
+renvoie le code `offline` pour une `httpx.ConnectError`, traduit par la page (`error.offline`, `feed.error.offline`) ;
+le feed réessaie seul (`retryWhenOnline` : événement « online », sinon toutes les 30 s tant que la page est ouverte).
+
 `./arxivreader check` appelle pour de vrai ceux que liste `CHECKS` (`app/check.py` : à compléter si l'application
 se met à dépendre d'un nouveau service) et vérifie la forme de la réponse (✓ bon, ✗ changé ou en panne, – non
 vérifié). Lancé à la main, il lit les réglages de la bibliothèque de l'utilisateur (clés) et y écrit `check.json`

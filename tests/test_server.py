@@ -6,6 +6,7 @@ import pathlib
 import tempfile
 import unittest
 
+import httpx
 from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 
@@ -123,6 +124,12 @@ class Helpers(unittest.TestCase):
         self.assertEqual(relevance.s2_key(None, "10.1063/1.4870869"), "DOI:10.1063/1.4870869")
         self.assertEqual(relevance.s2_key(None, "s2:abc"), "abc")
         self.assertIsNone(relevance.s2_key(None, "a book title"))
+
+    def test_offline_code(self):
+        """Pas de réseau (adresse introuvable) : code « offline », que la page traduit en clair ; autre échec : tel quel."""
+        offline = main._failed(httpx.ConnectError("[Errno 8] nodename nor servname provided, or not known"))
+        self.assertEqual((offline.status_code, json.loads(offline.body)["code"]), (502, "offline"))
+        self.assertNotIn("code", json.loads(main._failed(httpx.ReadError("reset")).body))
 
     def test_bounded_decompression(self):
         bomb = gzip.compress(b"\\documentclass{article}" + b" " * (texsource.MAX_FILE_BYTES + 10))

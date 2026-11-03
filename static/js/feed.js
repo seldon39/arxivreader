@@ -46,7 +46,9 @@ function ago(stamp) {
 const knownOf = (item) => ({ title: item.title, authors: item.authors || [], abstract: item.abstract || "", categories: item.categories || [],
   primary_category: item.primary_category || null, published: item.announced || null, doi: item.doi || null, journal_ref: item.journal_ref || null });
 
-function errorText(message) {
+function errorText(error) {
+  if (error.code === "offline") return t("feed.error.offline");
+  const message = error.message;
   const known = { "rate-limited": "feed.error.rateLimited", "no-seed": "feed.error.noSeed", "bad-key": "feed.error.badKey",
     "arxiv-timeout": "feed.error.timeout" };
   return known[message] ? t(known[message]) : t("error.generic", { message });
@@ -117,7 +119,7 @@ async function renderList(body, tab) {
       }
       remember();
     } catch (error) {
-      toast(errorText(error.message), { error: true, duration: 6000 });
+      toast(errorText(error), { error: true, duration: 6000 });
     } finally {
       loadingDay = false;
       draw();
@@ -137,6 +139,22 @@ async function renderList(body, tab) {
   };
   addEventListener("keydown", onKey);
 
+  // Pas de réseau (sortie de veille…) : nouvel essai dès que le Mac se dit en ligne, sinon toutes les 30 s
+  // (« en ligne » peut précéder de peu le retour du DNS), tant que la page est ouverte ; message effacé s'il réussit
+  let retry = null;
+  const retryWhenOnline = () => {
+    clearTimeout(retry);
+    const again = () => {
+      clearTimeout(retry);
+      removeEventListener("online", again);
+      if (!document.body.contains(list) || refresh.disabled) return;
+      notice.replaceChildren(); // comme un clic sur ↻ : remis s'il échoue encore
+      doRefresh(true);
+    };
+    addEventListener("online", again);
+    retry = setTimeout(again, 30000);
+  };
+
   const doRefresh = async (automatic = false) => {
     refresh.disabled = true;
     refresh.classList.add("spinning");
@@ -153,8 +171,9 @@ async function renderList(body, tab) {
       if (tab === "arxiv") (await api.alerts().catch(() => ({ unseen: [] }))).unseen.forEach((key) => fresh.add(key)); // apportés par la mise à jour
       draw();
     } catch (error) {
-      notice.replaceChildren(h("p", { class: "notice" }, errorText(error.message)));
-      if (!automatic) toast(errorText(error.message), { error: true, duration: 6000 });
+      notice.replaceChildren(h("p", { class: "notice" }, errorText(error)));
+      if (error.code === "offline") retryWhenOnline();
+      else if (!automatic) toast(errorText(error), { error: true, duration: 6000 });
     } finally {
       refresh.disabled = false;
       refresh.classList.remove("spinning");
@@ -238,6 +257,7 @@ async function renderList(body, tab) {
   const stopSelection = useSelectionBar({ papers: () => null });
   return () => {
     stopSelection();
+    clearTimeout(retry);
     removeEventListener("keydown", onKey);
     removeEventListener("arxivreader:section-opened", markSeenShown);
     abstractObserver.disconnect();
