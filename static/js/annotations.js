@@ -770,7 +770,11 @@ export class Annotator {
         let updated;
         try { updated = await api.updateAnnotation(id, { color }); } catch (error) { toastError(error); return; }
         Object.assign(annotation, updated);
-        this.content.querySelectorAll(`mark.hl[data-annotation="${id}"]`).forEach((m) => { m.className = `hl hl-${color}`; });
+        // seule la couleur change : les autres classes restent (hl-display : fond autour d'une formule centrée)
+        this.content.querySelectorAll(`mark.hl[data-annotation="${id}"]`).forEach((m) => {
+          m.classList.remove(...COLORS.map((c) => `hl-${c}`));
+          m.classList.add(`hl-${color}`);
+        });
         this.pdf?.recolor(id);
         colors.querySelectorAll(".hl-dot").forEach((b) => b.setAttribute("aria-pressed", String(b.classList.contains(`hl-${color}`))));
         this.onChange();
