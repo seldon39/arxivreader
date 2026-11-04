@@ -382,8 +382,9 @@ il suffit de la fermer et d'aller dans le feed.
   preuve) : ceux que le chapitre utilise, et ceux qui en dépendent, directement ou en chaîne. La relecture vérifie
   alors ces usages (*Uses from other chapters*) et dit quels énoncés suivants une erreur toucherait (*Impact on other
   chapters*). Les deux listes sont montrées, cliquables, avant l'envoi. L'onglet *Énoncés* montre lui aussi un
-  chapitre à la fois (menu *Chapitre* à la place du titre du chapitre : celui qu'on lit tant qu'on n'en a pas choisi,
-  ou tout le livre) ; une recherche porte sur tout le livre. En lisant le
+  chapitre à la fois (menu *Chapitre* à la place du titre du chapitre : celui qu'on lit, suivi pendant la lecture, en
+  HTML comme dans le PDF ; un chapitre choisi reste jusqu'au passage à un autre chapitre ; ou tout le livre) ; une
+  recherche porte sur tout le livre. En lisant le
   PDF, un énoncé choisi dans le panneau s'ouvre à sa page même quand le HTML d'arXiv le numérote autrement que le PDF
   (*Proposition 7.10* d'un côté, *2.3.10* de l'autre).
 - **Énoncés et preuves** : l'icône de note en marge (au survol) ouvre une note et, pour un énoncé,

@@ -413,8 +413,9 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   défaut : `reader.readingChapter`. « Tout le livre » : `ai.coverage` (`/api/papers/{id}/ai/coverage`, assistant
   choisi) — rien s'il tient dans `paper_limit`, sinon ses premières pages (prorata du texte et du nombre de pages :
   commentaire d'arXiv, PDF, structure ; repères `[page n]` d'un PDF importé). Onglet Énoncés d'un livre : menu `statements-chapter` à la place du titre du
-  chapitre (`bookChapters`, commun avec le graphe ; `statementsChapter` suit `chapterOfReading` jusqu'à un choix dans
-  le menu, `statementsChosen`) ; pendant une recherche, plus de menu : tout le livre, rangé par chapitre.
+  chapitre (`bookChapters`, commun avec le graphe ; `statementsChapter` suit `chapterOfReading` en défilant et dans
+  le PDF, `followStatementsChapter` ; un choix dans le menu, `statementsChosen`, tient tant que le chapitre lu reste
+  `chosenWhileReading` ; « Tout le livre » choisi tient toujours) ; pendant une recherche, plus de menu : tout le livre, rangé par chapitre.
   Pages dans le PDF d'un livre lu en HTML : LaTeXML numérote sections et énoncés à la suite (« 7 », « 7.10 », annexes
   « 9.B.1 »), le PDF par chapitre (« 2.3 », « 2.3.10 », « A.2.1 ») ; `texstructure._book_sections` refait les numéros
   du PDF pour les ancres (`subsection.2.3.10`…) et le texte cherché ; les numéros des énoncés seulement si le livre les

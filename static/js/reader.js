@@ -356,6 +356,7 @@ class Reader {
       if (target && this.content.contains(target)) {
         this.readingId = target.id;
         this.savePosition(target.id);
+        this.followStatementsChapter();
       }
     }, 800);
     this.pdf.onMove(follow);
@@ -1194,6 +1195,7 @@ class Reader {
       a.classList.toggle("current", id === section);
       if (id === section) a.setAttribute("aria-current", "location"); else a.removeAttribute("aria-current");
     });
+    this.followStatementsChapter();
     // Énoncé courant dans la liste
     const theorem = anchor.closest(".ltx_theorem");
     this.panel.querySelectorAll(".node-item.current").forEach((el) => el.classList.remove("current"));
@@ -1580,14 +1582,20 @@ class Reader {
     // Livre : un chapitre à la fois (par défaut celui qu'on lit ; celui de l'énoncé choisi), ou tout le livre
     let chapterMenu = null;
     if (this.structure.book && !this.onlyIds && this.bookChapters().size > 1) {
-      // tant qu'on n'a pas choisi dans le menu, il suit la lecture (à chaque retour sur l'onglet)
+      // tant qu'on n'a pas choisi dans le menu, il suit la lecture (followStatementsChapter)
       if (!this.statementsChosen) this.statementsChapter = this.chapterOfReading() || this.statementsChapter || this.chapters.keys().next().value;
       // énoncé choisi ailleurs (texte, graphe) : son chapitre, une fois ; un choix fait ensuite dans le menu est gardé
       const selected = this.selected && this.selected !== this.statementsFollowed && this.chapterOfNode(this.selected);
       this.statementsFollowed = this.selected;
       if (selected && this.statementsChapter) this.statementsChapter = selected;
       chapterMenu = h("select", { class: "chapter-select statements-chapter", "aria-label": t("graph.chapter"), title: t("graph.chapter"),
-        onchange: () => { this.statementsChapter = chapterMenu.value; this.statementsChosen = true; draw(); chapterMenu.focus(); } },
+        onchange: () => {
+          this.statementsChapter = chapterMenu.value;
+          this.statementsChosen = true;
+          this.chosenWhileReading = this.chapterOfReading();
+          draw();
+          chapterMenu.focus();
+        } },
       h("option", { value: "" }, t("panel.allChapters", { n: this.nodes.length })),
       [...this.chapters].map(([id, chapter]) => h("option", { value: id }, `${chapter.title || id} (${chapter.ids.size})`)));
       chapterMenu.value = this.statementsChapter || "";
@@ -1733,6 +1741,23 @@ class Reader {
   chapterOfNode(id) {
     for (const [chapter, { ids }] of this.bookChapters()) if (ids.has(id)) return chapter;
     return null;
+  }
+
+  // Livre, onglet Énoncés : le menu suit le chapitre lu, en défilant (HTML ou PDF). Un chapitre choisi dans le menu
+  // reste affiché tant qu'on lit le même chapitre ; passé à un autre chapitre, le menu suit de nouveau la lecture.
+  // « Tout le livre » choisi, ou une recherche en cours (tout le livre aussi) : rien ne change.
+  followStatementsChapter() {
+    if (this.tab !== "statements" || !this.structure.book || !this.chapters || this.chapters.size < 2 || this.onlyIds
+      || this.search.trim()) return;
+    const chapter = this.chapterOfReading();
+    if (!chapter) return;
+    if (this.statementsChosen) {
+      if (!this.statementsChapter || chapter === this.chosenWhileReading) return;
+      this.statementsChosen = false;
+    }
+    if (chapter === this.statementsChapter) return;
+    this.statementsChapter = chapter;
+    this.renderPanel();
   }
 
   // chapitre de l'endroit lu (dans le PDF : dernier endroit retrouvé dans le HTML), s'il a des énoncés

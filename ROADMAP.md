@@ -35,7 +35,7 @@ readers, roughly in order of impact. Each one is a GitHub issue with the context
 - Cross-review by two assistants (independent reviews, comparison, tagged synthesis): done in 1.11.11. Next:
   a third assistant to write the synthesis, when there is one.
 - Books: summary and review chapter by chapter, with the statements of other chapters the chapter uses and those
-  that depend on it (statements only): done in 1.11.18.
+  that depend on it (statements only): done in 1.11.18. Statements tab following the chapter being read: 1.11.23.
 - Faster HTML conversion of long documents (idea, to be decided): LaTeXML run in parallel on blocks of about 20
   pages or more, cut at the nearest section or chapter (counters taken from the PDF compilation, cross-references,
   macros and one bibliography kept across blocks), then put back together as one page; for books and long papers,
