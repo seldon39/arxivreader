@@ -42,6 +42,8 @@ readers, roughly in order of impact. Each one is a GitHub issue with the context
   about 4–5 times faster in a first test. Falls back to the whole-document conversion if a block fails.
 - AI answers adapted to the reader (profile and a free "Your profile" field sent with every request): done in
   1.11.4. Next: a "Link with my work" action that sends the reader's own papers in full when they fit.
+- Lighter reading of long papers full of formulas (sections far from the window not drawn, a third of the memory):
+  done in 1.11.23.
 - [#12](https://github.com/seldon39/arxivreader/issues/12) Cancelling a related-papers build should interrupt
   the request in flight.
 

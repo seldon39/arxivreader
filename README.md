@@ -146,6 +146,8 @@ http://127.0.0.1:8710/; the server only listens on this computer (not on Wi-Fi).
   text size, reading width (from "Narrow" to "Full" for large screens), proofs collapsed by default; text
   size and width also in the reader's toolbar (A−/A+ and two width buttons).
 - Layout adapted to the window width: 3 columns (≥ 1280 px), 2 (≥ 900 px), 1 column with drawers.
+- **Long papers stay light**: sections more than one screen away from the window are not drawn, and drawn again
+  before they come into view (on a long paper full of formulas, about a third of the memory).
 
 Dependencies come from the cross-references (`\ref`, `\eqref`, `\cite`) in a statement and in its proof:
 an argument used without an explicit reference does not show up.
@@ -522,7 +524,7 @@ windows/        Windows app: shell/ (C# window with tabs, WebView2), launcher.py
                 smoke.ps1 (test of the built app), build-requirements.txt
 .github/        workflows: Windows build, tests and release (windows.yml), Linux tests (linux.yml)
 static/         interface (HTML, CSS, JavaScript with no build step);
-                vendor/mathjax (MathJax 3.2.2), vendor/pdfjs (pdf.js 6.3.289, Apache 2.0)
+                vendor/mathjax (MathJax 3.2.2), vendor/pdfjs (pdf.js 6.5.438, Apache 2.0)
                 and fonts/ (Latin Modern) copied locally
 tests/          offline tests: .venv/bin/python -m unittest discover tests
 ```

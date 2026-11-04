@@ -119,6 +119,9 @@ screens, and on several papers — a fix for one paper's LaTeXML output often br
   `app/main.py`), otherwise it is silently not saved.
 - **Analysis changes**: when `app/structure.py` or `app/texstructure.py` changes what it extracts or marks, bump
   `STRUCTURE_VERSION` so imported papers are re-analysed.
+- **Reader layout changes**: anything that changes the height of sections away from the screen (text size, width,
+  panes, revealed hidden text) goes through `reader.relayout(fn)` or `keepReadingPosition`: those sections are not
+  drawn (`static/js/lazypaint.js`) and keep the height measured before they were hidden.
 - **Followed authors**: recognise a followed author's paper only through `relevance.follows` (names, namesakes set
   aside, categories kept for that author).
 

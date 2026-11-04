@@ -149,6 +149,8 @@ http://127.0.0.1:8710/ ; le serveur n'écoute que sur cet ordinateur (pas sur le
   taille du texte, largeur de lecture (de « Étroite » à « Pleine » pour les grands écrans), preuves repliées par
   défaut ; taille et largeur du texte aussi dans la barre du lecteur (A−/A+ et deux boutons de largeur).
 - Mise en page adaptée à la largeur : 3 colonnes (≥ 1280 px), 2 (≥ 900 px), 1 colonne avec tiroirs.
+- **Longs articles légers** : les sections à plus d'un écran de la fenêtre ne sont pas dessinées, et le sont de
+  nouveau avant d'arriver à l'écran (sur un long article plein de formules, environ un tiers de la mémoire).
 
 Les dépendances viennent des renvois (`\ref`, `\eqref`, `\cite`) dans l'énoncé et dans sa preuve :
 un argument utilisé sans renvoi explicite n'apparaît pas.
@@ -544,7 +546,7 @@ windows/        application Windows : shell/ (fenêtre à onglets en C#, WebView
                 par PyInstaller), smoke.ps1 (essai de l'application construite), build-requirements.txt
 .github/        workflows : construction, tests et publication Windows (windows.yml), tests Linux (linux.yml)
 static/         interface (HTML, CSS, JavaScript sans compilation) ;
-                vendor/mathjax (MathJax 3.2.2), vendor/pdfjs (pdf.js 6.3.289, Apache 2.0)
+                vendor/mathjax (MathJax 3.2.2), vendor/pdfjs (pdf.js 6.5.438, Apache 2.0)
                 et fonts/ (Latin Modern) copiés localement
 tests/          tests hors ligne : .venv/bin/python -m unittest discover tests
 ```

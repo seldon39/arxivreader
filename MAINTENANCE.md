@@ -39,7 +39,7 @@ anglais.
 
 | Domaine | Serveur (`app/`) | Page (`static/js/`) |
 |---|---|---|
-| Import, HTML nettoyé, PDF | `library.py`, `arxiv.py`, `sanitize.py` | `reader.js`, `pdfview.js`, `pdfsync.js` |
+| Import, HTML nettoyé, PDF | `library.py`, `arxiv.py`, `sanitize.py` | `reader.js`, `pdfview.js`, `pdfsync.js`, `lazypaint.js` (sections loin de l'écran pas dessinées) |
 | Structure (énoncés, preuves, dépendances) | `structure.py` (HTML LaTeXML), `texstructure.py`, `texsource.py` (source TeX) | `reader.js`, `graph.js`, `texview.js` |
 | Notes, surlignages, état de lecture, export | `annotations.py`, `export.py`, `notesync.py` (export signé, import d'un ordinateur à l'autre) | `annotations.js`, `markdown.js`, `bookmarks.js` (marque-pages, menu du clic droit), `pdfnotes.js` (passages, zones et notes dans le PDF ; passages retrouvés après recompilation) |
 | PDF et fichiers TeX de l'ordinateur | `localpdf.py` (PDF importés : texte, titre, version arXiv), `texfile.py` (fichiers TeX : compilation, bibliographie, vérifications, identifiants tirés des `\label`, tâches en arrière-plan) | `library.js` (import), `texfile.js` (fenêtre d'import, vérifications du lecteur), `reader.js` (Recompiler, livres : énoncés et graphe par chapitre) |
@@ -213,7 +213,15 @@ main, dans l'application installée :
   `notes-trusted.json` ; tout changement du contenu du bloc passe par `FORMAT` (les anciens fichiers restent lisibles) ;
 - le menu du clic droit du navigateur est supprimé (`app.js`) sauf sur une sélection, un champ, un lien ou une image ;
   le clic droit de l'article (`annotations.js`) et du PDF (`pdfnotes.js`) propose les marque-pages (`bookmarks.js`) ;
-- les téléchargements (export des notes : dossier Téléchargements, `WKDownloadDelegate`).
+- les téléchargements (export des notes : dossier Téléchargements, `WKDownloadDelegate`) ;
+- le défilement d'un long article riche en formules (`lazypaint.js`). WebKit garde l'image de tout ce qui a défilé
+  et ne la libère pas quand elle contient des formules : 2,3 Go pour 2611.03736 lu en entier, pic de 4 Go. Les
+  sections à plus d'un écran de la fenêtre (`AHEAD`) passent donc en `content-visibility: hidden`, à la hauteur
+  mesurée juste avant (`contain-intrinsic-height`) : 0,8 Go. À revérifier : mémoire du processus
+  `com.apple.WebKit.WebContent` (`footprint <pid>`, ligne « graphics »), positions inchangées (sommaire, recherche,
+  passage au PDF, taille du texte), rien d'affiché en retard en défilant. WebKit donne les vraies positions dans une
+  section masquée (éléments et `Range`) ; `content-visibility: auto` ne convient pas : aucune avance (section
+  dessinée une fois à l'écran) et hauteurs estimées des sections jamais vues (sommaire décalé de 2 000 px).
 Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à comparer.
 
 ## 8. Dépendances Python
@@ -228,6 +236,17 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
 
 ## 9. Pièges connus
 
+- Sections masquées du lecteur (`lazypaint.js`) : une section loin de l'écran garde la hauteur mesurée avant d'être
+  masquée. Tout changement qui modifie la hauteur de sections hors de l'écran (taille du texte, largeur, volets,
+  texte caché révélé) passe par `reader.relayout(fn)` (ou `keepReadingPosition`, qui l'appelle) : tout est réaffiché
+  le temps du calcul, puis les hauteurs sont reprises. Les sections (`.lazy-paint`) s'étendent sur la marge de
+  l'article (`--paper-pad`) : une section masquée ne dessine rien hors de son cadre
+  (repères, flèches des preuves, notes, marque-pages sont dans cette marge) ; les marges qui sortaient de la section
+  (titre en haut, dernier paragraphe ou preuve en bas) sont portées par la section (`edgeChain`) : une section
+  masquée ne laisse rien sortir, ce qui suit remonterait. Pas de `flow-root` : il enfermerait le □ flottant des
+  preuves (une ligne de plus). Un élément de la marge ne doit
+  pas dépasser `--paper-pad` (26 à 32 px). `keepReadingPosition(..., { applied: true })` quand le changement est déjà
+  fait (réglages, fenêtre redimensionnée) : la place d'avant vient alors des positions retenues (`this.anchors`).
 - Version HTML par LaTeXML (`latexml.py`) : rangée dans `papers/<id>/html/`, jamais dans `content.html` à la racine
   (sa présence fait d'un article un article d'arXiv lu en HTML : analyse, texte pour l'assistant). Les identifiants des
   énoncés (rapprochés dans l'ordre du document, type par type), des sections, de la bibliographie et des équations

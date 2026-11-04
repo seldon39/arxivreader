@@ -307,9 +307,19 @@ a.button.primary { text-decoration: none; }
 @media (max-width: 600px) { .find-input { width: 120px; } .find-count { min-width: 48px; } }
 .paper-scroll { grid-area: paper; position: relative; min-width: 0; background: var(--surface); }
 .paper {
-  max-width: var(--reading-width); margin: 0 auto; padding: 28px 32px 30vh;
+  --paper-pad: 32px;
+  max-width: var(--reading-width); margin: 0 auto; padding: 28px var(--paper-pad) 30vh;
   font-family: var(--paper-font); font-size: var(--font-size); line-height: 1.5;
 }
+/* Sections loin de l'écran : pas dessinées (lazypaint.js). Une section masquée ne dessine rien hors de son cadre :
+   chaque section s'étend sur la marge de l'article, où sont repères, flèches des preuves et notes (même largeur à
+   chaque niveau, sections d'un chapitre comprises). Une section masquée ne laisse sortir aucune marge intérieure :
+   celles qui sortaient (titre en haut, dernier paragraphe en bas) sont portées par la section (lazypaint.js), affichée
+   ou non ; mise en page inchangée */
+.lazy-paint :is(.ltx_chapter, .ltx_section, .ltx_appendix, .ltx_bibliography, .ltx_subsection) {
+  margin-inline: calc(-1 * var(--paper-pad)); padding-inline: var(--paper-pad);
+}
+.lazy-paint .offscreen { content-visibility: hidden; }
 .scrim { display: none; }
 
 @media (max-width: 1279px) {
@@ -335,7 +345,7 @@ a.button.primary { text-decoration: none; }
   }
   .reader[data-panel="open"] .panel { transform: none; }
   .reader[data-panel="open"] .scrim { display: block; }
-  .paper { padding: 22px 26px 30vh; }
+  .paper { --paper-pad: 26px; padding: 22px var(--paper-pad) 30vh; }
   .reader-toolbar .wide-only { display: none; }
 }
 @media (max-width: 1279px) {

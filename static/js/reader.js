@@ -10,6 +10,7 @@ import { emptyPictures, layoutFigures, openFigure, prepareFigures, sizeToText } 
 import { findBar, setFindHandler } from "./find.js";
 import { PdfView } from "./pdfview.js";
 import { PdfNotes } from "./pdfnotes.js";
+import { LazyPaint } from "./lazypaint.js";
 import { bookmarkBox, bookmarkSection, contextMenuAt, inPdf as bookmarkInPdf, staleVersion } from "./bookmarks.js";
 import { htmlToPdf, htmlWords, pdfToHtml, wordTop } from "./pdfsync.js";
 import { defineMacros, statementElement, statementsContainer } from "./texview.js";
@@ -173,6 +174,7 @@ class Reader {
     this.pdfNotes?.repaintAll(); // passages surlignés dans le PDF, connus seulement maintenant
     this.renderPanel(); // avec les états de lecture, chargés seulement maintenant
     this.anchors = null;
+    if (!this.texOnly) this.lazyPaint = new LazyPaint(this.content); // sections loin de l'écran : pas dessinées
     if (this.texOnly) {
       await defineMacros(this.structure.macros);
       await typesetTex([this.content]);
@@ -302,8 +304,10 @@ class Reader {
       this.anchors = null;
       // le HTML a pu être mis en page caché (article ouvert dans le PDF, fenêtre redimensionnée) :
       // figures et formules larges recalculées maintenant qu'il est affiché
-      layoutFigures(this.figures);
-      this.markWideMath();
+      this.relayout(() => {
+        layoutFigures(this.figures);
+        this.markWideMath();
+      });
       const text = location ? await this.pdf.text() : null;
       if (!current()) return;
       const html = this.htmlText = htmlWords(this.content);
@@ -477,7 +481,8 @@ class Reader {
         if (spots[index]) this.navigateElement(spots[index], { remember });
       };
       toggle.addEventListener("click", () => {
-        const on = this.article.classList.toggle("reveal-hidden");
+        let on;
+        this.relayout(() => { on = this.article.classList.toggle("reveal-hidden"); this.anchors = null; });
         toggle.textContent = on ? t("reader.conceal") : t("reader.reveal");
         if (!on || this.pdfMode) { next.hidden = true; return; }
         // un endroit par paragraphe (texte caché lettre par lettre : une seule étape), dans l'ordre de l'article
@@ -963,14 +968,29 @@ class Reader {
   }
 
   // Changement de mise en page (volet, police, largeur) : figures et formules recalées, même passage à l'écran
-  keepReadingPosition(change = () => {}) {
+  // applied : changement déjà fait (taille du texte, fenêtre redimensionnée) ; la place de l'élément lu avant lui est
+  // alors celle des positions retenues (une mesure donnerait la nouvelle mise en page, sections masquées encore à
+  // l'ancienne hauteur). Le recalage de WebKit (ancrage du défilement) est suspendu : il s'ajouterait au nôtre.
+  keepReadingPosition(change = () => {}, { applied = false } = {}) {
+    const kept = applied && this.anchors;
     const anchor = this.currentAnchor();
-    const top = anchor?.getBoundingClientRect().top;
-    change();
-    this.anchors = null;
-    layoutFigures(this.figures);
-    this.markWideMath();
+    const entry = kept && kept.find((a) => a.el === anchor);
+    const top = entry ? entry.y - scrollY : anchor?.getBoundingClientRect().top;
+    const root = document.documentElement;
+    root.style.overflowAnchor = "none";
+    requestAnimationFrame(() => requestAnimationFrame(() => { root.style.overflowAnchor = ""; }));
+    this.relayout(() => {
+      change();
+      this.anchors = null;
+      layoutFigures(this.figures);
+      this.markWideMath();
+    });
     if (anchor) scrollBy({ top: anchor.getBoundingClientRect().top - top, behavior: "instant" });
+  }
+
+  // Nouvelle mise en page de tout l'article : sections lointaines affichées le temps du calcul (lazypaint.js)
+  relayout(change) {
+    return this.lazyPaint ? this.lazyPaint.relayout(change) : change();
   }
 
   setProof(proof, collapsed, { update = true } = {}) {
@@ -1898,7 +1918,7 @@ class Reader {
         // Changement de format : volets remis dans leur état par défaut pour cette largeur
         this.setOpen("toc", currentLayout === "wide" && settings.tocOpen);
         this.setOpen("panel", currentLayout !== "narrow" && settings.panelOpen);
-      });
+      }, { applied: true });
     }, 200);
     document.addEventListener("keydown", onKey);
     addEventListener("resize", onResize);
@@ -1916,7 +1936,7 @@ class Reader {
       this.updateWidthButtons();
       this.article.dataset.marks = settings.marginMarks ? "on" : "off";
       const now = `${settings.fontSize}/${settings.readingWidth}/${settings.paperFont}`;
-      if (now !== look) { look = now; this.keepReadingPosition(); } else this.anchors = null;
+      if (now !== look) { look = now; this.keepReadingPosition(undefined, { applied: true }); } else this.anchors = null;
     });
     this.cleanups.push(() => document.removeEventListener("keydown", onKey), () => removeEventListener("resize", onResize), unsubscribe);
   }
@@ -2147,6 +2167,7 @@ class Reader {
     this.stopPick();
     this.hidePreview();
     this.overlay?.remove();
+    this.lazyPaint?.destroy();
     this.cleanups.forEach((fn) => fn());
   }
 }

@@ -33,7 +33,8 @@ REPORT = LIBRARY / "check.json"
 # à revoir à la main après un changement de WebKit (même liste que MAINTENANCE.md, section 7)
 WEBKIT_POINTS = ("glisser un article d'une fenêtre à l'autre, sur un onglet et sur « Bibliothèque » ou « Papiers liés »",
                  "couleurs du graphe des papiers liés (color-mix)", "réglages et graphe agrandi (fenêtre de dialogue, inert)",
-                 "lecteur PDF", "formules (MathJax)", "export des notes (téléchargement)")
+                 "lecteur PDF", "formules (MathJax)", "export des notes (téléchargement)",
+                 "défilement d'un long article (sections masquées, mémoire)")
 
 
 class Skip(Exception):
