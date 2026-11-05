@@ -176,7 +176,7 @@ problème ; journal `~/Library/Logs/arXivReader-check.log`, résultat `check.jso
 | Zotero web API v3 | `zotero.py` | en-têtes (`Total-Results`, `Last-Modified-Version`, `Backoff`), écritures multiples (`successful`/`failed`), `since`/`/deleted` | garde-fous : écriture refusée réessayée, retraits massifs en attente |
 | Claude (SDK Agent et son CLI) | `ai.py` | options du SDK, liste des modèles (`get_server_info`), connexion | message de connexion dans les réglages |
 | TeX de l'utilisateur (latexmk, pdflatex/xelatex, BibTeX/Biber, kpsewhich) | `texfile.py` (fichiers TeX importés) | latexmk ancien (BibTeX ne peut pas écrire dans `-outdir` : `$bibtex_fudge=1`), MiKTeX sans Perl (latexmk ne démarre pas), programmes hors du PATH d'une application lancée du Finder (`TEX_DIRS`) | compilation à la main (LaTeX, BibTeX ou Biber, LaTeX ×2) ; sans TeX, PDF compilé à côté du fichier |
-| LaTeXML de l'utilisateur (`latexmlc`) | `latexml.py` (HTML β) | options de `latexmlc`, lenteur (pgfplots, gros documents), installation sous Windows (Perl) | figures pgfplots remplacées par une mention ; 10 minutes au plus, puis échec retenu (« Réessayer ») ; le PDF reste lisible |
+| LaTeXML de l'utilisateur (`latexmlc`) | `latexml.py` (HTML β) | options de `latexmlc`, lenteur (pgfplots, gros documents), installation sous Windows (Perl) | figures pgfplots remplacées par une mention ; durée limite selon la taille de la source (`latexml.timeout` : 10 min à 1 h, environ 300 s par Mo de TeX mesurées sur un Mac récent, ×4 de marge), puis échec retenu (« Réessayer ») ; le PDF reste lisible |
 | Codex CLI, API Gemini, modèle local | `providers.py` | options du CLI (`-m`, `model_reasoning_effort`, `--image=` après la question `-`), `~/.codex/models_cache.json`, `thinkingLevel` de Gemini | — (la CLI Gemini n'accepte plus les comptes Google gratuits : API par clé) |
 | GitHub releases | `updates.py` | — | silencieux |
 
@@ -268,7 +268,8 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   Ghostscript), dans le dossier du document, 2400 px et 180 s au plus en tout, `page=` respecté), images réduites à quelques pixels par une longueur
   inconnue de LaTeXML (`fix_tiny_images`). Bibliographie vide (le `.bib` relu avec le préambule : pdfx, CJK… arrêtent
   LaTeXML) : seconde conversion d'après un `.bbl` (`_lost_bibliography`, `_bbl` : compilation ou BibTeX sur les
-  citations ; `.bbl` biblatex changé en thebibliography, `_biblatex_bibliography`).
+  citations ; `.bbl` biblatex changé en thebibliography, `_biblatex_bibliography` : fait avant la première conversion quand la
+  source charge biblatex, que LaTeXML ne connaît pas, pour ne pas convertir deux fois un livre).
   Reste : lignes d'un nœud à plusieurs lignes un peu serrées (LaTeXML les empile sans interligne). Sous-figures
   (`ltx_flex_figure`) côte à côte : `latexml.css`. Taille des figures (dessins, images) rapportée au texte
   (`figures.sizeToText` : largeur LaTeXML à 100 dpi convertie en em d'après le corps du document, 10pt par défaut).

@@ -390,6 +390,41 @@ class Latexml(unittest.TestCase):
             self.assertEqual(latexml.convert("tex-r")["state"], "ready")
         self.assertIn("ok", (latexml.html_dir("tex-r") / "content.html").read_text())
 
+    def test_biblatex_list_built_before_a_single_conversion(self):
+        # biblatex : la liste tirée du .bbl est en place dès la première conversion (pas de seconde conversion)
+        db.save_paper({"id": "tex-b", "arxiv_id": "", "version": None, "title": "T", "authors": [], "abstract": "",
+                       "categories": [], "primary_category": "", "published": None, "updated": None, "doi": None,
+                       "journal_ref": None, "comment": "", "source": "local-tex", "in_library": 1})
+        work = self.tmp / "wb"
+        work.mkdir()
+        (work / "main.tex").write_text("\\usepackage[style=alphabetic]{biblatex}\\addbibresource{b.bib}"
+                                       "\\begin{document}\\cite{k}\\printbibliography\\end{document}", encoding="utf-8")
+        (work / "main.bbl").write_text("\\entry{k}{article}{}\\field{title}{T}\\endentry", encoding="utf-8")
+        calls = []
+
+        def run(program, cwd, main_name, paths, out, use_bbl=False):
+            calls.append(use_bbl)
+            self.assertIn("\\input{arxivreader-bibliography}", (cwd / main_name).read_text())
+            return '<article class="ltx_document"><p>ok</p></article>'  # même sans ltx_bibitem : pas de reprise
+        (latexml.paper_dir("tex-b")).mkdir(parents=True, exist_ok=True)
+        (latexml.paper_dir("tex-b") / "structure.json").write_text("{}", encoding="utf-8")
+        with mock.patch.object(latexml, "find", return_value="/bin/latexmlc"), \
+             mock.patch.object(latexml, "_source", return_value=(work, "main.tex", [], False)), \
+             mock.patch.object(latexml, "_run", run), mock.patch.object(texfile, "report", return_value={"compiledAt": "A"}):
+            self.assertEqual(latexml.convert("tex-b")["state"], "ready")
+        self.assertEqual(calls, [True])
+
+    def test_timeout_follows_source_size(self):
+        cwd = self.tmp / "size"
+        (cwd / "chapters").mkdir(parents=True)
+        (cwd / "main.tex").write_text("x" * 1000, encoding="utf-8")
+        self.assertEqual(latexml.timeout(cwd), latexml.TIMEOUT)  # petit article : 10 minutes
+        (cwd / "chapters" / "one.tex").write_bytes(b"x" * 1_100_000)  # livre de 300 pages environ
+        (cwd / "figure.png").write_bytes(b"x" * 5_000_000)  # images : ne comptent pas
+        self.assertEqual(latexml.timeout(cwd), round(latexml.SECONDS_PER_MB * 1.101))
+        (cwd / "chapters" / "two.tex").write_bytes(b"x" * 9_000_000)
+        self.assertEqual(latexml.timeout(cwd), latexml.MAX_TIMEOUT)
+
 
 if __name__ == "__main__":
     unittest.main()

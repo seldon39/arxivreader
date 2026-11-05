@@ -34,7 +34,12 @@ from .structure import STRUCTURE_VERSION, classify, extract_structure
 from .texsource import MAX_FILE_BYTES, MAX_MEMBERS, MAX_TOTAL_BYTES, choose_main
 
 SOURCES = (texfile.SOURCE, "tex")
-TIMEOUT = 600  # secondes : un livre peut demander plusieurs minutes
+# Durée accordée à LaTeXML, selon la taille de la source : environ 300 s par Mo de TeX sur un Mac récent (livre de
+# 303 pages, 1,1 Mo : 309 s), quatre fois plus pour un ordinateur lent ; 10 minutes au moins, une heure au plus.
+# Une limite fixe de 10 minutes arrêtait les livres de 400 à 500 pages.
+TIMEOUT = 600  # secondes, au moins
+SECONDS_PER_MB = 1200
+MAX_TIMEOUT = 3600
 GUIDE = "https://math.nist.gov/~BMiller/LaTeXML/get.html"  # installation (Windows : Perl, puis LaTeXML)
 DIRS = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "~/perl5/bin",
         "C:/Strawberry/perl/site/bin", "C:/Strawberry/perl/bin"]
@@ -141,9 +146,12 @@ def convert(pid):
         out = work / "out"
         out.mkdir()
         try:
-            html = _run(program, cwd, main, paths, out, use_bbl)
-            if _lost_bibliography(html, cwd) and (_biblatex_bibliography(paper, cwd, main)
-                                                  or not use_bbl and _bbl(paper, cwd, main)):
+            # biblatex : LaTeXML ne le connaît pas, la bibliographie sortirait vide ; la liste tirée du .bbl est mise
+            # en place d'emblée (une seule conversion au lieu de deux, sensible sur un livre)
+            biblatex = bool(BIBLATEX_PACKAGE.search(_texts(cwd))) and _biblatex_bibliography(paper, cwd, main)
+            html = _run(program, cwd, main, paths, out, use_bbl or biblatex)
+            if not biblatex and _lost_bibliography(html, cwd) and (_biblatex_bibliography(paper, cwd, main)
+                                                                   or not use_bbl and _bbl(paper, cwd, main)):
                 again = work / "out-bbl"  # bibliographie d'après le .bbl, comme sur arXiv
                 again.mkdir()
                 try:
@@ -168,6 +176,7 @@ def convert(pid):
 # compilation (fichier importé) ou celui que BibTeX fait des citations de l'article (source d'arXiv sans .bbl).
 BIBDATA = re.compile(r"\\bibliography\s*\{([^{}]+)\}")
 BIBLATEX = re.compile(r"\\(?:addbibresource|printbibliography|bibliography)\b")
+BIBLATEX_PACKAGE = re.compile(r"\\usepackage\s*(?:\[[^\]]*\])?\s*\{[^{}]*\bbiblatex\b[^{}]*\}|\\addbibresource\b")
 PRINTBIBLIOGRAPHY = re.compile(r"\\printbibliography\s*(?:\[[^\]]*\])?")
 BIBSTYLE = re.compile(r"\\bibliographystyle\s*\{([^{}]+)\}")
 CITE = re.compile(r"\\(?:no)?cite[a-zA-Z]*\*?\s*(?:\[[^\]]*\]\s*){0,2}\{([^{}]*)\}")
@@ -677,6 +686,13 @@ def _extract(data, folder):
     return choose_main(texts, readme.read_text(encoding="utf-8", errors="replace") if readme.is_file() else None)
 
 
+def timeout(cwd):
+    """Secondes accordées à LaTeXML pour le document de `cwd` (fichiers TeX copiés là), selon leur taille."""
+    size = sum(path.stat().st_size for path in Path(cwd).rglob("*")
+               if path.suffix.lower() in (".tex", ".ltx") and path.is_file())
+    return min(MAX_TIMEOUT, max(TIMEOUT, round(SECONDS_PER_MB * size / 1_000_000)))
+
+
 def _run(program, cwd, main, paths, out, use_bbl=False):
     """LaTeXML lancé dans le dossier du document, sur un chemin relatif (les espaces dans les chemins le gênent) ;
     renvoie la page produite. Bibliographie : le .bib (LaTeXML le lit lui-même, comme sur arXiv), sinon le .bbl
@@ -688,7 +704,7 @@ def _run(program, cwd, main, paths, out, use_bbl=False):
                *(["--preload=[nobibtex]latexml.sty"] if use_bbl else []), "--preload=arxivreader-figures.sty",
                *(f"--path={p}" for p in paths), f"--dest={out / 'index.html'}", f"--log={out / 'log.txt'}", main]
     try:
-        texfile._run(command, str(cwd), env, TIMEOUT)
+        texfile._run(command, str(cwd), env, timeout(cwd))
     except texfile.TexError as error:
         raise LatexmlError("timeout" if str(error) == "timeout" else str(error))
     page = out / "index.html"

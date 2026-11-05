@@ -28,8 +28,9 @@ readers, roughly in order of impact. Each one is a GitHub issue with the context
 - [#13](https://github.com/seldon39/arxivreader/issues/13) Drawings LaTeXML cannot convert (PSTricks, picture).
 - Your own TeX files (papers and books being written): compiled PDF with statements, checks and recompiling, and an
   experimental HTML version made on demand by LaTeXML (if installed), also for arXiv papers without HTML: done in
-  1.9.32; figures, PDF images and lost bibliographies checked on 15 recent arXiv papers in 1.10.4. Next: faster
-  or partial conversion of very long documents; line spacing inside multi-line TikZ nodes.
+  1.9.32; figures, PDF images and lost bibliographies checked on 15 recent arXiv papers in 1.10.4. Books of
+  400–500 pages no longer stopped after 10 minutes (time limit following the size of the source; biblatex
+  bibliographies in a single pass). Next: faster or partial conversion of very long documents; line spacing inside multi-line TikZ nodes.
 - AI tab as a conversation (Questions, Summary and Review threads, field at the bottom, ↩ Reply, ↑ ↓): done in
   1.11.0. Next: pass the whole chain of follow-ups to the assistant, not only the previous exchange.
 - Cross-review by two assistants (independent reviews, comparison, tagged synthesis): done in 1.11.11. Next:
