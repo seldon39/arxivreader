@@ -9,7 +9,7 @@ Thank you for your interest. arXivReader is a reader for arXiv papers built for 
 
 - the **arXiv identifier and version** of the paper (e.g. `arXiv:2609.40232v1`) — most display problems are
   specific to one paper's LaTeXML conversion;
-- the **app version** (Settings → Updates) and your system (macOS or Windows, with its version);
+- the **app version** (Settings → About) and your system (macOS or Windows, with its version);
 - a **screenshot** or a short screen recording, and what you expected instead.
 
 To see whether a problem comes from arXivReader or from arXiv's own HTML, compare with

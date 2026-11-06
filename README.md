@@ -23,7 +23,7 @@ on your computer: the server only listens on 127.0.0.1.
 | Linux | from the source code: see [Linux](#linux) | Python 3.12 or later |
 
 The apps are self-contained (Python and its packages are included): there is nothing else to install. They check
-once a day whether a new version is out (Settings → Updates) and then show an "Update" pill at the top right; your
+once a day whether a new version is out (Settings → About) and then show an "Update" pill at the top right; your
 library is kept when you update.
 
 ### macOS

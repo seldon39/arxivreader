@@ -3,7 +3,7 @@
 # .github/workflows/windows.yml, déclenché par l'étiquette)
 # Avant : augmenter VERSION dans app/version.py, committer. Le script construit l'application, crée
 # l'étiquette vX.Y.Z, pousse le dépôt et publie dist/arXivReader.dmg ; les applications installées
-# le signalent ensuite (Réglages → Mises à jour).
+# le signalent ensuite (Réglages → À propos).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 VERSION=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' app/version.py)

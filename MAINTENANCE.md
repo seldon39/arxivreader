@@ -56,9 +56,9 @@ sections d'après le numéro du titre (`toc`), références entre crochets ou au
 article cité, « Theorem 3.1 of [12] », « [12, Theorem 3.1] » ; aperçu au survol par `reader.previewFor`), `aiproviders.js`, `reader.js` (`contextPages` : pages d'un scan rendues par pdf.js) |
 | Zotero | `zotero.py` | `zotero.js`, `settings.js` |
 | Premier lancement | `onboarding.py` | `onboarding.js` |
-| Mises à jour, vérification des services | `updates.py`, `check.py` | `updates.js` |
+| Mises à jour, vérification des services | `updates.py`, `check.py` | `updates.js` (dans Réglages → À propos) |
 | Formules, construction du DOM | `feed.tex_text` (TeX des titres et résumés) | `math.js` (MathJax), `amsfix.js`, `util.js` (`h`, `withMath`, `tidyTitle`) |
-| Réglages | `main.py` (liste `allowed` et `_valid_setting` de `/api/settings`) | `settings.js` (section « À propos » : copyright, licence) |
+| Réglages | `main.py` (liste `allowed` et `_valid_setting` de `/api/settings`) | `settings.js` (section « À propos » : version, mises à jour, copyright, licence) |
 | Textes de l'interface | — | `i18n.js` (blocs FR et EN : mêmes clés) |
 | Application Mac | — | `macos/main.swift` (onglets, glisser sur un onglet, téléchargements, essais, sélecteurs natifs de dossier et de fichiers : `chooseFolder`, `chooseFiles`), `macos/build.sh`, `macos/release.sh` |
 | Application Windows | `windows/launcher.py` (serveur sans fenêtre, repli Edge) | `windows/shell/` (fenêtre C# : `MainForm.cs`, `TabStrip.cs`, `Program.cs`), `windows/smoke.ps1`, `.github/workflows/windows.yml` |

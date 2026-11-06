@@ -23,7 +23,7 @@ Tout reste sur votre ordinateur : le serveur n'écoute que sur 127.0.0.1.
 | Linux | depuis le code source : voir [Linux](#linux) | Python 3.12 ou plus |
 
 Les applications sont autonomes (Python et ses paquets sont inclus) : rien d'autre à installer. Elles vérifient une
-fois par jour s'il existe une nouvelle version (Réglages → Mises à jour) et affichent alors une pastille « Mise à
+fois par jour s'il existe une nouvelle version (Réglages → À propos) et affichent alors une pastille « Mise à
 jour » en haut à droite ; la bibliothèque est conservée lors d'une mise à jour.
 
 ### macOS

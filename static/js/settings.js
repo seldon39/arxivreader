@@ -264,11 +264,10 @@ export function openSettingsDialog({ section = null } = {}) {
       ...check("zoteroAutoSync", t("settings.zoteroAuto"), settings.zoteroAutoSync !== false, t("settings.zoteroAutoHint")),
       zoteroBox,
     ]],
-    ["updates", t("settings.updates"), [
+    // À propos : version installée et mises à jour, puis copyright et licence
+    ["about", t("settings.about"), [
       ...check("checkUpdates", t("settings.checkUpdates"), settings.checkUpdates !== false),
       updatesSection(),
-    ]],
-    ["about", t("settings.about"), [
       h("p", {}, h("strong", {}, "arXivReader"), " — © 2026 Razvan Apredoaei (seldon39)"),
       h("p", {}, t("about.license"), " ", h("a", { href: "https://github.com/seldon39/arxivreader", target: "_blank",
         rel: "noopener noreferrer" }, "github.com/seldon39/arxivreader")),

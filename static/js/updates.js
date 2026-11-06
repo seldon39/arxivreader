@@ -23,11 +23,11 @@ function showPill() {
   if (!current?.available || current.dismissed) return;
   const pill = h("button", { class: "update-pill", type: "button", title: t("updates.pillTitle", { version: current.latest.version }) },
     t("updates.pill"));
-  pill.addEventListener("click", () => dispatchEvent(new CustomEvent("arxivreader:settings", { detail: "updates" })));
+  pill.addEventListener("click", () => dispatchEvent(new CustomEvent("arxivreader:settings", { detail: "about" })));
   document.querySelector(".topbar-actions")?.prepend(pill);
 }
 
-// Section « Mises à jour » des réglages
+// Mises à jour, dans la section « À propos » des réglages
 export function updatesSection() {
   const box = h("div", { class: "updates-settings" });
   const draw = (state, checking = false) => {
