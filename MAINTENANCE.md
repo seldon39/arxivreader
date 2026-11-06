@@ -11,7 +11,10 @@ Lecteur d'articles arXiv (macOS, Windows ; Linux depuis le code source), pensé 
 127.0.0.1, page en JavaScript sans compilation (`static/`), application Mac en Swift (`macos/main.swift`, une
 fenêtre WebKit par onglet) qui embarque son propre Python. Données de l'utilisateur dans
 `~/Library/Application Support/arXivReader` (base `arxivreader.db`, dossier `papers/`). Dépôt public
-(github.com/seldon39/arxivreader, licence MIT). Code et commentaires en français ; interface en français et en
+(github.com/seldon39/arxivreader, licence MIT, © 2026 Razvan Apredoaei (seldon39) : même ligne dans `LICENSE`,
+Réglages → À propos (`settings.js`), `NSHumanReadableCopyright` de `macos/build.sh` et `AppCopyright` de
+`windows/installer.iss` ; `LICENSE` est copié dans l'app Mac par `build.sh` et dans le zip et l'installateur Windows
+par `windows.yml`). Code et commentaires en français ; interface en français et en
 anglais.
 
 ## 2. Règles à ne jamais enfreindre
@@ -55,7 +58,7 @@ article cité, « Theorem 3.1 of [12] », « [12, Theorem 3.1] » ; aperçu au s
 | Premier lancement | `onboarding.py` | `onboarding.js` |
 | Mises à jour, vérification des services | `updates.py`, `check.py` | `updates.js` |
 | Formules, construction du DOM | `feed.tex_text` (TeX des titres et résumés) | `math.js` (MathJax), `amsfix.js`, `util.js` (`h`, `withMath`, `tidyTitle`) |
-| Réglages | `main.py` (liste `allowed` et `_valid_setting` de `/api/settings`) | `settings.js` |
+| Réglages | `main.py` (liste `allowed` et `_valid_setting` de `/api/settings`) | `settings.js` (section « À propos » : copyright, licence) |
 | Textes de l'interface | — | `i18n.js` (blocs FR et EN : mêmes clés) |
 | Application Mac | — | `macos/main.swift` (onglets, glisser sur un onglet, téléchargements, essais, sélecteurs natifs de dossier et de fichiers : `chooseFolder`, `chooseFiles`), `macos/build.sh`, `macos/release.sh` |
 | Application Windows | `windows/launcher.py` (serveur sans fenêtre, repli Edge) | `windows/shell/` (fenêtre C# : `MainForm.cs`, `TabStrip.cs`, `Program.cs`), `windows/smoke.ps1`, `.github/workflows/windows.yml` |

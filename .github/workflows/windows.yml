@@ -66,6 +66,7 @@ jobs:
         shell: pwsh
         run: |
           Copy-Item windows/LISEZMOI.txt dist/arXivReader/
+          Copy-Item LICENSE dist/arXivReader/LICENSE.txt  # la licence MIT accompagne chaque copie (zip et installateur)
           Get-ChildItem dist/arXivReader -Name
           Compress-Archive -Path dist/arXivReader -DestinationPath arXivReader-windows.zip
           "{0:N0} Mo" -f ((Get-Item arXivReader-windows.zip).Length / 1MB)

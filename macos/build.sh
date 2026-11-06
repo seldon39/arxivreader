@@ -59,6 +59,7 @@ rsync -a --exclude 'pip' --exclude 'pip-*' --exclude __pycache__ ".venv/$SITE/" 
 # 3. Code de l'application
 mkdir -p "$RES/arxivreader"
 rsync -a --exclude __pycache__ app static "$RES/arxivreader/"
+cp LICENSE "$RES/arxivreader/LICENSE"  # la licence MIT accompagne chaque copie
 
 # Python et l'application précompilés : sans cela, tout est recompilé à chaque lancement (0,6 s de plus).
 # « unchecked-hash » : les .pyc servent tels quels, quelles que soient les dates des fichiers copiés
@@ -96,7 +97,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.education</string>
   <key>NSHighResolutionCapable</key><true/>
-  <key>NSHumanReadableCopyright</key><string>Usage personnel.</string>
+  <key>NSHumanReadableCopyright</key><string>© 2026 Razvan Apredoaei (seldon39). Licence MIT.</string>
 </dict></plist>
 PLIST
 

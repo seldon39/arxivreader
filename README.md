@@ -539,4 +539,5 @@ HTML, a daily feed sorted by your profile, an AI assistant with no tools or netw
 
 ## License
 
-MIT.
+MIT, © 2026 Razvan Apredoaei (seldon39). The license text ships with the Mac and Windows apps;
+Settings → About recalls it.

@@ -562,4 +562,5 @@ application Mac installable.
 
 ## Licence
 
-MIT.
+MIT, © 2026 Razvan Apredoaei (seldon39). Le texte de la licence est joint aux applications Mac et Windows ;
+Réglages → À propos le rappelle.

@@ -268,6 +268,12 @@ export function openSettingsDialog({ section = null } = {}) {
       ...check("checkUpdates", t("settings.checkUpdates"), settings.checkUpdates !== false),
       updatesSection(),
     ]],
+    ["about", t("settings.about"), [
+      h("p", {}, h("strong", {}, "arXivReader"), " — © 2026 Razvan Apredoaei (seldon39)"),
+      h("p", {}, t("about.license"), " ", h("a", { href: "https://github.com/seldon39/arxivreader", target: "_blank",
+        rel: "noopener noreferrer" }, "github.com/seldon39/arxivreader")),
+      h("p", {}, t("about.vibe")),
+    ]],
   ];
   if (!sections.some(([key]) => key === currentSection)) currentSection = "reading";
   const panes = sections.map(([key, title, nodes]) => h("section", { class: "settings-pane", id: `settings-${key}`, role: "tabpanel",

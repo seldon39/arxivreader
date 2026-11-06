@@ -137,3 +137,5 @@ Releases (version number in `app/version.py`, `macos/release.sh`) are made by th
 ## License
 
 By contributing, you agree that your contributions are licensed under the [MIT License](LICENSE).
+The copyright line (Razvan Apredoaei, seldon39) is the same in `LICENSE`, Settings → About and the Mac and
+Windows packages: see MAINTENANCE.md.
