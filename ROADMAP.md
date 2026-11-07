@@ -40,7 +40,7 @@ readers, roughly in order of impact. Each one is a GitHub issue with the context
   All chapters in parallel (two at a time, a background task of the server), then a synthesis that compares the
   chapter records, or an overall summary (replaces "Whole book"): done in 1.11.26. Reviews rewritten as a referee's
   report (verdict, Critical / Serious / Minor, certain or suspected): 1.11.26; each point as a short title and prose,
-  repair included, without the repeated "Main results" and "What survives" sections: next version.
+  repair included, without the repeated "Main results" and "What survives" sections: 1.11.27.
 - Faster HTML conversion of long documents (idea, to be decided): LaTeXML run in parallel on blocks of about 20
   pages or more, cut at the nearest section or chapter (counters taken from the PDF compilation, cross-references,
   macros and one bibliography kept across blocks), then put back together as one page; for books and long papers,
