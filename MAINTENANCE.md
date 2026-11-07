@@ -233,6 +233,17 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   que l'application embarque (`build.sh` copie `.venv`, et refuse de construire s'il diffère du verrou).
 - Mettre à jour, exprès et un paquet à la fois : `.venv/bin/pip install -U <paquet>`, tests, essai, puis
   `./arxivreader lock` et committer `requirements.lock`. Lire les notes de version du paquet avant.
+- Version majeure de pypdf : comparer avant et après, sur les PDF de la bibliothèque (lecture seule), le texte de
+  chaque page (`localpdf.read_pdf`), le tampon arXiv, `latexml._pdf_size` et le placement des pages
+  (`texstructure.locate_pages`). pypdf 7.0 (1.11.27) : seul changement, une espace autour des indices et exposants
+  (« H 2 p » au lieu de « H 2p ») ; tampons, tailles et pages identiques.
+- `.venv` sans fichiers en double (« nom 2.py », « claude 3 » : copies laissées par le Finder ou une synchronisation,
+  embarquées ensuite par `build.sh`) : `find .venv -name '* [0-9]*' | head` ne doit rien donner ; sinon refaire `.venv`
+  depuis `requirements.lock` (ancien dossier déplacé, pas supprimé). Trouvé en 1.11.27 : 2 776 doublons, 155 Mo.
+- Outils de la version Windows (`windows/build-requirements.txt`) et actions GitHub (`.github/workflows`) : à vérifier
+  aussi à chaque audit (`gh api repos/actions/<action>/releases/latest`), notes des versions majeures lues avant :
+  download-artifact 8 échoue si le condensé du fichier ne correspond pas, upload-artifact 7 ajoute `archive` (vrai par
+  défaut) ; le téléchargement par nom (`name:`) est inchangé.
 - Changer de version de Python : `.venv` refait avec la nouvelle version ; `build.sh` crée le Python embarqué
   depuis le cache de conda-forge (`miniforge`, `conda create --offline`) à la même version : il faut d'abord la
   télécharger dans ce cache (`conda create` sans `--offline`), avec l'accord de l'utilisateur.
