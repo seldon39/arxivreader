@@ -150,14 +150,23 @@ export class Assistant {
   }
 
   // Échanges relus (une tâche du livre en a ajouté) ; la demande en cours de cette page garde son objet, mis à jour
-  // au fil de sa réponse
+  // au fil de sa réponse. Les échanges retenus par une saisie (réponse à, question modifiée) passent aux nouveaux
+  // objets : supprimer ou répondre vise toujours un échange de la liste
   async reloadExchanges() {
     let list;
     try { list = await api.aiExchanges(this.paper.id); } catch { return; }
     const live = this.running?.exchange;
-    if (!live || !this.exchanges.includes(live)) { this.exchanges = list; return; }
-    const order = (e) => (typeof e.id === "number" ? e.id : Infinity);
-    this.exchanges = [...list.filter((e) => e.id !== live.id), live].sort((a, b) => order(a) - order(b));
+    if (live && this.exchanges.includes(live)) {
+      const order = (e) => (typeof e.id === "number" ? e.id : Infinity);
+      list = [...list.filter((e) => e.id !== live.id), live].sort((a, b) => order(a) - order(b));
+    }
+    this.exchanges = list;
+    const byId = new Map(list.map((e) => [e.id, e]));
+    for (const pending of [this.pending, ...Object.values(this.docPending)]) {
+      for (const key of ["parent", "replaces"]) {
+        if (pending[key]) pending[key] = byId.get(pending[key].id) || null;  // supprimé ailleurs : la saisie le lâche
+      }
+    }
   }
 
   async refreshStatus() {
@@ -440,7 +449,7 @@ export class Assistant {
       toastError(error);
       return false;
     }
-    this.exchanges = this.exchanges.filter((e) => e !== exchange);
+    this.exchanges = this.exchanges.filter((e) => e.id !== exchange.id);
     return true;
   }
 
@@ -465,8 +474,8 @@ export class Assistant {
         toastError(error);
         break;
       }
-      this.exchanges = this.exchanges.filter((x) => x !== e);
-      if (this.pending.parent === e) this.pending.parent = null;
+      this.exchanges = this.exchanges.filter((x) => x.id !== e.id);
+      if (this.pending.parent?.id === e.id) this.pending.parent = null;
     }
     this.onChange();
   }
@@ -633,7 +642,19 @@ export class Assistant {
     const tick = async () => {
       let next = null;
       const stamp = this.jobsStamp;
-      try { next = await api.aiBook(this.paper.id); } catch { /* réseau : nouvel essai au prochain tour */ }
+      try {
+        next = await api.aiBook(this.paper.id);
+        this.pollFailures = 0;
+      } catch (error) {
+        // article supprimé ailleurs : plus rien à suivre ; sinon (réseau, serveur) nouvel essai, de plus en plus espacé
+        this.pollFailures = (this.pollFailures || 0) + 1;
+        if (error.status === 404 && !this.destroyed) {
+          this.jobs = {};
+          this.pollTimer = null;
+          this.onChange();  // panneau refait sans la tâche (bouton Arrêter, progression)
+          return;
+        }
+      }
       if (this.destroyed) return;
       if (next && stamp !== this.jobsStamp) next = null;  // lancement ou arrêt pendant le relevé : relevé suivant
       if (next) {
@@ -654,7 +675,8 @@ export class Assistant {
           this.onChange();
         } else this.bookLive?.(next);
       }
-      this.pollTimer = BOOK_TASKS.some((task) => jobRunning(this.jobs[task])) ? setTimeout(tick, 2000) : null;
+      const wait = this.pollFailures >= 3 ? 10000 : 2000;
+      this.pollTimer = BOOK_TASKS.some((task) => jobRunning(this.jobs[task])) ? setTimeout(tick, wait) : null;
     };
     this.pollTimer = setTimeout(tick, 2000);
   }
@@ -872,8 +894,12 @@ export class Assistant {
       return h("div", { class: "ai-bottom" }, h("button", { class: "button ai-launch", type: "button", onclick: () => this.stopBook(task) },
         t("ai.book.stop")), footer);
     }
-    // chapitre relu (ou résumé) par la tâche du livre en ce moment : rien à demander avant la fin
-    if (view !== "questions" && exchanges.some((e) => e.status === "running" && e !== this.running?.exchange)) {
+    // chapitre relu (ou résumé) par la tâche du livre en ce moment : rien à demander avant la fin (seulement un échange
+    // de cette tâche : une demande en cours ailleurs, sur un article qui n'est pas un livre, n'est pas un chapitre)
+    const job = jobRunning(this.jobs[task]) ? this.jobs[task] : null;
+    const jobExchanges = new Set([...(job?.chapters || []).map((c) => c.exchange), job?.synthesis?.exchange]
+      .filter((id) => id != null));
+    if (view !== "questions" && exchanges.some((e) => e.status === "running" && jobExchanges.has(e.id))) {
       return h("div", { class: "ai-bottom" }, h("p", { class: "muted small ai-book-busy" }, t(`ai.book.chapterBusy.${task}`)), footer);
     }
     const relaunch = view === "review" && this.relaunch && !running;

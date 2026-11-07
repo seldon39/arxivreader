@@ -12,6 +12,7 @@ async function request(method, url, body) {
   if (!response.ok) {
     const message = (data && (data.error || data.detail)) || `HTTP ${response.status}`;
     const error = new Error(message);
+    error.status = response.status;
     if (data && typeof data.code === "string") error.code = data.code; // cause précise (traduite par la page)
     throw error;
   }

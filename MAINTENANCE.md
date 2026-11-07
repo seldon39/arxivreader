@@ -51,7 +51,7 @@ anglais.
 | Feed, profil, pertinence, alertes, citations | `feed.py`, `profile.py`, `relevance.py` (`same_person`, `follows` : homonymes des auteurs suivis), `alerts.py`, `citations.py`, `journals.py` | `feed.js` (👎 → « pas cette personne »), `profile.js` (catégories gardées pour un auteur) |
 | Recherche arXiv | `search.py` | `search.js` |
 | Papiers liés (graphe) | `related.py` | `related.js` |
-| IA | `ai.py` (Claude, SDK Agent ; scans : pages jointes en images ; livres trop longs : début et fenêtre autour de la question), `providers.py` (Codex, Gemini, local), `bookjob.py` (livre : tous les chapitres en parallèle, puis synthèse) | `ai.js` (onglet en conversation : sous-onglets Questions / Résumé / Relecture d'après la racine de chaque échange, `viewOf` ; une question sur un résumé ou une relecture a pour parent ce document ; mémoire du fil : `ai.thread_history` (même fil que `viewOf` : tout le fil Questions, ou le document et les questions posées dessus ; terminés ou arrêtés, avec une réponse) et `_history_block` (`<conversation_history>`, au plus `limit / HISTORY_SHARE` caractères : le document et l'échange répondu toujours, puis les plus récents ; balises neutralisées ; pas pour résumé, relecture, transcription) ; positions de lecture `positions`, boutons ↑ ↓ dans la marge du fil ; renvois des réponses `buildRefs` : énoncés, équations,
+| IA | `ai.py` (Claude, SDK Agent ; scans : pages jointes en images ; livres trop longs : début et fenêtre autour de la question), `providers.py` (Codex, Gemini, local), `bookjob.py` (livre : tous les chapitres en parallèle, puis synthèse) | `ai.js` (onglet en conversation : sous-onglets Questions / Résumé / Relecture d'après la racine de chaque échange, `viewOf` ; une question sur un résumé ou une relecture a pour parent ce document ; mémoire du fil : `ai.thread_history` (même fil que `viewOf` : tout le fil Questions, ou le document et les questions posées dessus ; terminés ou arrêtés, avec une réponse ; l'échange répondu même en erreur, marqué « [answer interrupted by an error] ») et `_history_block` (`<conversation_history>`, au plus `limit / HISTORY_SHARE` caractères : le document et l'échange répondu toujours, puis les plus récents ; balises neutralisées ; pas pour résumé, relecture, transcription) ; positions de lecture `positions`, boutons ↑ ↓ dans la marge du fil ; renvois des réponses `buildRefs` : énoncés, équations,
 sections d'après le numéro du titre (`toc`), références entre crochets ou auteur-année (`bibliography`), sauf l'énoncé d'un
 article cité, « Theorem 3.1 of [12] », « [12, Theorem 3.1] » ; aperçu au survol par `reader.previewFor`), `aiproviders.js`, `reader.js` (`contextPages` : pages d'un scan rendues par pdf.js) |
 | Zotero | `zotero.py` | `zotero.js`, `settings.js` |
@@ -427,18 +427,23 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
 - Livre, tous les chapitres en parallèle (`app/bookjob.py`, routes `/api/papers/{id}/ai/book`, `…/book/stop`) : tâche
   de fond du serveur (`asyncio`), une par livre et par sorte, `PARALLEL` chapitres à la fois (relecture croisée :
   `ai.cross_review` pour chacun) ; elle continue si la page se ferme, s'arrête avec le serveur (`stop_all` dans
-  `lifespan`) ou quand l'article est supprimé (`forget`, depuis `library.remove_paper`, sûr d'un autre fil). Chaque
+  `lifespan`) ou quand l'article est supprimé (`forget`, depuis `library.remove_paper` : d'un autre fil, il confie
+  l'oubli à la boucle du serveur, `_forget`, seule à toucher `jobs`). Chaque
   chapitre fini est un échange ordinaire (cible : le chapitre) ; à l'arrêt ou sur une erreur, un chapitre inachevé est
   supprimé et la synthèse commencée close « stopped » (`close_open`). Un nouveau lancement reprend le dernier document
   terminé de chaque chapitre (`reusable` ; relecture : avec `card`), sauf `fresh`. Synthèse : échange de cible
   `ai.BOOK` (« @book »), consigne `BOOK_PROMPTS` construite par `ai.book_prompt` : sommaire, renvois entre chapitres
   (`_book_links`), documents des chapitres dans `<chapter_review>` / `<chapter_summary>` (balises neutralisées, début
-  et fin gardés si trop long : la fiche est à la fin), jamais le texte du livre. État (`state`) gardé une heure après
-  la fin (erreur montrée à la page). Côté page : première entrée du menu `chapterBar` (`bookPlace`), présentation
+  et fin gardés si trop long, `_cut_middle` ; relecture : la dernière partie, depuis le dernier titre « ### », gardée
+  entière si elle tient dans 7/10 de la part : c'est la fiche, repérée par sa place car le modèle traduit son titre),
+  jamais le texte du livre. État (`state`) gardé une heure après la fin (erreur montrée à la page), purgé à chaque
+  lancement ou relevé (`_purge`) ; tâche finie : livre et réponses libérés. Côté page : première entrée du menu `chapterBar` (`bookPlace`), présentation
   `bookIntro`, progression `bookProgress` mise à jour sur place (`bookLive` ; temps écoulé
   `job.elapsed`, pas d'estimation du temps restant, souvent fausse ; durée totale dans le message de fin), suivi `pollJobs` toutes les 2 s tant
-  qu'une tâche tourne (un changement d'état recharge les échanges, `reloadExchanges`, qui garde l'objet de la demande
-  en cours, puis refait le panneau) ; `reusable` comme côté serveur ; liens vers les chapitres sous la synthèse
+  qu'une tâche tourne, 10 s après trois échecs, arrêt et panneau refait si l'article n'existe plus (404) ; un changement
+  d'état recharge les échanges, `reloadExchanges`, qui garde l'objet de la demande en cours et fait pointer les saisies
+  (`pending`, `docPending` : réponse à, question refaite) vers les nouveaux objets, puis refait le panneau ; avis
+  « chapitre en cours » seulement sur un échange de la tâche (`chapters[].exchange`, `synthesis.exchange`) ; `reusable` comme côté serveur ; liens vers les chapitres sous la synthèse
   (`bookChips`). « Tout le livre » (un seul envoi, tronqué au-delà de `paper_limit`) a disparu des livres.
 
 - Livres, résumé et relecture par chapitre : `structure.assign_chapters` (HTML d'arXiv et `texstructure`) marque

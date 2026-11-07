@@ -722,8 +722,9 @@ def list_ai(paper_id: str):
 
 
 @app.get("/api/papers/{paper_id}/ai/book")
-def book_jobs(paper_id: str):
-    """Livre : état de la relecture et du résumé de tous les chapitres (en cours, ou fini depuis peu ; sinon null)."""
+async def book_jobs(paper_id: str):
+    """Livre : état de la relecture et du résumé de tous les chapitres (en cours, ou fini depuis peu ; sinon null).
+    async : lu dans la boucle, comme les tâches le modifient (jamais au milieu d'un changement d'état)."""
     checked_paper(paper_id)
     return {task: bookjob.state(paper_id, task) for task in ("summary", "review")}
 

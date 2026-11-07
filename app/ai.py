@@ -461,25 +461,33 @@ can be skipped; a short reading guide)
 
 
 def _book_links(structure):
-    """Renvois entre énoncés de chapitres différents : « Theorem 3.2 (Chapter 3) uses Lemma 1.4 (Chapter 1) »."""
+    """Renvois entre énoncés de chapitres différents : « Theorem 3.2 (Chapter 3) uses Lemma 1.4 (Chapter 1) ».
+    Titres et étiquettes (écrits par l'auteur) sur une ligne, sans < ni > : ils ne referment pas le bloc de données."""
+    plain = lambda text: re.sub(r"[\s<>]+", " ", str(text or "")).strip()[:160]
     nodes = {n["id"]: n for n in structure.get("nodes", [])}
-    titles = {c["id"]: c["title"] for c in structure.get("chapters", [])}
+    titles = {c["id"]: plain(c["title"]) for c in structure.get("chapters", [])}
     lines = []
     for node in structure.get("nodes", []):
         for used in node.get("uses", []):
             other = nodes.get(used)
             if other and other.get("chapter") and node.get("chapter") and other["chapter"] != node["chapter"]:
-                lines.append(f"{node['label']} ({titles.get(node['chapter'], '')}) uses {other['label']} "
+                lines.append(f"{plain(node['label'])} ({titles.get(node['chapter'], '')}) uses {plain(other['label'])} "
                              f"({titles.get(other['chapter'], '')})")
     return lines[:BOOK_LINKS]
 
 
-def _cut_middle(text, size):
-    """Texte trop long : son début et sa fin (une relecture se termine par la fiche du chapitre)."""
+def _cut_middle(text, size, keep_last=False):
+    """Texte trop long : son début et sa fin. `keep_last` : dernière partie (depuis le dernier titre « ### ») gardée
+    entière si elle tient dans sept dixièmes de la place : la fiche à la fin d'une relecture de chapitre, que la
+    synthèse compare. Repérée par sa place et non par son titre, que le modèle écrit dans la langue choisie."""
     if len(text) <= size:
         return text
-    head = int(size * 0.6)
-    return text[:head] + "\n\n[… part of this text is cut: too long …]\n\n" + text[len(text) - (size - head):]
+    tail = len(text) - (size - int(size * 0.6))
+    found = text.rfind("\n### ") + 1 if keep_last else 0
+    if found > 0 and len(text) - found <= size * 0.7:
+        tail = min(tail, found)
+    head = max(0, size - (len(text) - tail))
+    return text[:head] + "\n\n[… part of this text is cut: too long …]\n\n" + text[tail:]
 
 
 def book_prompt(paper, structure, task, docs, language="fr", limit=PAPER_LIMIT, profile=None):
@@ -498,9 +506,10 @@ def book_prompt(paper, structure, task, docs, language="fr", limit=PAPER_LIMIT, 
              f"<contents>\n{html.escape(contents, quote=False)}\n</contents>",
              "<chapter_links>\n" + ("\n".join(links) if links else "No cross-reference between chapters was found.")
              + "\n</chapter_links>"]
-    share = max(4000, (limit - sum(map(len, parts)) - 6000) // max(1, len(docs)))
+    # part de chaque chapitre : le tout tient dans la limite du modèle (beaucoup de chapitres, modèle local)
+    share = max(1000, (limit - sum(map(len, parts)) - 6000) // max(1, len(docs)))
     for chapter, text in docs:
-        body = BOOK_TAGS.sub(lambda m: m.group(0).replace("<", "&lt;"), _cut_middle(text or "", share))
+        body = BOOK_TAGS.sub(lambda m: m.group(0).replace("<", "&lt;"), _cut_middle(text or "", share, task == "review"))
         parts.append(f'<{tag} chapter="{html.escape(titles.get(chapter, chapter), quote=True)}">\n{body}\n</{tag}>')
     parts.append(BOOK_PROMPTS[task])
     system = SYSTEM.format(language="French" if language == "fr" else "English")
@@ -798,7 +807,8 @@ HISTORY_PROMPT = ("Earlier exchanges of this conversation with the reader are in
 def thread_history(paper_id, parent, task):
     """Échanges précédents du fil où part la demande, dans l'ordre : résumé ou relecture (`parent` en descend) → ce
     document puis les questions posées sur lui ; sinon tout le fil Questions de l'article (comme viewOf dans ai.js).
-    Seulement les échanges terminés ou arrêtés qui ont une réponse."""
+    Seulement les échanges terminés ou arrêtés qui ont une réponse, et toujours celui auquel on répond (`parent`), même
+    interrompu par une erreur : son début de réponse reste ce dont parle la question."""
     if task not in HISTORY_TASKS:
         return []
     exchanges = list_for(paper_id)
@@ -816,7 +826,9 @@ def thread_history(paper_id, parent, task):
         keep = lambda e: root(e)["id"] == top["id"]
     else:
         keep = lambda e: root(e)["task"] not in ("summary", "review")
-    return [e for e in exchanges if keep(e) and e["status"] in ("done", "stopped") and (e.get("answer") or "").strip()]
+    replied = parent["id"] if parent else None
+    return [e for e in exchanges if keep(e) and (e["status"] in ("done", "stopped") or e["id"] == replied)
+            and (e.get("answer") or "").strip()]
 
 
 def _history_block(history, parent, structure, budget):
@@ -828,6 +840,8 @@ def _history_block(history, parent, structure, budget):
             answer = answer[:budget // 2] + "\n[…]"
         if exchange["status"] == "stopped":
             answer += "\n[answer interrupted by the reader]"
+        elif exchange["status"] == "error":
+            answer += "\n[answer interrupted by an error]"
         request, answer = (HISTORY_TAGS.sub(lambda m: m.group(0).replace("<", "&lt;"), text)  # ne referme pas le bloc
                            for text in (_describe(exchange, structure), answer))
         return request, answer

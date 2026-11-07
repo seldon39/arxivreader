@@ -17,7 +17,7 @@ log = logging.getLogger("arxivreader.bookjob")
 PARALLEL = 2           # chapitres faits en même temps (relecture croisée : deux assistants par chapitre)
 KEEP_FINISHED = 3600   # secondes pendant lesquelles l'état d'une tâche finie reste lisible (erreur montrée à la page)
 
-jobs = {}  # (paper_id, task) -> Job
+jobs = {}  # (paper_id, task) -> Job ; lu et modifié seulement dans la boucle du serveur
 
 
 def reusable(paper_id, task, chapter_ids):
@@ -85,6 +85,7 @@ class Job:
         finally:
             self.ended = time.time()
             self.close_open()
+            self.structure, self.answers = None, {}  # gardée une heure pour son état : sans le livre ni les réponses
 
     async def chapter(self, entry, gate):
         async with gate:
@@ -139,8 +140,16 @@ class Job:
             self.open.discard(exchange_id)
 
 
+def _purge():
+    """Tâches finies depuis plus de KEEP_FINISHED : oubliées (de tous les livres, pas seulement celui qu'on lit)."""
+    now = time.time()
+    for key in [k for k, job in jobs.items() if not job.running and now - job.ended > KEEP_FINISHED]:
+        del jobs[key]
+
+
 def start(paper, structure, task, model, second=None, language="fr", fresh=False):
     """Lance la tâche (une seule à la fois par livre et par sorte) ; `second` : modèle du second relecteur."""
+    _purge()
     key = (paper["id"], task)
     if key in jobs and jobs[key].running:
         raise ai.AIError("Already running")
@@ -152,10 +161,8 @@ def start(paper, structure, task, model, second=None, language="fr", fresh=False
 
 
 def state(paper_id, task):
+    _purge()
     job = jobs.get((paper_id, task))
-    if job and not job.running and time.time() - job.ended > KEEP_FINISHED:
-        del jobs[(paper_id, task)]
-        return None
     return job.state() if job else None
 
 
@@ -176,8 +183,15 @@ async def stop_all():
 
 
 def forget(paper_id):
-    """Article supprimé (peut-être depuis un autre fil) : sa tâche s'arrête, sans attendre, et son état est oublié."""
-    for key in [k for k in jobs if k[0] == paper_id]:
-        job = jobs.pop(key, None)
-        if job and job.running:
-            job.loop.call_soon_threadsafe(job.handle.cancel)
+    """Article supprimé (peut-être depuis un autre fil) : sa tâche s'arrête, sans attendre, et son état est oublié ;
+    le tout dans la boucle du serveur, seule à toucher `jobs`."""
+    for key, job in list(jobs.items()):
+        if key[0] == paper_id:
+            job.loop.call_soon_threadsafe(_forget, key, job)
+
+
+def _forget(key, job):
+    if jobs.get(key) is job:
+        del jobs[key]
+    if job.running:
+        job.handle.cancel()
