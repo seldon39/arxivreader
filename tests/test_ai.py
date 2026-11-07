@@ -635,10 +635,11 @@ class Chapters(unittest.TestCase):
     def test_new_review_prompts(self):
         """Relecture : verdict d'abord, gravité, certain ou soupçonné, ce qui reste valable ; résumé : nouveauté, limites."""
         _, prompt = ai.build_prompt(self.paper, self.structure, "review", language="en")
-        for part in ("### Verdict", "A wrong proof is not a false result", "**certain** or **suspected**",
-                     "A possible repair never removes a point", "### What survives and possible repairs", "### What I checked"):
+        for part in ("### Verdict", "A wrong proof is not a false result", "say what stands regardless",
+                     "A possible repair never removes a point", "(certain) or (suspected)", "### What I checked"):
             self.assertIn(part, prompt)
         self.assertLess(prompt.index("### Verdict"), prompt.index("### Points to check"))
+        self.assertNotIn("### Main results", prompt)  # rapport de référé : chaque point complet, sans répétition
         _, prompt = ai.build_prompt(self.paper, self.structure, "summary", language="en")
         self.assertIn("### Novelty, as claimed by the authors", prompt)
         self.assertIn("### Limitations and open questions", prompt)

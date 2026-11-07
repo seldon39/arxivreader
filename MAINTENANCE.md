@@ -406,13 +406,23 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   « other » : un code « login » ferait croire le premier déconnecté. Assistants prêts : `/api/ai/partners`
   (`ai.partners`, vérifiés en parallèle ; gardés deux minutes par la page).
 
-- Consignes de relecture (`REVIEW_GUIDANCE`, `REVIEW_VERDICT`, `REVIEW_POINTS`, `REVIEW_SURVIVES`, communes à
-  l'article, au chapitre, à la synthèse croisée et à celle du livre) : verdict d'abord (quatre phrases au plus), points
-  classés Critical / Serious / Minor, chacun certain ou suspected, coquilles en un seul point, puis ce qui reste valable
-  et les réparations ; un auteur relit son propre texte avec : une erreur est toujours dite, une réparation ne la
-  retire jamais, une preuve fausse n'est pas un résultat faux. Résumé : nouveauté revendiquée, limites et questions
+- Consignes de relecture (`REVIEW_GUIDANCE`, `REVIEW_VERDICT`, `REVIEW_STYLE`, `REVIEW_POINTS`, `REVIEW_CHECKED`,
+  communes à l'article, au chapitre, à la synthèse croisée et à celle du livre) : le rapport d'un référé. Verdict
+  d'abord (quatre phrases au plus, sans liste, avec ce qui tient malgré tout), puis les points classés Critical /
+  Serious / Minor ; chaque point grave est complet à lui seul : titre en gras avec (certain) ou (suspected), puis un
+  ou deux paragraphes de prose, réparation comprise (pas de champs ni de sous-puces, pas de sections « Main results »
+  ni « What survives », qui répétaient les points) ; coquilles en un seul point ; « What I checked » en une ou deux
+  phrases. Un auteur relit son propre texte avec : une erreur est toujours dite, une réparation ne la retire jamais,
+  une preuve fausse n'est pas un résultat faux. `SYSTEM` demande de la prose (une liste seulement pour des éléments
+  parallèles, un niveau d'imbrication au plus) et interdit les vérifications affirmées sans contenu (« I checked
+  this », « numerically ») : l'assistant n'a pas d'outil de calcul. Résumé : nouveauté revendiquée, limites et questions
   ouvertes. Relecture d'un chapitre : se termine par sa fiche (`CHAPTER_RECORD`) ; l'échange porte alors `card = 1`
   (colonne `card`, posée par `ai.finish`).
+
+- Rendu des réponses (`LiveAnswer`, `markdown.js`) : la réponse est coupée en blocs aux lignes vides (`splitBlocks`,
+  rendus au fil du flux) ; `markdownToHtml` gère les listes imbriquées (pile de listes, retrait d'au moins deux
+  espaces de plus). Un bloc qui commence en retrait est la suite de l'élément de liste du bloc précédent (paragraphe
+  d'un point de relecture) : classe `ai-continued`, même retrait que la liste.
 
 - Livre, tous les chapitres en parallèle (`app/bookjob.py`, routes `/api/papers/{id}/ai/book`, `…/book/stop`) : tâche
   de fond du serveur (`asyncio`), une par livre et par sorte, `PARALLEL` chapitres à la fois (relecture croisée :
@@ -425,7 +435,8 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   (`_book_links`), documents des chapitres dans `<chapter_review>` / `<chapter_summary>` (balises neutralisées, début
   et fin gardés si trop long : la fiche est à la fin), jamais le texte du livre. État (`state`) gardé une heure après
   la fin (erreur montrée à la page). Côté page : première entrée du menu `chapterBar` (`bookPlace`), présentation
-  `bookIntro`, progression `bookProgress` mise à jour sur place (`bookLive`), suivi `pollJobs` toutes les 2 s tant
+  `bookIntro`, progression `bookProgress` mise à jour sur place (`bookLive` ; temps écoulé
+  `job.elapsed`, pas d'estimation du temps restant, souvent fausse ; durée totale dans le message de fin), suivi `pollJobs` toutes les 2 s tant
   qu'une tâche tourne (un changement d'état recharge les échanges, `reloadExchanges`, qui garde l'objet de la demande
   en cours, puis refait le panneau) ; `reusable` comme côté serveur ; liens vers les chapitres sous la synthèse
   (`bookChips`). « Tout le livre » (un seul envoi, tronqué au-delà de `paper_limit`) a disparu des livres.

@@ -396,8 +396,8 @@ il suffit de la fermer et d'aller dans le feed.
   (notation ou hypothèse qui change, résultat utilisé avant d'être démontré ou sous une forme plus forte) et garde
   tous les points critiques et sérieux des chapitres. En *Relecture croisée*, chaque chapitre est relu par les deux
   assistants (4 demandes par chapitre). La tâche tourne dans l'application : on peut lire, poser d'autres questions ou
-  fermer l'article pendant ce temps ; l'onglet montre la progression (chapitres faits, en cours, temps restant
-  estimé), *Arrêter* garde les chapitres finis, et chaque chapitre fini s'ouvre déjà dans le menu. Un nouveau
+  fermer l'article pendant ce temps ; l'onglet montre la progression (chapitres faits, en cours, temps écoulé ; la
+  durée totale est donnée à la fin), *Arrêter* garde les chapitres finis, et chaque chapitre fini s'ouvre déjà dans le menu. Un nouveau
   lancement reprend les chapitres déjà faits (relectures avec leur fiche), sauf si l'on coche *Relire aussi les
   chapitres déjà relus*.
 - **Énoncés et preuves** : l'icône de note en marge (au survol) ouvre une note et, pour un énoncé,
@@ -446,12 +446,14 @@ il suffit de la fermer et d'aller dans le feed.
   ce qu'il a déjà dit. Un résumé ou une relecture part sans mémoire. Le bouton ↗ en haut (*Envoyer à Claude*, ou à ChatGPT, à Gemini) ouvre une nouvelle
   conversation dans l'application ou le site de l'assistant, avec les références de l'article, et copie son texte
   complet dans le presse-papiers.
-- **Relecture critique** : d'abord un verdict (quels résultats principaux sont démontrés tels qu'écrits, lesquels
-  non), puis chaque résultat principal (énoncé, preuve, réparable ou non), les points à vérifier classés *Critique*,
-  *Sérieux* et *Mineur* (chacun dit *certain* ou *soupçonné* ; coquilles regroupées), ce qui reste valable et les
-  réparations possibles, et ce que l'assistant a suivi en détail ou seulement parcouru. Les erreurs sont toujours
-  dites, avant les réparations, qui ne les retirent pas ; une preuve fausse n'est pas présentée comme un résultat
-  faux. Le **résumé** dit aussi la nouveauté revendiquée par les auteurs, puis les limites et questions ouvertes.
+- **Relecture critique**, écrite comme le rapport d'un référé : d'abord un verdict (quels résultats principaux sont
+  démontrés tels qu'écrits, lesquels non, ce qui tient malgré tout), puis les points à vérifier classés *Critique*,
+  *Sérieux* et *Mineur*. Chaque point sérieux se suffit à lui-même : un titre court avec *certain* ou *soupçonné*, puis
+  un ou deux paragraphes de prose (ce qui ne va pas et pourquoi, ce que cela touche, comment le réparer) ; les
+  coquilles sont regroupées. Enfin, en une ou deux phrases, ce que l'assistant a suivi en détail ou seulement
+  parcouru. Les erreurs sont toujours dites, et une réparation ne les retire jamais ; une preuve fausse n'est pas
+  présentée comme un résultat faux. Une relecture simple peut manquer des erreurs : une relecture croisée en manque
+  moins. Le **résumé** dit aussi la nouveauté revendiquée par les auteurs, puis les limites et questions ouvertes.
 - **Relecture croisée**, quand un deuxième assistant est prêt (Claude, Codex, Gemini ou un modèle local) :
   *Relecture simple* | *Relecture croisée* au-dessus du bouton de l'onglet *Relecture*, puis l'assistant, le modèle et le niveau
   de réflexion de chaque relecteur. Les deux assistants relisent l'article chacun de leur côté, le second compare

@@ -73,6 +73,7 @@ const jobRunning = (job) => Boolean(job) && ["chapters", "synthesis"].includes(j
 // ce qui, en changeant, demande de recharger les échanges et de refaire le panneau (pas l'écoulement du temps)
 const jobSignature = (jobs) => JSON.stringify(BOOK_TASKS.map((task) => jobs[task]
   && [jobs[task].phase, jobs[task].chapters.map((c) => `${c.state}:${c.exchange}`)]));
+const duration = (seconds) => (seconds < 60 ? `${Math.round(seconds)} s` : `${Math.round(seconds / 60)} min`);  // durée totale
 const minutes = (seconds) => `${Math.floor(seconds / 60)}:${String(Math.round(seconds) % 60).padStart(2, "0")}`;
 
 // Marqueurs de la synthèse, remplacés par `tag(sorte, mot)` (« Les deux », « Gemini »…)
@@ -646,7 +647,7 @@ export class Assistant {
             const job = next[task];
             if (job?.phase === "error") toast(t(ERROR_KEYS[job.code] || "ai.error.other", { message: job.error || "" }), { error: true });
             else if (job?.phase === "done") {
-              toast(t(`ai.book.finished.${task}`));
+              toast(t(`ai.book.finished.${task}`, { time: duration(job.elapsed || 0) }));
               delete this.positions[`${task}:`];  // synthèse seule : lue depuis son début
             }
           }
@@ -688,7 +689,8 @@ export class Assistant {
       h("p", { class: "hint ai-book-hint" }, t(`ai.book.hint.${task}`)));
   }
 
-  // Tâche en cours : barre, état de chaque chapitre, temps restant estimé, synthèse qui s'écrit
+  // Tâche en cours : barre, état de chaque chapitre, temps écoulé depuis le lancement (une estimation du temps restant
+  // se trompait souvent : les chapitres ont des durées très différentes), synthèse qui s'écrit
   bookProgress(view, task) {
     const bar = h("span", {});
     const status = h("p", { class: "hint ai-book-status", role: "status" });
@@ -708,18 +710,10 @@ export class Assistant {
       }
       synthesis.set(job.phase === "synthesis" ? ["run", "Σ", t("ai.book.state.writing")] : ["wait", "Σ", t("ai.book.state.after")]);
       bar.style.width = `${Math.round(100 * (finished.length + (job.phase === "synthesis" ? 0.5 : 0)) / (job.chapters.length + 1))}%`;
-      if (job.phase === "synthesis") status.textContent = t(`ai.book.status.synthesis.${task}`, { n: finished.length });
-      else {
-        // temps restant : durée moyenne d'un chapitre fait par cette tâche, chapitres répartis entre les relecteurs
-        const times = job.chapters.filter((c) => c.state === "done").map((c) => c.seconds || 0);
-        const average = times.length ? times.reduce((a, b) => a + b, 0) / times.length : null;
-        const work = average === null ? null : job.chapters.reduce((sum, c) => sum + (c.state === "wait" ? average
-          : c.state === "running" ? Math.max(0, average - (c.elapsed || 0)) : 0), 0);
-        const left = work === null ? null : Math.max(1, Math.ceil((work / (job.parallel || 2) + average / 2) / 60));
-        const running = job.chapters.filter((c) => c.state === "running").length;
-        status.textContent = t("ai.book.status.chapters", { done: finished.length, total: job.chapters.length, running })
-          + (left === null ? "" : ` · ${tn("ai.book.status.left", left)}`);
-      }
+      const running = job.chapters.filter((c) => c.state === "running").length;
+      status.textContent = (job.phase === "synthesis" ? t(`ai.book.status.synthesis.${task}`, { n: finished.length })
+        : t("ai.book.status.chapters", { done: finished.length, total: job.chapters.length, running }))
+        + ` · ${t("ai.book.status.elapsed", { time: minutes(job.elapsed || 0) })}`;
       if (job.synthesis?.answer) live.update(job.synthesis.answer, false);
     };
     update(this.jobs);
@@ -1482,7 +1476,9 @@ class LiveAnswer {
     const complete = final ? blocks.length : Math.max(0, blocks.length - 1);
     const added = [];
     for (; this.done < complete; this.done++) {
-      const block = h("div", { class: "ai-block" });
+      // paragraphe en retrait après une ligne vide : suite de l'élément de liste au-dessus (un point d'une relecture),
+      // aligné sur son texte (chaque bloc est rendu à part : il ne peut entrer dans la liste du bloc précédent)
+      const block = h("div", { class: CONTINUED.test(blocks[this.done]) ? "ai-block ai-continued" : "ai-block" });
       block.innerHTML = this.html(blocks[this.done]);
       this.tail.before(block);
       added.push(block);
@@ -1499,6 +1495,8 @@ class LiveAnswer {
 }
 
 // Coupe le Markdown aux lignes vides, sans couper un bloc de code ni une formule $$…$$
+const CONTINUED = /^[ \t]{2,}\S/;
+
 function splitBlocks(text) {
   const blocks = [];
   let current = [];

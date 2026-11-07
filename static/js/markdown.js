@@ -40,16 +40,22 @@ export function markdownToHtml(source, { refs } = {}) {
   const lines = text.split("\n");
   const out = [];
   let paragraph = [];
-  let list = null;
+  // listes imbriquées : une pile, du niveau le plus haut au plus profond ; une sous-liste est rendue dans le
+  // dernier élément de la liste qui la contient (retrait d'au moins deux espaces de plus)
+  const lists = [];
   const flushParagraph = () => {
     if (paragraph.length) out.push(`<p>${inline(paragraph.join(" "), math, refs)}</p>`);
     paragraph = [];
   };
-  const flushList = () => {
-    const start = list?.start > 1 ? ` start="${list.start}"` : "";
-    if (list) out.push(`<${list.tag}${start}>${list.items.map((i) => `<li>${inline(i, math, refs)}</li>`).join("")}</${list.tag}>`);
-    list = null;
+  const closeList = () => {
+    const list = lists.pop();
+    const start = list.start > 1 ? ` start="${list.start}"` : "";
+    const html = `<${list.tag}${start}>${list.items.map((i) => `<li>${inline(i.text, math, refs)}${i.sub.join("")}</li>`).join("")}</${list.tag}>`;
+    if (lists.length) lists[lists.length - 1].items.at(-1).sub.push(html);
+    else out.push(html);
   };
+  const flushList = () => { while (lists.length) closeList(); };
+  const indentOf = (line) => line.match(/^[ \t]*/)[0].replace(/\t/g, "    ").length;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (/^```/.test(line)) {
@@ -85,16 +91,22 @@ export function markdownToHtml(source, { refs } = {}) {
     } else if (bullet || numbered) {
       flushParagraph();
       const tag = bullet ? "ul" : "ol";
-      if (list && list.tag !== tag) flushList();
-      list ||= { tag, items: [], start: numbered ? Number(numbered[1]) : 1 };
-      list.items.push(bullet ? bullet[1] : numbered[2]);
+      const indent = indentOf(line);
+      while (lists.length && indent < lists[lists.length - 1].indent) closeList();
+      const top = lists[lists.length - 1];
+      if (top && indent < top.indent + 2 && top.tag !== tag) closeList();  // même niveau, autre sorte de liste
+      const current = lists[lists.length - 1];
+      if (!current || indent >= current.indent + 2 || current.tag !== tag) {
+        lists.push({ tag, indent, items: [], start: numbered ? Number(numbered[1]) : 1 });
+      }
+      lists[lists.length - 1].items.push({ text: bullet ? bullet[1] : numbered[2], sub: [] });
     } else if (quote) {
       flushParagraph(); flushList();
       out.push(`<blockquote>${inline(quote[1], math, refs)}</blockquote>`);
     } else if (!line.trim()) {
       flushParagraph(); flushList();
-    } else if (list && /^\s{2,}/.test(line)) {
-      list.items[list.items.length - 1] += ` ${line.trim()}`;
+    } else if (lists.length && /^\s{2,}/.test(line)) {
+      lists[lists.length - 1].items.at(-1).text += ` ${line.trim()}`;
     } else {
       flushList();
       paragraph.push(line.trim());

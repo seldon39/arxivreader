@@ -380,7 +380,7 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   result used before it is proved or in a stronger form) and keeps every critical and serious point of the chapters.
   With *Cross-review*, each chapter is reviewed by both assistants (4 requests per chapter). The task runs in the
   application: you can read, ask other questions or close the paper meanwhile; the tab shows the progress (chapters
-  done, in progress, estimated time left), *Stop* keeps the finished chapters, and each finished chapter already opens
+  done, in progress, time elapsed; the total time is given at the end), *Stop* keeps the finished chapters, and each finished chapter already opens
   from the menu. A new run reuses the chapters already done (reviews with their record), unless you tick *Also review
   again the chapters already reviewed*.
 - **Statements and proofs**: the note icon in the margin (on hover) opens a note and, for a statement,
@@ -426,11 +426,12 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   and the questions asked about it), the most recent first when the thread is long (about 50,000 characters; the
   document and the exchange being replied to always go): the assistant builds on what it already said. A summary or
   a review starts without memory.
-- **Critical review**: first a verdict (which main results are proved as written, which are not), then each main
-  result (statement, proof, repairable or not), the points to check under *Critical*, *Serious* and *Minor* (each
-  said *certain* or *suspected*; typos grouped), what survives and possible repairs, and what the assistant followed
-  in detail or only read through. Errors are always stated, before the repairs, which never remove them; a wrong
-  proof is not presented as a false result. The **summary** also gives the novelty claimed by the authors, then the
+- **Critical review**, written like a referee's report: first a verdict (which main results are proved as written,
+  which are not, what stands regardless), then the points to check under *Critical*, *Serious* and *Minor*. Each
+  serious point is complete in itself: a short title with *certain* or *suspected*, then a paragraph or two of prose
+  (what fails and why, what it affects, how it could be repaired); typos are grouped. Then, in a sentence or two, what
+  the assistant followed in detail or only read through. Errors are always stated, and a repair never removes them; a
+  wrong proof is not presented as a false result. A single review can miss errors: a cross-review misses fewer. The **summary** also gives the novelty claimed by the authors, then the
   limitations and open questions.
 - **Cross-review**, when a second assistant is ready (Claude, Codex, Gemini or a local model): *Single review* |
   *Cross-review* above the button of the *Review* tab, then each reviewer's assistant, model and reasoning level. Both

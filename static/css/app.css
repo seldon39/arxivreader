@@ -907,6 +907,7 @@ mark.hl.hl-display > mjx-container[display="true"] { margin: .2em 0 !important; 
 .ai-text-size .spacer { flex: 1; }
 .ai-text-size .zoom-reset { min-width: 48px; height: 28px; font-size: 12px; }
 .ai-answer .ai-block + .ai-block, .ai-answer .ai-block + .ai-tail:not(:empty) { margin-top: .55em; }
+.ai-answer .ai-continued { padding-left: 1.4em; }  /* suite d'un élément de liste (même retrait que .markdown ol) */
 .ai-answer h4, .ai-answer h5, .ai-answer h6 { font-family: var(--font-ui); font-size: .87em; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: .9em 0 .3em; }
 .ai-answer :is(h4, h5, h6) mjx-container { text-transform: none; letter-spacing: normal; } /* formules d'un titre : telles quelles */
 .ai-answer .ai-block:first-child h4:first-child, .ai-answer .ai-block:first-child h5:first-child, .ai-answer .ai-block:first-child h6:first-child { margin-top: 0; }
