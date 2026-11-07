@@ -115,8 +115,8 @@ On Linux, see [Linux](#linux) above. On a Mac (development):
   Closing the Terminal window (or Ctrl+C) stops the app.
 - **Terminal**: `./arxivreader` from this folder.
 
-The first time, the script creates the Python environment (`.venv/`, ~1 min). The address is
-http://127.0.0.1:8710/; the server only listens on this computer (not on Wi-Fi).
+The first time, the script creates the Python environment (~1 min) in `.venv.nosync/`, which iCloud does not
+sync, with `.venv` as a link to it. The address is http://127.0.0.1:8710/; the server only listens on this computer (not on Wi-Fi).
 
 ## The reader
 

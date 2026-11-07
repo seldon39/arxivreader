@@ -118,8 +118,8 @@ Sous Linux, voir [Linux](#linux) plus haut. Sur un Mac (développement) :
   Fermer la fenêtre Terminal (ou Ctrl+C) arrête l'application.
 - **Terminal** : `./arxivreader` depuis ce dossier.
 
-La première fois, le script crée l'environnement Python (`.venv/`, ~1 min). L'adresse est
-http://127.0.0.1:8710/ ; le serveur n'écoute que sur cet ordinateur (pas sur le Wi-Fi).
+La première fois, le script crée l'environnement Python (~1 min) dans `.venv.nosync/`, qu'iCloud ne synchronise
+pas, avec `.venv` comme lien vers lui. L'adresse est http://127.0.0.1:8710/ ; le serveur n'écoute que sur cet ordinateur (pas sur le Wi-Fi).
 
 ## Ce que fait la version actuelle (étape 1 : lecteur structuré)
 

@@ -237,9 +237,12 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   chaque page (`localpdf.read_pdf`), le tampon arXiv, `latexml._pdf_size` et le placement des pages
   (`texstructure.locate_pages`). pypdf 7.0 (1.11.27) : seul changement, une espace autour des indices et exposants
   (« H 2 p » au lieu de « H 2p ») ; tampons, tailles et pages identiques.
-- `.venv` sans fichiers en double (« nom 2.py », « claude 3 » : copies laissées par le Finder ou une synchronisation,
-  embarquées ensuite par `build.sh`) : `find .venv -name '* [0-9]*' | head` ne doit rien donner ; sinon refaire `.venv`
-  depuis `requirements.lock` (ancien dossier déplacé, pas supprimé). Trouvé en 1.11.27 : 2 776 doublons, 155 Mo.
+- Mac : l'environnement est dans `.venv.nosync` (iCloud ignore les noms en `.nosync`), `.venv` n'est qu'un lien ;
+  `./arxivreader` le crée ainsi (Linux : `.venv` ordinaire). Raison : Documents est synchronisé par iCloud, qui
+  recréait dans un `.venv` refait ou mis à jour les anciennes versions des fichiers en copies « nom 2.py », « claude 3 »
+  (fichiers fantômes, `dataless` : les déplacer un à un les télécharge), embarquées ensuite par l'application (2 776
+  dans un .venv, 1 744 dans l'app 1.11.26). `build.sh` refuse de construire s'il en trouve (`find .venv/ -name
+  '* [0-9]*'`). Refaire l'environnement : `rm -rf .venv .venv.nosync && ./arxivreader`.
 - Outils de la version Windows (`windows/build-requirements.txt`) et actions GitHub (`.github/workflows`) : à vérifier
   aussi à chaque audit (`gh api repos/actions/<action>/releases/latest`), notes des versions majeures lues avant :
   download-artifact 8 échoue si le condensé du fichier ne correspond pas, upload-artifact 7 ajoute `archive` (vrai par
@@ -324,7 +327,8 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   3.15). Mise à jour : tests, banc du texte caché, puis `./arxivreader lock`. Python embarqué = celui de `.venv`
   (`build.sh` en refait une copie conda-forge de même version) : environnement conda à part,
   `conda create -p ~/miniforge3/envs/arxivreader -c conda-forge python=3.14.X`, puis `.venv` refait dessus
-  (`python3 -m venv .venv`, `pip install -r requirements.lock`) ; jamais le Python de base de miniforge.
+  (`rm -rf .venv .venv.nosync && PYTHON=~/miniforge3/envs/arxivreader/bin/python ./arxivreader`) ; jamais le
+  Python de base de miniforge.
 
 - Texte invisible (`structure.mark_hidden`, au début de l'analyse : `plain` ne le garde ni dans les étiquettes ni dans
   les titres) : couleur du texte blanche ou presque (luminance ≥ 0,9), transparente ou d'alpha nul (`_hiding`, `_color` :
@@ -505,7 +509,8 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   les fuseaux de macOS. Pour simuler un autre Mac : `PYTHONTZPATH=/introuvable` avec le Python de l'application.
 
 - Le dossier Documents est synchronisé par iCloud : construire l'application ailleurs
-  (`~/Library/Caches/arXivReader-build`), sinon la signature casse. Une tâche de fond (launchd) ne peut pas lire
+  (`~/Library/Caches/arXivReader-build`), sinon la signature casse ; environnement Python dans `.venv.nosync`
+  (section 8). Une tâche de fond (launchd) ne peut pas lire
   Documents : elle utilise le code de l'application installée, sans écrire de bytecode (`PYTHONDONTWRITEBYTECODE`).
 - Un `DataTransfer` synthétique ne peut pas fixer `dropEffect` : les glissements se testent pour de bon dans
   l'application.

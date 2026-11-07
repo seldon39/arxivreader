@@ -27,7 +27,15 @@ if [ "$FROZEN" != "$(sort -f requirements.lock)" ]; then
   echo ".venv ne correspond pas à requirements.lock :"
   diff <(echo "$FROZEN") <(sort -f requirements.lock) | sed 's/^/  /' || true
   echo "→ revenir aux versions figées : .venv/bin/pip install -r requirements.lock (un paquet en trop : .venv/bin/pip uninstall <paquet>,"
-  echo "  ou refaire .venv : rm -rf .venv && ./arxivreader) ; figer une mise à jour voulue : ./arxivreader lock"
+  echo "  ou refaire .venv : rm -rf .venv .venv.nosync && ./arxivreader) ; figer une mise à jour voulue : ./arxivreader lock"
+  exit 1
+fi
+# Copies laissées par iCloud (« api 2.py », « claude 3 ») : pip freeze ne les voit pas, l'application les embarquerait.
+# ./arxivreader crée l'environnement dans .venv.nosync, qu'iCloud ignore ; un ancien .venv synchronisé en a souvent
+if [ -n "$(find .venv/ -name '* [0-9]*' -print -quit)" ]; then
+  echo ".venv contient des copies laissées par iCloud, qui seraient embarquées dans l'application :"
+  find .venv/ -name '* [0-9]*' | head -5 | sed 's/^/  /' || true  # head coupe le tube : find s'arrête (SIGPIPE)
+  echo "→ refaire l'environnement hors d'iCloud : rm -rf .venv .venv.nosync && ./arxivreader"
   exit 1
 fi
 

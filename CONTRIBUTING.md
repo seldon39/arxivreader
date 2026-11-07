@@ -64,7 +64,7 @@ Mac-only tests being skipped on Windows.
 
 ```bash
 git clone https://github.com/seldon39/arxivreader.git && cd arxivreader
-./arxivreader            # creates .venv from requirements.lock, starts the server, opens the browser
+./arxivreader            # creates .venv from requirements.lock (macOS: in .venv.nosync, out of iCloud), starts the server, opens the browser
 ```
 
 The server runs at http://127.0.0.1:8710 with the library in `library/`. For experiments, use another port

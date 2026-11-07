@@ -31,7 +31,16 @@ if [ ! -x .venv/bin/python ]; then
     exit 1
   }
   echo "Première installation de l'environnement Python…"
-  "$PYTHON" -m venv .venv
+  # macOS : environnement dans .venv.nosync, qu'iCloud ne synchronise pas (dans Documents, il y recrée les anciennes
+  # versions des fichiers en copies « nom 2.py », que l'application embarquerait) ; .venv n'en est qu'un lien.
+  # Lien seul effacé (rm -rf .venv) : environnement refait à neuf (--clear), pas l'ancien repris tel quel
+  if [ "$(uname)" = Darwin ] && { [ -L .venv ] || [ ! -e .venv ]; }; then
+    rm -f .venv
+    "$PYTHON" -m venv --clear .venv.nosync
+    ln -s .venv.nosync .venv
+  else
+    "$PYTHON" -m venv .venv
+  fi
 fi
 # Versions figées (avant la réinstallation ci-dessous, qui sinon défairait la mise à jour voulue) : après
 # « .venv/bin/pip install -U <paquet> » (ou l'ajout d'un paquet à requirements.txt puis son installation) et les tests
