@@ -384,6 +384,8 @@ a.button.primary { text-decoration: none; }
 .ltx_theorem { --kind: var(--k-other); scroll-margin-top: 12px; }
 .paper .ltx_theorem .ltx_title_theorem { cursor: pointer; }
 .paper .ltx_theorem .ltx_title_theorem:hover .ltx_tag_theorem { text-decoration: underline; text-decoration-color: var(--kind); text-underline-offset: 3px; }
+/* numéro lien (énoncé repris, renvoi à l'original) : seul le soulignement de la couleur de l'énoncé, pas celui du lien */
+.paper .ltx_theorem .ltx_title_theorem a:hover { text-decoration: none; }
 .paper[data-marks="on"] .ltx_theorem::before {
   content: ""; position: absolute; left: -16px; top: .3em; bottom: .3em; width: 3px; border-radius: 2px;
   background: var(--kind); opacity: .5;
