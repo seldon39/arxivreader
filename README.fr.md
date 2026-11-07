@@ -427,7 +427,10 @@ il suffit de la fermer et d'aller dans le feed.
   réponse : copier l'échange, ou le supprimer (question et réponse ; un résumé ou une relecture part avec les
   questions posées dessus). *✎ Modifier*, au survol sous la dernière question envoyée : arrête la réponse si elle
   arrive encore et remet la question dans le champ (avec son passage ou sa zone du PDF) ; l'envoyer remplace
-  l'échange, réponse comprise. Le bouton ↗ en haut (*Envoyer à Claude*, ou à ChatGPT, à Gemini) ouvre une nouvelle
+  l'échange, réponse comprise. **Mémoire** : chaque question part avec les échanges précédents de son fil (tout le
+  fil *Questions*, ou le résumé, la relecture et les questions posées dessus), les plus récents d'abord si le fil est
+  long (environ 50 000 caractères ; le document et l'échange auquel on répond toujours) : l'assistant s'appuie sur
+  ce qu'il a déjà dit. Un résumé ou une relecture part sans mémoire. Le bouton ↗ en haut (*Envoyer à Claude*, ou à ChatGPT, à Gemini) ouvre une nouvelle
   conversation dans l'application ou le site de l'assistant, avec les références de l'article, et copie son texte
   complet dans le presse-papiers.
 - **Relecture croisée**, quand un deuxième assistant est prêt (Claude, Codex, Gemini ou un modèle local) :

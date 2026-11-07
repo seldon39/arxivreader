@@ -32,7 +32,7 @@ readers, roughly in order of impact. Each one is a GitHub issue with the context
   400–500 pages no longer stopped after 10 minutes (time limit following the size of the source; biblatex
   bibliographies in a single pass): 1.11.25. Next: faster or partial conversion of very long documents; line spacing inside multi-line TikZ nodes.
 - AI tab as a conversation (Questions, Summary and Review threads, field at the bottom, ↩ Reply, ↑ ↓): done in
-  1.11.0. Next: pass the whole chain of follow-ups to the assistant, not only the previous exchange.
+  1.11.0. Memory of each thread (earlier exchanges of the thread sent with each question): next version.
 - Cross-review by two assistants (independent reviews, comparison, tagged synthesis): done in 1.11.11. Next:
   a third assistant to write the synthesis, when there is one.
 - Books: summary and review chapter by chapter, with the statements of other chapters the chapter uses and those

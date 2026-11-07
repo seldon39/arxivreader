@@ -758,10 +758,12 @@ async def ask_ai(paper_id: str, body: AIRequest):
             events = ai.cross_review(paper, structure, model, ai.model_of(body.second, settings), settings.get("language", "fr"), pages,
                                      chapter)
         else:
+            # mémoire de la conversation : les échanges précédents du fil (Questions, ou ce résumé, cette relecture)
+            history = await run_in_threadpool(ai.thread_history, paper_id, parent, body.task)
             system, prompt = await run_in_threadpool(ai.build_prompt, paper, structure, body.task, target, quote, question,
                                                      parent, settings.get("language", "fr"), ai.paper_limit(model), zone,
                                                      [number for number, _ in pages], max(1, body.page) if body.page else None,
-                                                     chapter=chapter)
+                                                     chapter=chapter, history=history)
             events = ({"delta": text} async for text in ai.stream_answer(system, prompt, model, image, [data for _, data in pages]))
     except ai.AIError as error:
         return JSONResponse({"error": str(error)}, status_code=400)

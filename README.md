@@ -409,7 +409,11 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   bottom right go to the start or the end of the thread; each tab reopens where you left it. *⋯* under an answer:
   copy the exchange, or delete it (question and answer; a summary or review goes with the questions about it).
   *✎ Edit*, on hover under the last question sent: stops the answer if it is still coming and puts the question back
-  in the field (with its passage or PDF region); sending it replaces the exchange, answer included.
+  in the field (with its passage or PDF region); sending it replaces the exchange, answer included. **Memory**:
+  each question goes with the earlier exchanges of its thread (the whole *Questions* thread, or the summary or review
+  and the questions asked about it), the most recent first when the thread is long (about 50,000 characters; the
+  document and the exchange being replied to always go): the assistant builds on what it already said. A summary or
+  a review starts without memory.
 - **Cross-review**, when a second assistant is ready (Claude, Codex, Gemini or a local model): *Single review* |
   *Cross-review* above the button of the *Review* tab, then each reviewer's assistant, model and reasoning level. Both
   assistants review the paper on their own, the second compares the two reviews, the first answers that comparison
