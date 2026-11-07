@@ -66,6 +66,15 @@ function whoOf(exchange) {
 // modèle d'un assistant d'après ses réglages (comme ai.model_of)
 const modelOf = (provider) => modelFor({ ...settings, aiProvider: provider });
 
+// Livre : relecture, résumé de tous les chapitres en parallèle (tâche du serveur, bookjob) ; cible de la synthèse
+const BOOK = "@book";
+const BOOK_TASKS = ["summary", "review"];
+const jobRunning = (job) => Boolean(job) && ["chapters", "synthesis"].includes(job.phase);
+// ce qui, en changeant, demande de recharger les échanges et de refaire le panneau (pas l'écoulement du temps)
+const jobSignature = (jobs) => JSON.stringify(BOOK_TASKS.map((task) => jobs[task]
+  && [jobs[task].phase, jobs[task].chapters.map((c) => `${c.state}:${c.exchange}`)]));
+const minutes = (seconds) => `${Math.floor(seconds / 60)}:${String(Math.round(seconds) % 60).padStart(2, "0")}`;
+
 // Marqueurs de la synthèse, remplacés par `tag(sorte, mot)` (« Les deux », « Gemini »…)
 const MARKER = /\[\[\s*(both|a|b|dispute|withdrawn)\s*\]\]/gi;
 function withTags(text, names, tag) {
@@ -116,6 +125,8 @@ export class Assistant {
     this.seen = {};           // échanges vus en bas de chaque sous-onglet (pastille du bouton ↓)
     this.partners = null;     // autres assistants prêts (relecture croisée)
     this.relaunch = false;    // Relecture : barre de lancement rouverte par « Refaire » (simple ou croisée)
+    this.jobs = {};           // livre : état des tâches « tous les chapitres » du serveur ({ summary, review })
+    this.fresh = {};          // livre : refaire aussi les chapitres déjà faits (case de la barre de lancement)
     this.refs = this.buildRefs();
   }
 
@@ -131,6 +142,21 @@ export class Assistant {
 
   async load() {
     try { this.exchanges = await api.aiExchanges(this.paper.id); } catch { this.exchanges = []; }
+    if (this.chapters.length >= 2) {
+      try { this.jobs = await api.aiBook(this.paper.id); } catch { this.jobs = {}; }
+      if (BOOK_TASKS.some((task) => jobRunning(this.jobs[task]))) this.pollJobs();
+    }
+  }
+
+  // Échanges relus (une tâche du livre en a ajouté) ; la demande en cours de cette page garde son objet, mis à jour
+  // au fil de sa réponse
+  async reloadExchanges() {
+    let list;
+    try { list = await api.aiExchanges(this.paper.id); } catch { return; }
+    const live = this.running?.exchange;
+    if (!live || !this.exchanges.includes(live)) { this.exchanges = list; return; }
+    const order = (e) => (typeof e.id === "number" ? e.id : Infinity);
+    this.exchanges = [...list.filter((e) => e.id !== live.id), live].sort((a, b) => order(a) - order(b));
   }
 
   async refreshStatus() {
@@ -469,6 +495,7 @@ export class Assistant {
   }
 
   title(exchange) {
+    if (exchange.target === BOOK) return t(`ai.title.${exchange.task}Book`);
     const chapter = ["summary", "review"].includes(exchange.task) && this.chapterOfExchange(exchange);
     if (chapter) return t(`ai.title.${exchange.task}Chapter`, { label: this.chapterTitle(chapter) });
     const node = this.byId.get(exchange.target);
@@ -541,31 +568,174 @@ export class Assistant {
     return [h("div", { class: "ai-uses-title" }, t("ai.uses.before")), chips(used), h("div", { class: "ai-uses-title" }, t("ai.uses.after")), chips(dependents)];
   }
 
-  // Sous les sous-onglets : chapitre du résumé ou de la relecture (✓ : déjà fait), ou tout le livre (son début)
-  // « Tout le livre » : rien de plus s'il tient dans ce que l'assistant reçoit, sinon ses premières pages lues
-  wholeBookLabel() {
-    const model = this.status?.model || currentModel();
-    if (this.coverage?.model !== model) {
-      this.coverage = { model };
-      api.aiCoverage(this.paper.id).then((found) => {
-        if (this.coverage?.model !== model) return;
-        this.coverage = { model, ...found };
-        if (!found.whole) this.onChange();
-      }).catch(() => {});
-    }
-    const { whole, pages } = this.coverage;
-    return whole !== false ? t("ai.wholeBook") : pages ? t("ai.wholeBookPages", { n: pages }) : t("ai.wholeBookStart");
-  }
-
+  // Sous les sous-onglets : tous les chapitres en parallèle, puis synthèse (ou résumé d'ensemble), sinon un chapitre
+  // (✓ : déjà fait ; … : tâche du livre en cours)
   chapterBar(view) {
     const task = view === "summary" ? "summary" : "review";
     const done = new Set(this.exchanges.filter((e) => e.task === task && e.status === "done" && typeof e.id === "number").map((e) => this.chapterOfExchange(e) || ""));
     const mark = (id) => (done.has(id) ? "  ✓" : "");
     const select = h("select", { class: "ai-model", "aria-label": t("ai.chapter"), title: t("ai.chapter"),
       onchange: () => { this.chapterOf[view] = select.value || null; this.focusChapter = true; this.onChange(); } },
-    h("option", { value: "", selected: !this.chapterOf[view] }, this.wholeBookLabel() + mark("")),
-    this.chapters.map((c) => h("option", { value: c.id, selected: c.id === this.chapterOf[view] }, c.title + mark(c.id))));
+    h("option", { value: "", selected: !this.chapterOf[view] }, t(`ai.book.all.${task}`) + (jobRunning(this.jobs[task]) ? "  …" : mark(""))),
+    h("optgroup", { label: t("ai.chapters") },
+      this.chapters.map((c) => h("option", { value: c.id, selected: c.id === this.chapterOf[view] }, c.title + mark(c.id)))));
     return h("div", { class: "ai-chapterbar" }, h("span", {}, t("ai.chapter")), select);
+  }
+
+  // ---------- Livre : tous les chapitres en parallèle, puis synthèse (tâche de fond du serveur, bookjob) ----------
+
+  // résumé, relecture de tout le livre : « Tous les chapitres » dans le menu
+  bookPlace(view) { return this.byChapter(view) && !this.chapterOf[view]; }
+
+  // Chapitre -> son document terminé qu'une nouvelle tâche reprend tel quel (relecture : avec sa fiche), comme
+  // bookjob.reusable
+  reusable(task) {
+    const found = new Map();
+    for (const e of this.exchanges) {
+      if (e.task === task && !e.parent_id && e.status === "done" && typeof e.id === "number" && e.answer
+        && this.chapters.some((c) => c.id === e.target) && (task !== "review" || e.card)) found.set(e.target, e);
+    }
+    return found;
+  }
+
+  async startBook(task, second = null) {
+    if (this.status && !this.status.loggedIn) {
+      this.onChange({ show: true });
+      toast(t("ai.loginFirst"), { error: true });
+      return;
+    }
+    try {
+      this.jobsStamp = (this.jobsStamp || 0) + 1;  // un relevé parti avant le lancement ne l'efface pas (pollJobs)
+      this.jobs[task] = await api.startAIBook(this.paper.id, { task, fresh: Boolean(this.fresh[task]), ...(second ? { second } : {}) });
+    } catch (error) {
+      toastError(error);
+      return;
+    }
+    this.relaunch = false;
+    this.fresh[task] = false;
+    this.positions[this.place(this.view)] = { top: 0, atBottom: true };
+    this.pollJobs();
+    this.onChange();
+  }
+
+  async stopBook(task) {
+    this.jobsStamp = (this.jobsStamp || 0) + 1;
+    try { this.jobs[task] = await api.stopAIBook(this.paper.id, task); } catch (error) { toastError(error); }
+    await this.reloadExchanges();
+    this.onChange();
+  }
+
+  // Suivi des tâches en cours, toutes les 2 s tant qu'il y en a : un chapitre fini (ou une étape) recharge les échanges
+  // et refait le panneau (✓ du menu, documents) ; sinon la progression est mise à jour sur place (temps, synthèse)
+  pollJobs() {
+    if (this.pollTimer || this.destroyed) return;
+    const tick = async () => {
+      let next = null;
+      const stamp = this.jobsStamp;
+      try { next = await api.aiBook(this.paper.id); } catch { /* réseau : nouvel essai au prochain tour */ }
+      if (this.destroyed) return;
+      if (next && stamp !== this.jobsStamp) next = null;  // lancement ou arrêt pendant le relevé : relevé suivant
+      if (next) {
+        const ended = BOOK_TASKS.filter((task) => jobRunning(this.jobs[task]) && !jobRunning(next[task]));
+        const changed = jobSignature(next) !== jobSignature(this.jobs);
+        this.jobs = next;
+        if (changed) {
+          await this.reloadExchanges();
+          if (this.destroyed) return;
+          for (const task of ended) {
+            const job = next[task];
+            if (job?.phase === "error") toast(t(ERROR_KEYS[job.code] || "ai.error.other", { message: job.error || "" }), { error: true });
+            else if (job?.phase === "done") {
+              toast(t(`ai.book.finished.${task}`));
+              delete this.positions[`${task}:`];  // synthèse seule : lue depuis son début
+            }
+          }
+          this.onChange();
+        } else this.bookLive?.(next);
+      }
+      this.pollTimer = BOOK_TASKS.some((task) => jobRunning(this.jobs[task])) ? setTimeout(tick, 2000) : null;
+    };
+    this.pollTimer = setTimeout(tick, 2000);
+  }
+
+  // Ligne d'un chapitre (ou de la synthèse) : état, titre (un chapitre fait s'ouvre d'un clic), note
+  bookItem(view, chapter, state) {
+    const name = chapter ? h("button", { type: "button", class: "ai-book-name", onclick: () => { this.chapterOf[view] = chapter.id; this.onChange(); } }, chapter.title)
+      : h("span", { class: "ai-book-name" }, t(`ai.book.synthesis.${view}`));
+    const item = h("li", { class: chapter ? "" : "synthesis" }, h("span", { class: "ai-book-mark", "aria-hidden": "true" }), name, h("span", { class: "ai-book-note" }));
+    const set = ([kind, mark, note]) => {
+      item.classList.remove("done", "run", "wait");
+      item.classList.add(kind);
+      item.firstChild.textContent = mark;
+      item.lastChild.textContent = note;
+      if (chapter) name.disabled = kind !== "done";
+    };
+    set(state);
+    item.set = set;
+    return item;
+  }
+
+  // Avant le lancement : ce qui sera fait, chapitre par chapitre (✓ : déjà fait, repris tel quel)
+  bookIntro(view) {
+    const task = view === "summary" ? "summary" : "review";
+    const cross = view === "review" && this.crossPartner();
+    const reused = this.fresh[task] ? new Map() : this.reusable(task);
+    const intro = cross ? t("ai.book.intro.cross", { a: modelLabel(currentModel()), b: modelLabel(modelOf(cross.provider)) }) : t(`ai.book.intro.${task}`);
+    return h("div", { class: "ai-empty ai-empty-doc ai-book" }, h("div", { class: "ai-empty-title" }, t(`ai.book.title.${task}`)), h("p", {}, intro),
+      h("ul", { class: "ai-book-list" }, this.chapters.map((c) => this.bookItem(view, c, reused.has(c.id)
+        ? ["done", "✓", t(`ai.book.state.reused.${task}`)] : ["wait", "·", t(`ai.book.state.todo.${task}`)])),
+      this.bookItem(view, null, ["wait", "Σ", t("ai.book.state.atEnd")])),
+      h("p", { class: "hint ai-book-hint" }, t(`ai.book.hint.${task}`)));
+  }
+
+  // Tâche en cours : barre, état de chaque chapitre, temps restant estimé, synthèse qui s'écrit
+  bookProgress(view, task) {
+    const bar = h("span", {});
+    const status = h("p", { class: "hint ai-book-status", role: "status" });
+    const items = new Map(this.chapters.map((c) => [c.id, this.bookItem(view, c, ["wait", "·", ""])]));
+    const synthesis = this.bookItem(view, null, ["wait", "Σ", ""]);
+    const text = h("div", { class: "markdown ai-answer ai-book-text" });
+    const live = new LiveAnswer(text, this.refs);
+    const update = (jobs) => {
+      const job = jobs[task];
+      if (!jobRunning(job)) return;
+      const finished = job.chapters.filter((c) => ["done", "reused"].includes(c.state));
+      for (const c of job.chapters) {
+        items.get(c.id)?.set(c.state === "reused" ? ["done", "✓", t(`ai.book.state.reused.${task}`)]
+          : c.state === "done" ? ["done", "✓", t("ai.book.state.done", { time: minutes(c.seconds || 0) })]
+            : c.state === "running" ? ["run", "◌", t("ai.book.state.running", { time: minutes(c.elapsed || 0) })]
+              : ["wait", "·", t("ai.book.state.waiting")]);
+      }
+      synthesis.set(job.phase === "synthesis" ? ["run", "Σ", t("ai.book.state.writing")] : ["wait", "Σ", t("ai.book.state.after")]);
+      bar.style.width = `${Math.round(100 * (finished.length + (job.phase === "synthesis" ? 0.5 : 0)) / (job.chapters.length + 1))}%`;
+      if (job.phase === "synthesis") status.textContent = t(`ai.book.status.synthesis.${task}`, { n: finished.length });
+      else {
+        // temps restant : durée moyenne d'un chapitre fait par cette tâche, chapitres répartis entre les relecteurs
+        const times = job.chapters.filter((c) => c.state === "done").map((c) => c.seconds || 0);
+        const average = times.length ? times.reduce((a, b) => a + b, 0) / times.length : null;
+        const work = average === null ? null : job.chapters.reduce((sum, c) => sum + (c.state === "wait" ? average
+          : c.state === "running" ? Math.max(0, average - (c.elapsed || 0)) : 0), 0);
+        const left = work === null ? null : Math.max(1, Math.ceil((work / (job.parallel || 2) + average / 2) / 60));
+        const running = job.chapters.filter((c) => c.state === "running").length;
+        status.textContent = t("ai.book.status.chapters", { done: finished.length, total: job.chapters.length, running })
+          + (left === null ? "" : ` · ${tn("ai.book.status.left", left)}`);
+      }
+      if (job.synthesis?.answer) live.update(job.synthesis.answer, false);
+    };
+    update(this.jobs);
+    this.bookLive = (jobs) => { if (status.isConnected) update(jobs); };
+    return h("div", { class: "ai-empty ai-empty-doc ai-book" }, h("div", { class: "ai-empty-title" }, t(`ai.book.running.${task}`)),
+      h("div", { class: "ai-book-bar" }, bar), status, h("ul", { class: "ai-book-list" }, [...items.values()], synthesis),
+      h("p", { class: "hint ai-book-hint" }, t(`ai.book.continue.${task}`)), text);
+  }
+
+  // Synthèse du livre : un lien vers le document de chaque chapitre
+  bookChips(view) {
+    const task = view === "summary" ? "summary" : "review";
+    const done = new Set(this.exchanges.filter((e) => e.task === task && !e.parent_id && e.status === "done").map((e) => e.target));
+    const chapters = this.chapters.filter((c) => done.has(c.id));
+    return chapters.length ? h("div", { class: "ai-uses ai-book-chips" }, h("span", { class: "muted small" }, t(`ai.book.chips.${task}`)),
+      chapters.map((c) => h("button", { type: "button", class: "ai-ref", onclick: () => { this.chapterOf[view] = c.id; this.onChange(); } }, c.title))) : null;
   }
 
   renderPanel(body, { focus = false } = {}) {
@@ -584,7 +754,12 @@ export class Assistant {
     const chapter = book ? this.chapterOf[view] : null;
     const place = this.place(view);
     this.shown = place;
-    const exchanges = this.exchanges.filter((e) => this.viewOf(e) === view && (!book || this.chapterOfExchange(e) === chapter));
+    const task = view === "summary" ? "summary" : "review";
+    const whole = this.bookPlace(view);  // livre : tous les chapitres, puis synthèse
+    const job = whole && this.jobs[task];
+    // synthèse en cours : montrée par la progression de la tâche, pas comme un document vide
+    const exchanges = this.exchanges.filter((e) => this.viewOf(e) === view && (!book || this.chapterOfExchange(e) === chapter)
+      && !(jobRunning(job) && e.id === job.synthesis?.exchange));
     this.loadPartners();
     const notice = status && !status.loggedIn ? setupNotice(status, () => { this.status = null; this.onChange(); }) : null;
 
@@ -594,10 +769,11 @@ export class Assistant {
       if (exchanges.length) exchanges.forEach((e) => this.renderExchange(content, e));
       else content.append(h("p", { class: "hint ai-empty" }, t("ai.emptyQuestions") + (this.inPdf() && this.readsImages() ? ` ${t("ai.hintZone")}` : "")));
     } else {
-      const docs = exchanges.filter((e) => e.task === (view === "summary" ? "summary" : "review"));
+      const docs = exchanges.filter((e) => e.task === task);
       if (exchanges.length) exchanges.forEach((e) => (docs.includes(e) ? this.renderDocument(content, e, e === docs[docs.length - 1])
         : this.renderExchange(content, e, { reply: false })));
-      else {
+      else if (whole && !jobRunning(job)) content.append(this.bookIntro(view));
+      else if (!whole) {
         const cross = view === "review" && this.crossPartner();
         const label = chapter && this.chapterTitle(chapter);
         const title = chapter ? t(cross ? "ai.title.crossChapter" : `ai.title.${view}Chapter`, { label }) : t(cross ? "ai.title.cross" : `ai.title.${view}`);
@@ -605,6 +781,11 @@ export class Assistant {
           : t(chapter ? "ai.intro.chapter" : `ai.intro.${view}`);
         content.append(h("div", { class: "ai-empty ai-empty-doc" }, h("div", { class: "ai-empty-title" }, title), h("p", {}, intro),
           chapter ? this.chapterLinksBox(chapter) : null));
+      }
+      this.bookLive = null;
+      if (jobRunning(job)) content.append(this.bookProgress(view, task));
+      else if (job?.phase === "error") {
+        content.append(h("div", { class: "notice small ai-book-error" }, t(ERROR_KEYS[job.code] || "ai.error.other", { message: job.error || "" })));
       }
     }
 
@@ -651,7 +832,7 @@ export class Assistant {
     // position de lecture : celle laissée ; la première fois, le document depuis le haut, sinon la dernière réponse
     requestAnimationFrame(() => {
       const kept = this.positions[place];
-      const first = view !== "questions" && exchanges.length === 1;
+      const first = view !== "questions" && exchanges.length <= 1;  // document seul, ou présentation avant le lancement
       thread.scrollTop = kept ? (kept.atBottom ? thread.scrollHeight : kept.top) : first ? 0 : thread.scrollHeight;
       update();
     });
@@ -679,10 +860,11 @@ export class Assistant {
   // Barre du haut : sous-onglets (une réponse en cours ailleurs y est signalée) et taille du texte des réponses
   viewBar() {
     const views = ["questions", "summary", "review"];
-    const busy = this.running ? this.viewOf(this.running.exchange) : null;
+    // réponse en cours de cette page, tâche du livre en cours : signalées sur leur sous-onglet
+    const busy = new Set([this.running && this.viewOf(this.running.exchange), ...BOOK_TASKS.filter((task) => jobRunning(this.jobs[task]))]);
     const seg = h("div", { class: "ai-views", role: "group", "aria-label": t("ai.views") }, views.map((view) =>
-      h("button", { type: "button", class: `ai-view${busy === view ? " busy" : ""}`, "aria-pressed": String(this.view === view),
-        title: busy === view ? t("ai.busyHere") : undefined, onclick: () => this.showView(view) }, t(`ai.view.${view}`))));
+      h("button", { type: "button", class: `ai-view${busy.has(view) ? " busy" : ""}`, "aria-pressed": String(this.view === view),
+        title: busy.has(view) ? t("ai.busyHere") : undefined, onclick: () => this.showView(view) }, t(`ai.view.${view}`))));
     return h("div", { class: "ai-topbar" }, seg, h("span", { class: "spacer" }), this.textSizeBar(), this.shareLink({ compact: true }));
   }
 
@@ -690,20 +872,39 @@ export class Assistant {
   bottomBar(view, exchanges, focus) {
     const running = Boolean(this.running);
     const footer = h("p", { class: "ai-footnote", title: t(`ai.privacy.${providerOf(currentModel())}`) }, t("ai.footnote"));
+    const task = view === "summary" ? "summary" : "review";
+    const whole = this.bookPlace(view);
+    if (whole && jobRunning(this.jobs[task])) {  // tâche du livre en cours : on peut l'arrêter (chapitres finis gardés)
+      return h("div", { class: "ai-bottom" }, h("button", { class: "button ai-launch", type: "button", onclick: () => this.stopBook(task) },
+        t("ai.book.stop")), footer);
+    }
+    // chapitre relu (ou résumé) par la tâche du livre en ce moment : rien à demander avant la fin
+    if (view !== "questions" && exchanges.some((e) => e.status === "running" && e !== this.running?.exchange)) {
+      return h("div", { class: "ai-bottom" }, h("p", { class: "muted small ai-book-busy" }, t(`ai.book.chapterBusy.${task}`)), footer);
+    }
     const relaunch = view === "review" && this.relaunch && !running;
     if (view !== "questions" && (!this.lastDocument(view, exchanges) || relaunch) && !exchanges.some((e) => e.status === "running")) {
-      const task = view === "summary" ? "summary" : "review";
       const chapter = this.byChapter(view) ? this.chapterOf[view] : null;
       const cross = view === "review" && this.crossPartner();
-      const launch = running
+      // livre, tous les chapitres : nombre de chapitres à faire (ceux déjà faits sont repris, sauf si l'on coche)
+      const reused = whole ? this.reusable(task).size : 0;
+      const todo = whole && this.chapters.length - (this.fresh[task] ? 0 : reused);
+      const label = whole ? (todo ? tn(`ai.book.launch.${cross ? "cross" : task}`, todo) : t(`ai.book.launch.${task}Only`))
+        : t(cross ? "ai.launch.cross" : chapter ? `ai.launch.${task}Chapter` : `ai.launch.${task}`);
+      const launch = running && !whole
         ? h("button", { class: "button ai-launch", type: "button", onclick: () => this.stop() }, t("ai.stop"))
-        : h("button", { class: "button primary ai-launch", type: "button", onclick: () => { this.relaunch = false; this.ask({ task, second: cross?.provider, chapter }); } },
-          t(cross ? "ai.launch.cross" : chapter ? `ai.launch.${task}Chapter` : `ai.launch.${task}`));
+        : h("button", { class: "button primary ai-launch", type: "button", onclick: () => {
+          this.relaunch = false;
+          if (whole) this.startBook(task, cross?.provider);
+          else this.ask({ task, second: cross?.provider, chapter });
+        } }, label);
+      const fresh = whole && reused > 0 && h("label", { class: "ai-book-fresh small" }, h("input", { type: "checkbox", checked: Boolean(this.fresh[task]),
+        onchange: (event) => { this.fresh[task] = event.target.checked; this.onChange(); } }), ` ${tn(`ai.book.fresh.${task}`, reused)}`);
       // « Refaire » une relecture : retour au champ des questions sans rien lancer
       const cancel = relaunch && h("button", { class: "button", type: "button", onclick: () => { this.relaunch = false; this.onChange(); } }, t("ai.cancelRedo"));
       const picker = this.modelPicker(cross?.provider) || h("span", { class: "muted small" }, modelLabel(currentModel()));
       return h("div", { class: "ai-bottom" }, view === "review" && this.partners?.length ? this.reviewMode(cross) : null,
-        cancel ? h("div", { class: "ai-launch-row" }, launch, cancel) : launch,
+        cancel ? h("div", { class: "ai-launch-row" }, launch, cancel) : launch, fresh,
         cross ? this.reviewers(picker, cross) : h("div", { class: "ai-foot" }, picker), footer);
     }
     return h("div", { class: "ai-bottom" }, this.askBox(view, exchanges, focus), footer);
@@ -898,17 +1099,25 @@ export class Assistant {
   renderDocument(thread, exchange, latest) {
     const second = secondOf(exchange);
     const choose = exchange.task === "review" && this.partners?.length;
+    const view = this.viewOf(exchange);
+    const whole = this.bookPlace(view);  // synthèse du livre : refaite par la tâche (chapitres faits repris)
     const again = () => {
+      if (!choose && whole) { this.startBook(exchange.task); return; }
       if (!choose) { this.ask({ task: exchange.task, second: second && providerOf(second), chapter: this.chapterOfExchange(exchange) }); return; }
       this.relaunch = !this.relaunch;
       this.onChange();
     };
-    const redo = latest && exchange.status !== "running" && !this.running
+    const redo = latest && exchange.status !== "running" && !(whole ? jobRunning(this.jobs[exchange.task]) : this.running)
       ? h("button", { class: "button small-button", type: "button", title: t(`ai.redo.${exchange.task}`), "aria-pressed": choose ? this.relaunch : undefined,
         onclick: again }, h("span", { class: "ai-icon", html: icons.refresh }), t("ai.redo")) : null;
     const answer = this.renderAnswer(exchange, { reply: false, document: true });
     const chapter = this.chapterOfExchange(exchange);  // livre : le chapitre du document, dans son en-tête
     if (chapter) answer.querySelector(".ai-who span:not(.ai-who-dot)")?.append(` · ${this.chapterTitle(chapter)}`);
+    if (exchange.target === BOOK) {  // synthèse du livre : d'après les documents des chapitres, un lien vers chacun
+      answer.querySelector(".ai-who span:not(.ai-who-dot)")?.append(` · ${t(`ai.book.of.${exchange.task}`)}`);
+      const chips = exchange.status === "done" && this.bookChips(view);
+      if (chips) answer.querySelector(".markdown")?.after(chips);
+    }
     const who = answer.querySelector(".ai-who");
     who?.append(h("span", { class: "spacer" }), redo || "");
     if (exchange.steps?.length) who?.after(this.stepsFold(exchange));
@@ -939,7 +1148,7 @@ export class Assistant {
     const answer = h("div", { class: "markdown ai-answer" });
     const live = new LiveAnswer(answer, this.refs, crossNames(exchange));
     live.update(exchange.answer || "", exchange.status !== "running");
-    if (exchange.status === "running") this.live = live;
+    if (exchange.status === "running" && exchange === this.running?.exchange) this.live = live;  // pas un chapitre de la tâche du livre
     answer.addEventListener("click", (event) => {
       const ref = event.target.closest("a.ai-ref");
       if (!ref) return;
@@ -1175,6 +1384,8 @@ export class Assistant {
   }
 
   destroy() {
+    this.destroyed = true;
+    clearTimeout(this.pollTimer);
     this.stop();
   }
 }

@@ -152,6 +152,8 @@ def init():
             db.execute("ALTER TABLE ai_exchanges ADD COLUMN applied INTEGER DEFAULT 0")
         if "steps" not in columns:  # relecture croisée : étapes avant la synthèse (JSON)
             db.execute("ALTER TABLE ai_exchanges ADD COLUMN steps TEXT")
+        if "card" not in columns:  # relecture d'un chapitre terminée par sa fiche (reprise par la relecture du livre)
+            db.execute("ALTER TABLE ai_exchanges ADD COLUMN card INTEGER DEFAULT 0")
     _move_secrets()
 
 

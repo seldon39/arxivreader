@@ -378,7 +378,7 @@ il suffit de la fermer et d'aller dans le feed.
   plus avant qu'après ; les pages omises sont signalées. Un article part toujours en entier.
 - **Livres, chapitre par chapitre** : dans un livre (HTML d'arXiv ou fichier TeX à chapitres), les onglets *Résumé*
   et *Relecture* ont un menu *Chapitre* (par défaut celui qu'on lit, ✓ pour ceux déjà faits), chaque chapitre avec son
-  fil ; *Tout le livre* indique combien de premières pages l'assistant reçoit quand le livre dépasse ce qu'il lit. L'assistant lit ce chapitre seul, avec le sommaire du livre et, des autres chapitres, les énoncés seuls (sans
+  fil. L'assistant lit ce chapitre seul, avec le sommaire du livre et, des autres chapitres, les énoncés seuls (sans
   preuve) : ceux que le chapitre utilise, et ceux qui en dépendent, directement ou en chaîne. La relecture vérifie
   alors ces usages (*Uses from other chapters*) et dit quels énoncés suivants une erreur toucherait (*Impact on other
   chapters*). Les deux listes sont montrées, cliquables, avant l'envoi. L'onglet *Énoncés* montre lui aussi un
@@ -387,6 +387,19 @@ il suffit de la fermer et d'aller dans le feed.
   recherche porte sur tout le livre. En lisant le
   PDF, un énoncé choisi dans le panneau s'ouvre à sa page même quand le HTML d'arXiv le numérote autrement que le PDF
   (*Proposition 7.10* d'un côté, *2.3.10* de l'autre).
+- **Tout le livre, en parallèle** : la première entrée du menu *Chapitre*, *Tous les chapitres en parallèle, puis
+  synthèse* (*Relecture*) ou *… puis résumé d'ensemble* (*Résumé*), relit ou résume chaque chapitre séparément, deux à
+  la fois, puis écrit la synthèse du livre d'après ces relectures, ou un résumé d'ensemble court qui dégage la
+  structure globale (pas chapitre par chapitre). Chaque relecture de chapitre se termine par une *fiche du chapitre*
+  (notations et conventions, hypothèses générales, résultats d'autres chapitres utilisés et sous quelle forme,
+  résultats fournis aux autres) ; la synthèse compare ces fiches pour trouver ce qu'aucune relecture isolée ne voit
+  (notation ou hypothèse qui change, résultat utilisé avant d'être démontré ou sous une forme plus forte) et garde
+  tous les points critiques et sérieux des chapitres. En *Relecture croisée*, chaque chapitre est relu par les deux
+  assistants (4 demandes par chapitre). La tâche tourne dans l'application : on peut lire, poser d'autres questions ou
+  fermer l'article pendant ce temps ; l'onglet montre la progression (chapitres faits, en cours, temps restant
+  estimé), *Arrêter* garde les chapitres finis, et chaque chapitre fini s'ouvre déjà dans le menu. Un nouveau
+  lancement reprend les chapitres déjà faits (relectures avec leur fiche), sauf si l'on coche *Relire aussi les
+  chapitres déjà relus*.
 - **Énoncés et preuves** : l'icône de note en marge (au survol) ouvre une note et, pour un énoncé,
   l'état de lecture *compris / à revoir / vérifié* (affiché dans le titre et la liste des énoncés).
 - **Notes sans passage** : clic droit → « Ajouter une note », en HTML (sur le paragraphe ; dans un énoncé ou une
@@ -433,6 +446,12 @@ il suffit de la fermer et d'aller dans le feed.
   ce qu'il a déjà dit. Un résumé ou une relecture part sans mémoire. Le bouton ↗ en haut (*Envoyer à Claude*, ou à ChatGPT, à Gemini) ouvre une nouvelle
   conversation dans l'application ou le site de l'assistant, avec les références de l'article, et copie son texte
   complet dans le presse-papiers.
+- **Relecture critique** : d'abord un verdict (quels résultats principaux sont démontrés tels qu'écrits, lesquels
+  non), puis chaque résultat principal (énoncé, preuve, réparable ou non), les points à vérifier classés *Critique*,
+  *Sérieux* et *Mineur* (chacun dit *certain* ou *soupçonné* ; coquilles regroupées), ce qui reste valable et les
+  réparations possibles, et ce que l'assistant a suivi en détail ou seulement parcouru. Les erreurs sont toujours
+  dites, avant les réparations, qui ne les retirent pas ; une preuve fausse n'est pas présentée comme un résultat
+  faux. Le **résumé** dit aussi la nouveauté revendiquée par les auteurs, puis les limites et questions ouvertes.
 - **Relecture croisée**, quand un deuxième assistant est prêt (Claude, Codex, Gemini ou un modèle local) :
   *Relecture simple* | *Relecture croisée* au-dessus du bouton de l'onglet *Relecture*, puis l'assistant, le modèle et le niveau
   de réflexion de chaque relecteur. Les deux assistants relisent l'article chacun de leur côté, le second compare

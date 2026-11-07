@@ -362,7 +362,7 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   statement or the quoted passage), more before than after; omitted pages are marked. A paper is always sent whole.
 - **Books, chapter by chapter**: in a book (arXiv HTML or TeX file with chapters), the *Summary* and *Review* tabs
   have a *Chapter* menu (the chapter being read by default, ✓ for those already done), each chapter with its own
-  thread; *Whole book* says how many first pages the assistant receives when the book is longer than what it reads. The assistant reads that chapter only, with the book's contents and, from other chapters, statements only
+  thread. The assistant reads that chapter only, with the book's contents and, from other chapters, statements only
   (no proofs): those the chapter uses, and those that depend on it, directly or in a chain. The review then checks
   the uses (*Uses from other chapters*) and says which later statements an error would affect (*Impact on other
   chapters*). Both lists are shown, clickable, before the request is sent. The *Statements* tab also shows one
@@ -371,6 +371,18 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   covers the whole book. Read in the PDF, a
   statement chosen in the panel opens at its page even when arXiv's HTML numbers it differently from the PDF
   (*Proposition 7.10* there, *2.3.10* in the PDF).
+- **The whole book, in parallel**: the first entry of the *Chapter* menu, *All chapters in parallel, then synthesis*
+  (*Review*) or *… then overall summary* (*Summary*), reviews or summarises each chapter separately, two at a time,
+  then writes the synthesis of the book from these reviews, or a short overall summary that brings out the global
+  structure (not chapter by chapter). Each chapter review ends with a *chapter record* (notation and conventions,
+  standing hypotheses, results used from other chapters and in what form, results provided to the others); the
+  synthesis compares these records to find what no single review can see (notation or hypotheses that change, a
+  result used before it is proved or in a stronger form) and keeps every critical and serious point of the chapters.
+  With *Cross-review*, each chapter is reviewed by both assistants (4 requests per chapter). The task runs in the
+  application: you can read, ask other questions or close the paper meanwhile; the tab shows the progress (chapters
+  done, in progress, estimated time left), *Stop* keeps the finished chapters, and each finished chapter already opens
+  from the menu. A new run reuses the chapters already done (reviews with their record), unless you tick *Also review
+  again the chapters already reviewed*.
 - **Statements and proofs**: the note icon in the margin (on hover) opens a note and, for a statement,
   the reading state *understood / to review / checked* (shown in the title and in the list of statements).
 - **Notes without a passage**: right-click → "Add note", in HTML (on the paragraph; in a statement or proof, its
@@ -414,6 +426,12 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   and the questions asked about it), the most recent first when the thread is long (about 50,000 characters; the
   document and the exchange being replied to always go): the assistant builds on what it already said. A summary or
   a review starts without memory.
+- **Critical review**: first a verdict (which main results are proved as written, which are not), then each main
+  result (statement, proof, repairable or not), the points to check under *Critical*, *Serious* and *Minor* (each
+  said *certain* or *suspected*; typos grouped), what survives and possible repairs, and what the assistant followed
+  in detail or only read through. Errors are always stated, before the repairs, which never remove them; a wrong
+  proof is not presented as a false result. The **summary** also gives the novelty claimed by the authors, then the
+  limitations and open questions.
 - **Cross-review**, when a second assistant is ready (Claude, Codex, Gemini or a local model): *Single review* |
   *Cross-review* above the button of the *Review* tab, then each reviewer's assistant, model and reasoning level. Both
   assistants review the paper on their own, the second compares the two reviews, the first answers that comparison

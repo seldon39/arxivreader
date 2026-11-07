@@ -514,20 +514,135 @@ class Chapters(unittest.TestCase):
         events = [json.loads(line) for line in client.post("/api/papers/b1/ai", json={"task": "summary", "chapter": "Ch3"}).text.splitlines()]
         self.assertEqual((events[-1]["exchange"]["target"], events[-1]["exchange"]["status"]), ("Ch3", "done"))
 
-    def test_whole_book_coverage(self):
-        """« Tout le livre » : rien s'il tient dans la limite ; sinon ses premières pages, au prorata ou par repères."""
-        import unittest.mock
-        paper = {"id": "x", "comment": "200 pages"}
-        with unittest.mock.patch.object(ai, "_load", return_value=(None, {}, "a" * 1000)), \
-                unittest.mock.patch.object(ai, "paper_limit", return_value=2000):
-            self.assertEqual(ai.coverage(paper, {}, "m"), {"whole": True})
-        with unittest.mock.patch.object(ai, "_load", return_value=(None, {}, "a" * 8000)), \
-                unittest.mock.patch.object(ai, "paper_limit", return_value=2000):
-            self.assertEqual(ai.coverage(paper, {}, "m"), {"whole": False, "pages": 50})
-        pdf_text = "\n\n".join(f"[page {n}]\n" + "b" * 900 for n in range(1, 11))  # PDF importé : texte par page
-        with unittest.mock.patch.object(ai, "_load", return_value=(None, {}, pdf_text)), \
-                unittest.mock.patch.object(ai, "paper_limit", return_value=3000):
-            self.assertEqual(ai.coverage({"id": "x"}, {}, "m"), {"whole": False, "pages": 4})
+    def test_book_review_job(self):
+        """Tous les chapitres en parallèle : relecture avec fiche reprise, les autres relues, puis la synthèse."""
+        import asyncio
+        import re
+        from app import bookjob
+        prompts = []
+
+        async def fake(system, prompt, model, image=None, pages=()):
+            prompts.append(prompt)
+            if "<chapter_review" in prompt:
+                yield "### Verdict\nbook verdict"
+            else:
+                yield "review of " + re.search(r'part="([^"]+)"', prompt).group(1) + "\n### Chapter record\n- notation"
+        ai.stream_answer = fake
+        kept = ai.create("b1", "review", "Ch1", None, None, None, "opus")
+        ai.finish(kept["id"], "old review of Ch1", "done", card=True)
+        plain = ai.create("b1", "review", "Ch2", None, None, None, "opus")
+        ai.finish(plain["id"], "review without record", "done")  # d'avant la fiche : refaite
+
+        async def run():
+            job = bookjob.start(self.paper, self.structure, "review", "opus", language="en")
+            self.assertEqual([c["state"] for c in job.chapters], ["reused", "wait", "wait"])
+            await job.handle
+            return job
+        job = asyncio.run(run())
+        self.addCleanup(bookjob.jobs.clear)
+        self.assertEqual((job.phase, [c["state"] for c in job.chapters]), ("done", ["reused", "done", "done"]))
+        self.assertEqual(len(prompts), 3)  # deux chapitres, puis la synthèse
+        self.assertIn("### Chapter record", prompts[0])
+        synthesis = prompts[-1]
+        self.assertIn('<chapter_review chapter="Chapter 1 Basics">\nold review of Ch1', synthesis)
+        self.assertIn("review of Chapter 2 Core", synthesis)
+        self.assertNotIn("Text only in chapter two.", synthesis)  # pas le texte du livre
+        self.assertIn("Theorem 2.1.1 (Chapter 2 Core) uses Lemma 1.1.1 (Chapter 1 Basics)", synthesis)
+        self.assertIn("First compare the chapter records", synthesis)
+        exchanges = ai.list_for("b1")
+        book = [e for e in exchanges if e["target"] == ai.BOOK]
+        self.assertEqual([(e["status"], e["answer"]) for e in book], [("done", "### Verdict\nbook verdict")])
+        self.assertEqual(sorted((e["target"], e["card"]) for e in exchanges if e["target"] in ("Ch2", "Ch3") and e["card"]),
+                         [("Ch2", 1), ("Ch3", 1)])
+        self.assertFalse(any(e["status"] == "running" for e in exchanges))
+        self.assertEqual(bookjob.state("b1", "review")["phase"], "done")
+
+    def test_book_job_stop_and_error(self):
+        """Arrêt : chapitres finis gardés, chapitre en cours supprimé, pas de synthèse ; erreur : son code."""
+        import asyncio
+        from app import bookjob
+        self.addCleanup(bookjob.jobs.clear)
+
+        async def slow(system, prompt, model, image=None, pages=()):
+            if 'part="Chapter 3 Uses"' in prompt:
+                await asyncio.sleep(30)
+            yield "summary"
+        ai.stream_answer = slow
+
+        async def stop():
+            job = bookjob.start(self.paper, self.structure, "summary", "opus", language="en")
+            while [c["state"] for c in job.chapters] != ["done", "done", "running"]:
+                await asyncio.sleep(0.01)
+            await bookjob.stop("b1", "summary")
+            return job
+        job = asyncio.run(stop())
+        self.assertEqual((job.phase, [c["state"] for c in job.chapters]), ("stopped", ["done", "done", "wait"]))
+        self.assertEqual(sorted(e["target"] for e in ai.list_for("b1")), ["Ch1", "Ch2"])
+
+        async def failing(system, prompt, model, image=None, pages=()):
+            raise ai.AIError("Not logged in", "login")
+            yield ""
+        ai.stream_answer = failing
+
+        async def error():
+            job = bookjob.start(self.paper, self.structure, "summary", "opus", language="en")
+            self.assertEqual([c["state"] for c in job.chapters], ["reused", "reused", "wait"])  # résumés repris
+            await job.handle
+            return job
+        job = asyncio.run(error())
+        self.assertEqual((job.phase, job.code), ("error", "login"))
+        self.assertEqual(sorted(e["target"] for e in ai.list_for("b1")), ["Ch1", "Ch2"])
+
+    def test_book_job_cross(self):
+        """Relecture croisée de chaque chapitre : ses étapes gardées ; la synthèse du livre sans les marqueurs."""
+        import asyncio
+        from app import bookjob
+        self.addCleanup(bookjob.jobs.clear)
+
+        async def fake(system, prompt, model, image=None, pages=()):
+            if "<chapter_review" in prompt:
+                yield "book"
+            elif '<review id="comparison"' in prompt:
+                yield "1. [[both]] point\n### Chapter record\n- notation"
+            else:
+                yield f"step by {model}"
+        ai.stream_answer = fake
+
+        async def run():
+            job = bookjob.start(self.paper, self.structure, "review", "opus", "gemini", "en", fresh=True)
+            await job.handle
+            return job
+        job = asyncio.run(run())
+        self.assertEqual(job.phase, "done")
+        chapters = [e for e in ai.list_for("b1") if e["target"] != ai.BOOK]
+        self.assertEqual(len(chapters), 3)
+        self.assertTrue(all(len(e["steps"]) == 3 and e["card"] for e in chapters))
+        self.assertIn("never write such markers yourself", ai.BOOK_PROMPTS["review"])
+
+    def test_book_job_requests(self):
+        from app import bookjob
+        self.addCleanup(bookjob.jobs.clear)
+        client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
+        self.assertEqual(client.get("/api/papers/b1/ai/book").json(), {"summary": None, "review": None})
+        self.assertEqual(client.post("/api/papers/b1/ai/book", json={"task": "ask"}).status_code, 400)
+        self.assertEqual(client.post("/api/papers/b1/ai/book", json={"task": "summary", "second": "gemini"}).status_code, 400)
+        db.save_settings({"aiProvider": "claude", "aiModel": "opus"})
+        self.assertEqual(client.post("/api/papers/b1/ai/book", json={"task": "review", "second": "claude"}).status_code, 400)
+        db.save_paper({"id": "p2", "arxiv_id": "2601.00003", "version": 1, "title": "Short", "authors": ["A. B."],
+                       "abstract": "", "categories": ["math.DG"], "source": "arxiv-html", "in_library": 1})
+        self.assertEqual(client.post("/api/papers/p2/ai/book", json={"task": "review"}).json(), {"error": "Not a book"})
+
+    def test_new_review_prompts(self):
+        """Relecture : verdict d'abord, gravité, certain ou soupçonné, ce qui reste valable ; résumé : nouveauté, limites."""
+        _, prompt = ai.build_prompt(self.paper, self.structure, "review", language="en")
+        for part in ("### Verdict", "A wrong proof is not a false result", "**certain** or **suspected**",
+                     "A possible repair never removes a point", "### What survives and possible repairs", "### What I checked"):
+            self.assertIn(part, prompt)
+        self.assertLess(prompt.index("### Verdict"), prompt.index("### Points to check"))
+        _, prompt = ai.build_prompt(self.paper, self.structure, "summary", language="en")
+        self.assertIn("### Novelty, as claimed by the authors", prompt)
+        self.assertIn("### Limitations and open questions", prompt)
+        self.assertIn("### Chapter record", ai.CHAPTER_SYNTHESIS)
 
     def test_tex_book_chapters(self):
         from app import texsource, texstructure

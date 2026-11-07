@@ -51,7 +51,7 @@ anglais.
 | Feed, profil, pertinence, alertes, citations | `feed.py`, `profile.py`, `relevance.py` (`same_person`, `follows` : homonymes des auteurs suivis), `alerts.py`, `citations.py`, `journals.py` | `feed.js` (👎 → « pas cette personne »), `profile.js` (catégories gardées pour un auteur) |
 | Recherche arXiv | `search.py` | `search.js` |
 | Papiers liés (graphe) | `related.py` | `related.js` |
-| IA | `ai.py` (Claude, SDK Agent ; scans : pages jointes en images ; livres trop longs : début et fenêtre autour de la question), `providers.py` (Codex, Gemini, local) | `ai.js` (onglet en conversation : sous-onglets Questions / Résumé / Relecture d'après la racine de chaque échange, `viewOf` ; une question sur un résumé ou une relecture a pour parent ce document ; mémoire du fil : `ai.thread_history` (même fil que `viewOf` : tout le fil Questions, ou le document et les questions posées dessus ; terminés ou arrêtés, avec une réponse) et `_history_block` (`<conversation_history>`, au plus `limit / HISTORY_SHARE` caractères : le document et l'échange répondu toujours, puis les plus récents ; balises neutralisées ; pas pour résumé, relecture, transcription) ; positions de lecture `positions`, boutons ↑ ↓ dans la marge du fil ; renvois des réponses `buildRefs` : énoncés, équations,
+| IA | `ai.py` (Claude, SDK Agent ; scans : pages jointes en images ; livres trop longs : début et fenêtre autour de la question), `providers.py` (Codex, Gemini, local), `bookjob.py` (livre : tous les chapitres en parallèle, puis synthèse) | `ai.js` (onglet en conversation : sous-onglets Questions / Résumé / Relecture d'après la racine de chaque échange, `viewOf` ; une question sur un résumé ou une relecture a pour parent ce document ; mémoire du fil : `ai.thread_history` (même fil que `viewOf` : tout le fil Questions, ou le document et les questions posées dessus ; terminés ou arrêtés, avec une réponse) et `_history_block` (`<conversation_history>`, au plus `limit / HISTORY_SHARE` caractères : le document et l'échange répondu toujours, puis les plus récents ; balises neutralisées ; pas pour résumé, relecture, transcription) ; positions de lecture `positions`, boutons ↑ ↓ dans la marge du fil ; renvois des réponses `buildRefs` : énoncés, équations,
 sections d'après le numéro du titre (`toc`), références entre crochets ou auteur-année (`bibliography`), sauf l'énoncé d'un
 article cité, « Theorem 3.1 of [12] », « [12, Theorem 3.1] » ; aperçu au survol par `reader.previewFor`), `aiproviders.js`, `reader.js` (`contextPages` : pages d'un scan rendues par pdf.js) |
 | Zotero | `zotero.py` | `zotero.js`, `settings.js` |
@@ -406,6 +406,30 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   « other » : un code « login » ferait croire le premier déconnecté. Assistants prêts : `/api/ai/partners`
   (`ai.partners`, vérifiés en parallèle ; gardés deux minutes par la page).
 
+- Consignes de relecture (`REVIEW_GUIDANCE`, `REVIEW_VERDICT`, `REVIEW_POINTS`, `REVIEW_SURVIVES`, communes à
+  l'article, au chapitre, à la synthèse croisée et à celle du livre) : verdict d'abord (quatre phrases au plus), points
+  classés Critical / Serious / Minor, chacun certain ou suspected, coquilles en un seul point, puis ce qui reste valable
+  et les réparations ; un auteur relit son propre texte avec : une erreur est toujours dite, une réparation ne la
+  retire jamais, une preuve fausse n'est pas un résultat faux. Résumé : nouveauté revendiquée, limites et questions
+  ouvertes. Relecture d'un chapitre : se termine par sa fiche (`CHAPTER_RECORD`) ; l'échange porte alors `card = 1`
+  (colonne `card`, posée par `ai.finish`).
+
+- Livre, tous les chapitres en parallèle (`app/bookjob.py`, routes `/api/papers/{id}/ai/book`, `…/book/stop`) : tâche
+  de fond du serveur (`asyncio`), une par livre et par sorte, `PARALLEL` chapitres à la fois (relecture croisée :
+  `ai.cross_review` pour chacun) ; elle continue si la page se ferme, s'arrête avec le serveur (`stop_all` dans
+  `lifespan`) ou quand l'article est supprimé (`forget`, depuis `library.remove_paper`, sûr d'un autre fil). Chaque
+  chapitre fini est un échange ordinaire (cible : le chapitre) ; à l'arrêt ou sur une erreur, un chapitre inachevé est
+  supprimé et la synthèse commencée close « stopped » (`close_open`). Un nouveau lancement reprend le dernier document
+  terminé de chaque chapitre (`reusable` ; relecture : avec `card`), sauf `fresh`. Synthèse : échange de cible
+  `ai.BOOK` (« @book »), consigne `BOOK_PROMPTS` construite par `ai.book_prompt` : sommaire, renvois entre chapitres
+  (`_book_links`), documents des chapitres dans `<chapter_review>` / `<chapter_summary>` (balises neutralisées, début
+  et fin gardés si trop long : la fiche est à la fin), jamais le texte du livre. État (`state`) gardé une heure après
+  la fin (erreur montrée à la page). Côté page : première entrée du menu `chapterBar` (`bookPlace`), présentation
+  `bookIntro`, progression `bookProgress` mise à jour sur place (`bookLive`), suivi `pollJobs` toutes les 2 s tant
+  qu'une tâche tourne (un changement d'état recharge les échanges, `reloadExchanges`, qui garde l'objet de la demande
+  en cours, puis refait le panneau) ; `reusable` comme côté serveur ; liens vers les chapitres sous la synthèse
+  (`bookChips`). « Tout le livre » (un seul envoi, tronqué au-delà de `paper_limit`) a disparu des livres.
+
 - Livres, résumé et relecture par chapitre : `structure.assign_chapters` (HTML d'arXiv et `texstructure`) marque
   `book`, liste `chapters` (chapitres et annexes de premier niveau, d'après le `kind` des entrées du sommaire) et pose
   `chapter` sur chaque énoncé. La demande porte `chapter` (résumé ou relecture seulement, sinon 400) ; `build_prompt`
@@ -414,9 +438,7 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   en chaîne par `usedBy` (`<dependent_statements>`, avec `depends_on`), énoncés seuls, au plus `CHAPTER_STATEMENTS`.
   Consignes `CHAPTER_PROMPTS`, et `CHAPTER_SYNTHESIS` pour une relecture croisée. Côté page (`ai.js`) : menu
   `chapterBar`, fils par chapitre (`chapterOf`, positions par `place`), listes `chapterLinksBox` ; chapitre lu par
-  défaut : `reader.readingChapter`. « Tout le livre » : `ai.coverage` (`/api/papers/{id}/ai/coverage`, assistant
-  choisi) — rien s'il tient dans `paper_limit`, sinon ses premières pages (prorata du texte et du nombre de pages :
-  commentaire d'arXiv, PDF, structure ; repères `[page n]` d'un PDF importé). Onglet Énoncés d'un livre : menu `statements-chapter` à la place du titre du
+  défaut : `reader.readingChapter`. Onglet Énoncés d'un livre : menu `statements-chapter` à la place du titre du
   chapitre (`bookChapters`, commun avec le graphe ; `statementsChapter` suit `chapterOfReading` en défilant et dans
   le PDF, `followStatementsChapter` ; un choix dans le menu, `statementsChosen`, tient tant que le chapitre lu reste
   `chosenWhileReading` ; « Tout le livre » choisi tient toujours) ; pendant une recherche, plus de menu : tout le livre, rangé par chapitre.

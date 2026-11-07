@@ -439,7 +439,8 @@ def clean_cache(days=30):
 
 
 def remove_paper(paper_id):
-    from . import ai, annotations, folders
+    from . import ai, annotations, bookjob, folders
+    bookjob.forget(paper_id)  # livre : relecture ou résumé des chapitres en cours arrêtés
     shutil.rmtree(paper_dir(paper_id), ignore_errors=True)
     db.delete_paper(paper_id)
     folders.forget_paper(paper_id)

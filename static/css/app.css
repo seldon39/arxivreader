@@ -1018,6 +1018,32 @@ mark.hl.hl-display > mjx-container[display="true"] { margin: .2em 0 !important; 
 .ai-uses-title { margin-top: 12px; font-size: 13px; color: var(--muted); }
 .ai-uses { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 6px; }
 .ai-uses a.ai-ref { font-size: 13px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); text-decoration: none; }
+/* Livre, tous les chapitres en parallèle : chapitre par chapitre, ce qui est fait, en cours, à faire ; puis la synthèse */
+.ai-book .ai-book-list { list-style: none; margin: 12px 0 0; padding: 0; text-align: left; }
+.ai-book-list li { display: flex; gap: 8px; align-items: baseline; padding: 6px 2px; border-top: 1px solid var(--border); }
+.ai-book-list li:first-child { border-top: 0; }
+.ai-book-mark { flex: none; width: 1.2em; text-align: center; }
+.ai-book-name { flex: 1; min-width: 0; text-align: left; color: var(--text); }
+button.ai-book-name { border: 0; padding: 0; background: none; font: inherit; cursor: pointer; }
+button.ai-book-name:not(:disabled):hover { color: var(--accent); text-decoration: underline; }
+button.ai-book-name:disabled { cursor: default; color: inherit; }
+.ai-book-note { flex: none; color: var(--muted); font-size: 12.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ai-book-list .done .ai-book-mark { color: var(--state-verified); }
+.ai-book-list .run .ai-book-mark { color: var(--accent); }
+.ai-book-list .wait { color: var(--muted); }
+.ai-book-list .wait .ai-book-name { color: var(--muted); }
+.ai-book-list .synthesis .ai-book-name { font-weight: 600; }
+.ai-book .ai-book-hint { margin-top: 12px; }
+.ai-book-bar { height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; margin: 10px 0 4px; }
+.ai-book-bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.4s; }
+.ai-book-status { margin: 0; }
+.ai-book-text { margin-top: 14px; text-align: left; color: var(--text); }
+.ai-book-text:empty { display: none; }
+.ai-book-chips { justify-content: flex-start; align-items: center; margin: 12px 0 4px; }
+.ai-book-chips button.ai-ref { font: 13px var(--font-ui); padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--accent); cursor: pointer; }
+.ai-book-fresh { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+.ai-book-busy { margin: 4px 0; text-align: center; }
+.ai-book-error { margin: 12px 6px 0; }
 .ai-launch-row .ai-launch { flex: 1; width: auto; }
 .ai-launch-row .button:not(.ai-launch) { height: 38px; }
 /* Relecture croisée : sorte de relecture, les deux relecteurs, étiquettes des points et étapes repliées */

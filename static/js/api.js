@@ -121,7 +121,10 @@ export const api = {
   aiSetup: (provider, step) => request("POST", "/api/ai/setup", { provider, step }),
   aiLogout: (provider) => request("POST", "/api/ai/logout", { provider }),
   aiExchanges: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/ai`),
-  aiCoverage: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/ai/coverage`),
+  // livre : relecture ou résumé de tous les chapitres en parallèle, puis synthèse (tâche de fond du serveur)
+  aiBook: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/ai/book`),
+  startAIBook: (id, body) => request("POST", `/api/papers/${encodeURIComponent(id)}/ai/book`, body),
+  stopAIBook: (id, task) => request("POST", `/api/papers/${encodeURIComponent(id)}/ai/book/stop`, { task }),
   exportAI: (exchangeId) => request("GET", `/api/ai/${exchangeId}/export`),
   paperText: (paperId) => request("GET", `/api/papers/${encodeURIComponent(paperId)}/text`),
   setAIApplied: (exchangeId, applied) => request("PUT", `/api/ai/${exchangeId}/applied`, { applied }),

@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Red
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import (ai, alerts, annotations, notesync, citations, crossrefs, db, export, feed, folders, journals, latexml, library, localpdf, onboarding, profile, providers, related, texfile,
+from . import (ai, alerts, annotations, bookjob, notesync, citations, crossrefs, db, export, feed, folders, journals, latexml, library, localpdf, onboarding, profile, providers, related, texfile,
                relevance, search, updates, zotero)
 from .arxiv import ArxivError, fetch_metadata, parse_arxiv_id
 from .config import HOST, PORT, STATIC, TOKEN, TOKEN_FILE
@@ -77,6 +77,7 @@ async def lifespan(_app):
     if os.environ.get("ARXIVREADER_WATCH_PARENT"):
         threading.Thread(target=_watch_parent, args=(os.getppid(),), daemon=True).start()
     yield
+    await bookjob.stop_all()  # livre : relectures, résumés des chapitres en cours arrêtés (chapitres finis gardés)
     if syncing:
         zotero.stop.set()  # la synchronisation en cours s'arrête à l'étape suivante
         try:
@@ -267,6 +268,16 @@ class AIRequest(BaseModel):
     pages: list[dict] = []  # PDF sans texte : [{"page", "image" (JPEG en base64)}] autour de la question
     second: str | None = None  # relecture croisée : l'autre assistant (claude, codex, gemini, local)
     chapter: str | None = None  # livre : résumé ou relecture d'un seul chapitre
+
+
+class BookRequest(BaseModel):
+    task: str  # summary, review
+    second: str | None = None  # relecture croisée de chaque chapitre, avec cet assistant
+    fresh: bool = False  # refaire aussi les chapitres déjà faits
+
+
+class BookStopRequest(BaseModel):
+    task: str
 
 
 class FindArxivRequest(BaseModel):
@@ -710,12 +721,40 @@ def list_ai(paper_id: str):
     return ai.list_for(paper_id)
 
 
-@app.get("/api/papers/{paper_id}/ai/coverage")
-async def ai_coverage(paper_id: str):
-    """Livre : part du document que l'assistant choisi reçoit pour un résumé ou une relecture de tout le livre."""
+@app.get("/api/papers/{paper_id}/ai/book")
+def book_jobs(paper_id: str):
+    """Livre : état de la relecture et du résumé de tous les chapitres (en cours, ou fini depuis peu ; sinon null)."""
+    checked_paper(paper_id)
+    return {task: bookjob.state(paper_id, task) for task in ("summary", "review")}
+
+
+@app.post("/api/papers/{paper_id}/ai/book")
+async def start_book_job(paper_id: str, body: BookRequest):
+    """Livre : relecture ou résumé de tous les chapitres en parallèle, puis synthèse ; tâche de fond (bookjob)."""
     paper = checked_paper(paper_id)
-    structure = library.load_structure(paper_id) or {}
-    return await run_in_threadpool(ai.coverage, paper, structure, ai.current_model(db.get_settings()))
+    structure = await run_in_threadpool(library.load_structure, paper_id) or {}
+    settings = db.get_settings()
+    model = ai.current_model(settings)
+    if body.task not in ("summary", "review"):
+        return JSONResponse({"error": "Unknown task"}, status_code=400)
+    if len(structure.get("chapters", [])) < 2:
+        return JSONResponse({"error": "Not a book"}, status_code=400)
+    second = None
+    if body.second is not None:
+        if body.task != "review" or body.second not in providers.PROVIDERS or body.second == providers.provider_of(model):
+            return JSONResponse({"error": "Bad cross-review"}, status_code=400)
+        second = ai.model_of(body.second, settings)
+    try:
+        job = bookjob.start(paper, structure, body.task, model, second, settings.get("language", "fr"), body.fresh)
+    except ai.AIError as error:
+        return JSONResponse({"error": str(error)}, status_code=409)
+    return job.state()
+
+
+@app.post("/api/papers/{paper_id}/ai/book/stop")
+async def stop_book_job(paper_id: str, body: BookStopRequest):
+    checked_paper(paper_id)
+    return await bookjob.stop(paper_id, body.task)
 
 
 @app.post("/api/papers/{paper_id}/ai")
@@ -786,7 +825,7 @@ async def ask_ai(paper_id: str, body: AIRequest):
             status = "error"
             yield json.dumps({"error": str(error), "code": error.code}) + "\n"
         finally:
-            final = ai.finish(exchange["id"], "".join(answer), status, steps)
+            final = ai.finish(exchange["id"], "".join(answer), status, steps, card=bool(chapter) and body.task == "review")
         yield json.dumps({"done": True, "exchange": final}) + "\n"
 
     return StreamingResponse(lines(), media_type="application/x-ndjson", headers={"Cache-Control": "no-store"})
