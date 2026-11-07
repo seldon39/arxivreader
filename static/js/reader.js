@@ -1411,6 +1411,16 @@ class Reader {
     box.addEventListener("mouseenter", () => clearTimeout(this.hideTimer));
     box.addEventListener("click", this.interceptLinks);
     box.addEventListener("mouseleave", () => this.scheduleHide());
+    // défilement le curseur sur l'aperçu : son contenu s'il dépasse, jamais l'article. Sinon (bulle fixe qui ne défile
+    // pas, ou bout du contenu atteint), le geste passait au document : l'article défilait, l'aperçu se fermait et
+    // l'élan du geste continuait sur l'article, d'un coup. Pincer (Ctrl, ⌘) : laissé au navigateur.
+    box.addEventListener("wheel", (event) => {
+      if (event.ctrlKey || event.metaKey) return;
+      for (let element = event.target; element && box.contains(element); element = element.parentElement) {
+        if (canScroll(element, event.deltaX, event.deltaY)) return;
+      }
+      event.preventDefault();
+    }, { passive: false });
     document.body.append(box);
     typesetFragment(box);
     // contenu chargé ensuite (énoncé d'un autre article) : mis en forme et la bulle recalée
@@ -2197,3 +2207,12 @@ class Reader {
   }
 }
 
+// l'élément peut-il encore défiler dans le sens du geste ?
+function canScroll(element, dx, dy) {
+  if (!(element instanceof HTMLElement)) return false;
+  const style = getComputedStyle(element);
+  if (dy && /auto|scroll/.test(style.overflowY) && element.scrollHeight > element.clientHeight + 1
+    && (dy < 0 ? element.scrollTop > 0 : element.scrollTop + element.clientHeight < element.scrollHeight - 1)) return true;
+  return Boolean(dx && /auto|scroll/.test(style.overflowX) && element.scrollWidth > element.clientWidth + 1
+    && (dx < 0 ? element.scrollLeft > 0 : element.scrollLeft + element.clientWidth < element.scrollWidth - 1));
+}

@@ -459,7 +459,7 @@ a.button.primary { text-decoration: none; }
 
 /* ---------- Aperçus au survol ---------- */
 .preview {
-  position: fixed; z-index: 50; max-width: min(560px, calc(100vw - 24px)); max-height: 46vh; overflow: auto;
+  position: fixed; z-index: 50; max-width: min(560px, calc(100vw - 24px)); max-height: 46vh; overflow: auto; overscroll-behavior: contain;
   background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: var(--shadow);
   padding: 14px 20px; font-family: var(--paper-font); font-size: calc(var(--font-size) * .9); line-height: 1.5; text-align: justify; hyphens: auto;
 }
