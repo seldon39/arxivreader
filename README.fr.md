@@ -4,8 +4,9 @@
 
 Lecteur d'articles arXiv pensé pour les mathématiques : mise en page « papier AMS », énoncés et preuves navigables,
 graphe des dépendances, notes et surlignages, feed des nouveautés trié selon votre profil, graphes de papiers liés, et
-un assistant IA (Claude, Codex, Gemini ou un modèle local) qui ne voit que le texte de l'article. Interface en
-français et en anglais.
+un assistant IA facultatif (Claude, Codex, Gemini ou un modèle local) qui ne voit que le texte de l'article : questions,
+résumés et relectures critiques, éventuellement croisées entre deux assistants, chapitre par chapitre pour un livre.
+Interface en français et en anglais.
 
 Il fonctionne sous **macOS** et **Windows** (applications à télécharger) et sous **Linux** (depuis le code source).
 Tout reste sur votre ordinateur : le serveur n'écoute que sur 127.0.0.1.

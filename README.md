@@ -4,8 +4,9 @@
 
 A reader for arXiv papers built for mathematics: AMS-style "paper" layout, navigable statements and proofs,
 dependency graph, notes and highlights, a feed of new papers sorted by your profile, related-papers graphs, and an
-AI assistant (Claude, Codex, Gemini or a local model) that only sees the text of the paper. French and English
-interface.
+optional AI assistant (Claude, Codex, Gemini or a local model) that only sees the text of the paper: questions,
+summaries and critical reviews, optionally cross-checked by two assistants, chapter by chapter for books. French and
+English interface.
 
 It runs on **macOS** and **Windows** (apps to download) and on **Linux** (from the source code). Everything stays
 on your computer: the server only listens on 127.0.0.1.
