@@ -273,7 +273,8 @@ Papers already imported are re-analysed automatically when this analysis changes
 
 When a bibliography entry is a paper read here (same arXiv identifier, same DOI, or title found in the
 entry), hovering "[12, Theorem 4.3]" shows Theorem 4.3 of that paper, with a button to open it at that
-place; in the bibliography, an "Open the paper" pill.
+place; in the bibliography, an "Open the paper" pill. Both open the paper in a new tab, the paper being read
+stays in its own (⌘-click: in the background).
 arXiv identifiers in the bibliography ("arXiv:2101.00001") open the cited paper in a new tab (⌘-click: in
 the background), whether it is in the library or not; the paper you were reading stays in its own tab.
 
@@ -442,7 +443,7 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   same choice again (single or cross-review, reviewers), with *Cancel* to go back to the questions.
   The ↗ button at the top (*Send to Claude*, or to ChatGPT, to Gemini) opens a new conversation in the
   assistant's app or website, with the paper's reference, and copies its full text to the clipboard.
-- Answers stream live, formulas are rendered, references ("Lemma 2.3", "(2.11)") are clickable;
+- Answers stream live, formulas are rendered, references ("Lemma 2.3", "Theorems 1.2, 1.3", "(2.11)") are clickable;
   *Add to my notes* copies them into the note of the statement or proof (otherwise into the reading sheet).
   Assistant (among those connected), model (Opus, Fable, Sonnet, Haiku… depending on your subscription) and
   reasoning level chosen under the field of each AI sub-tab, one choice shared with the settings; likewise for Codex
@@ -464,7 +465,8 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
 ### Other assistants (Settings → AI assistant)
 
 - **Accounts**: once an assistant is ready, the settings show the account in use (Claude: address and plan) with
-  *Change account…* (Claude, Codex: logs out, then back in with the other account, in Terminal) and *Log out*;
+  *Change account…* (Claude, Codex: logs out, then back in with the other account, in Terminal; for Claude, the sign-in
+goes through a private window, or the link is copied to paste into one, so that the browser's session is not reused) and *Log out*;
   for Gemini, *Remove key*, or paste the key of another Google account. The Claude connection is shared with
   Claude Code on the same computer. A local model has no account.
 
@@ -562,5 +564,5 @@ HTML, a daily feed sorted by your profile, an AI assistant with no tools or netw
 
 ## License
 
-MIT, © 2026 Razvan Apredoaei (seldon39). The license text ships with the Mac and Windows apps;
+MIT, © 2026 [seldon39](https://github.com/seldon39). The license text ships with the Mac and Windows apps;
 Settings → About recalls it.

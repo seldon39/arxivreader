@@ -15,6 +15,7 @@ import contextlib
 import glob
 import json
 import os
+import plistlib
 import re
 import shlex
 import shutil
@@ -188,14 +189,63 @@ SETUP = {
 WINDOWS_SETUP = {("local", "missing"): "set OLLAMA_CONTEXT_LENGTH=32768 && ollama serve"}  # syntaxe de cmd.exe
 
 
+# Changer de compte Claude : un navigateur déjà connecté à claude.ai reprendrait ce compte sur la page d'autorisation,
+# donc connexion sans sa session. La commande de connexion ouvre le lien avec $BROWSER s'il est défini (appelé avec le
+# lien pour seul argument, sans shell) ; s'il échoue, elle affiche le lien et demande le code obtenu
+PRIVATE_WINDOW = {  # navigateur par défaut (macOS) : application et option de fenêtre privée. Safari n'en a pas
+    "com.google.chrome": ("Google Chrome", "--incognito"),
+    "com.microsoft.edgemac": ("Microsoft Edge", "--inprivate"),
+    "com.brave.browser": ("Brave Browser", "--incognito"),
+    "org.mozilla.firefox": ("Firefox", "--private-window"),
+}
+NO_BROWSER = "arxivreader-no-browser"  # Windows : programme inexistant, le lien est seulement affiché
+
+
+def _default_browser():
+    """Identifiant du navigateur par défaut de macOS, en minuscules ; "" si aucun n'est choisi (Safari) ou illisible."""
+    path = Path.home() / "Library/Preferences/com.apple.LaunchServices/com.apple.launchservices.secure.plist"
+    try:
+        handlers = plistlib.loads(path.read_bytes()).get("LSHandlers", [])
+        return next((h.get("LSHandlerRoleAll", "") for h in handlers if h.get("LSHandlerURLScheme") == "https"), "").lower()
+    except Exception:  # noqa: BLE001 — fichier absent ou abîmé : comme Safari, le lien est copié
+        return ""
+
+
+def _private_browser():
+    """macOS : petit script à mettre dans $BROWSER (fenêtre privée, sinon lien copié) et consignes à afficher avant."""
+    folder = LIBRARY / "ai"
+    folder.mkdir(parents=True, exist_ok=True)
+    script = folder / "setup-browser.sh"
+    copy = 'printf %s "$1" | /usr/bin/pbcopy\n'
+    app = PRIVATE_WINDOW.get(_default_browser())
+    if app:
+        body = f'/usr/bin/open -na {shlex.quote(app[0])} --args {app[1]} "$1" || {copy}'
+        lines = ("Une fenêtre privée de votre navigateur va s'ouvrir : connectez-vous avec l'autre compte.",
+                 "A private window of your browser will open: sign in with the other account.")
+    else:
+        body = copy
+        lines = ("Le lien de connexion va être copié : ouvrez une fenêtre privée de votre navigateur (Safari : ⇧⌘N), "
+                 "collez le lien (⌘V) et connectez-vous avec l'autre compte.",
+                 "The sign-in link will be copied: open a private window of your browser (Safari: ⇧⌘N), paste the link (⌘V) "
+                 "and sign in with the other account.")
+    _write(script, "#!/bin/bash\n" + body)
+    script.chmod(0o700)
+    return script, lines
+
+
 def _open_setup_windows(provider, step, claude_cli):
     """Comme open_setup, dans une invite de commandes (cmd.exe) qui reste ouverte à la fin."""
     if provider == "claude" and step in ("login", "missing", "switch"):
         if not claude_cli:
             raise OSError("claude-agent-sdk is missing")
         command = f'"{claude_cli}" auth login --claudeai && "{claude_cli}" auth status --text'
-        if step == "switch":  # changer de compte : déconnexion d'abord
-            command = f'"{claude_cli}" auth logout && {command}'
+        if step == "switch":  # changer de compte : déconnexion d'abord, puis connexion hors de la session du navigateur
+            command = (f'"{claude_cli}" auth logout && '
+                       "echo Copiez le lien affiché ci-dessous dans une fenêtre privée de votre navigateur (Ctrl+Maj+N ; Firefox : "
+                       "Ctrl+Maj+P), connectez-vous avec l'autre compte et collez ici le code si on vous le demande. && "
+                       "echo Copy the link shown below into a private window of your browser (Ctrl+Shift+N; Firefox: Ctrl+Shift+P), "
+                       "sign in with the other account and paste the code here if asked. && "
+                       f'set "BROWSER={NO_BROWSER}" && {command}')
     elif (provider, step) in SETUP:
         command = WINDOWS_SETUP.get((provider, step), SETUP[provider, step])
         # npm, codex… sont des scripts .cmd : appelés sans « call », ils termineraient le script avant la suite
@@ -227,8 +277,10 @@ def open_setup(provider, step, claude_cli=None):
             raise OSError("claude-agent-sdk is missing")
         claude = f"env -u ANTHROPIC_API_KEY {shlex.quote(claude_cli)}"
         command = f"{claude} auth login --claudeai && {claude} auth status --text"
-        if step == "switch":  # changer de compte : déconnexion d'abord
-            command = f"{claude} auth logout && {command}"
+        if step == "switch":  # changer de compte : déconnexion d'abord, puis connexion hors de la session du navigateur
+            browser, lines = _private_browser()
+            notice = " && ".join(f"echo {shlex.quote(line)}" for line in lines)
+            command = f"{claude} auth logout && {notice} && BROWSER={shlex.quote(str(browser))} {command}"
     elif (provider, step) in SETUP:
         command = SETUP[provider, step]
     else:

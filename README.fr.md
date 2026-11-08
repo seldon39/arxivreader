@@ -285,7 +285,8 @@ Les articles déjà importés sont ré-analysés automatiquement quand cette ana
 
 Quand une référence de la bibliographie est un article lu ici (même identifiant arXiv, même DOI, ou titre
 retrouvé dans la référence), « [12, Theorem 4.3] » affiche au survol le Theorem 4.3 de cet article, avec un
-bouton pour l'ouvrir à cet endroit ; dans la bibliographie, une pastille « Ouvrir l'article ».
+bouton pour l'ouvrir à cet endroit ; dans la bibliographie, une pastille « Ouvrir l'article ». Les deux l'ouvrent
+dans un nouvel onglet, l'article lu reste dans le sien (⌘-clic : en arrière-plan).
 Les identifiants arXiv de la bibliographie (« arXiv:2101.00001 ») ouvrent l'article cité dans un nouvel onglet
 (⌘-clic : en arrière-plan), qu'il soit dans la bibliothèque ou non ; l'article lu reste dans le sien.
 
@@ -462,7 +463,7 @@ il suffit de la fermer et d'aller dans le feed.
   *Retiré*. Les étapes précédentes restent repliées au-dessus. 4 demandes ; l'article part chez les deux
   assistants, sans son texte invisible. Une relecture faite, *Refaire* rouvre ce même choix (simple ou croisée,
   relecteurs), avec *Annuler* pour revenir aux questions.
-- Réponses en direct, formules rendues, renvois (« Lemma 2.3 », « (2.11) ») cliquables ; *Ajouter à mes
+- Réponses en direct, formules rendues, renvois (« Lemma 2.3 », « Theorems 1.2, 1.3 », « (2.11) ») cliquables ; *Ajouter à mes
   notes* les copie dans la note de l'énoncé ou de la preuve (sinon dans la fiche de lecture). Assistant (parmi
   ceux connectés), modèle (Opus, Fable, Sonnet, Haiku… selon votre abonnement) et niveau de réflexion au choix sous
   le champ de chaque sous-onglet de l'IA, un même choix partagé avec les réglages ; de même pour Codex et Gemini,
@@ -485,7 +486,8 @@ il suffit de la fermer et d'aller dans le feed.
 ### Autres assistants (Réglages → Assistant IA)
 
 - **Comptes** : un assistant prêt, les réglages montrent le compte utilisé (Claude : adresse et abonnement), avec
-  *Changer de compte…* (Claude, Codex : déconnexion puis reconnexion avec l'autre compte, dans le Terminal) et
+  *Changer de compte…* (Claude, Codex : déconnexion puis reconnexion avec l'autre compte, dans le Terminal ; pour Claude,
+la connexion passe par une fenêtre privée, ou le lien est copié pour y être collé, afin de ne pas reprendre la session du navigateur) et
   *Se déconnecter* ; pour Gemini, *Retirer la clé*, ou coller celle d'un autre compte Google. La connexion Claude est
   partagée avec Claude Code sur le même ordinateur. Un modèle local n'a pas de compte.
 
@@ -586,5 +588,5 @@ application Mac installable.
 
 ## Licence
 
-MIT, © 2026 Razvan Apredoaei (seldon39). Le texte de la licence est joint aux applications Mac et Windows ;
+MIT, © 2026 [seldon39](https://github.com/seldon39). Le texte de la licence est joint aux applications Mac et Windows ;
 Réglages → À propos le rappelle.

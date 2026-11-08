@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import pathlib
+import plistlib
 import stat
 import subprocess
 import sys
@@ -176,15 +177,40 @@ class Setup(unittest.TestCase):
             providers.open_setup("claude", "login", "/path with space/claude")
             self.assertIn("'/path with space/claude' auth login --claudeai", (providers.LIBRARY / "ai" / "setup-claude.command").read_text())
             # changer de compte : déconnexion, puis connexion
-            providers.open_setup("claude", "switch", "/bin/claude")
+            # (connexion dans une fenêtre privée : le compte du navigateur serait repris) ; la simple connexion n'y touche pas
+            self.assertNotIn("BROWSER", (providers.LIBRARY / "ai" / "setup-claude.command").read_text())
+            helper = providers.LIBRARY / "ai" / "setup-browser.sh"
+            with unittest.mock.patch.object(providers, "_default_browser", return_value="com.google.chrome"):
+                providers.open_setup("claude", "switch", "/bin/claude")
             text = (providers.LIBRARY / "ai" / "setup-claude.command").read_text()
-            self.assertIn("/bin/claude auth logout && env -u ANTHROPIC_API_KEY /bin/claude auth login --claudeai", text)
+            self.assertIn("/bin/claude auth logout && echo", text)
+            self.assertRegex(text, r"&& BROWSER=\S*setup-browser\.sh env -u ANTHROPIC_API_KEY /bin/claude auth login --claudeai")
+            self.assertIn("A private window", text)
+            self.assertIn("/usr/bin/open -na 'Google Chrome' --args --incognito \"$1\"", helper.read_text())
+            self.assertTrue(os.access(helper, os.X_OK))
+            with unittest.mock.patch.object(providers, "_default_browser", return_value=""):  # Safari : pas d'option
+                providers.open_setup("claude", "switch", "/bin/claude")
+            self.assertIn("will be copied", (providers.LIBRARY / "ai" / "setup-claude.command").read_text())
+            self.assertIn("pbcopy", helper.read_text())
+            self.assertNotIn("open", helper.read_text())
             providers.open_setup("codex", "switch")
             self.assertIn("codex logout && codex login", (providers.LIBRARY / "ai" / "setup-codex.command").read_text())
             with self.assertRaises(ValueError):  # commandes fixées d'avance, rien d'autre
                 providers.open_setup("codex", "rm -rf ~")
         finally:
             providers.LIBRARY, providers.subprocess.run = saved
+
+    def test_default_browser(self):
+        home = pathlib.Path(tempfile.mkdtemp())
+        with unittest.mock.patch.object(providers.Path, "home", return_value=home):
+            self.assertEqual(providers._default_browser(), "")  # pas de fichier : Safari
+            path = home / "Library/Preferences/com.apple.LaunchServices/com.apple.launchservices.secure.plist"
+            path.parent.mkdir(parents=True)
+            path.write_bytes(b"pas un plist")
+            self.assertEqual(providers._default_browser(), "")
+            path.write_bytes(plistlib.dumps({"LSHandlers": [{"LSHandlerURLScheme": "mailto", "LSHandlerRoleAll": "x"},
+                                                            {"LSHandlerURLScheme": "https", "LSHandlerRoleAll": "com.Google.Chrome"}]}))
+            self.assertEqual(providers._default_browser(), "com.google.chrome")
 
     def test_logout(self):
         calls = []
@@ -228,7 +254,9 @@ class Setup(unittest.TestCase):
             providers.open_setup("codex", "switch")
             self.assertIn("call codex logout && call codex login", (library / "ai" / "setup-codex.cmd").read_text(encoding="utf-8"))
             providers.open_setup("claude", "switch", r"C:\claude.exe")
-            self.assertIn('"C:\\claude.exe" auth logout && "C:\\claude.exe" auth login --claudeai', (library / "ai" / "setup-claude.cmd").read_text(encoding="utf-8"))
+            text = (library / "ai" / "setup-claude.cmd").read_text(encoding="utf-8")
+            self.assertIn('"C:\\claude.exe" auth logout && echo', text)
+            self.assertIn(f'set "BROWSER={providers.NO_BROWSER}" && "C:\\claude.exe" auth login --claudeai', text)
             with self.assertRaises(ValueError):
                 providers.open_setup("codex", "rm -rf ~")
 

@@ -389,7 +389,8 @@ class Reader {
     for (const [bibId, entry] of Object.entries(this.crosslinks)) {
       const item = this.find(bibId);
       if (!item || item.querySelector(".cross-badge")) continue;
-      item.append(h("a", { class: "cross-badge", href: `#/paper/${encodeURIComponent(entry.paper)}`, title: entry.title }, t("reader.crossOpen")));
+      item.append(h("a", { class: "cross-badge cross-open", href: `#/paper/${encodeURIComponent(entry.paper)}`,
+        title: `${entry.title}\n${t("reader.crossOpenTab")}` }, t("reader.crossOpen")));
     }
   }
 
@@ -1257,8 +1258,8 @@ class Reader {
     const entry = this.crosslinks[bibitem.id];
     const nodeId = link.dataset.crossNode;
     const node = nodeId && entry.nodes.find((n) => n.id === nodeId);
-    const open = h("a", { class: "button small-button", href: `#/paper/${encodeURIComponent(entry.paper)}${node ? `/${encodeURIComponent(node.id)}` : ""}` },
-      node ? t("reader.crossOpenStatement", { label: node.label }) : t("reader.crossOpen"));
+    const open = h("a", { class: "button small-button cross-open", href: `#/paper/${encodeURIComponent(entry.paper)}${node ? `/${encodeURIComponent(node.id)}` : ""}`,
+      title: t("reader.crossOpenTab") }, node ? t("reader.crossOpenStatement", { label: node.label }) : t("reader.crossOpen"));
     const head = h("div", { class: "cross-head muted small" }, t("reader.crossIn", { title: entry.title }));
     if (!node) return { body: h("div", {}, head, this.clean(bibitem)), extra: open };
     const holder = h("div", { class: "cross-statement" }, h("div", { class: "busy small" }, h("span", { class: "spinner" })));
@@ -1365,6 +1366,16 @@ class Reader {
     return notice;
   }
 
+  // Article de la bibliothèque cité (« Ouvrir l'article », « Ouvrir Theorem 4.3 » : aperçu, bibliographie) : dans un
+  // nouvel onglet, l'article lu reste dans le sien ; au premier plan, ⌘-clic en arrière-plan (⇧ : au premier plan quand
+  // même). Clic du milieu : le gestionnaire commun de l'application (app.js). Appelé par interceptLinks : la pastille
+  // est aussi recopiée dans les aperçus de la bibliographie (clean), sans les écouteurs de l'original
+  openCross(link, event) {
+    event.preventDefault();
+    this.hidePreview();
+    openRoute(link.getAttribute("href"), true, !wantsNewTab(event) || event.shiftKey);
+  }
+
   // Article cité ouvert dans l'application, dans un nouvel onglet (l'article lu reste à sa place dans le sien) :
   // au premier plan ; ⌘-clic, en arrière-plan (⇧ : au premier plan quand même)
   async readArxiv(link, event) {
@@ -1389,6 +1400,11 @@ class Reader {
       event.preventDefault();
       this.hidePreview();
       this.readArxiv(arxiv, event);
+      return;
+    }
+    const cross = event.target.closest("a.cross-open");
+    if (cross && !event.defaultPrevented) {
+      this.openCross(cross, event);
       return;
     }
     const link = event.target.closest('a[href^="#"]');

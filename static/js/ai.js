@@ -22,13 +22,38 @@ const SHARE = {
 
 // Mots qui précèdent un numéro d'énoncé dans les réponses (anglais et français)
 const KIND_WORDS = {
-  theorem: "theorems?|théorèmes?|thm\\.?", lemma: "lemmas?|lemmes?|lemmata", proposition: "propositions?|prop\\.",
-  corollary: "corollar(?:y|ies)|corollaires?|cor\\.", definition: "definitions?|définitions?", remark: "remarks?|remarques?",
+  theorem: "theorems?|théorèmes?|thms?\\.?", lemma: "lemmas?|lemmes?|lemmata", proposition: "propositions?|props?\\.",
+  corollary: "corollar(?:y|ies)|corollaires?|cors?\\.", definition: "definitions?|définitions?", remark: "remarks?|remarques?",
   example: "examples?|exemples?", conjecture: "conjectures?", claim: "claims?|assertions?|steps?|étapes?",
   notation: "notations?|assumptions?|hypothès(?:e|es)|conventions?", problem: "problems?|problèmes?|questions?",
 };
 const KIND_OF_WORD = Object.entries(KIND_WORDS).map(([kind, words]) => [new RegExp(`^(?:${words})$`, "i"), kind]);
 const NUMBER = "\\d+(?:\\.\\d+)*[a-z]?";
+const NUMBER_END = "(?![\\p{L}\\p{N}]|\\.\\d)";  // « 2.3 » ne se relit pas « 2 » suivi de « .3 »
+const GAP = "(?:\\s|&nbsp;)";
+// Énumération après un mot au pluriel : « 3.6, 1.2, 1.3 », « 3.5–3.8 », « 2.1 to 2.4 ». Un « and » la ferme : dans
+// « Theorems 1 and 2, 3 divides n », le 3 n'en est plus.
+const LIST_OPEN = new RegExp(`${GAP}*,${GAP}*|-{1,2}|[–—]|${GAP}+(?:–|to|à)${GAP}+`, "iuy");
+const LIST_CLOSE = new RegExp(`(?:${GAP}*,)?${GAP}+(?:and|or|et|ou)${GAP}+|(?:${GAP}*,)?${GAP}*&amp;${GAP}*`, "iuy");
+const LIST_ITEM_END = `${NUMBER_END}(?!-\\p{L})`;  // « 3-manifolds » n'est pas un numéro
+// énoncé ou section d'un AUTRE article (« Theorem 3.1 of [12] ») : à tester après la liste entière
+const ELSEWHERE = /[^\S\n]*,?[^\S\n]+(?:of|in|from|de|du|dans|chez)[^\S\n]+(?:\[|the cited|l['’]article cité)/uy;
+const matchAt = (re, text, at) => { re.lastIndex = at; return re.exec(text); };
+// numéros qui suivent le premier, chacun avec sa position ; la liste s'arrête au premier qui ne va pas avec lui
+function listAfter(text, from, first, item, sameList) {
+  const items = [];
+  for (let at = from, closed = false; !closed;) {
+    const close = matchAt(LIST_CLOSE, text, at);
+    const joint = close || matchAt(LIST_OPEN, text, at);
+    const found = joint && matchAt(item, text, at + joint[0].length);
+    if (!found || !sameList(first, found[0])) break;
+    at += joint[0].length + found[0].length;
+    items.push({ number: found[0], start: at - found[0].length, end: at });
+    closed = Boolean(close);
+  }
+  return items;
+}
+const isPlural = (word) => /(?:s|§§|lemmata)\.?$/i.test(word);  // une énumération suit un mot au pluriel
 
 
 // Requête en cours : ce que fait l'assistant et depuis combien de temps (une réponse peut prendre
@@ -248,18 +273,44 @@ export class Assistant {
     const authorYearRe = authorYear.length ? new RegExp(authorYear.map(([who, year]) =>
       `(?<![\\p{L}\\p{N}])(${escapeRegExp(who)})(\\s*\\(\\s*${year}\\s*\\)|,?\\s+${year})(?![\\p{L}\\p{N}])`).join("|"), "gu") : null;
     const words = Object.values(KIND_WORDS).join("|");
-    // énoncé ou section d'un AUTRE article (« Theorem 3.1 of [12] », « [12, Theorem 3.1] ») : pas relié à celui-ci
-    const elsewhere = "(?![^\\S\\n]*,?[^\\S\\n]+(?:of|in|from|de|du|dans|chez)[^\\S\\n]+(?:\\[|the cited|l['’]article cité))";
     const notCited = "(?<!\\[[^\\[\\]\\n]{0,80})";
     // pas de \b : il ne connaît que les lettres ASCII (« étape 3 » ne serait jamais repéré)
-    const statement = new RegExp(`${notCited}(?<![\\p{L}\\p{N}])(${words})(\\s|&nbsp;| )+(${NUMBER})(?![\\p{L}\\p{N}])${elsewhere}`, "giu");
+    const statement = new RegExp(`${notCited}(?<![\\p{L}\\p{N}])(${words})${GAP}+(${NUMBER})${NUMBER_END}`, "giu");
+    const statementItem = new RegExp(`${NUMBER}${LIST_ITEM_END}`, "iuy");
     // mot-clé sans casse, numéro avec (« la section a été… » n'est pas l'annexe A) ; espace obligatoire sauf après §
     const anyCase = (word) => word.replace(/\p{L}/gu, (c) => `[${c.toLowerCase()}${c.toUpperCase()}]`);
-    const sectionWords = ["sections?", "sect\\.", "sec\\.", "appendix", "appendices", "annexes?", "chapters?", "chapitres?"].map(anyCase).join("|");
-    const section = new RegExp(`${notCited}(?<![\\p{L}\\p{N}])(?:(?:${sectionWords})(?:\\s|&nbsp;| )+|§(?:\\s|&nbsp;| )*)((?:[A-Z]|\\d+)(?:\\.\\d+)*)(?![\\p{L}\\p{N}]|\\.\\d)${elsewhere}`, "gu");
+    const sectionWords = ["sections?", "sects?\\.", "secs?\\.", "appendix", "appendices", "annexes?", "chapters?", "chapitres?"].map(anyCase).join("|");
+    const sectionNumber = "(?:[A-Z]|\\d+)(?:\\.\\d+)*";
+    const section = new RegExp(`${notCited}(?<![\\p{L}\\p{N}])(?:(${sectionWords})${GAP}+|(§§?)${GAP}*)(${sectionNumber})${NUMBER_END}`, "gu");
+    const sectionItem = new RegExp(`${sectionNumber}${LIST_ITEM_END}`, "uy");
+    const sameDepth = (a, b) => a.split(".").length === b.split(".").length;  // « Theorems 1.2, 7 cases » : le 7 n'en est pas
+    // chiffres avec chiffres ; lettres dans l'ordre (« Appendices B, A proof… » : ce A est un mot)
+    const sameSections = (a, b) => sameDepth(a, b) && (/^\d/.test(a) ? /^\d/.test(b) : b > a);
     const equation = new RegExp(`\\((${NUMBER})\\)`, "g");
     const bracket = /\[([^\[\]\n]{1,80})\]/g;
     const link = (id, text) => `<a href="#${encodeURIComponent(id)}" class="ai-ref" data-ref="${id.replace(/"/g, "&quot;")}">${text}</a>`;
+    // « Theorems 3.6, 1.2 » : le mot et le premier numéro forment le premier lien, puis un lien par numéro connu
+    const linkRefs = (text, head, read, item, sameList) => {
+      let html = "", done = 0, match;
+      const piece = (id, label) => (id ? link(id, label) : label);
+      head.lastIndex = 0;
+      while ((match = head.exec(text))) {
+        const { word, number, idOf } = read(match);
+        const headEnd = head.lastIndex;
+        const rest = isPlural(word) ? listAfter(text, headEnd, number, item, sameList) : [];
+        const end = rest.length ? rest[rest.length - 1].end : headEnd;
+        head.lastIndex = end;
+        if (matchAt(ELSEWHERE, text, end)) continue;
+        html += text.slice(done, match.index) + piece(idOf(number), match[0]);
+        let at = headEnd;
+        for (const entry of rest) {
+          html += text.slice(at, entry.start) + piece(idOf(entry.number), entry.number);
+          at = entry.end;
+        }
+        done = end;
+      }
+      return html + text.slice(done);
+    };
     // chaque étape seulement hors des liens déjà posés
     const outside = (html, change) => {
       let depth = 0;
@@ -273,15 +324,11 @@ export class Assistant {
       }).join("");
     };
     const steps = [
-      (text) => text.replace(statement, (match, word, _space, number) => {
+      (text) => linkRefs(text, statement, ([, word, number]) => {
         const kind = KIND_OF_WORD.find(([re]) => re.test(word))?.[1];
-        const id = byKind.get(`${kind}:${number}`) || byNumber.get(number);
-        return id ? link(id, match) : match;
-      }),
-      (text) => text.replace(section, (match, number) => {
-        const id = sections.get(number);
-        return id ? link(id, match) : match;
-      }),
+        return { word, number, idOf: (n) => byKind.get(`${kind}:${n}`) || byNumber.get(n) };
+      }, statementItem, sameDepth),
+      (text) => linkRefs(text, section, ([, word, mark, number]) => ({ word: word || mark, number, idOf: (n) => sections.get(n) }), sectionItem, sameSections),
       (text) => text.replace(equation, (match, number) => {
         const id = equationId(`(${number})`);
         return id ? link(id, match) : match;

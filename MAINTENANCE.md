@@ -11,7 +11,7 @@ Lecteur d'articles arXiv (macOS, Windows ; Linux depuis le code source), pensé 
 127.0.0.1, page en JavaScript sans compilation (`static/`), application Mac en Swift (`macos/main.swift`, une
 fenêtre WebKit par onglet) qui embarque son propre Python. Données de l'utilisateur dans
 `~/Library/Application Support/arXivReader` (base `arxivreader.db`, dossier `papers/`). Dépôt public
-(github.com/seldon39/arxivreader, licence MIT, © 2026 Razvan Apredoaei (seldon39) : même ligne dans `LICENSE`,
+(github.com/seldon39/arxivreader, licence MIT, © 2026 seldon39 : même ligne dans `LICENSE`,
 Réglages → À propos (`settings.js`), `NSHumanReadableCopyright` de `macos/build.sh` et `AppCopyright` de
 `windows/installer.iss` ; `LICENSE` est copié dans l'app Mac par `build.sh` et dans le zip et l'installateur Windows
 par `windows.yml`). Code et commentaires en français ; interface en français et en
@@ -253,6 +253,12 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
 
 ## 9. Pièges connus
 
+- Lien vers un autre article depuis l'article lu (« Ouvrir l'article », « Ouvrir Theorem 4.3 » : aperçu d'un renvoi,
+  pastille de la bibliographie) : un simple `href="#/paper/…"` remplacerait l'article lu dans son onglet. Ces liens
+  portent `.cross-open` et passent par `reader.openCross`, depuis `interceptLinks` et non par un écouteur posé sur le
+  lien, car `clean` recopie la pastille dans les aperçus sans ses écouteurs (nouvel onglet au premier plan, ⌘-clic en
+  arrière-plan, comme `readArxiv` pour les identifiants arXiv) ; clic du milieu : gestionnaire commun d'app.js.
+
 - Sections masquées du lecteur (`lazypaint.js`) : une section loin de l'écran garde la hauteur mesurée avant d'être
   masquée. Tout changement qui modifie la hauteur de sections hors de l'écran (taille du texte, largeur, volets,
   texte caché révélé) passe par `reader.relayout(fn)` (ou `keepReadingPosition`, qui l'appelle) : tout est réaffiché
@@ -312,7 +318,10 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   Essai de l'interface dans une copie de l'app : effacer ses `__pycache__` (Python embarqué : bytecode non revérifié).
   Renvois des réponses : mot-clé de section sans casse mais numéro en majuscule (« la section a été… » n'est pas l'annexe
   A), lettre seule de la table des matières seulement pour une annexe ou « A.1 » ; étiquette entre crochets entière
-  d'abord (« [EGA-IV] »), puis morceaux séparés par « , », « ; » (hors entité) ou « – ».
+  d'abord (« [EGA-IV] »), puis morceaux séparés par « , », « ; » (hors entité) ou « – ». Énumération après un mot au
+  pluriel (« Theorems 3.6, 1.2 », « Lemmas 3.5–3.8 », « §§2–3 ») : un lien par numéro connu (`listAfter`, `linkRefs`).
+  La liste se ferme après « and », garde la profondeur du premier numéro (annexes : lettres dans l'ordre), et le test
+  « of [5] » vient après elle : « Theorems 1 and 2, 3 divides n » ne relie pas le 3, « Theorems 1 and 2 of [5] » rien.
 
 - Fichiers glissés depuis l'ordinateur (barre d'import, liste de la bibliothèque : `library.importDropped`) : chemins
   demandés à la fenêtre (`util.droppedFilePaths`) — Mac : `DropWebView` (main.swift) retient les chemins PDF/TeX du
@@ -400,7 +409,13 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   `app.check` (vérification, à la main ou chaque semaine) l'active lui-même dans `main()`.
 
 - Comptes des assistants (réglages, `accountControls`) : changer de compte = étape « switch » d'`open_setup`
-  (déconnexion puis connexion dans le Terminal ou l'invite de commandes) ; se déconnecter = `/api/ai/logout`
+  (déconnexion puis connexion dans le Terminal ou l'invite de commandes). Claude : un navigateur déjà connecté à
+  claude.ai reprendrait ce compte, donc connexion hors de sa session par `$BROWSER` (la CLI l'appelle sans shell avec le
+  lien ; vérifié sur 2.1.319, à revérifier si le SDK change, sans jamais se déconnecter : HOME et `CLAUDE_CONFIG_DIR`
+  temporaires, pseudo-terminal, tuer avant la fin). Mac (`_private_browser`, `PRIVATE_WINDOW`) : Chrome, Edge, Brave,
+  Firefox en fenêtre privée ; Safari, sans commande pour cela, ou navigateur inconnu : lien copié, consigne affichée.
+  Windows : `BROWSER` inexistant, la CLI affiche le lien, consigne affichée. La connexion simple (« login ») ne change
+  pas. Se déconnecter = `/api/ai/logout`
   (`ai.logout` : `claude auth logout`, `codex logout`). Autre compte Claude : sa liste de modèles est relue
   (`_claude_status` compare l'adresse). Les onglets IA ouverts oublient l'état des assistants (événement
   `arxivreader:ai-accounts`). Ne jamais lancer une déconnexion pendant un essai : la connexion Claude est celle de

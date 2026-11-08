@@ -105,7 +105,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.education</string>
   <key>NSHighResolutionCapable</key><true/>
-  <key>NSHumanReadableCopyright</key><string>© 2026 Razvan Apredoaei (seldon39). Licence MIT.</string>
+  <key>NSHumanReadableCopyright</key><string>© 2026 seldon39. Licence MIT.</string>
 </dict></plist>
 PLIST
 

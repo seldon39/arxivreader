@@ -268,7 +268,8 @@ export function openSettingsDialog({ section = null } = {}) {
     ["about", t("settings.about"), [
       ...check("checkUpdates", t("settings.checkUpdates"), settings.checkUpdates !== false),
       updatesSection(),
-      h("p", {}, h("strong", {}, "arXivReader"), " — © 2026 Razvan Apredoaei (seldon39)"),
+      h("p", {}, h("strong", {}, "arXivReader"), " — © 2026 ", h("a", { href: "https://github.com/seldon39", target: "_blank",
+        rel: "noopener noreferrer" }, "seldon39")),
       h("p", {}, t("about.license"), " ", h("a", { href: "https://github.com/seldon39/arxivreader", target: "_blank",
         rel: "noopener noreferrer" }, "github.com/seldon39/arxivreader")),
       h("p", {}, t("about.vibe")),
