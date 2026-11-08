@@ -421,7 +421,11 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   `arxivreader:ai-accounts`). Ne jamais lancer une déconnexion pendant un essai : la connexion Claude est celle de
   Claude Code sur la machine.
 
-- Choix de l'assistant dans l'onglet IA (`Assistant.modelPicker`) : même réglage `aiProvider` que les réglages ; la
+- Choix de l'assistant dans l'onglet IA (`Assistant.modelPicker`), qui écrit `aiProvider`, le modèle et le
+  niveau. Assistant par défaut (`aiDefault`, vide : le dernier choisi) : remis dans `aiProvider` au lancement du serveur
+  (`select_default_assistant`) et dès qu'on le choisit ; un assistant qui vient de devenir prêt dans les réglages remplace
+  celui utilisé si ce dernier ne l'est pas vraiment (`adoptIfActiveNotReady` ; `inconclusive` : vérification sans réponse claire — réseau, délai, quota, réponse illisible —, jamais de bascule ; seuls un refus explicite ou un serveur local éteint comptent comme « pas prêt »). Les réglages ne servent qu'à configurer chaque assistant (`configuring`, jamais enregistré ; `/api/ai/status?provider=`) ; un
+  compte changé, ou la section quittée (fermeture de la fenêtre), y déclenche `arxivreader:ai-accounts`, qui fait revérifier les assistants. La
   liste vient de l'état de l'assistant choisi et de `/api/ai/partners` (les autres, prêts). Changer d'assistant
   (`switchAssistant`) reprend leurs états déjà connus, posés avant d'enregistrer le réglage : l'enregistrement
   redessine le panneau aussitôt (`reader`, `onSettingsChange`), qui relancerait sinon les vérifications.

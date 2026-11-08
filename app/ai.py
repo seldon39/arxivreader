@@ -1101,7 +1101,7 @@ def current_model(settings):
 
 
 def model_of(provider, settings):
-    """Modèle demandé à un assistant donné, d'après ses réglages (choisi ou non dans les réglages)."""
+    """Modèle demandé à un assistant donné, d'après ses réglages enregistrés (choisi ou non)."""
     if provider in ("codex", "gemini"):
         return provider
     if provider == "local":
@@ -1121,7 +1121,7 @@ def assistant_name(model):
 
 
 def status(settings, provider=None):
-    """État de l'assistant choisi dans les réglages, ou de `provider` : prêt, modèles et niveaux proposés."""
+    """État de l'assistant utilisé (réglage `aiProvider`), ou de `provider` : prêt, modèles et niveaux proposés."""
     model = current_model(settings) if provider is None else model_of(provider, settings)
     provider = providers.provider_of(model)
     info = _claude_status() if provider == "claude" else providers.status(provider, settings)
@@ -1154,7 +1154,8 @@ def _claude_status():
     if email != _claude_models.get("email"):  # autre compte : sa liste de modèles est relue
         _claude_models.update(email=email, at=0.0, models=None, failed=0.0)
     return {"available": True, "loggedIn": bool(info.get("loggedIn")), "authMethod": info.get("authMethod"),
-            "subscription": info.get("subscriptionType"), "email": email}
+            "subscription": info.get("subscriptionType"), "email": email,
+            "inconclusive": "loggedIn" not in info}  # sans réponse claire : on ne sait pas s'il est connecté
 
 
 def logout(provider):

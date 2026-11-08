@@ -1,6 +1,6 @@
 // Réglages de l'interface, enregistrés côté serveur (library/arxivreader.db).
 
-import { PROVIDERS, assistantName, modelControls, setupNotice } from "./aiproviders.js";
+import { PROVIDERS, assistantName, authorName, setupNotice } from "./aiproviders.js";
 import { api } from "./api.js";
 import { applyStatic, setAIName, setLanguage, t } from "./i18n.js";
 import { updatesSection } from "./updates.js";
@@ -24,6 +24,7 @@ const DEFAULTS = {
   marginMarks: true,
   mathRenderer: "mathjax",
   aiProvider: "claude",
+  aiDefault: "",      // assistant sélectionné au lancement de l'application (vide : le dernier choisi)
   aiLocalUrl: "",     // vide : Ollama (http://127.0.0.1:11434/v1)
 };
 const LOCAL_URL = "http://127.0.0.1:11434/v1";
@@ -83,21 +84,77 @@ export async function saveSettings(values) {
   }
 }
 
-// Assistant IA choisi : à quoi il sert, s'il est prêt (sinon la marche à suivre), et pour un modèle
-// local, l'adresse du serveur et le modèle
+// Assistant à configurer : à quoi il sert, s'il est prêt (sinon la marche à suivre), son compte ou sa clé, et pour un
+// modèle local, l'adresse du serveur. Celui qui répond et son modèle se choisissent dans l'onglet IA (modelPicker).
 let aiCheck = 0;
+let configuring = "claude";  // assistant affiché ici (gardé quand la fenêtre est redessinée) : rien n'est enregistré
+let aiSeen = false;          // section vue depuis l'ouverture : la liste des assistants prêts y est chargée
+const accountsChanged = () => dispatchEvent(new Event("arxivreader:ai-accounts"));
+let readySeen = {};          // assistants vus dans la fenêtre : prêts ou non (pour repérer celui qui vient de l'être)
+
+let aiTouched = false;       // assistant affiché, clé, adresse ou défaut changés : l'onglet IA revérifie à la fermeture
+const readStatus = (provider) => api.aiStatus(provider).catch(() => null);
+const conclusive = (status) => Boolean(status) && !status.inconclusive;  // réseau, délai dépassé : on ne sait pas
+
+// Rend un assistant actif (modèle local manquant : le premier installé, avant toute demande), puis fait revérifier l'onglet IA
+async function activate(provider, status, values = {}) {
+  const repair = provider === "local" && status?.models?.length && !status.models.includes(settings.aiLocalModel);
+  await saveSettings({ ...values, aiProvider: provider, ...(repair ? { aiLocalModel: status.models[0] } : {}) });
+  accountsChanged();
+}
+
+// Assistant qu'on vient de configurer : il prend la place de celui utilisé si celui-ci n'est pas prêt (sinon, rien ne répondrait)
+async function adoptIfActiveNotReady(provider, status) {
+  const active = settings.aiProvider;
+  if (provider === active) return;
+  const current = await readStatus();
+  if (conclusive(current) && !current.loggedIn && settings.aiProvider === active) await activate(provider, status);  // choix fait entre-temps : il prime
+}
+
+// Retient si un assistant est prêt, même si la fenêtre en affiche déjà un autre ; agit s'il vient de changer
+async function noteReadiness(provider, status) {
+  if (!conclusive(status)) return;
+  const ready = Boolean(status.loggedIn);
+  const changed = provider in readySeen && readySeen[provider] !== ready;
+  readySeen[provider] = ready;
+  if (!changed) return;
+  if (ready) await adoptIfActiveNotReady(provider, status);
+  renderDefaultChoice();
+}
+
+// Assistant par défaut, parmi ceux qui sont prêts ; celui enregistré reste proposé s'il ne l'est plus (marqué)
+let defaultCheck = 0;
+let readyStatuses = {};  // états lus pour le menu (modèles locaux, au moment de choisir)
+async function renderDefaultChoice() {
+  const holder = document.querySelector("#settings-dialog .ai-default");
+  if (!holder) return;
+  const check = ++defaultCheck;
+  let found = [];
+  try {
+    const [active, others] = await Promise.all([api.aiStatus(), api.aiPartners()]);
+    found = [active, ...others].filter((status) => status.loggedIn);
+  } catch { /* vérification impossible : seul le choix enregistré reste proposé */ }
+  if (check !== defaultCheck || !holder.isConnected) return;
+  const ready = found.map((status) => status.provider);
+  readyStatuses = Object.fromEntries(found.map((status) => [status.provider, status]));
+  const chosen = settings.aiDefault || "";
+  const shown = PROVIDERS.filter((p) => ready.includes(p) || p === chosen);
+  holder.replaceChildren(
+    h("label", { class: "row" }, h("span", {}, t("settings.aiDefault")),
+      h("select", { class: "text-input", name: "aiDefault" },
+        h("option", { value: "", selected: !chosen }, t("settings.aiDefault.last")),
+        shown.map((p) => h("option", { value: p, selected: p === chosen }, ready.includes(p) ? authorName(p) : t("settings.aiDefault.notReady", { name: authorName(p) }))))),
+    h("p", { class: "hint" }, t("settings.aiDefaultHint")));
+}
 async function renderAISettings(holder, keepFocus = null) {
-  const provider = settings.aiProvider || "claude";
+  const provider = configuring;
   const check = ++aiCheck;
   const line = h("p", { class: "hint", "aria-live": "polite" }, t("settings.aiChecking"));
   holder.replaceChildren(h("p", { class: "hint" }, t(`settings.aiHint.${provider}`)), line);
-  let status;
-  try { status = await api.aiStatus(); } catch { status = { provider, available: false, loggedIn: false }; }
+  const read = await readStatus(provider);
+  noteReadiness(provider, read);  // indépendant de ce qui est dessiné ici
   if (check !== aiCheck || !holder.isConnected) return; // réglage changé entre-temps
-  const models = status.models || [];
-  if (provider === "local" && models.length && !models.includes(settings.aiLocalModel)) {
-    await saveSettings({ aiLocalModel: models[0] });
-  }
+  const status = read || { provider, available: false, loggedIn: false };
   if (provider === "gemini" && status.geminiModel && status.geminiModel !== settings.aiGeminiModel) {
     await saveSettings({ aiGeminiModel: status.geminiModel });
   }
@@ -111,20 +168,9 @@ async function renderAISettings(holder, keepFocus = null) {
     h("label", { class: "row" }, h("span", {}, t("settings.aiLocalUrl")),
       h("input", { class: "text-input", type: "text", name: "aiLocalUrl", value: settings.aiLocalUrl || "", placeholder: LOCAL_URL,
         spellcheck: "false", autocomplete: "off" })),
-    models.length > 0 && h("label", { class: "row" }, h("span", {}, t("settings.aiLocalModel")),
-      h("select", { class: "text-input", name: "aiLocalModel" },
-        models.map((model) => h("option", { value: model, selected: model === settings.aiLocalModel }, model)))),
   ];
-  // modèle et niveau de réflexion (assistant prêt ; modèle local : son choix ci-dessus)
-  const [modelChoice, effortChoice] = provider === "local" ? [null, null]
-    : modelControls({ ...status, provider }, null); // le niveau suit le modèle sur place
-  const choices = [
-    modelChoice && h("label", { class: "row" }, h("span", {}, t("ai.model")), modelChoice),
-    effortChoice && h("label", { class: "row", hidden: effortChoice.hidden }, h("span", {}, t("ai.effort")), effortChoice),
-    effortChoice && h("p", { class: "hint" }, t("settings.effortHint")),
-  ];
-  const again = () => { dispatchEvent(new Event("arxivreader:ai-accounts")); renderAISettings(holder); };
-  line.replaceWith(...fields.filter(Boolean), ...choices.filter(Boolean),
+  const again = () => { accountsChanged(); renderAISettings(holder); };
+  line.replaceWith(...fields.filter(Boolean),
     ...(status.loggedIn ? accountControls(provider, status, again) : [setupNotice({ ...status, provider }, again)]));
   if (keepFocus && !holder.contains(document.activeElement)) holder.querySelector(`[name="${keepFocus}"]`)?.focus();
 }
@@ -175,7 +221,15 @@ let currentSection = "reading";
 
 export function openSettingsDialog({ section = null } = {}) {
   const dialog = document.getElementById("settings-dialog");
+  if (!dialog.open) {  // à l'ouverture : celui utilisé
+    configuring = settings.aiProvider || "claude";
+    aiSeen = false;
+    aiTouched = false;
+    readySeen = {};
+  }
+  dialog.onclose = () => { if (aiTouched) accountsChanged(); };  // un assistant lancé ou connecté entre-temps apparaît dans l'onglet IA
   if (section) currentSection = section;
+  aiSeen ||= currentSection === "ai";  // fenêtre rouverte sur cette section
   const check = (name, label, checked, hint = null) => [
     h("label", { class: "check" }, h("span", {}, label), h("input", { type: "checkbox", class: "switch", name, checked })),
     hint && h("p", { class: "hint" }, hint),
@@ -237,9 +291,11 @@ export function openSettingsDialog({ section = null } = {}) {
       deviceLine(),
     ]],
     ["ai", t("settings.ai"), [
-      h("div", { class: "row" }, h("span", { id: "setting-aiProvider" }, t("settings.aiProvider")),
-        segmented("aiProvider", PROVIDERS.map((p) => [p, p === "local" ? t("settings.aiProvider.local") : { claude: "Claude", codex: "Codex", gemini: "Gemini" }[p]]),
-          settings.aiProvider || "claude")),
+      h("div", { class: "ai-default" }),
+      h("div", { class: "row" }, h("span", { id: "setting-aiConfigure" }, t("settings.aiProvider")),
+        segmented("aiConfigure", PROVIDERS.map((p) => [p, p === "local" ? t("settings.aiProvider.local") : { claude: "Claude", codex: "Codex", gemini: "Gemini" }[p]]),
+          configuring)),
+      h("p", { class: "hint" }, t("settings.aiChooseHint")),
       h("div", { class: "ai-settings" }),
       aiProfileSection(settings),
     ]],
@@ -281,6 +337,10 @@ export function openSettingsDialog({ section = null } = {}) {
     h("h3", { class: "settings-pane-title" }, title), h("div", { class: "settings-card" }, nodes.filter(Boolean))));
   const show = (key) => {
     currentSection = key;
+    if (key === "ai" && !aiSeen) {  // première visite : la liste demande leur état à tous les assistants
+      aiSeen = true;
+      renderDefaultChoice();
+    }
     panes.forEach((pane) => { pane.hidden = pane.id !== `settings-${key}`; });
     nav.querySelectorAll("button").forEach((button) => {
       const on = button.dataset.section === key;
@@ -308,16 +368,32 @@ export function openSettingsDialog({ section = null } = {}) {
     h("div", { class: "settings-layout" }, nav, h("div", { class: "settings-panes" }, panes)),
     h("div", { class: "actions" }, h("button", { class: "button", value: "close" }, t("settings.close"))),
   );
+  // après une clé ou une adresse : l'assistant modifié est revérifié, même si la fenêtre en affiche déjà un autre
+  const recheck = (provider, keep) => {
+    if (configuring !== provider) readStatus(provider).then((status) => noteReadiness(provider, status));
+    renderAISettings(form.querySelector(".ai-settings"), keep);
+  };
   form.addEventListener("input", (event) => {
     const { name, value, checked, type } = event.target;
-    if (!name || event.target.classList.contains("ai-model")) return; // modèle et niveau : enregistrés par leurs menus
+    if (!name) return;
+    if (name === "aiDefault") { // choisi : sélectionné tout de suite, et à chaque lancement
+      aiTouched = true;
+      if (value) activate(value, readyStatuses[value], { aiDefault: value });
+      else saveSettings({ aiDefault: "" });
+      return;
+    }
+    if (name === "aiConfigure") { // seulement l'assistant affiché ici
+      configuring = value;
+      aiTouched = true;
+      renderAISettings(form.querySelector(".ai-settings"));
+      return;
+    }
     if (name === "zoteroApiKey") zoteroBox.redraw();
     if (name === "feedCategories" || name === "s2ApiKey" || name === "aiLocalUrl" || name === "geminiApiKey" || name === "zoteroApiKey"
       || name === "aiProfile") return; // enregistrés à la sortie du champ
     const parsed = type === "checkbox" ? checked : name === "fontSize" ? Number(value) : value;
     if (name === "fontSize") form.querySelector("#setting-fontSize").textContent = t("settings.fontSize", { n: value });
-    const saved = saveSettings({ [name]: parsed });
-    if (name === "aiProvider") saved.then(() => renderAISettings(form.querySelector(".ai-settings")));
+    saveSettings({ [name]: parsed });
     if (name === "language") {
       openSettingsDialog(); // re-dessine la fenêtre dans la nouvelle langue
       dialog.querySelector('input[name="language"]:checked')?.focus();
@@ -343,7 +419,8 @@ export function openSettingsDialog({ section = null } = {}) {
     } else if (name === "geminiApiKey") {
       // focus rendu au champ seulement s'il l'a encore (sortie par Tab ou clic : il va ailleurs, et la clé resterait affichée)
       const keep = document.activeElement === event.target ? "geminiApiKey" : null;
-      saveSettings({ geminiApiKey: value.trim() }).then(() => renderAISettings(form.querySelector(".ai-settings"), keep));
+      aiTouched = true;
+      saveSettings({ geminiApiKey: value.trim() }).then(() => recheck("gemini", keep));
     } else if (name === "aiProfile") {
       saveSettings({ aiProfile: value.trim() }).then(() => form.querySelector(".ai-profile-preview")?.refresh());
     } else if (name === "aiLocalUrl") {
@@ -353,13 +430,15 @@ export function openSettingsDialog({ section = null } = {}) {
         return;
       }
       const keep = document.activeElement === event.target ? "aiLocalUrl" : null;
-      saveSettings({ aiLocalUrl: url }).then(() => renderAISettings(form.querySelector(".ai-settings"), keep));
+      aiTouched = true;
+      saveSettings({ aiLocalUrl: url }).then(() => recheck("local", keep));
     }
   });
   renderAISettings(form.querySelector(".ai-settings"));
   dialog.replaceChildren(form);
   applyStatic(dialog);
   if (!dialog.open) dialog.showModal();
+  if (aiSeen) renderDefaultChoice();  // ouverte sur cette section, ou redessinée
 
 }
 

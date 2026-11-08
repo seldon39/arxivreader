@@ -326,20 +326,22 @@ def status(provider, settings):
                                     timeout=20, env=_environment())
             output = (result.stdout + result.stderr).lower()
             logged = result.returncode == 0 and "not logged in" not in output
+            inconclusive = result.returncode != 0 and "not logged in" not in output  # autre échec : on ne sait pas
         except (OSError, subprocess.TimeoutExpired):
             logged = False
+            inconclusive = True  # vérification impossible : on ne sait pas s'il est connecté
         choices, chosen, effort = codex_choice(settings)
-        return {"available": True, "loggedIn": logged, "choices": choices, "chosen": chosen, "effort": effort}
+        return {"available": True, "loggedIn": logged, "choices": choices, "chosen": chosen, "effort": effort, "inconclusive": inconclusive}
     if provider == "gemini":
         key = settings.get("geminiApiKey") or ""
         if not key:
             return {"available": False, "loggedIn": False, "models": []}  # « missing » : pas de clé
         try:
             models = gemini_models(key)
-        except ProviderError as error:
-            return {"available": True, "loggedIn": False, "models": [], "error": str(error)}
+        except ProviderError as error:  # seule une clé refusée est une réponse claire (quota, panne : on ne sait pas)
+            return {"available": True, "loggedIn": False, "models": [], "error": str(error), "inconclusive": error.code != "login"}
         except (httpx.HTTPError, ValueError):
-            return {"available": True, "loggedIn": False, "models": [], "error": "network"}
+            return {"available": True, "loggedIn": False, "models": [], "error": "network", "inconclusive": True}
         choices = [{"value": m, "label": m, "levels": list(GEMINI_EFFORTS)} for m in models]
         return {"available": True, "loggedIn": bool(models), "models": models, "geminiModel": gemini_model(settings, models),
                 "choices": choices, "chosen": gemini_model(settings, models), "effort": _effort(settings, "aiGeminiEffort", choices)}
@@ -350,8 +352,10 @@ def status(provider, settings):
                 response = client.get(f"{url.rstrip('/')}/models")
                 response.raise_for_status()
                 models = sorted(m["id"] for m in response.json().get("data", []) if isinstance(m.get("id"), str))
-        except (httpx.HTTPError, httpx.InvalidURL, ValueError, KeyError, TypeError, AttributeError):
+        except (httpx.ConnectError, httpx.InvalidURL):  # serveur éteint
             return {"available": False, "loggedIn": False, "models": []}
+        except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError):  # occupé, réponse illisible : on ne sait pas
+            return {"available": False, "loggedIn": False, "models": [], "inconclusive": True}
         return {"available": True, "loggedIn": bool(models), "models": models}
     raise ValueError(provider)
 
@@ -546,7 +550,7 @@ def gemini_models(key):
 
 
 def gemini_model(settings, models):
-    """Modèle choisi dans les réglages s'il est proposé, sinon le préféré, sinon le premier « flash »."""
+    """Modèle choisi (onglet IA) s'il est proposé, sinon le préféré, sinon le premier « flash »."""
     chosen = settings.get("aiGeminiModel")
     if chosen in models:
         return chosen
@@ -627,7 +631,7 @@ async def stream_local(system, prompt, model, url):
     if not valid_local_url(url):
         raise ProviderError("The local server must be on this computer (http://127.0.0.1…)")
     if not model:
-        raise ProviderError("No local model chosen (Settings → AI)", "login")
+        raise ProviderError("No local model chosen (AI tab)", "login")
     body = {"model": model, "stream": True,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}]}
     thinking = None  # modèles « à raisonnement » : le bloc <think>…</think> du début n'est pas affiché

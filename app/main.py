@@ -60,9 +60,18 @@ CSP = (
 )
 
 
+def select_default_assistant():
+    """Au lancement : l'assistant par défaut, s'il y en a un, redevient celui utilisé."""
+    settings = db.get_settings()
+    default = settings.get("aiDefault")
+    if default in providers.PROVIDERS and default != settings.get("aiProvider"):
+        db.save_settings({"aiProvider": default})
+
+
 @asynccontextmanager
 async def lifespan(_app):
     db.init()
+    select_default_assistant()
     _write_token()
     providers.forget_gemini_cli()
     ai.stop_running()
@@ -675,8 +684,11 @@ def _checked_node(paper_id, node_id):
 
 
 @app.get("/api/ai/status")
-async def ai_status():
-    return await run_in_threadpool(ai.status, db.get_settings())
+async def ai_status(provider: str | None = None):
+    """État de l'assistant utilisé, ou de `provider` (réglages : l'assistant qu'on y configure)."""
+    if provider is not None and provider not in providers.PROVIDERS:
+        raise HTTPException(400, "Unknown assistant")
+    return await run_in_threadpool(ai.status, db.get_settings(), provider)
 
 
 @app.get("/api/ai/partners")
@@ -1485,7 +1497,7 @@ def update_settings(values: dict):
                "aiProvider", "aiLocalUrl", "aiLocalModel", "checkUpdates", "aiFontSize", "notifyCitations", "readerView",
                "citingCollapsed", "followedCollapsed", "geminiApiKey", "aiGeminiModel", "profileOpen",
                "aiClaudeEffort", "aiCodexModel", "aiCodexEffort", "aiGeminiEffort", "zoteroApiKey", "zoteroAutoSync", "onboarded", "aiProfile",
-               "aiReviewMode", "aiSecond"}
+               "aiReviewMode", "aiSecond", "aiDefault"}
     values = {k: v for k, v in values.items() if k in allowed}
     if not all(_valid_setting(k, v) for k, v in values.items()):
         raise HTTPException(400, "Bad setting")
@@ -1503,6 +1515,7 @@ SETTING_CHOICES = {
     "aiProvider": set(providers.PROVIDERS), "readerView": {"html", "pdf"},
     "feedSort": {"relevance", "arxiv"}, "feedSortS2": {"relevance", "s2"},
     "aiReviewMode": {"single", "cross"}, "aiSecond": set(providers.PROVIDERS),  # relecture : simple ou croisée, et avec qui
+    "aiDefault": {"", *providers.PROVIDERS},  # assistant sélectionné au lancement (vide : le dernier choisi)
 }
 BOOLEAN_SETTINGS = {"proofsCollapsed", "tocOpen", "panelOpen", "marginMarks", "notifyFollowed", "checkUpdates", "notifyCitations",
                     "citingCollapsed", "followedCollapsed", "zoteroAutoSync", "onboarded"}

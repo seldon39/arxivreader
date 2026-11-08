@@ -1,4 +1,4 @@
-// Onglet « IA » du lecteur : l'assistant choisi dans les réglages (Claude par défaut) explique un énoncé,
+// Onglet « IA » du lecteur : l'assistant choisi sous le champ (Claude par défaut) explique un énoncé,
 // détaille ou audite une preuve, répond aux questions. Il ne reçoit que le texte de l'article (aucun outil) ;
 // ses réponses sont à vérifier.
 
@@ -107,7 +107,7 @@ function withTags(text, names, tag) {
   return names ? text.replace(MARKER, (_, kind) => tag(kind.toLowerCase(), names[kind.toLowerCase()] || t(`ai.tag.${kind.toLowerCase()}`))) : text;
 }
 
-// Autres assistants prêts (relecture croisée), vérifiés au plus toutes les deux minutes : la vérification lance
+// Autres assistants prêts (relecture croisée), vérifiés au plus toutes les deux minutes (sauf réglages de l'IA modifiés) : la vérification lance
 // leurs programmes (Claude, Codex) ou interroge Gemini ; une seule à la fois
 const PARTNERS_TTL = 120_000;
 let partnersCache = null;  // { provider, at, list (promesse) }
@@ -224,10 +224,17 @@ export class Assistant {
     const provider = providerOf(currentModel());
     if (this.partnersFor === provider) return;
     this.partnersFor = provider;
-    const found = await readyPartners(provider);
+    const found = (await readyPartners(provider)).filter((p) => p.provider !== provider);
     if (this.partnersFor !== provider) return;  // assistant changé entre-temps
+    const local = found.find((p) => p.provider === "local" && p.models?.length && !p.models.includes(settings.aiLocalModel));
+    if (local) {  // modèle local pas encore choisi (ou disparu) : le premier, avant d'afficher les noms (relecture croisée)
+      await saveSettings({ aiLocalModel: local.models[0] });
+      local.model = `local:${local.models[0]}`;
+      if (this.partnersFor !== provider) return;
+    }
+    const had = this.partners?.length;
     this.partners = found;
-    if (found.length) this.onChange();
+    if (found.length || had) this.onChange();  // aussi quand le dernier autre assistant vient de partir
   }
 
   // second assistant de la relecture croisée, si elle est choisie et possible (le dernier choisi, sinon le premier prêt)
@@ -807,7 +814,7 @@ export class Assistant {
       this.status = null;
       this.partnersFor = null;
     }
-    if ((!this.status && !this.checking) || this.statusFor !== currentModel()) this.refreshStatus(); // assistant changé dans les réglages
+    if ((!this.status && !this.checking) || this.statusFor !== currentModel()) this.refreshStatus(); // assistant changé
     body.classList.add("ai-body");
     const view = this.view;
     const status = this.status;
@@ -984,8 +991,8 @@ export class Assistant {
     return h("div", { class: "ai-mode" }, h("div", { class: "ai-views", role: "group", "aria-label": t("ai.mode") }, button("single"), button("cross")));
   }
 
-  // Relecture croisée : le premier relecteur (l'assistant des réglages, qui écrit la synthèse), puis le second, chacun
-  // avec son modèle et son niveau de réflexion (ceux de l'assistant, comme dans les réglages)
+  // Relecture croisée : le premier relecteur (l'assistant choisi, qui écrit la synthèse), puis le second, chacun
+  // avec son modèle et son niveau de réflexion (ceux de l'assistant)
   reviewers(picker, partner) {
     const choose = h("select", { class: "ai-model", "aria-label": t("ai.secondAssistant"), title: t("ai.secondAssistant"),
       onchange: (event) => saveSettings({ aiSecond: event.target.value }).then(() => this.onChange()) },
@@ -1101,7 +1108,7 @@ export class Assistant {
   }
 
   // Choix de l'assistant (ceux qui sont prêts ; un seul : affiché quand même, on voit qui répond), de son modèle et
-  // du niveau de réflexion, sous la saisie ; communs aux sous-onglets et aux réglages. `exclude` : assistant du second
+  // du niveau de réflexion, sous la saisie ; communs aux sous-onglets (les réglages n'y touchent pas). `exclude` : assistant du second
   // relecteur (relecture croisée)
   modelPicker(exclude = null) {
     const [model, effort] = modelControls(this.status, () => {
@@ -1116,7 +1123,7 @@ export class Assistant {
     return model || assistant ? h("span", { class: "ai-model-picker" }, assistant, model, effort) : null;
   }
 
-  // Autre assistant choisi (même réglage que dans les réglages) : son état est déjà connu (assistants prêts), et
+  // Autre assistant choisi : son état est déjà connu (assistants prêts), et
   // l'ancien rejoint la liste des autres, sans nouvelle vérification. État posé avant le réglage : l'enregistrer
   // redessine le panneau aussitôt (reader, onSettingsChange)
   switchAssistant(provider) {

@@ -608,7 +608,7 @@ const STRINGS = {
     "ai.model": "Modèle",
     "ai.effort": "Réflexion", "ai.effort.default": "Réflexion par défaut", "ai.effort.low": "Réflexion faible", "ai.effort.medium": "Réflexion moyenne",
     "ai.effort.high": "Réflexion élevée", "ai.effort.xhigh": "Réflexion très élevée", "ai.effort.max": "Réflexion maximale", "ai.effort.ultra": "Réflexion ultra",
-    "settings.effortHint": "Une réflexion plus poussée donne des réponses plus soignées (utile pour détailler ou auditer une preuve), mais plus lentes, et consomme davantage de votre quota.",
+    "ai.effortHint": "Une réflexion plus poussée donne des réponses plus soignées (utile pour détailler ou auditer une preuve), mais plus lentes, et consomme davantage de votre quota.",
     "ai.saveToNotes": "Ajouter à mes notes",
     "ai.savedBlock": "Ajouté à la note de {label}.",
     "ai.savedGeneral": "Ajouté à la fiche de lecture.",
@@ -783,7 +783,10 @@ const STRINGS = {
     "ai.local": "IA locale",
     "settings.ai": "Assistant IA",
     "settings.reading": "Lecture",
-    "settings.aiProvider": "Assistant",
+    "settings.aiProvider": "Assistant à configurer",
+    "settings.aiDefault": "Assistant par défaut", "settings.aiDefault.last": "Le dernier choisi", "settings.aiDefault.notReady": "{name} (pas prêt)",
+    "settings.aiDefaultHint": "Choisi parmi les assistants prêts, et sélectionné à chaque lancement de l'application.",
+    "settings.aiChooseHint": "Pour changer d'assistant sur le moment, de modèle ou de niveau de réflexion : sous le champ de l'onglet IA.",
     "settings.aiProvider.local": "Local",
     "settings.aiProfile": "Votre profil",
     "settings.aiProfilePlaceholder": "Ex. : thèse en topologie algébrique, à l'aise avec les suites spectrales ; détailler davantage l'analyse ; réponses concises.",
@@ -791,7 +794,6 @@ const STRINGS = {
     "settings.aiProfilePreview": "Ce que l'IA reçoit avec chaque demande",
     "settings.aiProfileEmpty": "Rien pour l'instant : remplissez l'onglet Profil ou le champ ci-dessus.",
     "settings.aiLocalUrl": "Adresse du serveur local",
-    "settings.aiLocalModel": "Modèle local",
     "settings.aiHint.claude": "Avec votre abonnement Claude.",
     "settings.aiHint.codex": "Avec votre compte ChatGPT, par Codex en ligne de commande (OpenAI).",
     "settings.aiHint.gemini": "Par l'API Gemini de Google, avec votre clé (Google AI Studio) : offre gratuite limitée, sinon payante à l'usage.",
@@ -1494,7 +1496,7 @@ const STRINGS = {
     "ai.model": "Model",
     "ai.effort": "Reasoning", "ai.effort.default": "Default reasoning", "ai.effort.low": "Low reasoning", "ai.effort.medium": "Medium reasoning",
     "ai.effort.high": "High reasoning", "ai.effort.xhigh": "Very high reasoning", "ai.effort.max": "Maximum reasoning", "ai.effort.ultra": "Ultra reasoning",
-    "settings.effortHint": "Deeper reasoning gives more careful answers (useful to detail or audit a proof), but slower ones, and uses more of your quota.",
+    "ai.effortHint": "Deeper reasoning gives more careful answers (useful to detail or audit a proof), but slower ones, and uses more of your quota.",
     "ai.saveToNotes": "Add to my notes",
     "ai.savedBlock": "Added to the note on {label}.",
     "ai.savedGeneral": "Added to the reading notes.",
@@ -1668,7 +1670,10 @@ const STRINGS = {
     "ai.local": "local AI",
     "settings.ai": "AI assistant",
     "settings.reading": "Reading",
-    "settings.aiProvider": "Assistant",
+    "settings.aiProvider": "Assistant to set up",
+    "settings.aiDefault": "Default assistant", "settings.aiDefault.last": "The last one chosen", "settings.aiDefault.notReady": "{name} (not ready)",
+    "settings.aiDefaultHint": "Chosen among the assistants that are ready, and selected each time the app starts.",
+    "settings.aiChooseHint": "To change the assistant for now, its model or its reasoning level: under the field of the AI tab.",
     "settings.aiProvider.local": "Local",
     "settings.aiProfile": "Your profile",
     "settings.aiProfilePlaceholder": "E.g. PhD in algebraic topology, at ease with spectral sequences; more detail on analysis; concise answers.",
@@ -1676,7 +1681,6 @@ const STRINGS = {
     "settings.aiProfilePreview": "What the AI receives with each request",
     "settings.aiProfileEmpty": "Nothing yet: fill in the Profile tab or the field above.",
     "settings.aiLocalUrl": "Local server address",
-    "settings.aiLocalModel": "Local model",
     "settings.aiHint.claude": "With your Claude plan.",
     "settings.aiHint.codex": "With your ChatGPT account, through the Codex command-line tool (OpenAI).",
     "settings.aiHint.gemini": "Through Google's Gemini API, with your key (Google AI Studio): limited free tier, otherwise pay as you go.",
@@ -1811,7 +1815,7 @@ function forSystem(text) {
 }
 
 let language = "fr";
-let aiName = "Claude"; // {ai} dans les textes : l'assistant choisi dans les réglages
+let aiName = "Claude"; // {ai} dans les textes : l'assistant choisi sous le champ de l'onglet IA
 
 export function setAIName(name) {
   aiName = name;

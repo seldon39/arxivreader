@@ -113,7 +113,7 @@ export const api = {
   deleteAnnotation: (annotationId) => request("DELETE", `/api/annotations/${annotationId}`),
   setProof: (id, nodeId, body) => request("PUT", `/api/papers/${encodeURIComponent(id)}/proofs/${encodeURIComponent(nodeId)}`, body),
   clearProof: (id, nodeId) => request("DELETE", `/api/papers/${encodeURIComponent(id)}/proofs/${encodeURIComponent(nodeId)}`),
-  aiStatus: () => request("GET", "/api/ai/status"),
+  aiStatus: (provider) => request("GET", `/api/ai/status${provider ? `?provider=${encodeURIComponent(provider)}` : ""}`),
   aiPartners: () => request("GET", "/api/ai/partners"),
   aiProfile: () => request("GET", "/api/ai/profile"),
   updates: () => request("GET", "/api/updates"),

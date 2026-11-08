@@ -53,14 +53,12 @@ export function modelControls(status, onSaved) {
   const effortFor = (value) => (levelsOf(value).includes(appSettings[effortKey]) ? appSettings[effortKey] : "");
   const model = h("select", { class: "ai-model", name: modelKey, "aria-label": t("ai.model"), title: t("ai.model") },
     choices.map((c) => h("option", { value: c.value, selected: c.value === chosen, title: c.description || null }, c.label)));
-  const effort = effortKey ? h("select", { class: "ai-model ai-effort", name: effortKey, "aria-label": t("ai.effort"), title: t("ai.effort") }) : null;
+  const effort = effortKey ? h("select", { class: "ai-model ai-effort", name: effortKey, "aria-label": t("ai.effort"), title: t("ai.effortHint") }) : null;
   // options du niveau d'après le modèle (redessinées sur place quand il change : pas de nouvel affichage)
   const fillEffort = (value) => {
     if (!effort) return;
     const levels = levelsOf(value);
     effort.hidden = !levels.length;
-    const row = effort.closest(".row"); // réglages : la ligne entière
-    if (row) row.hidden = !levels.length;
     effort.replaceChildren(...["", ...levels].map((level) => h("option", { value: level, selected: level === effortFor(value) },
       level ? t(`ai.effort.${level}`) : t("ai.effort.default"))));
   };

@@ -447,7 +447,7 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
 - Answers stream live, formulas are rendered, references ("Lemma 2.3", "Theorems 1.2, 1.3", "(2.11)") are clickable;
   *Add to my notes* copies them into the note of the statement or proof (otherwise into the reading sheet).
   Assistant (among those connected), model (Opus, Fable, Sonnet, Haiku… depending on your subscription) and
-  reasoning level chosen under the field of each AI sub-tab, one choice shared with the settings; likewise for Codex
+  reasoning level chosen under the field of each AI sub-tab; likewise for Codex
   and Gemini, from the list of your account or key. Answers are kept with the paper.
 - **Annotations suggested by Claude**: *Annotate* button on a statement, or any request such as
   "highlight… / annotate…". Claude attaches a list of annotations (passages quoted word for word, colour,
@@ -465,6 +465,8 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
 
 ### Other assistants (Settings → AI assistant)
 
+- **Default assistant**: chosen among those that are ready, and selected each time the app starts (otherwise, the last
+  one chosen stays). The menu under the field of the AI tab changes the assistant at any time.
 - **Accounts**: once an assistant is ready, the settings show the account in use (Claude: address and plan) with
   *Change account…* (Claude, Codex: logs out, then back in with the other account, in Terminal; for Claude, the sign-in
 goes through a private window, or the link is copied to paste into one, so that the browser's session is not reused) and *Log out*;

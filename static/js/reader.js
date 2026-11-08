@@ -1979,7 +1979,7 @@ class Reader {
     this.updateZoomButton();
     this.updateWidthButtons();
     const unsubscribe = onSettingsChange(() => {
-      if (currentModel(settings) !== assistant) { // assistant IA changé dans les réglages : onglet IA à jour
+      if (currentModel(settings) !== assistant) { // assistant IA changé (un autre onglet de lecture, menu de l'onglet IA) : à jour
         assistant = currentModel(settings);
         if (this.tab === "ai") this.renderPanel();
       }
@@ -1989,7 +1989,11 @@ class Reader {
       const now = `${settings.fontSize}/${settings.readingWidth}/${settings.paperFont}`;
       if (now !== look) { look = now; this.keepReadingPosition(undefined, { applied: true }); } else this.anchors = null;
     });
-    this.cleanups.push(() => document.removeEventListener("keydown", onKey), () => removeEventListener("resize", onResize), unsubscribe);
+    // réglages de l'IA quittés, compte changé : assistants prêts revérifiés (onglet IA fermé : celui utilisé, pour la prochaine demande)
+    const onAccounts = () => { if (this.tab === "ai") this.renderPanel(); else this.assistant?.refreshStatus(); };
+    addEventListener("arxivreader:ai-accounts", onAccounts);
+    this.cleanups.push(() => document.removeEventListener("keydown", onKey), () => removeEventListener("resize", onResize), unsubscribe,
+      () => removeEventListener("arxivreader:ai-accounts", onAccounts));
   }
 
   // surlignages et zones du PDF ; une zone peut partir vers l'assistant s'il lit les images (Claude, Gemini)

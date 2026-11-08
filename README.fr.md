@@ -467,7 +467,7 @@ il suffit de la fermer et d'aller dans le feed.
 - Réponses en direct, formules rendues, renvois (« Lemma 2.3 », « Theorems 1.2, 1.3 », « (2.11) ») cliquables ; *Ajouter à mes
   notes* les copie dans la note de l'énoncé ou de la preuve (sinon dans la fiche de lecture). Assistant (parmi
   ceux connectés), modèle (Opus, Fable, Sonnet, Haiku… selon votre abonnement) et niveau de réflexion au choix sous
-  le champ de chaque sous-onglet de l'IA, un même choix partagé avec les réglages ; de même pour Codex et Gemini,
+  le champ de chaque sous-onglet de l'IA ; de même pour Codex et Gemini,
   d'après la liste de votre compte ou de votre clé. Les réponses sont conservées avec l'article.
 - **Annotations proposées par Claude** : bouton *Annoter* sur un énoncé, ou toute demande du type « surligne… /
   annote… ». Claude joint une liste d'annotations (passages cités mot pour mot, couleur, note ; notes sur un
@@ -486,6 +486,8 @@ il suffit de la fermer et d'aller dans le feed.
 
 ### Autres assistants (Réglages → Assistant IA)
 
+- **Assistant par défaut** : choisi parmi ceux qui sont prêts, et sélectionné à chaque lancement de l'application
+  (sinon, le dernier choisi reste). Le menu sous le champ de l'onglet IA permet d'en changer à tout moment.
 - **Comptes** : un assistant prêt, les réglages montrent le compte utilisé (Claude : adresse et abonnement), avec
   *Changer de compte…* (Claude, Codex : déconnexion puis reconnexion avec l'autre compte, dans le Terminal ; pour Claude,
 la connexion passe par une fenêtre privée, ou le lien est copié pour y être collé, afin de ne pas reprendre la session du navigateur) et

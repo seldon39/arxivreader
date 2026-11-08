@@ -163,6 +163,35 @@ class Providers(unittest.TestCase):
         self.assertEqual(ai.paper_limit("local:qwen3"), providers.LOCAL_LIMIT)
 
 
+class Status(unittest.TestCase):
+    def test_failed_check_is_inconclusive(self):
+        with unittest.mock.patch.object(providers, "find", return_value="/bin/codex"), \
+                unittest.mock.patch.object(providers, "codex_choice", return_value=([], None, "")):
+            with unittest.mock.patch.object(providers.subprocess, "run", side_effect=subprocess.TimeoutExpired("codex", 20)):
+                self.assertTrue(providers.status("codex", {})["inconclusive"])
+            with unittest.mock.patch.object(providers.subprocess, "run", return_value=unittest.mock.Mock(returncode=1, stdout="Not logged in", stderr="")):
+                self.assertFalse(providers.status("codex", {})["inconclusive"])  # déconnecté pour de bon
+            with unittest.mock.patch.object(providers.subprocess, "run", return_value=unittest.mock.Mock(returncode=2, stdout="", stderr="boom")):
+                self.assertTrue(providers.status("codex", {})["inconclusive"])
+
+    def test_gemini_refused_key_is_the_only_clear_answer(self):
+        for code, unclear in (("login", False), ("limit", True), ("other", True)):
+            with unittest.mock.patch.object(providers, "gemini_models", side_effect=providers.ProviderError("no", code)):
+                self.assertEqual(providers.status("gemini", {"geminiApiKey": "k"})["inconclusive"], unclear, code)
+
+    def test_local_server_off_or_busy(self):
+        with unittest.mock.patch.object(providers.httpx.Client, "get", side_effect=providers.httpx.ConnectError("off")):
+            self.assertNotIn("inconclusive", providers.status("local", {}))
+        with unittest.mock.patch.object(providers.httpx.Client, "get", side_effect=providers.httpx.ReadTimeout("busy")):
+            self.assertTrue(providers.status("local", {})["inconclusive"])
+
+    def test_claude_needs_a_clear_answer(self):
+        for stdout, unclear in (('{"loggedIn": false}', False), ("", True), ("oops", True)):
+            with unittest.mock.patch.object(ai, "cli_path", return_value="/bin/claude"), \
+                    unittest.mock.patch.object(ai.subprocess, "run", return_value=unittest.mock.Mock(returncode=1, stdout=stdout, stderr="")):
+                self.assertEqual(ai._claude_status()["inconclusive"], unclear, stdout)
+
+
 class Setup(unittest.TestCase):
     @unittest.mock.patch.object(providers, "WINDOWS", False)
     def test_terminal_script(self):
@@ -428,6 +457,25 @@ class Settings(unittest.TestCase):
 
     def tearDown(self):
         db.DB_PATH, db.LIBRARY = self.saved
+
+    def test_status_of_assistant_being_set_up(self):
+        db.save_settings({"aiProvider": "claude"})
+        with unittest.mock.patch.object(providers, "status", return_value={"available": True, "loggedIn": False}) as status:
+            self.assertEqual(self.client.get("/api/ai/status", params={"provider": "gemini"}).json()["provider"], "gemini")
+            self.assertEqual(status.call_args.args[0], "gemini")
+        self.assertEqual(self.client.get("/api/ai/status", params={"provider": "skynet"}).status_code, 400)
+        self.assertEqual(db.get_settings()["aiProvider"], "claude")  # le réglage de l'assistant utilisé n'a pas bougé
+
+    def test_default_assistant_selected_at_launch(self):
+        put = lambda values: self.client.put("/api/settings", json=values).status_code  # noqa: E731
+        self.assertEqual(put({"aiDefault": "skynet"}), 400)
+        self.assertEqual(put({"aiDefault": "", "aiProvider": "codex"}), 200)
+        main.select_default_assistant()  # aucun assistant par défaut : le dernier choisi reste
+        self.assertEqual(db.get_settings()["aiProvider"], "codex")
+        self.assertEqual(put({"aiDefault": "gemini"}), 200)
+        self.assertEqual(db.get_settings()["aiProvider"], "codex")  # le serveur n'y touche qu'au lancement
+        main.select_default_assistant()
+        self.assertEqual(db.get_settings()["aiProvider"], "gemini")
 
     def test_validation(self):
         put = lambda values: self.client.put("/api/settings", json=values).status_code  # noqa: E731
