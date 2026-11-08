@@ -5,6 +5,7 @@ import json
 import os
 import pathlib
 import plistlib
+import shlex
 import stat
 import subprocess
 import sys
@@ -184,7 +185,7 @@ class Setup(unittest.TestCase):
                 providers.open_setup("claude", "switch", "/bin/claude")
             text = (providers.LIBRARY / "ai" / "setup-claude.command").read_text()
             self.assertIn("/bin/claude auth logout && echo", text)
-            self.assertRegex(text, r"&& BROWSER=\S*setup-browser\.sh env -u ANTHROPIC_API_KEY /bin/claude auth login --claudeai")
+            self.assertIn(f"&& BROWSER={shlex.quote(str(helper))} env -u ANTHROPIC_API_KEY /bin/claude auth login --claudeai", text)
             self.assertIn("A private window", text)
             self.assertIn("/usr/bin/open -na 'Google Chrome' --args --incognito \"$1\"", helper.read_text())
             self.assertTrue(os.access(helper, os.X_OK))
