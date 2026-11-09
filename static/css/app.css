@@ -789,11 +789,7 @@ mark.hl.hl-display > mjx-container[display="true"] { margin: .2em 0 !important; 
 .context-menu { position: fixed; z-index: 60; display: grid; min-width: 200px; padding: 5px; background: var(--surface);
   border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: var(--shadow); }
 .context-menu-item { padding: 7px 12px; border: 0; border-radius: 6px; background: none; color: var(--text); font: 13.5px var(--font-ui); text-align: left; cursor: pointer; }
-.context-menu-item:hover, .context-menu-item:focus-visible { background: var(--surface-hover); outline: none; }
-.context-menu-search { display: flex; flex-wrap: wrap; gap: 2px 10px; max-width: 300px; margin-top: 4px; padding: 7px 12px 4px; border-top: 1px solid var(--border); font: 13px var(--font-ui); color: var(--muted); }
-.context-menu-search a { color: var(--link); text-decoration: none; }
-.context-menu-search a:hover, .context-menu-search a:focus-visible { text-decoration: underline; outline: none; }
-.hl-toolbar {
+.context-menu-item:hover, .context-menu-item:focus-visible { background: var(--surface-hover); outline: none; }.hl-toolbar {
   position: fixed; z-index: 55; display: flex; align-items: center; gap: 6px; padding: 6px 8px;
   background: var(--surface); border: 1px solid var(--border-strong); border-radius: 999px; box-shadow: var(--shadow);
 }

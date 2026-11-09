@@ -346,14 +346,6 @@ function authorBadge(annotation) {
     : null;
 }
 
-// Clic droit sur un terme : recherche sur les sites de référence (dans le navigateur, seulement au clic)
-const SEARCH_SITES = [
-  ["nLab", "https://ncatlab.org/nlab/search?query="],
-  ["MathOverflow", "https://mathoverflow.net/search?q="],
-  ["Stacks", "https://stacks.math.columbia.edu/search?query="],
-  ["zbMATH", "https://zbmath.org/?q="],
-];
-
 // ---------- Éditeur de note (Markdown + LaTeX) ----------
 
 function renderNote(element, text) {
@@ -710,8 +702,6 @@ export class Annotator {
     const item = (label, action) => h("button", { type: "button", class: "context-menu-item", role: "menuitem",
       onclick: () => { this.hideContextMenu(); action(); } }, label);
     const tex = range && hasMath(range);
-    const words = range && !tex ? range.toString().replace(/\s+/g, " ").trim() : "";
-    const query = words.length >= 2 && words.length <= 120 ? words : "";  // un terme ou une expression, pas un paragraphe
     const menu = this.contextMenuElement = h("div", { class: "context-menu", role: "menu" },
       range && [item(t("notes.highlight"), () => this.createFrom(range, "yellow", false)),
       item(t("notes.addNote"), () => this.createFrom(range, "yellow", true)),
@@ -719,10 +709,7 @@ export class Annotator {
       item(t("notes.copyText"), async () => { await copyText(range.toString()); toast(t("notes.textCopied")); }),
       this.onAskAI && item(t("ai.askPassage"), () => { const quote = quoteOf(range, 12000); getSelection().removeAllRanges(); this.onAskAI(quote); })],
       freeNote && item(t("notes.addFreeNote"), freeNote),
-      bookmark && item(t("bookmarks.addHereMenu"), bookmark),
-      query && h("div", { class: "context-menu-search" }, h("span", {}, t("notes.searchOn")),
-        SEARCH_SITES.map(([name, url]) => h("a", { href: url + encodeURIComponent(query), target: "_blank", rel: "noopener noreferrer",
-          onclick: () => setTimeout(() => this.hideContextMenu(), 0) }, name))));
+      bookmark && item(t("bookmarks.addHereMenu"), bookmark));
     document.body.append(menu);
     // à l'endroit du clic, dans la fenêtre
     menu.style.left = `${Math.max(8, Math.min(event.clientX, innerWidth - menu.offsetWidth - 8))}px`;
@@ -732,7 +719,7 @@ export class Annotator {
       if (key.key === "Escape") { key.preventDefault(); this.hideContextMenu(); }
       if (key.key === "ArrowDown" || key.key === "ArrowUp") {
         key.preventDefault();
-        const items = [...menu.querySelectorAll("button, a")];
+        const items = [...menu.querySelectorAll("button")];
         items[(items.indexOf(document.activeElement) + (key.key === "ArrowDown" ? 1 : items.length - 1)) % items.length]?.focus();
       }
     });
