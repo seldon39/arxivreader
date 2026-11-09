@@ -277,6 +277,10 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   proofs (one more line). A margin element must
   not exceed `--paper-pad` (26 to 32 px). `keepReadingPosition(..., { applied: true })` when the change is already
   made (settings, resized window): the previous place then comes from the retained positions (`this.anchors`).
+- LaTeXML extensions (`.ltxml`, `.latexml`) are Perl that LaTeXML runs without restriction when it finds them next to the
+  document: never extracted from a source downloaded from arXiv (`latexml._extract`, `BINDINGS`). Those of a TeX file the
+  user imported are still honoured, like the folder's `latexmkrc` (README: import only documents you trust). The app's own
+  extensions are written elsewhere (`_stubs`).
 - HTML version by LaTeXML (`latexml.py`): stored in `papers/<id>/html/`, never in `content.html` at the root
   (its presence makes a paper an arXiv paper read as HTML: analysis, text for the assistant). The identifiers of the
   statements (matched in document order, type by type), of the sections, of the bibliography and of the numbered equations
@@ -441,6 +445,11 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   list comes from the state of the chosen assistant and from `/api/ai/partners` (the others, ready). Changing assistant
   (`switchAssistant`) reuses their already known states, set before saving the setting: saving
   redraws the panel immediately (`reader`, `onSettingsChange`), which would otherwise restart the checks.
+
+- "Continue in Claude" (`Assistant.continueInClaude`): the `claude://claude.ai/new?q=` link holds about 14 000 characters. Beyond
+  13 000, the full text goes through the clipboard and the conversation opens empty, to be pasted with ⌘V (Claude turns a long
+  paste into an attachment, like "Copy the exchange"): never a truncated start that could be sent by mistake. Only if the copy
+  failed is the start put in the link.
 
 - Cross-review (`ai.cross_review`, called by the AI route when the request carries `second`): reviews
   by the two assistants in parallel, comparison by the second one, synthesis by the first one; all the requests go

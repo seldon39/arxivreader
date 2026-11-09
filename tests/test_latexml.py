@@ -67,6 +67,22 @@ class Latexml(unittest.TestCase):
         self.assertTrue((folder / "sub" / "part.tex").exists())
         self.assertFalse((self.tmp / "evil.tex").exists())
 
+    def test_extract_skips_latexml_bindings(self):
+        """Perl exécuté par LaTeXML : jamais extrait d'une source téléchargée ; les fichiers TeX restent."""
+        data = io.BytesIO()
+        names = ("paper.tex", "pkg.sty", "pkg.sty.ltxml", "paper.latexml", "sub/other.cls.LTXML", "sub/x.tex.ltxml. ",
+                 "paper.latexml\n", "sub/y.latexml\t", "z.latexml::$DATA")
+        with tarfile.open(fileobj=data, mode="w:gz") as archive:
+            for name in names:
+                raw = b"\\documentclass{article}\\begin{document}x\\end{document}" if name == "paper.tex" else b"x"
+                info = tarfile.TarInfo(name)
+                info.size = len(raw)
+                archive.addfile(info, io.BytesIO(raw))
+        folder = self.tmp / "src"
+        folder.mkdir()
+        self.assertEqual(latexml._extract(data.getvalue(), folder), "paper.tex")
+        self.assertEqual(sorted(p.name for p in folder.rglob("*") if p.is_file()), ["paper.tex", "pkg.sty"])
+
     def test_state_and_routes(self):
         db.save_paper({"id": "tex-s", "arxiv_id": "", "version": None, "title": "T", "authors": [], "abstract": "", "categories": [],
                        "primary_category": "", "published": None, "updated": None, "doi": None, "journal_ref": None,

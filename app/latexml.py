@@ -34,6 +34,10 @@ from .structure import STRUCTURE_VERSION, classify, extract_structure
 from .texsource import MAX_FILE_BYTES, MAX_MEMBERS, MAX_TOTAL_BYTES, choose_main
 
 SOURCES = (texfile.SOURCE, "tex")
+# Extensions de LaTeXML : du Perl qu'il exécute sans restriction dès qu'il les trouve à côté du document (« x.sty.ltxml »
+# pour \usepackage{x}, « main.latexml » pour main.tex). Jamais extraites d'une source téléchargée : personne ne les a
+# choisies. Celles de l'application (_stubs) sont écrites ailleurs.
+BINDINGS = (".ltxml", ".latexml")
 # Durée accordée à LaTeXML, selon la taille de la source : environ 300 s par Mo de TeX sur un Mac récent (livre de
 # 303 pages, 1,1 Mo : 309 s), quatre fois plus pour un ordinateur lent ; 10 minutes au moins, une heure au plus.
 # Une limite fixe de 10 minutes arrêtait les livres de 400 à 500 pages.
@@ -665,6 +669,8 @@ def _extract(data, folder):
                 name = posixpath.normpath(member.name.lstrip("/"))
                 if not member.isfile() or name.startswith("..") or member.size > MAX_FILE_BYTES or total + member.size > MAX_TOTAL_BYTES:
                     continue
+                if any(binding in name.lower() for binding in BINDINGS):  # n'importe où dans le nom : « x.latexml\n » est trouvé
+                    continue  # par LaTeXML ($ de ses expressions régulières) ; sans casse (macOS, Windows)
                 total += member.size
                 members.append(member)
             archive.extractall(folder, members=members, filter="data")

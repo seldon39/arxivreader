@@ -327,7 +327,7 @@ A TeX file you imported, or an arXiv paper without an HTML version but with its 
 (the tool arXiv uses for its own HTML pages), on demand only. The first time, a short note says it is experimental
 and may contain errors (formulas, figures, numbering): the PDF is the reference. The conversion runs in the
 background (from a few seconds to a few minutes) while you read the PDF; the HTML version then opens, with the same
-notes on statements as in the PDF. It is kept until the TeX file is recompiled or arXiv has a new version. pgfplots
+notes on statements as in the PDF. It is kept until the TeX file is recompiled or arXiv has a new version. For an arXiv paper, LaTeXML extensions shipped with the source (`.ltxml`, `.latexml`), which are programs, are ignored. pgfplots
 figures (curves, surfaces), which LaTeXML takes very long to compute, are replaced by a note pointing to the PDF.
 Figures in PDF format are converted to images first (by macOS itself, or by the Ghostscript that comes with TeX
 on Windows); if the bibliography is lost, it is rebuilt from the `.bbl` (the compilation's, or one made by BibTeX).

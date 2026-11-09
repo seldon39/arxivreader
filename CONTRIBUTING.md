@@ -57,7 +57,8 @@ These are not negotiable; a change that weakens one of them will not be merged.
   applies, usually restricted) and, like latexmk in a terminal, follows the folder's `latexmkrc` if it has one, which
   can run code (the READMEs tell users to import only documents they trust); imported PDFs and notes exports are copies. External programs run only on files the
   user chose (TeX) or, for LaTeXML and the experimental HTML, on those files and on the arXiv source of a paper
-  without HTML, when the reader asks for that version.
+  without HTML, when the reader asks for that version. LaTeXML extensions shipped in that downloaded source (`.ltxml`,
+  `.latexml`, Perl that LaTeXML runs without restriction) are never extracted (`latexml._extract`).
 
 ## Development setup
 

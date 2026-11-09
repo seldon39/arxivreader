@@ -1348,7 +1348,9 @@ export class Assistant {
   }
 
   // Nouvelle conversation dans l'application Claude, pré-remplie (non envoyée) avec l'article et l'échange.
-  // Le lien est limité à ~14 000 caractères : le texte complet est aussi copié dans le presse-papiers.
+  // Le lien est limité à ~14 000 caractères : le texte complet est aussi copié dans le presse-papiers. Plus long, il
+  // n'est pas mis dans le lien : conversation vide, à coller d'un ⌘V (Claude en fait une pièce jointe), plutôt qu'un
+  // début de texte à remplacer, qu'on enverrait tronqué par mégarde. Seul le début, si la copie a échoué.
   async continueInClaude(exchange) {
     const pending = api.exportAI(exchange.id).then((result) => result.text);
     const copied = await copyLater(pending);
@@ -1356,8 +1358,9 @@ export class Assistant {
     try { text = await pending; } catch (error) { toastError(error); return; }
     const LIMIT = 13000;
     const long = text.length > LIMIT;
-    const prefill = long ? `${text.slice(0, LIMIT)}\n\n[…] ${copied ? t("ai.continueCut") : ""}`.trim() : text;
-    location.href = `claude://claude.ai/new?q=${encodeURIComponent(prefill)}`;
+    // sans moitié de caractère à la coupe (formules en lettres mathématiques) : encodeURIComponent la refuserait
+    const prefill = long ? (copied ? "" : `${text.slice(0, LIMIT).replace(/[\uD800-\uDBFF]$/, "")}\n\n[…]`) : text;
+    location.href = `claude://claude.ai/new${prefill ? `?q=${encodeURIComponent(prefill)}` : ""}`;
     toast(t(long ? (copied ? "ai.continueLong" : "ai.continueLongNoCopy") : copied ? "ai.continueDone" : "ai.continueOpened"), { duration: 8000 });
   }
 
