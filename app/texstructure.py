@@ -15,7 +15,7 @@ import re
 import unicodedata
 
 from .arxiv import extract_ids
-from .structure import (ANNOUNCES_PROOF_BELOW, IMPLICIT_REF, JUSTIFICATION, JUSTIFIES_NEXT, JUSTIFIES_PREVIOUS, NEEDS_PROOF,
+from .structure import (defines_macro, ANNOUNCES_PROOF_BELOW, IMPLICIT_REF, JUSTIFICATION, JUSTIFIES_NEXT, JUSTIFIES_PREVIOUS, NEEDS_PROOF,
                         PROOF_HEADING, PROVING, STRUCTURE_VERSION, assign_chapters, classify)
 from .texsource import _expand, _read_archive, choose_main
 
@@ -316,6 +316,10 @@ def extract(text, bbl=""):
         command, star = match.group(1), match.group(2)
         pos = match.end()
         if command in SECTIONS:
+            # \renewcommand\section{…} dans le corps d'un article : une définition, pas une section (ai._section_span compte
+            # de même). Un livre n'est pas concerné : ses chapitres gardent leurs numéros, et ai.TEX_CHAPTER compte tout
+            if not book and defines_macro(body, match.start()):
+                continue
             (short, title), _ = _args(body, pos, "[{")
             if title is None:
                 continue
@@ -544,7 +548,7 @@ def extract(text, bbl=""):
         "nodes": [{k: v for k, v in nodes[n].items() if k not in ("insideProof", "chain")} for n in order],
         "proofBlocks": [{"id": p["id"], "of": p["of"], "anchors": []} for p in proofs.values()],
         "equations": equations, "bibliography": bibliography(body + "\n" + bbl), "hiddenText": 0,
-    })
+    }, lambda proof: proofs.get(proof, {}).get("section") or proof)
 
 
 def implicit_dependencies(body, nodes, order, proofs, spans, refs, labels, text_equations, use, add):

@@ -276,7 +276,7 @@ class AIRequest(BaseModel):
     page: int | None = None  # page de la zone, sinon page du PDF qu'on lit (livre trop long : fenêtre autour d'elle)
     pages: list[dict] = []  # PDF sans texte : [{"page", "image" (JPEG en base64)}] autour de la question
     second: str | None = None  # relecture croisée : l'autre assistant (claude, codex, gemini, local)
-    chapter: str | None = None  # livre : résumé ou relecture d'un seul chapitre
+    chapter: str | None = None  # résumé ou relecture d'un seul chapitre (livre) ou d'une seule section (article)
 
 
 class BookRequest(BaseModel):
@@ -441,7 +441,7 @@ def paper(paper_id: str):
     if paper.get("source") in latexml.SOURCES:  # version HTML expérimentale (LaTeXML), si elle est faite et à jour
         paper["html"] = latexml.state(paper)
         if paper["html"] == "ready" and (structure := latexml.structure(paper_id)):
-            return {"paper": paper, "structure": structure}
+            return {"paper": paper, "structure": _html_structure(paper_id, structure)}
     return {"paper": paper, "structure": library.load_structure(paper_id)}
 
 
@@ -664,6 +664,14 @@ def clear_proof_location(paper_id: str, node_id: str):
     return _reanalyze(paper_id, structure)
 
 
+def _html_structure(paper_id, structure):
+    """Structure de la page HTML : sections différentes de celles que le serveur connaît, pas de choix qu'il refuserait."""
+    known = (library.load_structure(paper_id) or {}).get("sections", [])
+    if [s["id"] for s in structure.get("sections", [])] != [s["id"] for s in known]:
+        structure["sections"] = []
+    return structure
+
+
 def _html_ready(paper):
     return paper.get("source") in latexml.SOURCES and latexml.state(paper) == "ready"
 
@@ -671,7 +679,7 @@ def _html_ready(paper):
 def _reanalyze(paper_id, structure):
     """Version HTML de LaTeXML affichée : sa structure, refaite sur sa page ; sinon celle de l'article."""
     if _html_ready(checked_paper(paper_id)):
-        return latexml.reanalyze(paper_id)
+        return _html_structure(paper_id, latexml.reanalyze(paper_id))
     return library.reanalyze(paper_id, structure)
 
 
@@ -743,15 +751,16 @@ async def book_jobs(paper_id: str):
 
 @app.post("/api/papers/{paper_id}/ai/book")
 async def start_book_job(paper_id: str, body: BookRequest):
-    """Livre : relecture ou résumé de tous les chapitres en parallèle, puis synthèse ; tâche de fond (bookjob)."""
+    """Livre ou article : relecture ou résumé de tous les chapitres (sections) en parallèle, puis synthèse ; tâche de
+    fond (bookjob)."""
     paper = checked_paper(paper_id)
     structure = await run_in_threadpool(library.load_structure, paper_id) or {}
     settings = db.get_settings()
     model = ai.current_model(settings)
     if body.task not in ("summary", "review"):
         return JSONResponse({"error": "Unknown task"}, status_code=400)
-    if len(structure.get("chapters", [])) < 2:
-        return JSONResponse({"error": "Not a book"}, status_code=400)
+    if len(ai.parts_of(structure)) < 2:
+        return JSONResponse({"error": "Nothing to split"}, status_code=400)
     second = None
     if body.second is not None:
         if body.task != "review" or body.second not in providers.PROVIDERS or body.second == providers.provider_of(model):
@@ -795,7 +804,7 @@ async def ask_ai(paper_id: str, body: AIRequest):
         model = ai.current_model(settings)
         cross = body.second is not None
         chapter = body.chapter or None
-        if chapter and (body.task not in ("summary", "review") or chapter not in {c["id"] for c in structure.get("chapters", [])}):
+        if chapter and (body.task not in ("summary", "review") or chapter not in {c["id"] for c in ai.parts_of(structure)}):
             raise ai.AIError("Unknown chapter")
         if chapter:
             target = chapter  # gardé avec l'échange : le document de ce chapitre

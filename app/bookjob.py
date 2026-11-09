@@ -1,4 +1,5 @@
-"""Livre : relecture ou résumé de tous les chapitres en parallèle (deux à la fois), puis synthèse ou résumé d'ensemble.
+"""Livre (ou article, section par section) : relecture ou résumé de tous les chapitres en parallèle (deux à la fois),
+puis synthèse ou résumé d'ensemble.
 
 Tâche de fond du serveur, une par livre et par sorte (résumé, relecture) : elle continue si l'article ou la page se
 ferme ; la page suit son état (`state`) et peut l'arrêter. Chaque chapitre fini est enregistré aussitôt comme un
@@ -34,7 +35,7 @@ class Job:
     def __init__(self, paper, structure, task, model, second, language, fresh):
         self.paper, self.structure, self.task = paper, structure, task
         self.model, self.second, self.language = model, second, language
-        chapters = structure.get("chapters", [])
+        chapters = ai.parts_of(structure)
         done = {} if fresh else reusable(paper["id"], task, {c["id"] for c in chapters})
         self.chapters = [{"id": c["id"], "state": "reused" if c["id"] in done else "wait",
                           "exchange": done[c["id"]]["id"] if c["id"] in done else None, "seconds": None, "started": None}

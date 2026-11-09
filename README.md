@@ -5,7 +5,7 @@
 A reader for arXiv papers built for mathematics: AMS-style "paper" layout, navigable statements and proofs,
 dependency graph, notes and highlights, a feed of new papers sorted by your profile, related-papers graphs, and an
 optional AI assistant (Claude, Codex, Gemini or a local model) that only sees the text of the paper: questions,
-summaries and critical reviews, optionally cross-checked by two assistants, chapter by chapter for books. French and
+summaries and critical reviews, optionally cross-checked by two assistants, chapter by chapter for books, section by section for papers. French and
 English interface.
 
 It runs on **macOS** and **Windows** (apps to download) and on **Linux** (from the source code). Everything stays
@@ -363,17 +363,17 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   notation) and a window around the question (the page of the region or the page being read, otherwise the
   statement or the quoted passage), more before than after; omitted pages are marked. A paper is always sent whole.
 - **Books, chapter by chapter**: in a book (arXiv HTML or TeX file with chapters), the *Summary* and *Review* tabs
-  have a *Chapter* menu (the chapter being read by default, ✓ for those already done), each chapter with its own
+  have a *Scope* menu (the chapter being read by default, ✓ for those already done), each chapter with its own
   thread. The assistant reads that chapter only, with the book's contents and, from other chapters, statements only
   (no proofs): those the chapter uses, and those that depend on it, directly or in a chain. The review then checks
   the uses (*Uses from other chapters*) and says which later statements an error would affect (*Impact on other
   chapters*). Both lists are shown, clickable, before the request is sent. The *Statements* tab also shows one
-  chapter at a time (*Chapter* menu in place of the chapter's title: the chapter being read, followed as you read in
+  chapter at a time (menu in place of the chapter's title: the chapter being read, followed as you read in
   the HTML or the PDF; a chapter you choose stays until you move on to another chapter; or the whole book); a search
   covers the whole book. Read in the PDF, a
   statement chosen in the panel opens at its page even when arXiv's HTML numbers it differently from the PDF
   (*Proposition 7.10* there, *2.3.10* in the PDF).
-- **The whole book, in parallel**: the first entry of the *Chapter* menu, *All chapters in parallel, then synthesis*
+- **The whole book, in parallel**: the first entry of the *Scope* menu, *All chapters in parallel, then synthesis*
   (*Review*) or *… then overall summary* (*Summary*), reviews or summarises each chapter separately, two at a time,
   then writes the synthesis of the book from these reviews, or a short overall summary that brings out the global
   structure (not chapter by chapter). Each chapter review ends with a *chapter record* (notation and conventions,
@@ -385,6 +385,13 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   done, in progress, time elapsed; the total time is given at the end), *Stop* keeps the finished chapters, and each finished chapter already opens
   from the menu. A new run reuses the chapters already done (reviews with their record), unless you tick *Also review
   again the chapters already reviewed*.
+- **Long papers, section by section**: in a paper with at least two sections, the *Summary* and *Review* tabs have a
+  *Scope* menu: *Full review of the paper* (the default, as without the menu), *All sections in parallel, then
+  synthesis*, or one section. For one section the assistant receives the whole paper, for its notation and definitions,
+  but works on that section only, with the statements linked to it, shown before sending: those of other sections it
+  uses, those that depend on it, and those written elsewhere but proved in it (what a proof uses counts in the section
+  where the proof is). The parallel option works as for a book. The *Graph* tab has the same choice: the whole paper by
+  default, or one section with the statements of other sections it uses directly.
 - **Statements and proofs**: the note icon in the margin (on hover) opens a note and, for a statement,
   the reading state *understood / to review / checked* (shown in the title and in the list of statements).
 - **Notes without a passage**: right-click → "Add note", in HTML (on the paragraph; in a statement or proof, its

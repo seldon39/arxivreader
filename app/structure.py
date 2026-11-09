@@ -7,7 +7,7 @@ from bs4 import NavigableString, Tag
 
 from .arxiv import ID_RE, extract_ids
 
-STRUCTURE_VERSION = 14  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
+STRUCTURE_VERSION = 15  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
 
 SECTION_LEVELS = {
     "ltx_part": 0, "ltx_chapter": 0, "ltx_section": 1, "ltx_appendix": 1,
@@ -813,6 +813,15 @@ def extract_structure(fragment, overrides=None):
         if re.search(r"#[#\d]", tex) and not para.find(class_="ltx_note") and "arx-macro-debris" not in classes:
             para["class"] = classes + ["arx-macro-debris"]
 
+    toc_ids = {entry["id"] for entry in toc}
+
+    def proof_place(proof_id):
+        """Entrée du sommaire qui contient la preuve (elle peut en être une : section de preuve)."""
+        element = by_id(proof_id)
+        while element is not None and element.get("id") not in toc_ids:
+            element = element.parent
+        return element.get("id") if element is not None else None
+
     return assign_chapters({
         "version": STRUCTURE_VERSION,
         "toc": toc,
@@ -820,16 +829,72 @@ def extract_structure(fragment, overrides=None):
         "equations": equations,
         "bibliography": bibliography,
         "hiddenText": hidden,
-    })
+    }, proof_place)
 
 
-def assign_chapters(structure):
+# Sections de fin sans contenu mathématique : pas de résumé ni de relecture à part
+NOT_A_SECTION = re.compile(r"^(?:[\dIVXLCA-Z]+\.?\s+)?(?:references|bibliography|bibliographie|acknowledge?ments?|remerciements|(?:table of )?contents|table des matières|sommaire|dedication|funding|data availability(?: statement)?|conflicts? of interests?|statements? and declarations?|declarations?(?: of (?:competing interests?|generative ai\b.*|ai\b.*))?|ai (?:usage statement|tools declaration|declaration))\W*$", re.I)
+
+
+_MACRO_DEFINITION = re.compile(r"\\(?:(?:re)?newcommand|providecommand)\*?\s*\{?\s*$|\\(?:let|def)\s*$")
+
+
+def defines_macro(body, start):
+    """Source TeX : la commande en `start` est le nom d'une macro qu'on définit (\\renewcommand\\section{…}), pas son emploi."""
+    return bool(_MACRO_DEFINITION.search(body[max(0, start - 30):start]))
+
+
+def top_sections(toc):
+    """Entrées de premier niveau du sommaire d'un article (sections et annexes, y compris « References »)."""
+    levels = [entry.get("level", 9) for entry in toc if entry.get("kind") in ("section", "appendix")]
+    return [entry for entry in toc if levels and entry.get("level", 9) == min(levels) and entry.get("kind") in ("section", "appendix")]
+
+
+def assign_sections(structure, proof_place=None):
+    """Article (au moins deux sections) : liste des sections (`sections`), section de chaque énoncé (`chapter`, comme
+    dans un livre) et sections qui contiennent sa preuve (`provedIn`, liste : souvent une autre section, un théorème de
+    l'introduction étant prouvé plus loin ; parfois plusieurs, une preuve en deux parties)."""
+    structure["sections"] = []
+    toc = structure.get("toc", [])
+    if structure.get("book"):
+        return
+    top = {entry["id"] for entry in top_sections(toc)}
+    if not top:
+        return
+    level = min(entry.get("level", 9) for entry in toc if entry["id"] in top)
+    owner, current, sections = {}, None, []
+    for entry in toc:
+        if entry["id"] in top:
+            current = None if NOT_A_SECTION.match(entry.get("title", "").strip()) else entry["id"]
+            if current:
+                sections.append({"id": current, "title": entry.get("title", "")})
+        elif entry.get("level", 9) <= level:  # bibliographie, partie : hors de toute section
+            current = None
+        owner[entry["id"]] = current
+
+    def section_of(place):
+        while place and place not in owner:  # sous-section absente du sommaire : la section qui la contient
+            place = place.rpartition(".")[0]
+        return owner.get(place)
+
+    if len(sections) < 2:
+        return
+    structure["sections"] = sections
+    for node in structure.get("nodes", []):
+        node["chapter"] = section_of(node.get("section") or "")
+        passage = node.get("proofPassage")  # preuve indiquée à la main comme un passage : là où il commence
+        places = (section_of((proof_place or (lambda p: p))(proof) or "") for proof in [*node.get("proofs", []), *([passage["start"]] if passage else [])])
+        node["provedIn"] = list(dict.fromkeys(place for place in places if place))
+
+
+def assign_chapters(structure, proof_place=None):
     """Livre (au moins deux chapitres, HTML ou source TeX) : `book`, liste des chapitres (`chapters`) et chapitre de
     chaque énoncé (`chapter`), d'après l'ordre du sommaire. Une annexe de premier niveau d'un livre est un chapitre."""
     toc = structure.get("toc", [])
     chapters = [entry for entry in toc if entry.get("kind") == "chapter"]
     if len(chapters) < 2:
         structure["chapters"] = []
+        assign_sections(structure, proof_place)
         return structure
 
     def is_chapter(entry):

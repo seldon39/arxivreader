@@ -480,6 +480,18 @@ Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à 
   « chapitre en cours » seulement sur un échange de la tâche (`chapters[].exchange`, `synthesis.exchange`) ; `reusable` comme côté serveur ; liens vers les chapitres sous la synthèse
   (`bookChips`). « Tout le livre » (un seul envoi, tronqué au-delà de `paper_limit`) a disparu des livres.
 
+- Articles, section par section : `structure.assign_sections` (appelé par `assign_chapters` quand ce n'est pas un livre)
+  pose `sections` (premier niveau du sommaire, sauf références et remerciements ; au moins deux), `chapter` (section de
+  l'énoncé) et `provedIn` (liste des sections de sa preuve, souvent une autre, passage indiqué à la main compris) sur chaque énoncé. `ai.parts_of` donne les chapitres
+  sinon les sections : `bookjob`, la route `/ai/book` et le paramètre `chapter` servent aux deux. Une section part avec
+  **tout l'article** (notations souvent fixées dans le texte courant), consignes `SECTION_PROMPTS` et, pour la synthèse,
+  `SECTIONS_PROMPTS`, dérivées de celles des livres (`_to_sections`, `_rewritten` : une phrase disparue fait échouer
+  l'import). `chapter_links` compte ce qu'une preuve utilise dans la section où elle est (`chapterLinks` dans `ai.js`,
+  même règle) ; `<statements_proved_here>` liste les énoncés écrits ailleurs et prouvés là. Article trop long pour
+  l'assistant (modèle local) : `_reduced_to_section`, y compris pour les questions posées sur la relecture d'une section. Relecture croisée : `scope` garde la comparaison et la synthèse sur la section. Version HTML (LaTeXML) dont les sections diffèrent de la structure du serveur : pas de menu (`sections` vidé dans la route). Côté page (`ai.js`) : le même menu `chapterBar`, entrées article
+  entier (valeur vide), `SECTIONS` (tâche parallèle) puis sections ; textes `ai.sections.*` (`tb`, `tnb`, sinon ceux du
+  livre). Graphe : `reader.sectionGraph`, tout l'article par défaut (`graphSection`). Onglet Énoncés inchangé : le suivi au
+  défilement reste propre aux livres. Le menu s'appelle Portée / Scope pour les articles comme pour les livres.
 - Livres, résumé et relecture par chapitre : `structure.assign_chapters` (HTML d'arXiv et `texstructure`) marque
   `book`, liste `chapters` (chapitres et annexes de premier niveau, d'après le `kind` des entrées du sommaire) et pose
   `chapter` sur chaque énoncé. La demande porte `chapter` (résumé ou relecture seulement, sinon 400) ; `build_prompt`

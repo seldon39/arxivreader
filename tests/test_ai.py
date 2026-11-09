@@ -2,9 +2,11 @@
 
 import base64
 import json
+import re
 import pathlib
 import tempfile
 import unittest
+import unittest.mock
 
 from fastapi.testclient import TestClient
 
@@ -481,6 +483,253 @@ BOOK = """<article><h1 class="ltx_title ltx_title_document">A short book</h1>
 <p>Even more, by <a href="#Thmcorollary1" class="ltx_ref">Corollary 3.1.1</a>.</p></div></section></section></article>"""
 
 
+ARTICLE = """<article><h1 class="ltx_title ltx_title_document">A long paper</h1>
+<section class="ltx_section" id="S1"><h2 class="ltx_title">1 Introduction</h2>
+<div class="ltx_theorem ltx_theorem_theorem" id="S1.Thm1"><h6 class="ltx_title ltx_title_theorem">Theorem 1.1.</h6>
+<p>The main claim holds.</p></div><p>The notation X is fixed here only.</p></section>
+<section class="ltx_section" id="S2"><h2 class="ltx_title">2 Tools</h2>
+<div class="ltx_theorem ltx_theorem_lemma" id="S2.Thm1"><h6 class="ltx_title ltx_title_theorem">Lemma 2.1.</h6>
+<p>The tool works.</p></div></section>
+<section class="ltx_section" id="S3"><h2 class="ltx_title">3 Proofs</h2>
+<div class="ltx_proof" id="S3.p1"><h6 class="ltx_title ltx_title_proof">Proof of <a href="#S1.Thm1" class="ltx_ref">Theorem 1.1</a>.</h6>
+<p>Only the third section argues like this, with <a href="#S2.Thm1" class="ltx_ref">Lemma 2.1</a>.</p></div>
+<div class="ltx_theorem ltx_theorem_corollary" id="S3.Thm1"><h6 class="ltx_title ltx_title_theorem">Corollary 3.1.</h6>
+<p>Consequence of <a href="#S1.Thm1" class="ltx_ref">Theorem 1.1</a>.</p></div></section>
+<section class="ltx_section" id="Sx1"><h2 class="ltx_title">References</h2><p>Some list.</p></section></article>"""
+
+
+class Sections(unittest.TestCase):
+    """Article : une section (tout l'article envoyé), ou toutes en parallèle puis synthèse."""
+
+    def setUp(self):
+        from bs4 import BeautifulSoup
+        from app.structure import extract_structure
+        self.saved = (db.DB_PATH, db.LIBRARY, library.PAPERS, ai.stream_answer)
+        self.tmp = pathlib.Path(tempfile.mkdtemp())
+        db.DB_PATH, db.LIBRARY, library.PAPERS = self.tmp / "test.db", self.tmp, self.tmp / "papers"
+        db.init()
+        folder = library.PAPERS / "a1"
+        folder.mkdir(parents=True)
+        (folder / "content.html").write_text(ARTICLE, encoding="utf-8")
+        self.structure = extract_structure(BeautifulSoup(ARTICLE, "html.parser"))
+        (folder / "structure.json").write_text(json.dumps(self.structure), encoding="utf-8")
+        db.save_paper({"id": "a1", "arxiv_id": "2601.00005", "version": 1, "title": "A long paper", "authors": ["A. B."],
+                       "abstract": "", "categories": ["math.DG"], "source": "arxiv-html", "in_library": 1})
+        self.paper = db.get_paper("a1")
+
+    def tearDown(self):
+        db.DB_PATH, db.LIBRARY, library.PAPERS, ai.stream_answer = self.saved
+
+    def test_sections_and_where_proofs_are(self):
+        self.assertFalse(self.structure.get("book"))
+        self.assertEqual(self.structure["chapters"], [])
+        self.assertEqual([s["id"] for s in self.structure["sections"]], ["S1", "S2", "S3"])  # pas « References »
+        nodes = {n["label"]: n for n in self.structure["nodes"]}
+        self.assertEqual((nodes["Theorem 1.1"]["chapter"], nodes["Theorem 1.1"]["provedIn"]), ("S1", ["S3"]))
+        self.assertEqual(nodes["Lemma 2.1"]["provedIn"], [])
+
+    def test_not_sections(self):
+        from app.structure import NOT_A_SECTION
+        for title in ("References", "Contents", "Funding", "5 Data availability statement", "Statements and Declarations", "Acknowledgments."):
+            self.assertTrue(NOT_A_SECTION.match(title), title)
+        for title in ("1 Introduction", "A note on references", "Contents of the proof"):
+            self.assertFalse(NOT_A_SECTION.match(title), title)
+
+    def test_proof_in_two_sections_or_a_passage(self):
+        from bs4 import BeautifulSoup
+        from app.structure import extract_structure
+        two = ARTICLE.replace('<section class="ltx_section" id="Sx1">', '<section class="ltx_section" id="S4"><h2 class="ltx_title">4 More</h2>'
+                              '<div class="ltx_proof" id="S4.p1"><h6 class="ltx_title ltx_title_proof">Proof of <a href="#S1.Thm1" class="ltx_ref">Theorem 1.1</a>, end.</h6>'
+                              '<p>Done.</p></div></section><section class="ltx_section" id="Sx1">')
+        structure = extract_structure(BeautifulSoup(two, "html.parser"))
+        theorem = next(n for n in structure["nodes"] if n["label"] == "Theorem 1.1")
+        self.assertEqual(theorem["provedIn"], ["S3", "S4"])
+        self.assertIn("S1.Thm1", ai.chapter_links(structure, "S4")[2])
+        page = ARTICLE.replace("<p>Some list.</p>", "").replace('<p>The tool works.</p>', '<p id="S2.p9">The tool works.</p>')
+        structure = extract_structure(BeautifulSoup(page, "html.parser"), {"S1.Thm1": {"mode": "passage", "start": "S2.p9", "end": "S2.p9"}})
+        theorem = next(n for n in structure["nodes"] if n["label"] == "Theorem 1.1")
+        self.assertEqual(theorem["provedIn"], ["S2"])
+
+    def test_links_follow_the_proof(self):
+        labels = lambda found: [n["label"] for n in found]  # noqa: E731
+        used, dependents, own = ai.chapter_links(self.structure, "S3")
+        self.assertEqual(labels(used), ["Lemma 2.1"])  # utilisé par la preuve du théorème 1.1, écrite ici
+        self.assertEqual(labels(dependents), [])
+        used, dependents, own = ai.chapter_links(self.structure, "S1")
+        self.assertEqual(labels(used), [])  # la preuve est ailleurs
+        self.assertEqual(labels(dependents), ["Corollary 3.1"])
+        used, dependents, own = ai.chapter_links(self.structure, "S2")
+        self.assertEqual(labels(dependents), ["Theorem 1.1", "Corollary 3.1"])  # en chaîne
+
+    def test_section_prompt_sends_the_whole_paper(self):
+        _, prompt = ai.build_prompt(self.paper, self.structure, "review", "S3", language="en", chapter="S3")
+        paper = prompt.split("</paper>")[0]
+        self.assertIn("The notation X is fixed here only.", paper)
+        self.assertIn("The tool works.", paper)
+        self.assertNotIn(" part=", paper.split(">")[0])
+        proved = prompt.split("<statements_proved_here>")[1].split("</statements_proved_here>")[0]
+        self.assertIn('label="Theorem 1.1" section="1 Introduction"', proved)
+        self.assertIn('label="Lemma 2.1"', prompt.split("<used_statements>")[1].split("</used_statements>")[0])
+        self.assertIn("### Uses from other sections", prompt)
+        self.assertIn("### Section record", prompt)
+        self.assertIn("review this section only", prompt)
+        rest = prompt.split("</paper>")[1]
+        self.assertIsNone(re.search(r"\b[Cc]hapter|\bbook\b", rest), re.search(r".{30}\b[Cc]hapter.{30}|.{30}\bbook\b.{30}", rest))
+        _, summary = ai.build_prompt(self.paper, self.structure, "summary", "S2", language="en", chapter="S2")
+        self.assertIn("### Content of the section", summary)
+        self.assertNotIn("{section}", summary)
+        with self.assertRaises(ai.AIError):
+            ai.build_prompt(self.paper, self.structure, "ask", question="?", chapter="S2")
+
+    def test_too_long_keeps_the_section(self):
+        text = ai._load("a1")[2]
+        _, prompt = ai.build_prompt(self.paper, self.structure, "review", "S3", language="en", limit=len(text) + 10, chapter="S3")
+        paper = prompt.split("</paper>")[0]  # le contexte joint compte dans la limite
+        self.assertIn("Only the third section argues like this", paper)
+        self.assertIn("omitted", paper)
+        self.assertIn("A long paper", paper)  # le début, pour les notations
+        history = [{"task": "review", "target": "S3", "question": None, "answer": "Fine.", "id": 1, "parent_id": None, "status": "done", "quote": None}]
+        _, follow = ai.build_prompt(self.paper, self.structure, "ask", question="Why?", language="en", limit=200, parent=history[0], history=history)
+        self.assertIn("Only the third section argues", follow.split("</paper>")[0])  # une question sur cette relecture garde la section
+        with unittest.mock.patch.object(ai, "_focus", return_value=0):  # un énoncé trouvé sur la page affichée
+            _, on_page = ai.build_prompt(self.paper, self.structure, "ask", question="Why?", language="en", limit=200, parent=history[0], history=history, page=1)
+        self.assertIn("Only the third section argues", on_page.split("</paper>")[0])  # la page affichée (PDF) ne l'emporte pas
+
+    def test_section_request(self):
+        async def fake(system, prompt, model, image=None, pages=()):
+            yield "ok"
+        ai.stream_answer = fake
+        client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
+        self.assertEqual(client.post("/api/papers/a1/ai", json={"task": "review", "chapter": "Sx1"}).status_code, 400)
+        events = [json.loads(line) for line in client.post("/api/papers/a1/ai", json={"task": "review", "chapter": "S2"}).text.splitlines()]
+        self.assertEqual((events[-1]["exchange"]["target"], events[-1]["exchange"]["status"], events[-1]["exchange"]["card"]), ("S2", "done", 1))
+
+    def test_full_review_is_unchanged(self):
+        _, prompt = ai.build_prompt(self.paper, self.structure, "review", language="en")
+        self.assertNotIn("<used_statements>", prompt)
+        self.assertIn("Read the paper as a careful referee.", prompt)
+
+    def test_all_sections_then_synthesis(self):
+        import asyncio
+        from app import bookjob
+        self.addCleanup(bookjob.jobs.clear)
+        prompts = []
+
+        async def fake(system, prompt, model, image=None, pages=()):
+            prompts.append(prompt)
+            yield f"Review {len(prompts)}\n\n### Section record\nNotation."
+        ai.stream_answer = fake
+
+        async def run():
+            job = bookjob.start(self.paper, self.structure, "review", "opus", language="en")
+            await job.handle
+            return job
+        job = asyncio.run(run())
+        self.assertEqual(job.phase, "done")
+        self.assertEqual([c["id"] for c in job.chapters], ["S1", "S2", "S3"])
+        last = prompts[-1]
+        self.assertEqual(last.count("<section_review "), 3)
+        self.assertIn("<section_links>", last)
+        self.assertIn("Corollary 3.1 (3 Proofs) uses Theorem 1.1 (1 Introduction)", last)
+        self.assertIn("Theorem 1.1 (3 Proofs) uses Lemma 2.1 (2 Tools)", last)  # là où est la preuve
+        self.assertNotIn("Theorem 1.1 (1 Introduction) uses", last)
+        self.assertIn("with the whole paper at hand", last)
+        self.assertIsNone(re.search(r"\b[Cc]hapter|\bbook\b", last))
+        exchanges = ai.list_for("a1")
+        self.assertEqual([e["target"] for e in exchanges if e["task"] == "review"][-1], ai.BOOK)
+        client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
+        self.assertEqual(client.get("/api/papers/a1/ai/book").status_code, 200)
+
+    def test_cross_review_of_a_section(self):
+        import asyncio
+        prompts = []
+
+        async def fake(system, prompt, model, image=None, pages=()):
+            prompts.append(prompt)
+            yield "ok"
+        ai.stream_answer = fake
+
+        async def run():
+            return [e async for e in ai.cross_review(self.paper, self.structure, "opus", "codex", "en", chapter="S2")]
+        asyncio.run(run())
+        self.assertIn("The tool works.", prompts[0])
+        self.assertIn("The notation X is fixed here only.", prompts[0])
+        self.assertIn("### Uses from other sections", prompts[-1])
+        for prompt in prompts[2:]:  # comparaison, synthèse : toujours cette section
+            self.assertIn("These reviews concern only the section “2 Tools”", prompt)
+        self.assertIsNone(re.search(r"\b[Cc]hapter", prompts[-1].split("</paper>")[-1]))
+
+    def test_tex_article(self):
+        from app import texsource, texstructure
+        source = ("\\documentclass{amsart}\n\\newtheorem{theorem}{Theorem}[section]\n\\begin{document}\n"
+                  "\\section{One}\\begin{theorem}\\label{a}First.\\end{theorem}\n"
+                  "\\section{Two}\\begin{theorem}\\label{b}Second.\\end{theorem}\n"
+                  "\\begin{proof}[Proof of Theorem~\\ref{a}]By Theorem~\\ref{b}.\\end{proof}\n\\end{document}\n")
+        source = texsource._strip_comments(source)
+        structure = texstructure.extract(source)
+        self.assertEqual(len(structure["sections"]), 2)
+        one, two = (s["id"] for s in structure["sections"])
+        first = next(n for n in structure["nodes"] if n["label"] == "Theorem 1.1")
+        self.assertEqual((first["chapter"], first["provedIn"]), (one, [two]))
+        text = ai.tex_body(source)
+        start, end = ai._section_span(text, None, {}, structure, two)
+        self.assertTrue(text[start:].startswith("\\section{Two}"))
+        self.assertEqual(end, len(text))
+
+    def test_tex_section_redefinition_is_not_a_section(self):
+        from app import texsource, texstructure
+        source = ("\\documentclass{amsart}\n\\begin{document}\n\\makeatletter\\renewcommand\\section{\\@startsection{section}{1}}\\makeatother\n"
+                  "\\section{One}\nText.\n\\section{Two}\nMore.\n\\end{document}\n")
+        structure = texstructure.extract(texsource._strip_comments(source))
+        self.assertEqual(len(structure["sections"]), 2)
+        self.assertIn("One", structure["sections"][0]["title"])
+        text = ai.tex_body(source)
+        start, _ = ai._section_span(text, None, {}, structure, structure["sections"][1]["id"])
+        self.assertTrue(text[start:].startswith("\\section{Two}"))
+
+    def test_tex_macro_definitions_are_counted_the_same_way(self):
+        from app import texsource, texstructure
+        for definition in ("\\def\\section{\\@startsection}", "\\renewcommand \\section{\\@startsection}", "\\newcommand*{\\section}[1]{x}"):
+            source = (f"\\documentclass{{amsart}}\n\\begin{{document}}\n{definition}\n\\section{{One}}\nText.\n\\section{{Two}}\nMore.\n\\end{{document}}\n")
+            structure = texstructure.extract(texsource._strip_comments(source))
+            self.assertEqual(len(structure["sections"]), 2, definition)
+            text = ai.tex_body(source)
+            start, _ = ai._section_span(text, None, {}, structure, structure["sections"][1]["id"])
+            self.assertTrue(text[start:].startswith("\\section{Two}"), definition)
+        source = "\\documentclass{amsart}\n\\begin{document}\n\\mycommand\\section{One}\nA.\n\\section{Two}\nB.\n\\end{document}\n"
+        structure = texstructure.extract(texsource._strip_comments(source))  # une autre macro : \\section reste une section
+        self.assertEqual(len(structure["sections"]), 2)
+        self.assertIsNotNone(ai._section_span(ai.tex_body(source), None, {}, structure, structure["sections"][1]["id"]))
+
+    def test_tex_book_with_chapter_redefinition_still_works(self):
+        from app import texsource, texstructure
+        source = ("\\documentclass{book}\n\\begin{document}\n\\makeatletter\\renewcommand\\chapter{\\@startchapter}\\makeatother\n"
+                  "\\chapter{One}\nFirst.\n\\chapter{Two}\nSecond.\n\\end{document}\n")
+        structure = texstructure.extract(texsource._strip_comments(source))
+        text = ai.tex_body(source)
+        for chapter in structure["chapters"]:
+            ai._chapter_text(None, {}, structure, text, chapter["id"])  # comme avant : pas d'erreur « Chapter not found »
+
+    def test_html_version_with_other_sections_has_no_menu(self):
+        client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
+        other = {**self.structure, "sections": [{"id": "S9", "title": "Other"}, {"id": "S3", "title": "3"}]}
+        same = {**self.structure, "sections": list(self.structure["sections"])}
+        sources = (*main.latexml.SOURCES, "arxiv-html")
+        for served, count in ((other, 0), (same, 3)):
+            with unittest.mock.patch.object(main.latexml, "SOURCES", sources), unittest.mock.patch.object(main.latexml, "state", return_value="ready"), \
+                    unittest.mock.patch.object(main.latexml, "structure", return_value=dict(served)):
+                self.assertEqual(len(client.get("/api/papers/a1").json()["structure"]["sections"]), count)
+            with unittest.mock.patch.object(main, "_html_ready", return_value=True), unittest.mock.patch.object(main.latexml, "reanalyze", return_value=dict(served)):
+                self.assertEqual(len(main._reanalyze("a1", None)["sections"]), count)  # indiquer une preuve : même vérification
+
+    def test_short_or_book_has_no_sections(self):
+        from bs4 import BeautifulSoup
+        from app.structure import extract_structure
+        one = '<article><section class="ltx_section" id="S1"><h2 class="ltx_title">1 Only</h2><p>x</p></section></article>'
+        self.assertEqual(extract_structure(BeautifulSoup(one, "html.parser"))["sections"], [])
+        self.assertFalse(extract_structure(BeautifulSoup(BOOK, "html.parser")).get("sections"))
+
+
 class Chapters(unittest.TestCase):
     def setUp(self):
         from bs4 import BeautifulSoup
@@ -696,7 +945,7 @@ class Chapters(unittest.TestCase):
         self.assertEqual(client.post("/api/papers/b1/ai/book", json={"task": "review", "second": "claude"}).status_code, 400)
         db.save_paper({"id": "p2", "arxiv_id": "2601.00003", "version": 1, "title": "Short", "authors": ["A. B."],
                        "abstract": "", "categories": ["math.DG"], "source": "arxiv-html", "in_library": 1})
-        self.assertEqual(client.post("/api/papers/p2/ai/book", json={"task": "review"}).json(), {"error": "Not a book"})
+        self.assertEqual(client.post("/api/papers/p2/ai/book", json={"task": "review"}).json(), {"error": "Nothing to split"})
 
     def test_new_review_prompts(self):
         """Relecture : verdict d'abord, gravité, certain ou soupçonné, ce qui reste valable ; résumé : nouveauté, limites."""

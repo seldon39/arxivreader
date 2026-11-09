@@ -5,7 +5,7 @@
 Lecteur d'articles arXiv pensé pour les mathématiques : mise en page « papier AMS », énoncés et preuves navigables,
 graphe des dépendances, notes et surlignages, feed des nouveautés trié selon votre profil, graphes de papiers liés, et
 un assistant IA facultatif (Claude, Codex, Gemini ou un modèle local) qui ne voit que le texte de l'article : questions,
-résumés et relectures critiques, éventuellement croisées entre deux assistants, chapitre par chapitre pour un livre.
+résumés et relectures critiques, éventuellement croisées entre deux assistants, chapitre par chapitre pour un livre, section par section pour un article.
 Interface en français et en anglais.
 
 Il fonctionne sous **macOS** et **Windows** (applications à télécharger) et sous **Linux** (depuis le code source).
@@ -379,17 +379,17 @@ il suffit de la fermer et d'aller dans le feed.
   notations) et une fenêtre autour de la question (page de la zone ou page qu'on lit, sinon énoncé ou passage cité),
   plus avant qu'après ; les pages omises sont signalées. Un article part toujours en entier.
 - **Livres, chapitre par chapitre** : dans un livre (HTML d'arXiv ou fichier TeX à chapitres), les onglets *Résumé*
-  et *Relecture* ont un menu *Chapitre* (par défaut celui qu'on lit, ✓ pour ceux déjà faits), chaque chapitre avec son
+  et *Relecture* ont un menu *Portée* (par défaut celui qu'on lit, ✓ pour ceux déjà faits), chaque chapitre avec son
   fil. L'assistant lit ce chapitre seul, avec le sommaire du livre et, des autres chapitres, les énoncés seuls (sans
   preuve) : ceux que le chapitre utilise, et ceux qui en dépendent, directement ou en chaîne. La relecture vérifie
   alors ces usages (*Uses from other chapters*) et dit quels énoncés suivants une erreur toucherait (*Impact on other
   chapters*). Les deux listes sont montrées, cliquables, avant l'envoi. L'onglet *Énoncés* montre lui aussi un
-  chapitre à la fois (menu *Chapitre* à la place du titre du chapitre : celui qu'on lit, suivi pendant la lecture, en
+  chapitre à la fois (menu à la place du titre du chapitre : celui qu'on lit, suivi pendant la lecture, en
   HTML comme dans le PDF ; un chapitre choisi reste jusqu'au passage à un autre chapitre ; ou tout le livre) ; une
   recherche porte sur tout le livre. En lisant le
   PDF, un énoncé choisi dans le panneau s'ouvre à sa page même quand le HTML d'arXiv le numérote autrement que le PDF
   (*Proposition 7.10* d'un côté, *2.3.10* de l'autre).
-- **Tout le livre, en parallèle** : la première entrée du menu *Chapitre*, *Tous les chapitres en parallèle, puis
+- **Tout le livre, en parallèle** : la première entrée du menu *Portée*, *Tous les chapitres en parallèle, puis
   synthèse* (*Relecture*) ou *… puis résumé d'ensemble* (*Résumé*), relit ou résume chaque chapitre séparément, deux à
   la fois, puis écrit la synthèse du livre d'après ces relectures, ou un résumé d'ensemble court qui dégage la
   structure globale (pas chapitre par chapitre). Chaque relecture de chapitre se termine par une *fiche du chapitre*
@@ -402,6 +402,14 @@ il suffit de la fermer et d'aller dans le feed.
   durée totale est donnée à la fin), *Arrêter* garde les chapitres finis, et chaque chapitre fini s'ouvre déjà dans le menu. Un nouveau
   lancement reprend les chapitres déjà faits (relectures avec leur fiche), sauf si l'on coche *Relire aussi les
   chapitres déjà relus*.
+- **Articles longs, section par section** : dans un article d'au moins deux sections, les onglets *Résumé* et
+  *Relecture* ont un menu *Portée* : *Relecture complète de l'article* (par défaut, comme sans le menu), *Toutes les
+  sections en parallèle, puis synthèse*, ou une section. Pour une section, l'assistant reçoit tout l'article, pour ses
+  notations et définitions, mais ne traite que cette section, avec les énoncés qui lui sont liés, montrés avant l'envoi :
+  ceux d'autres sections qu'elle utilise, ceux qui en dépendent, et ceux écrits ailleurs mais prouvés chez elle (ce
+  qu'une preuve utilise compte dans la section où elle se trouve). L'option en parallèle fonctionne comme pour un livre.
+  L'onglet *Graphe* offre le même choix : tout l'article par défaut, ou une section avec les énoncés d'autres sections
+  qu'elle utilise directement.
 - **Énoncés et preuves** : l'icône de note en marge (au survol) ouvre une note et, pour un énoncé,
   l'état de lecture *compris / à revoir / vérifié* (affiché dans le titre et la liste des énoncés).
 - **Notes sans passage** : clic droit → « Ajouter une note », en HTML (sur le paragraphe ; dans un énoncé ou une

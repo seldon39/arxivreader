@@ -41,6 +41,8 @@ readers, roughly in order of impact. Each one is a GitHub issue with the context
   chapter records, or an overall summary (replaces "Whole book"): done in 1.11.26. Reviews rewritten as a referee's
   report (verdict, Critical / Serious / Minor, certain or suspected): 1.11.26; each point as a short title and prose,
   repair included, without the repeated "Main results" and "What survives" sections: 1.11.27.
+- Long papers: Scope menu in Summary and Review (full paper, all sections in parallel then synthesis, one section with
+  the whole paper sent and the statements linked to it, following where each proof is), and graph by section: done in 1.11.31.
 - Faster HTML conversion of long documents (idea, to be decided): LaTeXML run in parallel on blocks of about 20
   pages or more, cut at the nearest section or chapter (counters taken from the PDF compilation, cross-references,
   macros and one bibliography kept across blocks), then put back together as one page; for books and long papers,

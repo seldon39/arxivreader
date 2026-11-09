@@ -1734,7 +1734,7 @@ class Reader {
   // Livre : graphe d'un chapitre à la fois (celui de l'énoncé choisi, sinon le premier qui a des énoncés), avec les
   // énoncés d'autres chapitres qu'il utilise directement ; un graphe de tout le livre serait illisible
   graphNodes() {
-    if (!this.structure.book) return this.nodes;
+    if (!this.structure.book) return this.sectionGraph();
     this.bookChapters();
     const selected = this.selected && this.byId.get(this.selected);
     if (selected && (!this.graphChapter || !this.chapters.get(this.graphChapter)?.ids.has(selected.id))) this.graphChapter = this.chapterOfNode(selected.id);
@@ -1747,6 +1747,35 @@ class Reader {
         : { ...n, uses: [], usedBy: n.usedBy.filter((id) => own.has(id)) })));
     }
     return this.chapterNodes.get(this.graphChapter);
+  }
+
+  // Article : tout l'article (par défaut), ou une section : ses énoncés, ceux qui y sont prouvés et ceux d'autres sections
+  // qu'ils utilisent directement (mêmes tableaux d'un affichage à l'autre, comme pour un livre : disposition gardée)
+  sectionGraph() {
+    if (this.graphSection && this.selected) {  // énoncé choisi ailleurs : sa section
+      const selected = this.byId.get(this.selected);
+      if (selected && !this.sectionIds(this.graphSection).has(selected.id)) this.graphSection = selected.chapter || "";
+    }
+    const section = this.graphSection;
+    if (!section) return this.nodes;
+    if (this.sectionNodes?.source !== this.nodes) this.sectionNodes = { source: this.nodes, graphs: new Map() };
+    if (!this.sectionNodes.graphs.has(section)) {
+      const own = this.sectionIds(section);
+      const used = new Set(this.nodes.filter((n) => own.has(n.id)).flatMap((n) => n.uses));
+      this.sectionNodes.graphs.set(section, this.nodes.filter((n) => own.has(n.id) || used.has(n.id)).map((n) => (own.has(n.id)
+        ? { ...n, uses: n.uses.filter((id) => own.has(id) || used.has(id)), usedBy: n.usedBy.filter((id) => own.has(id)) }
+        : { ...n, uses: [], usedBy: n.usedBy.filter((id) => own.has(id)) })));
+    }
+    return this.sectionNodes.graphs.get(section);
+  }
+
+  sectionIds(section) {
+    return new Set(this.nodes.filter((n) => n.chapter === section || n.provedIn?.includes(section)).map((n) => n.id));
+  }
+
+  // Article : sections qui ont au moins un énoncé
+  graphSections() {
+    return (this.structure.sections || []).filter((s) => this.nodes.some((n) => n.chapter === s.id || n.provedIn?.includes(s.id)));
   }
 
   // Livre : énoncés par chapitre (section de premier niveau), dans l'ordre du livre ; onglets Énoncés et Graphe
@@ -1796,7 +1825,17 @@ class Reader {
   }
 
   chapterSelect() {
-    if (!this.structure.book || !this.chapters || this.chapters.size < 2) return null;
+    if (!this.structure.book) {
+      const sections = this.graphSections();
+      if (sections.length < 2) return null;
+      const menu = h("select", { class: "chapter-select", "aria-label": t("graph.chapter"), title: t("graph.chapter") },
+        h("option", { value: "" }, t("panel.wholePaper", { n: this.nodes.length })),
+        sections.map((s) => h("option", { value: s.id }, plainTitle(s.title))));
+      menu.value = this.graphSection || "";
+      menu.addEventListener("change", () => { this.graphSection = menu.value; this.selected = null; this.renderPanel(); });
+      return menu;
+    }
+    if (!this.chapters || this.chapters.size < 2) return null;
     const select = h("select", { class: "chapter-select", "aria-label": t("graph.chapter") },
       [...this.chapters].map(([id, chapter]) => h("option", { value: id }, chapter.title || id)));
     select.value = this.graphChapter;

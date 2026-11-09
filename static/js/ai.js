@@ -7,7 +7,7 @@ import { authorName, currentModel as modelFor, modelControls, modelLabel, provid
 import { COLORS, rangeForQuote } from "./annotations.js";
 import { markdownToHtml } from "./markdown.js";
 import { typesetTex } from "./math.js";
-import { t, tn } from "./i18n.js";
+import { hasText, t, tn } from "./i18n.js";
 import { DEFAULT_AI_FONT_SIZE, saveSettings, settings } from "./settings.js";
 import { escapeHtml, escapeRegExp, h, icons, plainTitle, toast, toastError } from "./util.js";
 
@@ -93,6 +93,7 @@ const modelOf = (provider) => modelFor({ ...settings, aiProvider: provider });
 
 // Livre : relecture, résumé de tous les chapitres en parallèle (tâche du serveur, bookjob) ; cible de la synthèse
 const BOOK = "@book";
+const SECTIONS = "@sections";  // article, menu Portée : toutes les sections en parallèle, puis synthèse
 const BOOK_TASKS = ["summary", "review"];
 const jobRunning = (job) => Boolean(job) && ["chapters", "synthesis"].includes(job.phase);
 // ce qui, en changeant, demande de recharger les échanges et de refaire le panneau (pas l'écoulement du temps)
@@ -159,7 +160,8 @@ export class Assistant {
   setStructure(structure) {
     this.structure = structure;
     // choix de chapitre gardés s'ils existent encore (une preuve indiquée refait la structure, pas les chapitres)
-    const ids = new Set((structure.chapters || []).map((c) => c.id));
+    this.sectionList = null;
+    const ids = new Set([...this.chapters.map((c) => c.id), SECTIONS]);
     for (const view of Object.keys(this.chapterOf || {})) if (this.chapterOf[view] && !ids.has(this.chapterOf[view])) delete this.chapterOf[view];
     this.chapterOf ||= {};
     this.byId = new Map(structure.nodes.map((n) => [n.id, n]));
@@ -559,7 +561,7 @@ export class Assistant {
   }
 
   title(exchange) {
-    if (exchange.target === BOOK) return t(`ai.title.${exchange.task}Book`);
+    if (exchange.target === BOOK) return t(`ai.title.${exchange.task}${this.isArticle ? "Sections" : "Book"}`);
     const chapter = ["summary", "review"].includes(exchange.task) && this.chapterOfExchange(exchange);
     if (chapter) return t(`ai.title.${exchange.task}Chapter`, { label: this.chapterTitle(chapter) });
     const node = this.byId.get(exchange.target);
@@ -586,13 +588,30 @@ export class Assistant {
 
   // ---------- Livre : résumé, relecture d'un chapitre ----------
 
-  get chapters() { return this.structure.chapters || []; }
+  // Chapitres d'un livre, sinon sections d'un article : ce qu'on résume ou relit séparément
+  get chapters() {
+    if (this.structure.chapters?.length) return this.structure.chapters;
+    return (this.sectionList ||= (this.structure.sections || []).map((s) => ({ ...s, title: plainTitle(s.title) })));
+  }
+
+  get isArticle() { return !this.structure.chapters?.length; }
+
+  // Textes de la tâche parallèle : ceux des sections sur un article, s'ils diffèrent de ceux d'un livre
+  scopedKey(key, suffix = "") {
+    const section = key.replace("ai.book.", "ai.sections.");
+    return this.isArticle && hasText(section + suffix) ? section : key;
+  }
+
+  tb(key, params) { return t(this.scopedKey(key), params); }
+
+  tnb(key, n) { return tn(this.scopedKey(key, ".other"), n); }
 
   chapterTitle(id) { return this.chapters.find((c) => c.id === id)?.title || ""; }
 
   // chapitre d'un résumé ou d'une relecture, et des questions posées dessus ; null : tout le livre
   chapterOfExchange(exchange) {
     const target = this.rootOf(exchange)?.target;
+    if (this.isArticle && target === BOOK) return this.chapters.length >= 2 ? SECTIONS : null;  // plus de sections : refaite en entier
     return this.chapters.some((c) => c.id === target) ? target : null;
   }
 
@@ -607,10 +626,14 @@ export class Assistant {
   }
 
   // Énoncés d'autres chapitres que le chapitre utilise, et ceux qui en dépendent, directement ou par une chaîne :
-  // comme ai.chapter_links (ce que l'assistant reçoit), montrés avant l'envoi
+  // comme ai.chapter_links (ce que l'assistant reçoit), montrés avant l'envoi. Article : ce qu'une preuve utilise compte
+  // dans la section où elle se trouve (troisième liste : énoncés d'autres sections prouvés dans celle-ci)
   chapterLinks(chapter) {
-    const own = new Set(this.structure.nodes.filter((n) => n.chapter === chapter).map((n) => n.id));
-    const used = new Set([...own].flatMap((id) => this.byId.get(id)?.uses || []).filter((id) => this.byId.has(id) && !own.has(id)));
+    const nodes = this.structure.nodes;
+    const here = nodes.filter((n) => n.chapter === chapter).map((n) => n.id);
+    const worked = this.isArticle ? nodes.filter((n) => (n.provedIn?.length ? n.provedIn : [n.chapter]).includes(chapter)).map((n) => n.id) : here;
+    const own = new Set([...here, ...worked]);
+    const used = new Set(worked.flatMap((id) => this.byId.get(id)?.uses || []).filter((id) => this.byId.has(id) && !own.has(id)));
     const reached = new Set();
     const todo = [...own];
     while (todo.length) {
@@ -619,37 +642,41 @@ export class Assistant {
       }
     }
     const inOrder = (set) => this.structure.nodes.filter((n) => set.has(n.id));
-    return [inOrder(used), inOrder(reached)];
+    return [inOrder(used), inOrder(reached), this.isArticle ? nodes.filter((n) => own.has(n.id) && n.chapter !== chapter) : []];
   }
 
   // Avant l'envoi : les énoncés joints, cliquables (aperçu au survol, comme les renvois des réponses)
   chapterLinksBox(chapter) {
-    const [used, dependents] = this.chapterLinks(chapter);
+    const [used, dependents, proved] = this.chapterLinks(chapter);
+    const uses = (key) => t(this.isArticle ? `ai.sections.${key}` : `ai.uses.${key}`);
     const short = (title) => (title.length > 28 ? `${title.slice(0, 27)}…` : title);
     const chips = (nodes) => (nodes.length ? h("div", { class: "ai-uses" }, nodes.map((n) => h("a", { href: `#${n.id}`, class: "ai-ref", dataset: { ref: n.id },
       onclick: (event) => { event.preventDefault(); this.navigate(n.id); } }, n.label, h("span", { class: "muted" }, ` · ${short(this.chapterTitle(n.chapter))}`))))
       : h("div", { class: "ai-uses muted small" }, t("ai.uses.none")));
-    return [h("div", { class: "ai-uses-title" }, t("ai.uses.before")), chips(used), h("div", { class: "ai-uses-title" }, t("ai.uses.after")), chips(dependents)];
+    return [...(proved.length ? [h("div", { class: "ai-uses-title" }, t("ai.sections.proved")), chips(proved)] : []),
+      h("div", { class: "ai-uses-title" }, uses("before")), chips(used), h("div", { class: "ai-uses-title" }, uses("after")), chips(dependents)];
   }
 
   // Sous les sous-onglets : tous les chapitres en parallèle, puis synthèse (ou résumé d'ensemble), sinon un chapitre
-  // (✓ : déjà fait ; … : tâche du livre en cours)
+  // (✓ : déjà fait ; … : tâche du livre en cours). Article : d'abord l'article entier, comme s'il n'y avait pas de menu
   chapterBar(view) {
     const task = view === "summary" ? "summary" : "review";
     const done = new Set(this.exchanges.filter((e) => e.task === task && e.status === "done" && typeof e.id === "number").map((e) => this.chapterOfExchange(e) || ""));
     const mark = (id) => (done.has(id) ? "  ✓" : "");
     const select = h("select", { class: "ai-model", "aria-label": t("ai.chapter"), title: t("ai.chapter"),
       onchange: () => { this.chapterOf[view] = select.value || null; this.focusChapter = true; this.onChange(); } },
-    h("option", { value: "", selected: !this.chapterOf[view] }, t(`ai.book.all.${task}`) + (jobRunning(this.jobs[task]) ? "  …" : mark(""))),
-    h("optgroup", { label: t("ai.chapters") },
+    ...(this.isArticle ? [h("option", { value: "", selected: !this.chapterOf[view] }, t(`ai.sections.full.${task}`) + mark(""))] : []),
+    h("option", { value: this.isArticle ? SECTIONS : "", selected: this.isArticle ? this.chapterOf[view] === SECTIONS : !this.chapterOf[view] },
+      this.tb(`ai.book.all.${task}`) + (jobRunning(this.jobs[task]) ? "  …" : mark(this.isArticle ? SECTIONS : ""))),
+    h("optgroup", { label: t(this.isArticle ? "ai.sections.list" : "ai.chapters") },
       this.chapters.map((c) => h("option", { value: c.id, selected: c.id === this.chapterOf[view] }, c.title + mark(c.id)))));
     return h("div", { class: "ai-chapterbar" }, h("span", {}, t("ai.chapter")), select);
   }
 
   // ---------- Livre : tous les chapitres en parallèle, puis synthèse (tâche de fond du serveur, bookjob) ----------
 
-  // résumé, relecture de tout le livre : « Tous les chapitres » dans le menu
-  bookPlace(view) { return this.byChapter(view) && !this.chapterOf[view]; }
+  // résumé, relecture de tout le livre (de toutes les sections d'un article) : l'entrée « en parallèle » du menu
+  bookPlace(view) { return this.byChapter(view) && (this.isArticle ? this.chapterOf[view] === SECTIONS : !this.chapterOf[view]); }
 
   // Chapitre -> son document terminé qu'une nouvelle tâche reprend tel quel (relecture : avec sa fiche), comme
   // bookjob.reusable
@@ -722,8 +749,8 @@ export class Assistant {
             const job = next[task];
             if (job?.phase === "error") toast(t(ERROR_KEYS[job.code] || "ai.error.other", { message: job.error || "" }), { error: true });
             else if (job?.phase === "done") {
-              toast(t(`ai.book.finished.${task}`, { time: duration(job.elapsed || 0) }));
-              delete this.positions[`${task}:`];  // synthèse seule : lue depuis son début
+              toast(this.tb(`ai.book.finished.${task}`, { time: duration(job.elapsed || 0) }));
+              delete this.positions[`${task}:${this.isArticle ? SECTIONS : ""}`];  // synthèse seule : lue depuis son début
             }
           }
           this.onChange();
@@ -738,7 +765,7 @@ export class Assistant {
   // Ligne d'un chapitre (ou de la synthèse) : état, titre (un chapitre fait s'ouvre d'un clic), note
   bookItem(view, chapter, state) {
     const name = chapter ? h("button", { type: "button", class: "ai-book-name", onclick: () => { this.chapterOf[view] = chapter.id; this.onChange(); } }, chapter.title)
-      : h("span", { class: "ai-book-name" }, t(`ai.book.synthesis.${view}`));
+      : h("span", { class: "ai-book-name" }, this.tb(`ai.book.synthesis.${view}`));
     const item = h("li", { class: chapter ? "" : "synthesis" }, h("span", { class: "ai-book-mark", "aria-hidden": "true" }), name, h("span", { class: "ai-book-note" }));
     const set = ([kind, mark, note]) => {
       item.classList.remove("done", "run", "wait");
@@ -757,12 +784,12 @@ export class Assistant {
     const task = view === "summary" ? "summary" : "review";
     const cross = view === "review" && this.crossPartner();
     const reused = this.fresh[task] ? new Map() : this.reusable(task);
-    const intro = cross ? t("ai.book.intro.cross", { a: modelLabel(currentModel()), b: modelLabel(modelOf(cross.provider)) }) : t(`ai.book.intro.${task}`);
-    return h("div", { class: "ai-empty ai-empty-doc ai-book" }, h("div", { class: "ai-empty-title" }, t(`ai.book.title.${task}`)), h("p", {}, intro),
+    const intro = cross ? this.tb("ai.book.intro.cross", { a: modelLabel(currentModel()), b: modelLabel(modelOf(cross.provider)) }) : this.tb(`ai.book.intro.${task}`);
+    return h("div", { class: "ai-empty ai-empty-doc ai-book" }, h("div", { class: "ai-empty-title" }, this.tb(`ai.book.title.${task}`)), h("p", {}, intro),
       h("ul", { class: "ai-book-list" }, this.chapters.map((c) => this.bookItem(view, c, reused.has(c.id)
-        ? ["done", "✓", t(`ai.book.state.reused.${task}`)] : ["wait", "·", t(`ai.book.state.todo.${task}`)])),
-      this.bookItem(view, null, ["wait", "Σ", t("ai.book.state.atEnd")])),
-      h("p", { class: "hint ai-book-hint" }, t(`ai.book.hint.${task}`)));
+        ? ["done", "✓", this.tb(`ai.book.state.reused.${task}`)] : ["wait", "·", this.tb(`ai.book.state.todo.${task}`)])),
+      this.bookItem(view, null, ["wait", "Σ", this.tb("ai.book.state.atEnd")])),
+      h("p", { class: "hint ai-book-hint" }, this.tb(`ai.book.hint.${task}`)));
   }
 
   // Tâche en cours : barre, état de chaque chapitre, temps écoulé depuis le lancement (une estimation du temps restant
@@ -779,24 +806,24 @@ export class Assistant {
       if (!jobRunning(job)) return;
       const finished = job.chapters.filter((c) => ["done", "reused"].includes(c.state));
       for (const c of job.chapters) {
-        items.get(c.id)?.set(c.state === "reused" ? ["done", "✓", t(`ai.book.state.reused.${task}`)]
-          : c.state === "done" ? ["done", "✓", t("ai.book.state.done", { time: minutes(c.seconds || 0) })]
-            : c.state === "running" ? ["run", "◌", t("ai.book.state.running", { time: minutes(c.elapsed || 0) })]
-              : ["wait", "·", t("ai.book.state.waiting")]);
+        items.get(c.id)?.set(c.state === "reused" ? ["done", "✓", this.tb(`ai.book.state.reused.${task}`)]
+          : c.state === "done" ? ["done", "✓", this.tb("ai.book.state.done", { time: minutes(c.seconds || 0) })]
+            : c.state === "running" ? ["run", "◌", this.tb("ai.book.state.running", { time: minutes(c.elapsed || 0) })]
+              : ["wait", "·", this.tb("ai.book.state.waiting")]);
       }
-      synthesis.set(job.phase === "synthesis" ? ["run", "Σ", t("ai.book.state.writing")] : ["wait", "Σ", t("ai.book.state.after")]);
+      synthesis.set(job.phase === "synthesis" ? ["run", "Σ", this.tb("ai.book.state.writing")] : ["wait", "Σ", this.tb("ai.book.state.after")]);
       bar.style.width = `${Math.round(100 * (finished.length + (job.phase === "synthesis" ? 0.5 : 0)) / (job.chapters.length + 1))}%`;
       const running = job.chapters.filter((c) => c.state === "running").length;
-      status.textContent = (job.phase === "synthesis" ? t(`ai.book.status.synthesis.${task}`, { n: finished.length })
-        : t("ai.book.status.chapters", { done: finished.length, total: job.chapters.length, running }))
-        + ` · ${t("ai.book.status.elapsed", { time: minutes(job.elapsed || 0) })}`;
+      status.textContent = (job.phase === "synthesis" ? this.tb(`ai.book.status.synthesis.${task}`, { n: finished.length })
+        : this.tb("ai.book.status.chapters", { done: finished.length, total: job.chapters.length, running }))
+        + ` · ${this.tb("ai.book.status.elapsed", { time: minutes(job.elapsed || 0) })}`;
       if (job.synthesis?.answer) live.update(job.synthesis.answer, false);
     };
     update(this.jobs);
     this.bookLive = (jobs) => { if (status.isConnected) update(jobs); };
-    return h("div", { class: "ai-empty ai-empty-doc ai-book" }, h("div", { class: "ai-empty-title" }, t(`ai.book.running.${task}`)),
+    return h("div", { class: "ai-empty ai-empty-doc ai-book" }, h("div", { class: "ai-empty-title" }, this.tb(`ai.book.running.${task}`)),
       h("div", { class: "ai-book-bar" }, bar), status, h("ul", { class: "ai-book-list" }, [...items.values()], synthesis),
-      h("p", { class: "hint ai-book-hint" }, t(`ai.book.continue.${task}`)), text);
+      h("p", { class: "hint ai-book-hint" }, this.tb(`ai.book.continue.${task}`)), text);
   }
 
   // Synthèse du livre : un lien vers le document de chaque chapitre
@@ -804,7 +831,7 @@ export class Assistant {
     const task = view === "summary" ? "summary" : "review";
     const done = new Set(this.exchanges.filter((e) => e.task === task && !e.parent_id && e.status === "done").map((e) => e.target));
     const chapters = this.chapters.filter((c) => done.has(c.id));
-    return chapters.length ? h("div", { class: "ai-uses ai-book-chips" }, h("span", { class: "muted small" }, t(`ai.book.chips.${task}`)),
+    return chapters.length ? h("div", { class: "ai-uses ai-book-chips" }, h("span", { class: "muted small" }, this.tb(`ai.book.chips.${task}`)),
       chapters.map((c) => h("button", { type: "button", class: "ai-ref", onclick: () => { this.chapterOf[view] = c.id; this.onChange(); } }, c.title))) : null;
   }
 
@@ -846,9 +873,10 @@ export class Assistant {
       else if (!whole) {
         const cross = view === "review" && this.crossPartner();
         const label = chapter && this.chapterTitle(chapter);
+        const section = chapter && this.isArticle;
         const title = chapter ? t(cross ? "ai.title.crossChapter" : `ai.title.${view}Chapter`, { label }) : t(cross ? "ai.title.cross" : `ai.title.${view}`);
-        const intro = cross ? t("ai.intro.cross", { a: modelLabel(currentModel()), b: modelLabel(modelOf(cross.provider)) })
-          : t(chapter ? "ai.intro.chapter" : `ai.intro.${view}`);
+        const intro = cross ? t(section ? "ai.sections.introCross" : "ai.intro.cross", { a: modelLabel(currentModel()), b: modelLabel(modelOf(cross.provider)) })
+          : t(section ? "ai.sections.intro" : chapter ? "ai.intro.chapter" : `ai.intro.${view}`);
         content.append(h("div", { class: "ai-empty ai-empty-doc" }, h("div", { class: "ai-empty-title" }, title), h("p", {}, intro),
           chapter ? this.chapterLinksBox(chapter) : null));
       }
@@ -946,7 +974,7 @@ export class Assistant {
     const whole = this.bookPlace(view);
     if (whole && jobRunning(this.jobs[task])) {  // tâche du livre en cours : on peut l'arrêter (chapitres finis gardés)
       return h("div", { class: "ai-bottom" }, h("button", { class: "button ai-launch", type: "button", onclick: () => this.stopBook(task) },
-        t("ai.book.stop")), footer);
+        this.tb("ai.book.stop")), footer);
     }
     // chapitre relu (ou résumé) par la tâche du livre en ce moment : rien à demander avant la fin (seulement un échange
     // de cette tâche : une demande en cours ailleurs, sur un article qui n'est pas un livre, n'est pas un chapitre)
@@ -954,7 +982,7 @@ export class Assistant {
     const jobExchanges = new Set([...(job?.chapters || []).map((c) => c.exchange), job?.synthesis?.exchange]
       .filter((id) => id != null));
     if (view !== "questions" && exchanges.some((e) => e.status === "running" && jobExchanges.has(e.id))) {
-      return h("div", { class: "ai-bottom" }, h("p", { class: "muted small ai-book-busy" }, t(`ai.book.chapterBusy.${task}`)), footer);
+      return h("div", { class: "ai-bottom" }, h("p", { class: "muted small ai-book-busy" }, this.tb(`ai.book.chapterBusy.${task}`)), footer);
     }
     const relaunch = view === "review" && this.relaunch && !running;
     if (view !== "questions" && (!this.lastDocument(view, exchanges) || relaunch) && !exchanges.some((e) => e.status === "running")) {
@@ -963,8 +991,8 @@ export class Assistant {
       // livre, tous les chapitres : nombre de chapitres à faire (ceux déjà faits sont repris, sauf si l'on coche)
       const reused = whole ? this.reusable(task).size : 0;
       const todo = whole && this.chapters.length - (this.fresh[task] ? 0 : reused);
-      const label = whole ? (todo ? tn(`ai.book.launch.${cross ? "cross" : task}`, todo) : t(`ai.book.launch.${task}Only`))
-        : t(cross ? "ai.launch.cross" : chapter ? `ai.launch.${task}Chapter` : `ai.launch.${task}`);
+      const label = whole ? (todo ? this.tnb(`ai.book.launch.${cross ? "cross" : task}`, todo) : this.tb(`ai.book.launch.${task}Only`))
+        : t(cross ? "ai.launch.cross" : chapter ? (this.isArticle ? `ai.sections.launch.${task}` : `ai.launch.${task}Chapter`) : `ai.launch.${task}`);
       const launch = running && !whole
         ? h("button", { class: "button ai-launch", type: "button", onclick: () => this.stop() }, t("ai.stop"))
         : h("button", { class: "button primary ai-launch", type: "button", onclick: () => {
@@ -973,7 +1001,7 @@ export class Assistant {
           else this.ask({ task, second: cross?.provider, chapter });
         } }, label);
       const fresh = whole && reused > 0 && h("label", { class: "ai-book-fresh small" }, h("input", { type: "checkbox", checked: Boolean(this.fresh[task]),
-        onchange: (event) => { this.fresh[task] = event.target.checked; this.onChange(); } }), ` ${tn(`ai.book.fresh.${task}`, reused)}`);
+        onchange: (event) => { this.fresh[task] = event.target.checked; this.onChange(); } }), ` ${this.tnb(`ai.book.fresh.${task}`, reused)}`);
       // « Refaire » une relecture : retour au champ des questions sans rien lancer
       const cancel = relaunch && h("button", { class: "button", type: "button", onclick: () => { this.relaunch = false; this.onChange(); } }, t("ai.cancelRedo"));
       const picker = this.modelPicker(cross?.provider) || h("span", { class: "muted small" }, modelLabel(currentModel()));
@@ -1167,7 +1195,7 @@ export class Assistant {
     thread.append(edit ? h("div", { class: "ai-q" }, bubble, edit) : bubble, this.renderAnswer(exchange, { reply }));
   }
 
-  // Résumé ou relecture : le document, pleine largeur ; « Refaire » sur le plus récent
+  // Résumé ou relecture : le document, pleine largeur ; « Refaire » sur le plus récent, en bas à droite (à la fin de la lecture)
   // Relecture, un autre assistant prêt : « Refaire » rouvre la barre de lancement (simple ou croisée, relecteurs) ;
   // sinon refaite telle quelle (relecture croisée : même second assistant), ses étapes repliées au-dessus de la synthèse
   renderDocument(thread, exchange, latest) {
@@ -1186,15 +1214,14 @@ export class Assistant {
         onclick: again }, h("span", { class: "ai-icon", html: icons.refresh }), t("ai.redo")) : null;
     const answer = this.renderAnswer(exchange, { reply: false, document: true });
     const chapter = this.chapterOfExchange(exchange);  // livre : le chapitre du document, dans son en-tête
-    if (chapter) answer.querySelector(".ai-who span:not(.ai-who-dot)")?.append(` · ${this.chapterTitle(chapter)}`);
+    if (chapter && chapter !== SECTIONS) answer.querySelector(".ai-who span:not(.ai-who-dot)")?.append(` · ${this.chapterTitle(chapter)}`);
     if (exchange.target === BOOK) {  // synthèse du livre : d'après les documents des chapitres, un lien vers chacun
-      answer.querySelector(".ai-who span:not(.ai-who-dot)")?.append(` · ${t(`ai.book.of.${exchange.task}`)}`);
+      answer.querySelector(".ai-who span:not(.ai-who-dot)")?.append(` · ${this.tb(`ai.book.of.${exchange.task}`)}`);
       const chips = exchange.status === "done" && this.bookChips(view);
       if (chips) answer.querySelector(".markdown")?.after(chips);
     }
-    const who = answer.querySelector(".ai-who");
-    who?.append(h("span", { class: "spacer" }), redo || "");
-    if (exchange.steps?.length) who?.after(this.stepsFold(exchange));
+    if (exchange.steps?.length) answer.querySelector(".ai-who")?.after(this.stepsFold(exchange));
+    if (redo) answer.querySelector(".ai-acts")?.append(redo);
     thread.append(answer);
   }
 
