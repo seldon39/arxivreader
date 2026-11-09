@@ -9,7 +9,7 @@ Thank you for your interest. arXivReader is a reader for arXiv papers built for 
 
 - the **arXiv identifier and version** of the paper (e.g. `arXiv:2609.40232v1`) — most display problems are
   specific to one paper's LaTeXML conversion;
-- the **app version** (Settings → About) and your system (macOS or Windows, with its version);
+- the **app version** (Settings → About) and your system (macOS, Windows or Linux, with its version);
 - a **screenshot** or a short screen recording, and what you expected instead.
 
 To see whether a problem comes from arXivReader or from arXiv's own HTML, compare with
@@ -20,7 +20,7 @@ problem helps most, with the TeX distribution and its year (`latexmk -v`, `pdfla
 
 ## Where to start
 
-- [ROADMAP.md](ROADMAP.md) lists the larger steps, each with its issue.
+- [ROADMAP.md](ROADMAP.md) lists the larger steps, most of the open ones with their issue.
 - Issues labelled [good first issue](https://github.com/seldon39/arxivreader/labels/good%20first%20issue) are
   small and self-contained.
 - Comment on an issue before starting on it.
@@ -36,27 +36,33 @@ These are not negotiable; a change that weakens one of them will not be merged.
 - **The AI assistant has no tools and no network**, and sees only the paper. Text hidden in a paper (white,
   tiny, invisible) is flagged to the reader and never sent to the assistant (`app/structure.py`, `app/ai.py`):
   it can carry prompt injections. Every request goes through `ai.build_prompt`, including the four of a
-  cross-review (second assistant too) and a book chapter's summary or review (other chapters: statements only); the
-  synthesis of a whole book (`ai.book_prompt`, run by `app/bookjob.py`) receives the chapters' reviews or summaries,
-  never the book's text. The reader's profile (`ai.reader_profile`) goes into the system prompt with titles
+  cross-review (second assistant too), a book chapter's summary or review (other chapters: statements only) and a
+  paper section's summary or review (the whole paper is sent, with the statements linked to the section; only if it
+  is too long for the assistant, the section and the start of the paper); the synthesis of a whole book, or of a
+  paper done section by section (`ai.book_prompt`, run by `app/bookjob.py`), receives the reviews or summaries of the
+  chapters or sections, never the text. The reader's profile (`ai.reader_profile`) goes into the system prompt with titles
   and names escaped; it adapts answers, never the rules (a review stays as critical for everyone).
 - **No telemetry, no accounts.** The only network calls are the services listed in `MAINTENANCE.md` §6 (arXiv,
   Semantic Scholar, Zotero, GitHub releases, the AI provider the user chose).
 - **The user's keys** (Semantic Scholar, Gemini, Zotero) are typed by the user in the settings; they never
-  appear in code, logs or error messages, and are stored in the system keychain (`app/keystore.py`, with
-  `ARXIVREADER_KEYCHAIN=1`), never passed as a program argument.
+  appear in code, logs or error messages, and on macOS and Windows are stored in the system keychain
+  (`app/keystore.py`, with `ARXIVREADER_KEYCHAIN=1`; on Linux, or if the keychain refuses, they stay in the library's
+  database), never passed as a program argument.
 - **Zotero: no item is ever deleted or trashed.** Only the "arXivReader" collection and its sub-collections are
   modified (a sub-collection is removed when its folder is deleted in arXivReader; the papers stay in Zotero).
 - **No long requests from the page**: anything slow (imports, related-papers graphs, compiling a TeX file) runs in
   the background and is polled, because WebKit may drop a request left unanswered for about a minute.
 - **The user's files are read, never written.** A TeX file chosen by the user is compiled in a work folder of the
-  app (latexmk `-outdir`), never in its own folder, without shell escape; imported PDFs and notes exports are
-  copies. External programs (TeX, and LaTeXML for the experimental HTML) run only on files the user chose.
+  app (latexmk `-outdir`), never in its own folder; the app does not enable shell escape (TeX's default setting
+  applies, usually restricted) and, like latexmk in a terminal, follows the folder's `latexmkrc` if it has one, which
+  can run code (the READMEs tell users to import only documents they trust); imported PDFs and notes exports are copies. External programs run only on files the
+  user chose (TeX) or, for LaTeXML and the experimental HTML, on those files and on the arXiv source of a paper
+  without HTML, when the reader asks for that version.
 
 ## Development setup
 
-Requirements: Python 3.12 or later (3.14 is the version the apps ship; CI also tests 3.12 and 3.13 on Linux) on
-macOS — or on Windows/Linux for the server and the tests —, and Xcode command-line tools to build the Mac app. The Windows app (`windows/`: a C# window around
+Requirements: Python 3.12 or later (3.14 is the version the apps ship; CI also tests 3.12, 3.13 and 3.15 on Linux) on
+macOS — or on Windows/Linux for the server and the tests —, and Xcode command-line tools and miniforge (`conda`, Python taken from its cache) to build the Mac app. The Windows app (`windows/`: a C# window around
 WebView2, and the server built with PyInstaller) is built and tested by GitHub Actions on every push to `main`
 (`.github/workflows/windows.yml`, which also runs `windows/smoke.ps1` on the built app); the test suite also runs on
 Linux (`.github/workflows/linux.yml`, with the `./arxivreader` script itself) and passes on the three systems,
@@ -81,7 +87,7 @@ Zotero sync starts 30 s after launch.
 
 The Mac app is built with `macos/build.sh` (into `~/Library/Caches/arXivReader-build`, outside iCloud-synced
 folders, which break code signing). It can run on a library copy without being installed:
-`ARXIVREADER_LIBRARY=… ARXIVREADER_START=#/paper/<id> ~/Library/Caches/arXivReader-build/arXivReader.app/Contents/MacOS/arXivReader`;
+`ARXIVREADER_NO_ALERTS=1 ARXIVREADER_LIBRARY=… ARXIVREADER_START=#/paper/<id> ~/Library/Caches/arXivReader-build/arXivReader.app/Contents/MacOS/arXivReader`;
 `ARXIVREADER_WINDOWSHOT=file.png` saves a screenshot of the window and `ARXIVREADER_EVAL` runs JavaScript once
 the page is loaded.
 
@@ -105,7 +111,7 @@ screens, and on several papers — a fix for one paper's LaTeXML output often br
 - **Layout**: see [README.md → Code layout](README.md#code-layout). Python server in `app/` (FastAPI, SQLite),
   interface in `static/` (plain JavaScript modules, no build step, MathJax and pdf.js vendored), Mac shell in
   `macos/main.swift`.
-- **Maintenance guide**: [MAINTENANCE.md](MAINTENANCE.md) (in French for now): rules, work loop, release, what to
+- **Maintenance guide**: [MAINTENANCE.md](MAINTENANCE.md): rules, work loop, release, what to
   do when an external service changes, WebKit checks, known pitfalls. It is also what AI coding assistants read
   (`CLAUDE.md`, `AGENTS.md`).
 - **Comments** are mostly in French; new comments may be in English, and translating existing ones is welcome

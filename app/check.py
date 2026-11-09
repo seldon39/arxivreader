@@ -30,7 +30,7 @@ S2 = "https://api.semanticscholar.org"
 WEBKIT_PLISTS = (Path("/System/Cryptexes/OS/System/Library/Frameworks/WebKit.framework/Resources/Info.plist"),
                  Path("/System/Library/Frameworks/WebKit.framework/Resources/Info.plist"))
 REPORT = LIBRARY / "check.json"
-# à revoir à la main après un changement de WebKit (même liste que MAINTENANCE.md, section 7)
+# à revoir à la main après un changement de WebKit (résume la liste de MAINTENANCE.md, section 7)
 WEBKIT_POINTS = ("glisser un article d'une fenêtre à l'autre, sur un onglet et sur « Bibliothèque » ou « Papiers liés »",
                  "couleurs du graphe des papiers liés (color-mix)", "réglages et graphe agrandi (fenêtre de dialogue, inert)",
                  "lecteur PDF", "formules (MathJax)", "export des notes (téléchargement)",

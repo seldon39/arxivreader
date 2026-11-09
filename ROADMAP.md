@@ -1,8 +1,9 @@
 # Roadmap
 
 arXivReader works well for one mathematician on macOS and Windows, and from source on Linux. These are the steps that would let it serve many
-readers, roughly in order of impact. Each one is a GitHub issue with the context, the code involved and what
-"done" means: comment there before starting, so that work is not duplicated.
+readers, roughly in order of impact. Steps with a number are GitHub issues with the context, the code involved and
+what "done" means: comment there before starting, so that work is not duplicated. Entries without a number are
+finished work or steps not yet made into an issue.
 
 ## Easy to install and keep up to date
 

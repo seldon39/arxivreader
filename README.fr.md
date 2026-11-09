@@ -572,6 +572,10 @@ app/            serveur Python (FastAPI)
   annotations.py  surlignages, notes, état de lecture
   ai.py         texte de l'article et consignes pour Claude, appel sans outils (SDK Claude Agent) ; pages d'un
                 scan en images, fenêtre autour de la question pour les livres longs
+  bookjob.py    tous les chapitres d'un livre ou sections d'un article en parallèle, puis synthèse (tâche de fond)
+  alerts.py     auteurs suivis et citations (vérification de fond, notifications) ; updates.py : nouvelles versions (GitHub)
+  s2.py         Semantic Scholar (en-têtes, rythme des requêtes avec clé)
+  keystore.py   clés d'API dans le trousseau du système ; config.py : chemins et réglages fixes ; version.py : numéro de version
   crossrefs.py  références qui sont des articles lus ici ; citations.py : articles qui citent les vôtres
   texstructure.py  structure tirée de la source TeX et pages du PDF (articles sans version HTML)
   providers.py  autres assistants : Codex (en ligne de commande), Gemini (API), modèle local (Ollama, LM Studio)

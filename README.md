@@ -529,7 +529,7 @@ Versions: `requirements.txt` lists the wanted packages, `requirements.lock` thei
 package, deliberately and one at a time: `.venv/bin/pip install -U <package>`, the tests, then `./arxivreader lock`
 (and commit). MathJax and pdf.js are pinned in `static/vendor`.
 
-For an AI assistant in charge of maintenance: `MAINTENANCE.md` (in French: rules, work loop, release, what to do
+For an AI assistant in charge of maintenance: `MAINTENANCE.md` (rules, work loop, release, what to do
 when a service changes, known pitfalls), read automatically by Claude Code (`CLAUDE.md`) and Codex (`AGENTS.md`).
 
 ## Code layout
@@ -548,6 +548,10 @@ app/            Python server (FastAPI)
   annotations.py  highlights, notes, reading state
   ai.py         paper text and instructions for Claude, called without tools (Claude Agent SDK); pages of a scan
                 as images, window around the question for long books
+  bookjob.py    all chapters of a book or sections of a paper in parallel, then a synthesis (background task)
+  alerts.py     followed authors and citations (background check, notifications); updates.py: new versions (GitHub releases)
+  s2.py         Semantic Scholar (headers, pacing of requests made with a key)
+  keystore.py   API keys in the system keychain; config.py: paths and fixed settings; version.py: version number
   crossrefs.py  references that are papers read here; citations.py: papers citing yours
   texstructure.py  structure from the TeX source and PDF pages (papers without an HTML version)
   providers.py  other assistants: Codex (command line), Gemini (API), local model (Ollama, LM Studio)

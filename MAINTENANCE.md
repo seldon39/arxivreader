@@ -1,581 +1,593 @@
-# Maintenance d'arXivReader — instructions pour une IA
+# arXivReader maintenance — instructions for an AI
 
-Ce fichier s'adresse à un assistant (Claude Code, Codex…) chargé de maintenir ou de faire évoluer arXivReader :
-ce qu'il faut savoir avant de toucher au code, comment vérifier, comment publier, et quoi faire quand un service
-extérieur change. Les README (`README.md`, `README.fr.md`) décrivent l'application pour ses utilisateurs ; ce
-fichier, son entretien. Le tenir à jour quand une règle ou un piège change.
+This file is addressed to an assistant (Claude Code, Codex…) in charge of maintaining or evolving arXivReader:
+what to know before touching the code, how to verify, how to release, and what to do when an external service
+changes. The READMEs (`README.md`, `README.fr.md`) describe the application for its users; this
+file, its upkeep. Keep it up to date when a rule or a pitfall changes.
 
-## 1. En deux mots
+## 1. In brief
 
-Lecteur d'articles arXiv (macOS, Windows ; Linux depuis le code source), pensé pour les mathématiques : serveur Python (FastAPI + SQLite) sur
-127.0.0.1, page en JavaScript sans compilation (`static/`), application Mac en Swift (`macos/main.swift`, une
-fenêtre WebKit par onglet) qui embarque son propre Python. Données de l'utilisateur dans
-`~/Library/Application Support/arXivReader` (base `arxivreader.db`, dossier `papers/`). Dépôt public
-(github.com/seldon39/arxivreader, licence MIT, © 2026 seldon39 : même ligne dans `LICENSE`,
-Réglages → À propos (`settings.js`), `NSHumanReadableCopyright` de `macos/build.sh` et `AppCopyright` de
-`windows/installer.iss` ; `LICENSE` est copié dans l'app Mac par `build.sh` et dans le zip et l'installateur Windows
-par `windows.yml`). Code et commentaires en français ; interface en français et en
-anglais.
+Reader for arXiv papers (macOS, Windows; Linux from the source code), designed for mathematics: Python server (FastAPI + SQLite) on
+127.0.0.1, JavaScript page with no compilation (`static/`), Mac application in Swift (`macos/main.swift`, one
+WebKit window per tab) that embeds its own Python. The user's data is in
+`~/Library/Application Support/arXivReader` (database `arxivreader.db`, folder `papers/`). Public repository
+(github.com/seldon39/arxivreader, MIT license, © 2026 seldon39: same line in `LICENSE`,
+Settings → About (`settings.js`), `NSHumanReadableCopyright` of `macos/build.sh` and `AppCopyright` of
+`windows/installer.iss`; `LICENSE` is copied into the Mac app by `build.sh` and into the Windows zip and installer
+by `windows.yml`). Code and comments in French; interface in French and in
+English.
 
-## 2. Règles à ne jamais enfreindre
+## 2. Rules never to break
 
-- **Local seulement.** Le serveur écoute 127.0.0.1 ; le middleware `local_only` (`app/main.py`) refuse les hôtes
-  étrangers, les requêtes d'autres sites et les écritures sans JSON. Ne pas l'affaiblir. Les seuls appels
-  extérieurs sont ceux de la section 6.
-- **L'IA sur un article n'a ni outils ni réseau** et ne voit que l'article : ne pas lui en donner.
-- **Clés et mots de passe** (Semantic Scholar, Gemini, Zotero, comptes Claude/Codex) : c'est l'utilisateur qui les
-  crée et les colle dans les réglages. Ne jamais en saisir, en écrire dans le code, les journaux ou les messages
-  d'erreur.
-- **Ne jamais toucher à l'application ni à la bibliothèque de l'utilisateur pendant les essais** : pas d'arrêt de
-  son application ou de son serveur, pas d'écriture dans sa bibliothèque. Essais sur le port 8711 avec une copie
+- **Local only.** The server listens on 127.0.0.1; the `local_only` middleware (`app/main.py`) refuses foreign
+  hosts, requests from other sites and writes without JSON. Do not weaken it. The only external
+  calls are those of section 6.
+- **The AI on a paper has neither tools nor network** and sees only the paper: do not give it any.
+- **Keys and passwords** (Semantic Scholar, Gemini, Zotero, Claude/Codex accounts): the user is the one who
+  creates them and pastes them into the settings. Never enter any, and never write any in the code, the logs or error
+  messages.
+- **Never touch the user's application or library during test runs**: no stopping of
+  their application or their server, no writing to their library. Test runs on port 8711 with a copy
   (section 4).
-- **Zotero : aucun élément n'est jamais supprimé ni mis à la corbeille** ; seules les collections « arXivReader »
-  (et leurs sous-collections) sont modifiées, les autres collections d'un élément sont gardées.
-- **Installer ou publier seulement avec l'accord de l'utilisateur**, et seulement quand l'application est
-  vraiment quittée (`pgrep -f /Applications/arXivReader.app` ne renvoie rien : elle peut rester ouverte sans
-  fenêtre). Publier est public (GitHub) : toujours demander.
-- **Pas de téléchargement** (nouvelle bibliothèque, mise à jour de MathJax…) sans accord explicite.
-- Commits : messages en anglais, terminés par la ligne `Co-Authored-By:` de l'assistant ; un commit par
-  changement cohérent ; committer seulement quand l'utilisateur le veut.
+- **Zotero: no item is ever deleted or moved to the trash**; only the "arXivReader" collections
+  (and their sub-collections) are modified, an item's other collections are kept.
+- **Install or release only with the user's agreement**, and only when the application has
+  really quit (`pgrep -f /Applications/arXivReader.app` returns nothing: it can stay open with no
+  window). Releasing is public (GitHub): always ask.
+- **No download** (new library, MathJax update…) without explicit agreement.
+- Commits: messages in English, ending with the assistant's `Co-Authored-By:` line; one commit per
+  coherent change; commit only when the user wants it.
 
-## 3. Où est quoi
+## 3. What is where
 
-| Domaine | Serveur (`app/`) | Page (`static/js/`) |
+| Area | Server (`app/`) | Page (`static/js/`) |
 |---|---|---|
-| Import, HTML nettoyé, PDF | `library.py`, `arxiv.py`, `sanitize.py` | `reader.js`, `pdfview.js`, `pdfsync.js`, `lazypaint.js` (sections loin de l'écran pas dessinées) |
-| Structure (énoncés, preuves, dépendances) | `structure.py` (HTML LaTeXML), `texstructure.py`, `texsource.py` (source TeX) | `reader.js`, `graph.js`, `texview.js` |
-| Notes, surlignages, état de lecture, export | `annotations.py`, `export.py`, `notesync.py` (export signé, import d'un ordinateur à l'autre) | `annotations.js`, `markdown.js`, `bookmarks.js` (marque-pages, menu du clic droit), `pdfnotes.js` (passages, zones et notes dans le PDF ; passages retrouvés après recompilation) |
-| PDF et fichiers TeX de l'ordinateur | `localpdf.py` (PDF importés : texte, titre, version arXiv), `texfile.py` (fichiers TeX : compilation, bibliographie, vérifications, identifiants tirés des `\label`, tâches en arrière-plan) | `library.js` (import), `texfile.js` (fenêtre d'import, vérifications du lecteur), `reader.js` (Recompiler, livres : énoncés et graphe par chapitre) |
-| Version HTML expérimentale (LaTeXML) | `latexml.py` (conversion à la demande, dossier `html/` de l'article, identifiants alignés sur la structure de la source) | `latexml.js` (bouton « HTML β », avertissement, attente), `reader.js` |
-| Bibliothèque, dossiers, sélection | `library.py`, `folders.py` | `library.js`, `selection.js` |
-| Feed, profil, pertinence, alertes, citations | `feed.py`, `profile.py`, `relevance.py` (`same_person`, `follows` : homonymes des auteurs suivis), `alerts.py`, `citations.py`, `journals.py` | `feed.js` (👎 → « pas cette personne »), `profile.js` (catégories gardées pour un auteur) |
-| Recherche arXiv | `search.py` | `search.js` |
-| Papiers liés (graphe) | `related.py` | `related.js` |
-| IA | `ai.py` (Claude, SDK Agent ; scans : pages jointes en images ; livres trop longs : début et fenêtre autour de la question), `providers.py` (Codex, Gemini, local), `bookjob.py` (livre : tous les chapitres en parallèle, puis synthèse) | `ai.js` (onglet en conversation : sous-onglets Questions / Résumé / Relecture d'après la racine de chaque échange, `viewOf` ; une question sur un résumé ou une relecture a pour parent ce document ; mémoire du fil : `ai.thread_history` (même fil que `viewOf` : tout le fil Questions, ou le document et les questions posées dessus ; terminés ou arrêtés, avec une réponse ; l'échange répondu même en erreur, marqué « [answer interrupted by an error] ») et `_history_block` (`<conversation_history>`, au plus `limit / HISTORY_SHARE` caractères : le document et l'échange répondu toujours, puis les plus récents ; balises neutralisées ; pas pour résumé, relecture, transcription) ; positions de lecture `positions`, boutons ↑ ↓ dans la marge du fil ; renvois des réponses `buildRefs` : énoncés, équations,
-sections d'après le numéro du titre (`toc`), références entre crochets ou auteur-année (`bibliography`), sauf l'énoncé d'un
-article cité, « Theorem 3.1 of [12] », « [12, Theorem 3.1] » ; aperçu au survol par `reader.previewFor`), `aiproviders.js`, `reader.js` (`contextPages` : pages d'un scan rendues par pdf.js) |
+| Import, cleaned HTML, PDF | `library.py`, `arxiv.py`, `sanitize.py` | `reader.js`, `pdfview.js`, `pdfsync.js`, `lazypaint.js` (sections far from the screen not drawn) |
+| Structure (statements, proofs, dependencies) | `structure.py` (LaTeXML HTML), `texstructure.py`, `texsource.py` (TeX source) | `reader.js`, `graph.js`, `texview.js` |
+| Notes, highlights, reading state, export | `annotations.py`, `export.py`, `notesync.py` (signed export, import from one computer to another) | `annotations.js`, `markdown.js`, `bookmarks.js` (bookmarks, right-click menu), `pdfnotes.js` (passages, regions and notes in the PDF; passages found again after recompilation) |
+| PDF and TeX files from the computer | `localpdf.py` (imported PDFs: text, title, arXiv version), `texfile.py` (TeX files: compilation, bibliography, checks, identifiers taken from the `\label` commands, background jobs) | `library.js` (import), `texfile.js` (import window, reader checks), `reader.js` (Recompile, books: statements and graph by chapter) |
+| Experimental HTML version (LaTeXML) | `latexml.py` (on-demand conversion, the paper's `html/` folder, identifiers aligned with the structure of the source) | `latexml.js` ("HTML β" button, warning, waiting), `reader.js` |
+| Library, folders, selection | `library.py`, `folders.py` | `library.js`, `selection.js` |
+| Feed, profile, relevance, alerts, citations | `feed.py`, `profile.py`, `relevance.py` (`same_person`, `follows`: namesakes of followed authors), `alerts.py`, `citations.py`, `journals.py` | `feed.js` (👎 → "not this person"), `profile.js` (categories kept for an author) |
+| arXiv search | `search.py` | `search.js` |
+| Related papers (graph) | `related.py` | `related.js` |
+| Links from one paper to another (a bibliography reference that is a paper in the library) | `crossrefs.py` (`links`, `statement`, `match`) | `reader.js` (`openCross`) |
+| Search in the page (⌘F, ⌘G) | — | `find.js` (Edit menu of the Mac app: `app:find` event) |
+| AI | `ai.py` (Claude, Agent SDK; scans: pages attached as images; books that are too long: beginning and a window around the question), `providers.py` (Codex, Gemini, local), `bookjob.py` (book: all chapters in parallel, then synthesis) | `ai.js` (tab as a conversation: sub-tabs Questions / Summary / Review according to the root of each exchange, `viewOf`; a question on a summary or a review has that document as its parent; thread memory: `ai.thread_history` (same thread as `viewOf`: the whole Questions thread, or the document and the questions asked about it; finished or stopped, with an answer; the answered exchange even if in error, marked "[answer interrupted by an error]") and `_history_block` (`<conversation_history>`, at most `limit / HISTORY_SHARE` characters: the document and the answered exchange always, then the most recent ones; tags neutralised; not for summary, review, transcription); reading positions `positions`, ↑ ↓ buttons in the margin of the thread; cross-references in answers `buildRefs`: statements, equations,
+sections according to the number in the title (`toc`), references in brackets or author-year (`bibliography`), except the statement of a
+cited paper, "Theorem 3.1 of [12]", "[12, Theorem 3.1]"; hover preview through `reader.previewFor`), `aiproviders.js`, `reader.js` (`contextPages`: pages of a scan rendered by pdf.js) |
 | Zotero | `zotero.py` | `zotero.js`, `settings.js` |
-| Premier lancement | `onboarding.py` | `onboarding.js` |
-| Mises à jour, vérification des services | `updates.py`, `check.py` | `updates.js` (dans Réglages → À propos) |
-| Formules, construction du DOM | `feed.tex_text` (TeX des titres et résumés) | `math.js` (MathJax), `amsfix.js`, `util.js` (`h`, `withMath`, `tidyTitle`) |
-| Réglages | `main.py` (liste `allowed` et `_valid_setting` de `/api/settings`) | `settings.js` (section « À propos » : version, mises à jour, copyright, licence) |
-| Textes de l'interface | — | `i18n.js` (blocs FR et EN : mêmes clés) |
-| Application Mac | — | `macos/main.swift` (onglets, glisser sur un onglet, téléchargements, essais, sélecteurs natifs de dossier et de fichiers : `chooseFolder`, `chooseFiles`), `macos/build.sh`, `macos/release.sh` |
-| Application Windows | `windows/launcher.py` (serveur sans fenêtre, repli Edge) | `windows/shell/` (fenêtre C# : `MainForm.cs`, `TabStrip.cs`, `Program.cs`), `windows/smoke.ps1`, `.github/workflows/windows.yml` |
+| First launch | `onboarding.py` | `onboarding.js` |
+| Updates, service checks | `updates.py`, `check.py` | `updates.js` (in Settings → About) |
+| Formulas, DOM construction | `feed.tex_text` (TeX of titles and abstracts) | `math.js` (MathJax), `amsfix.js`, `util.js` (`h`, `withMath`, `tidyTitle`) |
+| Settings | `main.py` (`allowed` list and `_valid_setting` of `/api/settings`) | `settings.js` ("About" section: version, updates, copyright, license) |
+| Interface texts | — | `i18n.js` (FR and EN blocks: same keys) |
+| Mac application | — | `macos/main.swift` (tabs, dragging onto a tab, downloads, test runs, native folder and file pickers: `chooseFolder`, `chooseFiles`), `macos/build.sh`, `macos/release.sh` |
+| Windows application | `windows/launcher.py` (windowless server, Edge fallback) | `windows/shell/` (C# window: `MainForm.cs`, `TabStrip.cs`, `Program.cs`), `windows/smoke.ps1`, `.github/workflows/windows.yml` |
 
-Base : `app/db.py` (`SCHEMA` en `CREATE TABLE IF NOT EXISTS`, colonnes ajoutées par `ALTER TABLE` après
-`PRAGMA table_info` dans `init()`) ; modules qui ont leurs tables : `related.py`, `zotero.py`, `journals.py`
+Database: `app/db.py` (`SCHEMA` as `CREATE TABLE IF NOT EXISTS`, columns added by `ALTER TABLE` after
+`PRAGMA table_info` in `init()`); modules that have their own tables: `related.py`, `zotero.py`, `journals.py`
 (`_ensure`).
 
-Page : `h(tag, attrs, …)` ajoute les enfants comme texte ; `html:` est réservé aux icônes internes (`icons`). Tout
-texte venu d'arXiv, de Semantic Scholar, de Zotero ou d'une IA passe par du texte ou `withMath`, jamais par
-`html:` ni `innerHTML` (la politique CSP interdit de toute façon les scripts de l'article).
+Page: `h(tag, attrs, …)` adds the children as text; `html:` is reserved for internal icons (`icons`). All
+text coming from arXiv, Semantic Scholar, Zotero or an AI goes through text or `withMath`, never through
+`html:` or `innerHTML` (the CSP policy forbids the paper's scripts anyway).
 
-## 4. Boucle de travail
+## 4. Work loop
 
-- **Tests** (sans réseau : tout service extérieur y est simulé ; un test qui appelle le vrai réseau est un défaut) :
-  `.venv/bin/python -m unittest discover -s tests`. Pour s'assurer qu'aucun test ne sort, les relancer avec
-  `HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9` (exception connue : les tests Gemini utilisent un
-  faux serveur local que ce proxy intercepte).
-- **Serveur d'essai**, jamais celui de l'utilisateur, sur une copie **sans ses clés** (sinon une action sur la
-  copie, ou « Synchroniser maintenant », écrirait dans son vrai Zotero ou userait ses quotas) :
+- **Tests** (no network: every external service is simulated in them; a test that calls the real network is a defect):
+  `.venv/bin/python -m unittest discover -s tests`. To make sure that no test goes out, rerun them with
+  `HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9` (known exception: the Gemini tests use a
+  fake local server that this proxy intercepts).
+- **Test server**, never the user's, on a copy **without their keys** (otherwise an action on the
+  copy, or "Synchronise now", would write to their real Zotero or use up their quotas):
   ```bash
-  LIB=$(mktemp -d)   # dossier privé (0700) : la copie contient ses données
+  LIB=$(mktemp -d)   # private folder (0700): the copy contains their data
   sqlite3 -readonly ~/Library/Application\ Support/arXivReader/arxivreader.db ".backup $LIB/arxivreader.db"
   sqlite3 "$LIB/arxivreader.db" "DELETE FROM settings WHERE key LIKE 'zotero%' OR key IN ('s2ApiKey', 'geminiApiKey')"
   ARXIVREADER_LIBRARY=$LIB ARXIVREADER_PORT=8711 ARXIVREADER_NO_ALERTS=1 .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8711
   ```
-  `ARXIVREADER_NO_ALERTS=1` est **obligatoire pour tout essai** (serveur comme application) : il coupe les
-  boucles de fond (auteurs suivis et citations, `alerts.loop` ; synchronisation Zotero, `zotero.loop`) ; ce que la
-  page déclenche elle-même (revues sur Semantic Scholar, vérification des mises à jour) tourne quand même.
-  Ajouter `HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9` si l'essai n'a pas besoin du réseau. La
-  copie n'a pas `papers/` : un article ouvert est retéléchargé d'arXiv ; pour lire un article sans réseau, copier
-  aussi son dossier (`papers/<id>`). Bibliothèque vide (installation neuve, assistant de premier lancement) : un
-  `mktemp -d` vide. Effacer la copie après.
-- **Vérifier dans le navigateur** (la page recharge ses fichiers : forcer `location.reload()`), en clair et en
-  sombre, à plusieurs largeurs (une colonne sous 900 px). L'utilisateur lit dans WebKit (Safari) : c'est le moteur
-  qui compte.
-- **Essais dans l'application Mac** (construite par `macos/build.sh` dans `~/Library/Caches/arXivReader-build`,
-  sans l'installer) : toujours `ARXIVREADER_NO_ALERTS=1` et `ARXIVREADER_LIBRARY` (copie sans clés, comme
-  ci-dessus), `ARXIVREADER_START=#/paper/…,#/feed` (pages ouvertes, la
-  suivante en onglet), `ARXIVREADER_SNAPSHOT=fichier.png` (image de la page), `ARXIVREADER_WINDOWSHOT=fichier.png`
-  (fenêtre entière et relevé dans `fichier.png.txt`), `ARXIVREADER_EVAL` (JavaScript exécuté au chargement),
-  `ARXIVREADER_SNAPSHOT_DELAY`. Ne pas prendre la main sur l'écran de l'utilisateur.
-- **Avant de rendre la main** : tests verts, README FR et EN à jour si le comportement visible change, clés
-  `i18n.js` présentes dans les deux langues (pluriels : `.one` et `.other`).
+  `ARXIVREADER_NO_ALERTS=1` is **mandatory for every test run** (server as well as application): it cuts the
+  background loops (followed authors and citations, `alerts.loop`; Zotero synchronisation, `zotero.loop`); what the
+  page triggers itself (journals on Semantic Scholar, update check) still runs.
+  Add `HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9` if the test run does not need the network. The
+  copy does not have `papers/`: an opened paper is downloaded again from arXiv; to read a paper without network, also copy
+  its folder (`papers/<id>`). Empty library (fresh installation, first-launch assistant): an empty
+  `mktemp -d`. Erase the copy afterwards.
+- **Verify in the browser** (the page reloads its files: force `location.reload()`), in light and in
+  dark mode, at several widths (one column below 900 px). The user reads in WebKit (Safari): that is the engine
+  that counts. **Every display change (formulas, CSS, glyphs) is also verified in a built copy of the application (WebKit:
+  `static/` and `app/` replaced, `__pycache__` deleted, `ARXIVREADER_EVAL` + `ARXIVREADER_WINDOWSHOT`, see below), never only
+  in a Chrome-engine browser**: the two engines place combining glyphs and fonts differently.
+- **Test runs in the Mac application** (built by `macos/build.sh` in `~/Library/Caches/arXivReader-build`,
+  without installing it): always `ARXIVREADER_NO_ALERTS=1` and `ARXIVREADER_LIBRARY` (copy without keys, as
+  above), `ARXIVREADER_START=#/paper/…,#/feed` (pages opened, the
+  next one in a tab), `ARXIVREADER_SNAPSHOT=fichier.png` (image of the page), `ARXIVREADER_WINDOWSHOT=fichier.png`
+  (whole window and report in `fichier.png.txt`), `ARXIVREADER_EVAL` (JavaScript run on load),
+  `ARXIVREADER_SNAPSHOT_DELAY`. Do not take over the user's screen.
+- **Before handing back**: tests green; every feature or fix carried over into all the documentation files: `MAINTENANCE.md`
+  ("What is where" table, external services, known pitfalls), `CONTRIBUTING.md` (principles, code rules), `ROADMAP.md`
+  (steps done, next steps), `README.md` and `README.fr.md` together (including "Code layout"); `i18n.js` keys present in both languages (plurals: `.one` and `.other`).
 
-## 5. Publier une version
+## 5. Releasing a version
 
-1. Augmenter `VERSION` dans `app/version.py` (nouvelle fonction : mineure ; correction : correctif), committer.
-2. Accord de l'utilisateur ; application quittée (`pgrep -f /Applications/arXivReader.app` vide).
-3. Notes de version en anglais dans un fichier **hors du dépôt** (une ligne par changement visible), par exemple
-   `$(mktemp -d)/notes.md` : dans le dépôt, le fichier le rendrait « modifié » et le script refuserait.
-4. `macos/release.sh /chemin/absolu/notes.md` : il exige la branche `main`, un dépôt sans modification non
-   committée, `gh` connecté à GitHub et une étiquette `vX.Y.Z` encore libre ; puis tests, construction (refusée
-   si `.venv` diffère de `requirements.lock`), étiquette, poussée, publication du `.dmg` sur GitHub.
-5. Installer : `rm -rf /Applications/arXivReader.app && ditto ~/Library/Caches/arXivReader-build/arXivReader.app /Applications/arXivReader.app`,
-   puis vérifier `defaults read /Applications/arXivReader.app/Contents/Info.plist CFBundleShortVersionString` et
+1. Bump `VERSION` in `app/version.py` (new feature: minor; fix: patch), commit.
+2. The user's agreement; app quit (`pgrep -f /Applications/arXivReader.app` empty).
+3. Release notes in English in a file **outside the repository** (one line per visible change), for example
+   `$(mktemp -d)/notes.md`: inside the repository, the file would make it "modified" and the script would refuse.
+4. `macos/release.sh /chemin/absolu/notes.md`: it requires the `main` branch, a repository with no uncommitted
+   changes, `gh` connected to GitHub and a `vX.Y.Z` tag that is still free; then tests, build (refused
+   if `.venv` differs from `requirements.lock`), tag, push, release of the `.dmg` on GitHub.
+5. Install: `rm -rf /Applications/arXivReader.app && ditto ~/Library/Caches/arXivReader-build/arXivReader.app /Applications/arXivReader.app`,
+   then check `defaults read /Applications/arXivReader.app/Contents/Info.plist CFBundleShortVersionString` and
    `codesign --verify --deep --strict /Applications/arXivReader.app`.
 
-L'application n'a qu'une signature ad hoc (pas de notarisation) : sur un autre Mac, ouverture par clic droit >
-Ouvrir.
+The app has only an ad hoc signature (no notarization): on another Mac, open it with right-click >
+Open.
 
-### Version Windows
+### Windows version
 
-Construite par GitHub Actions (`.github/workflows/windows.yml`, machine `windows-latest`) **à chaque poussée sur
-`main`** : installation de `requirements.lock` et de `windows/build-requirements.txt` (PyInstaller, `tzdata` pour les
-fuseaux horaires, versions figées), **tous les tests** (ceux propres au Mac sont sautés), serveur
-`server\arXivReader-server.exe` (PyInstaller `--onedir`), fenêtre `arXivReader.exe` (`dotnet build`, SDK WebView2 à
-version figée), zip, puis `windows/smoke.ps1` : serveur sur une bibliothèque vide, type des modules JavaScript, import
-de 1603.04246, captures par Edge sans fenêtre, puis la fenêtre de l'application sur deux onglets (titre vérifié),
-serveur tué (la fenêtre doit rester et proposer de le relancer), et aucun serveur restant une fois la fenêtre fermée.
-Captures dans `shots/` (artefact de l'exécution, gardé 14 jours, avec le zip).
+Built by GitHub Actions (`.github/workflows/windows.yml`, machine `windows-latest`) **on every push to
+`main`**: installation of `requirements.lock` and of `windows/build-requirements.txt` (PyInstaller, `tzdata` for
+time zones, pinned versions), **all the tests** (the Mac-specific ones are skipped), server
+`server\arXivReader-server.exe` (PyInstaller `--onedir`), window `arXivReader.exe` (`dotnet build`, WebView2 SDK at a
+pinned version), zip, then `windows/smoke.ps1`: server on an empty library, type of the JavaScript modules, import
+of 1603.04246, screenshots by Edge with no window, then the app window on two tabs (title checked),
+server killed (the window must stay and offer to restart it), and no server left once the window is closed.
+Screenshots in `shots/` (run artifact, kept 14 days, with the zip).
 
-Publier : une seule version GitHub par numéro. `macos/release.sh` crée l'étiquette `vX.Y.Z` et la version avec le
-`.dmg` ; l'étiquette déclenche le workflow Windows, qui vérifie que X.Y.Z est celui de `app/version.py`, construit et
-essaie l'application (et l'installateur Inno Setup, `windows/installer.iss` : installation silencieuse, raccourci,
-désinstallation), puis **joint `arXivReader-setup.exe` et `arXivReader-windows.zip` à la version `vX.Y.Z`** (étape à part, seule à pouvoir
-écrire sur le dépôt ; relancée, elle remplace le zip). Les deux applications lisent « latest » : le Mac y prend le
-`.dmg`, Windows l'installateur s'il a été installé ainsi (`unins000.exe` à côté), sinon le `.zip` (pas encore joint : rien d'annoncé, la vérification suivante le verra). Les anciennes
-préversions `windows-v1.9.15`… `windows-v1.9.21` et `windows-latest` restent de l'histoire : les versions Windows
-1.9.21 et antérieures ne voient pas les versions unifiées, il faut les mettre à jour une fois à la main.
+Release: one single GitHub release per number. `macos/release.sh` creates the `vX.Y.Z` tag and the release with the
+`.dmg`; the tag triggers the Windows workflow, which checks that X.Y.Z is the one in `app/version.py`, builds and
+test-runs the app (and the Inno Setup installer, `windows/installer.iss`: silent installation, shortcut,
+uninstallation), then **attaches `arXivReader-setup.exe` and `arXivReader-windows.zip` to the `vX.Y.Z` release** (a separate step, the only one able to
+write to the repository; when re-run, it replaces the zip). Both apps read "latest": the Mac takes the
+`.dmg` from it, Windows takes the installer if it was installed that way (`unins000.exe` next to it), otherwise the `.zip` (not yet attached: nothing is announced, the next check will see it). The old
+pre-releases `windows-v1.9.15`… `windows-v1.9.21` and `windows-latest` remain as history: Windows versions
+1.9.21 and earlier do not see the unified releases, they must be updated once by hand.
 
-- Fenêtre : `windows/shell/` (C#, .NET Framework 4.8 inclus dans Windows, WebView2), l'équivalent de
-  `macos/main.swift` : une page WebView2 par onglet (historique propre à chacune), barre d'onglets dessinée façon
-  macOS (`TabStrip.cs`), liens extérieurs dans le navigateur par défaut, `window.chrome.webview.postMessage` pour
-  ouvrir un onglet (`nativeBridge` dans `static/js/util.js`), taille gardée dans `window.txt`. Elle lance
-  `server\arXivReader-server.exe` (PyInstaller, `windows/launcher.py` avec `ARXIVREADER_NO_BROWSER=1`) dans un
-  « job » Windows qui l'arrête avec elle, et lit son port dans `server.port`. Lancé seul, `launcher.py` ouvre encore
-  une fenêtre Edge (repli).
-- Essai : `windows/smoke.ps1` lance aussi la fenêtre sur deux onglets et capture l'écran (`shots/window.png`).
-- Différences côté serveur, toutes sous `sys.platform == "win32"` : notification par PowerShell (`alerts.py`),
-  connexion des assistants dans `cmd.exe` (`providers.py`), `claude.exe` du SDK (`ai.py`), le `.zip` de la dernière version
-  (`updates.py`). Types MIME fixés dans `main.py` (le registre de Windows sert parfois `.js` en `text/plain`).
-- Interface : `MAC` / `WINDOWS` dans `static/js/i18n.js` ; hors Mac, ⌘ ⌥ ⇧ deviennent Ctrl Alt Maj à l'affichage.
-- Pas encore sous Windows : « Recopier une bibliothèque… » (menu de l'application Mac), signature du `.exe`.
+- Window: `windows/shell/` (C#, .NET Framework 4.8 included in Windows, WebView2), the equivalent of
+  `macos/main.swift`: one WebView2 page per tab (each with its own history), tab bar drawn in the macOS style
+  (`TabStrip.cs`), external links in the default browser, `window.chrome.webview.postMessage` to
+  open a tab (`nativeBridge` in `static/js/util.js`), size kept in `window.txt`. It launches
+  `server\arXivReader-server.exe` (PyInstaller, `windows/launcher.py` with `ARXIVREADER_NO_BROWSER=1`) in a
+  Windows "job" that stops it together with the window, and reads its port from `server.port`. Launched alone, `launcher.py` still opens
+  an Edge window (fallback).
+- Test run: `windows/smoke.ps1` also launches the window on two tabs and captures the screen (`shots/window.png`).
+- Server-side differences, all under `sys.platform == "win32"`: notification through PowerShell (`alerts.py`),
+  sign-in of the assistants in `cmd.exe` (`providers.py`), the SDK's `claude.exe` (`ai.py`), the `.zip` of the latest release
+  (`updates.py`). MIME types fixed in `main.py` (the Windows registry sometimes serves `.js` as `text/plain`).
+- Interface: `MAC` / `WINDOWS` in `static/js/i18n.js`; outside the Mac, ⌘ ⌥ ⇧ become Ctrl Alt Shift on display.
+- Not yet on Windows: "Copy a Library…" (menu of the Mac app), signing of the `.exe`.
 
-## 6. Services extérieurs : ce qui peut changer, où regarder
+## 6. External services: what can change, where to look
 
-Service injoignable (pas de réseau, adresse introuvable : sortie de veille, Wi-Fi qui se reconnecte) : `main._failed`
-renvoie le code `offline` pour une `httpx.ConnectError`, traduit par la page (`error.offline`, `feed.error.offline`) ;
-le feed réessaie seul (`retryWhenOnline` : événement « online », sinon toutes les 30 s tant que la page est ouverte).
+Service unreachable (no network, address not found: waking from sleep, Wi-Fi reconnecting): `main._failed`
+returns the code `offline` for an `httpx.ConnectError`, translated by the page (`error.offline`, `feed.error.offline`);
+the feed retries on its own (`retryWhenOnline`: "online" event, otherwise every 30 s as long as the page is open).
 
-`./arxivreader check` appelle pour de vrai ceux que liste `CHECKS` (`app/check.py` : à compléter si l'application
-se met à dépendre d'un nouveau service) et vérifie la forme de la réponse (✓ bon, ✗ changé ou en panne, – non
-vérifié). Lancé à la main, il lit les réglages de la bibliothèque de l'utilisateur (clés) et y écrit `check.json`
-(sans toucher au repère macOS/WebKit de la tâche hebdomadaire) ; `ARXIVREADER_LIBRARY=<copie>` pour l'éviter. La
-tâche hebdomadaire (`./arxivreader check --weekly`, launchd
-`org.arxivreader.check`, lundi 10 h) le fait avec le Python de l'application installée et notifie en cas de
-problème ; journal `~/Library/Logs/arXivReader-check.log`, résultat `check.json` dans la bibliothèque.
+`./arxivreader check` makes real calls to those listed in `CHECKS` (`app/check.py`: to be extended if the app
+starts depending on a new service) and checks the shape of the response (✓ good, ✗ changed or down, – not
+checked). Run by hand, it reads the settings of the user's library (keys) and writes `check.json` there
+(without touching the macOS/WebKit marker of the weekly job); `ARXIVREADER_LIBRARY=<copie>` to avoid this. The
+weekly job (`./arxivreader check --weekly`, launchd
+`org.arxivreader.check`, Monday 10:00) does this with the Python of the installed app and notifies in case of a
+problem; log `~/Library/Logs/arXivReader-check.log`, result `check.json` in the library.
 
-| Service | Utilisé par | Ce qui casse d'habitude | Repli existant |
+| Service | Used by | What usually breaks | Existing fallback |
 |---|---|---|---|
-| API arXiv `export.arxiv.org/api/query` | `arxiv.py`, `search.py`, `feed.py` (jours passés), `profile.py`, `onboarding.py` | lenteur, 429/503, champs Atom | une requête toutes les 3 s (`arxiv._paced`, `search._wait_turn`), `with_retry` |
-| Pages HTML LaTeXML `arxiv.org/html/…` | `library.py`, `sanitize.py`, `structure.py` | classes `ltx_*`, balisage des énoncés et preuves, chemins des images (deux formes : `x1.png` ou `<id>v<n>/fig.png`, `sanitize._relative`) | ar5iv, sinon PDF + structure tirée du TeX (`texstructure.py`) |
-| RSS `rss.arxiv.org` | `feed.py` (`parse_rss`) | format des annonces (types new/cross/replace) | OAI-PMH, puis API de recherche |
-| OAI-PMH `oaipmh.arxiv.org/oai` | `feed.py` (jours passés) | lent au-delà d'une semaine | API de recherche (fenêtre de dépôt 14 h New York) |
-| Flux d'auteur `arxiv.org/a/<id>.atom2` | `onboarding.py` | format, ORCID non lié | recherche par nom |
-| Semantic Scholar (graph, batch, recommendations) | `related.py`, `relevance.py`, `journals.py`, `citations.py`, `feed.py`, `onboarding.py`, `localpdf.py` (version arXiv d'un PDF importé) | quota partagé sans clé (429), champs | attente et nouvel essai ; fonctions dégradées sans lui |
-| Zotero web API v3 | `zotero.py` | en-têtes (`Total-Results`, `Last-Modified-Version`, `Backoff`), écritures multiples (`successful`/`failed`), `since`/`/deleted` | garde-fous : écriture refusée réessayée, retraits massifs en attente |
-| Claude (SDK Agent et son CLI) | `ai.py` | options du SDK, liste des modèles (`get_server_info`), connexion | message de connexion dans les réglages |
-| TeX de l'utilisateur (latexmk, pdflatex/xelatex, BibTeX/Biber, kpsewhich) | `texfile.py` (fichiers TeX importés) | latexmk ancien (BibTeX ne peut pas écrire dans `-outdir` : `$bibtex_fudge=1`), MiKTeX sans Perl (latexmk ne démarre pas), programmes hors du PATH d'une application lancée du Finder (`TEX_DIRS`) | compilation à la main (LaTeX, BibTeX ou Biber, LaTeX ×2) ; sans TeX, PDF compilé à côté du fichier |
-| LaTeXML de l'utilisateur (`latexmlc`) | `latexml.py` (HTML β) | options de `latexmlc`, lenteur (pgfplots, gros documents), installation sous Windows (Perl) | figures pgfplots remplacées par une mention ; durée limite selon la taille de la source (`latexml.timeout` : 10 min à 1 h, environ 300 s par Mo de TeX mesurées sur un Mac récent, ×4 de marge), puis échec retenu (« Réessayer ») ; le PDF reste lisible |
-| Codex CLI, API Gemini, modèle local | `providers.py` | options du CLI (`-m`, `model_reasoning_effort`, `--image=` après la question `-`), `~/.codex/models_cache.json`, `thinkingLevel` de Gemini | — (la CLI Gemini n'accepte plus les comptes Google gratuits : API par clé) |
-| GitHub releases | `updates.py` | — | silencieux |
+| arXiv API `export.arxiv.org/api/query` | `arxiv.py`, `search.py`, `feed.py` (past days), `profile.py`, `onboarding.py` | slowness, 429/503, Atom fields | one request every 3 s (`arxiv._paced`, `search._wait_turn`), `with_retry` |
+| LaTeXML HTML pages `arxiv.org/html/…` | `library.py`, `sanitize.py`, `structure.py` | `ltx_*` classes, markup of statements and proofs, image paths (two forms: `x1.png` or `<id>v<n>/fig.png`, `sanitize._relative`) | ar5iv, otherwise PDF + structure extracted from the TeX (`texstructure.py`) |
+| RSS `rss.arxiv.org` | `feed.py` (`parse_rss`) | format of the announcements (new/cross/replace types) | OAI-PMH, then search API |
+| PDF and TeX source `arxiv.org/pdf/…`, `arxiv.org/e-print/…` | `arxiv.py` (called by `library.py`) | slowness, 429/503, format of the source archive | without source: structure taken from the HTML; without HTML or source: PDF only |
+| OAI-PMH `oaipmh.arxiv.org/oai` | `feed.py` (past days) | slow beyond one week | search API (submission window 14:00 New York) |
+| Author feed `arxiv.org/a/<id>.atom2` | `onboarding.py` | format, ORCID not linked | search by name |
+| Semantic Scholar (graph, batch, recommendations) | `related.py`, `relevance.py`, `journals.py`, `profile.py` (`_get_s2`), `citations.py`, `feed.py`, `onboarding.py`, `localpdf.py` (arXiv version of an imported PDF) | shared quota without a key (429), fields | wait and new attempt; features degraded without it |
+| Zotero web API v3 | `zotero.py` | headers (`Total-Results`, `Last-Modified-Version`, `Backoff`), multiple writes (`successful`/`failed`), `since`/`/deleted` | safeguards: rejected write retried, mass removals held pending |
+| Claude (Agent SDK and its CLI) | `ai.py` | SDK options, list of models (`get_server_info`), sign-in | sign-in message in the settings |
+| The user's TeX (latexmk, pdflatex/xelatex, BibTeX/Biber, kpsewhich) | `texfile.py` (imported TeX files) | old latexmk (BibTeX cannot write into `-outdir`: `$bibtex_fudge=1`), MiKTeX without Perl (latexmk does not start), programs outside the PATH of an app launched from the Finder (`TEX_DIRS`) | manual compilation (LaTeX, BibTeX or Biber, LaTeX ×2); without TeX, PDF compiled next to the file |
+| The user's LaTeXML (`latexmlc`) | `latexml.py` (HTML β) | options of `latexmlc`, slowness (pgfplots, large documents), installation on Windows (Perl) | pgfplots figures replaced by a note; time limit depending on the size of the source (`latexml.timeout`: 10 min to 1 h, about 300 s per MB of TeX measured on a recent Mac, ×4 margin), then failure remembered ("Retry"); the PDF remains readable |
+| Codex CLI, Gemini API, local model | `providers.py` | CLI options (`-m`, `model_reasoning_effort`, `--image=` after the question `-`), `~/.codex/models_cache.json`, Gemini's `thinkingLevel` | — (the Gemini CLI no longer accepts free Google accounts: API with a key) |
+| GitHub releases | `updates.py` | — | silent |
 
-**Démarche quand un service a changé** : reproduire avec une requête réelle minimale (comme `check.py`) ; corriger
-le module concerné ; mettre à jour la simulation des tests pour qu'elle ressemble à la nouvelle réponse (les faux
-services doivent être *aussi stricts* que les vrais : un faux trop permissif a déjà caché un défaut) ; ajouter un
-test du cas ; vérifier que le repli fonctionne si le service tombe.
+**Procedure when a service has changed**: reproduce with a minimal real request (like `check.py`); fix
+the module concerned; update the tests' simulation so that it resembles the new response (the fake
+services must be *as strict* as the real ones: an overly permissive fake has already hidden a defect); add a
+test for the case; check that the fallback works if the service goes down.
 
-**Caches à invalider** quand leur calcul change : `STRUCTURE_VERSION` (`structure.py`, ré-analyse des articles
-importés), `PAGES_VERSION` (`library.py`, pages des énoncés dans le PDF), `FORMAT` (`related.py`, graphes gardés quinze jours), index Zotero (`zoteroIndexVersion`, remis à zéro
-par `_forget_all`).
+**Caches to invalidate** when their computation changes: `STRUCTURE_VERSION` (`structure.py`, re-analysis of the imported
+papers), `PAGES_VERSION` (`library.py`, pages of the statements in the PDF), `FORMAT` (`related.py`, graphs kept for fifteen days), Zotero index (`zoteroIndexVersion`, reset
+by `_forget_all`).
 
-## 7. WebKit et macOS
+## 7. WebKit and macOS
 
-WebKit change avec macOS (surtout la version majeure, en septembre). `check.py` signale le changement ; revoir à la
-main, dans l'application installée :
-- (liste à tenir identique à `WEBKIT_POINTS` dans `app/check.py`, le texte de la notification)
-- glisser un article d'une fenêtre à l'autre, sur un onglet (ouverture après 0,6 s), sur « Bibliothèque » et
-  « Papiers liés » ; types de glissement : `application/x-arxivreader-paper` et `text/uri-list`
-  (`util.js`, `selection.js`, `TabWindow` dans `main.swift`, qui repère les onglets par les vues `NSTabButton` de
-  la barre du Mac) ;
-- couleurs SVG (le graphe des papiers liés met les couleurs en `style`, car WebKit refuse `var()` dans
-  l'attribut `fill`), `color-mix`, `<dialog>` et `inert`, `ResizeObserver` ;
-- le lecteur PDF (pdf.js figé dans `static/vendor/pdfjs`) et les formules (MathJax figé dans `static/vendor/mathjax`) ;
-  le visualiseur de pdf.js interdit les styles écrits par script (CSP `style-src 'self'`) : nos ajouts passent par
-  `static/css/pdfjs-extra.css` (boutons masqués, surlignages) ; les surlignages du PDF (`pdfnotes.js`) se repèrent
-  dans la couche de texte (`.textLayer`, événement `textlayerrendered`) : à revérifier à chaque mise à jour de pdf.js ;
-  la sélection est dessinée par `pdfnotes.js` (`enableSelectionRendering: false` dans `pdfview.js`) ; les zones
-  (⌥ + glisser, bouton `#arxZoneButton` ajouté à `#toolbarViewerMiddle`) sont rendues en image par `page.render` ;
-  images gardées dans `papers/<id>/zones/` (notes) et `papers/<id>/ai-images/` (questions), envoyées seulement aux
-  assistants de `ai.IMAGE_PROVIDERS` (Claude : message à blocs image + texte du SDK ; Gemini : `inline_data`) ;
-- notes exportées : bloc de données signé en fin de fichier (`notesync.py`, Ed25519 de `cryptography`), clé de
-  l'installation dans `notes-signing.key` (dossier de la bibliothèque, jamais exportée), appareils acceptés dans
-  `notes-trusted.json` ; tout changement du contenu du bloc passe par `FORMAT` (les anciens fichiers restent lisibles) ;
-- le menu du clic droit du navigateur est supprimé (`app.js`) sauf sur une sélection, un champ, un lien ou une image ;
-  le clic droit de l'article (`annotations.js`) et du PDF (`pdfnotes.js`) propose les marque-pages (`bookmarks.js`) ;
-- les téléchargements (export des notes : dossier Téléchargements, `WKDownloadDelegate`) ;
-- le défilement d'un long article riche en formules (`lazypaint.js`). WebKit garde l'image de tout ce qui a défilé
-  et ne la libère pas quand elle contient des formules : 2,3 Go pour 2611.03736 lu en entier, pic de 4 Go. Les
-  sections à plus d'un écran de la fenêtre (`AHEAD`) passent donc en `content-visibility: hidden`, à la hauteur
-  mesurée juste avant (`contain-intrinsic-height`) : 0,8 Go. À revérifier : mémoire du processus
-  `com.apple.WebKit.WebContent` (`footprint <pid>`, ligne « graphics »), positions inchangées (sommaire, recherche,
-  passage au PDF, taille du texte), rien d'affiché en retard en défilant. WebKit donne les vraies positions dans une
-  section masquée (éléments et `Range`) ; `content-visibility: auto` ne convient pas : aucune avance (section
-  dessinée une fois à l'écran) et hauteurs estimées des sections jamais vues (sommaire décalé de 2 000 px).
-Les captures (`ARXIVREADER_SNAPSHOT`) avant et après la mise à jour aident à comparer.
+WebKit changes with macOS (especially the major version, in September). `check.py` reports the change; re-check by
+hand, in the installed app:
+- (`WEBKIT_POINTS` in `app/check.py`, the text of the notification, summarises this list: add any new WebKit-specific point to it)
+- drag a paper from one window to the other, onto a tab (opens after 0.6 s), onto "Library" and
+  "Related papers"; drag types: `application/x-arxivreader-paper` and `text/uri-list`
+  (`util.js`, `selection.js`, `TabWindow` in `main.swift`, which locates tabs through the `NSTabButton` views of
+  the Mac's tab bar);
+- SVG colors (the related-papers graph puts its colors in `style`, because WebKit rejects `var()` in the
+  `fill` attribute), `color-mix`, `<dialog>` and `inert`, `ResizeObserver`;
+- the PDF reader (pdf.js frozen in `static/vendor/pdfjs`) and the formulas (MathJax frozen in `static/vendor/mathjax`);
+  the pdf.js viewer forbids styles written by script (CSP `style-src 'self'`): our additions go through
+  `static/css/pdfjs-extra.css` (hidden buttons, highlights); the PDF highlights (`pdfnotes.js`) locate themselves
+  in the text layer (`.textLayer`, `textlayerrendered` event): to be rechecked at every pdf.js update;
+  the selection is drawn by `pdfnotes.js` (`enableSelectionRendering: false` in `pdfview.js`); the regions
+  (⌥ + drag, button `#arxZoneButton` added to `#toolbarViewerMiddle`) are rendered as images by `page.render`;
+  images kept in `papers/<id>/zones/` (notes) and `papers/<id>/ai-images/` (questions), sent only to the
+  assistants of `ai.IMAGE_PROVIDERS` (Claude: the SDK's message with image + text blocks; Gemini: `inline_data`);
+- exported notes: signed data block at the end of the file (`notesync.py`, Ed25519 from `cryptography`), the
+  installation's key in `notes-signing.key` (library folder, never exported), accepted devices in
+  `notes-trusted.json`; any change to the block's content goes through `FORMAT` (old files remain readable);
+- the browser's right-click menu is suppressed (`app.js`) except on a selection, a field, a link or an image;
+  right-click on the paper (`annotations.js`) and on the PDF (`pdfnotes.js`) offers the bookmarks (`bookmarks.js`);
+- downloads (notes export: Downloads folder, `WKDownloadDelegate`);
+- scrolling through a long, formula-heavy paper (`lazypaint.js`). WebKit keeps the image of everything that has been
+  scrolled and does not release it when it contains formulas: 2.3 GB for 2611.03736 read in full, peak of 4 GB. The
+  sections more than one screen away from the window (`AHEAD`) therefore switch to `content-visibility: hidden`, at the height
+  measured just before (`contain-intrinsic-height`): 0.8 GB. To recheck: memory of the
+  `com.apple.WebKit.WebContent` process (`footprint <pid>`, "graphics" line), positions unchanged (table of contents, search,
+  switching to the PDF, text size), nothing displayed late while scrolling. WebKit gives the true positions within a
+  hidden section (elements and `Range`); `content-visibility: auto` is not suitable: no head start (a section is
+  drawn once it is on screen) and estimated heights for sections never seen (table of contents shifted by 2 000 px).
+Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with comparing.
 
-## 8. Dépendances Python
+## 8. Python dependencies
 
-- `requirements.txt` : paquets voulus ; `requirements.lock` : versions exactes, testées, que `.venv` installe et
-  que l'application embarque (`build.sh` copie `.venv`, et refuse de construire s'il diffère du verrou).
-- Mettre à jour, exprès et un paquet à la fois : `.venv/bin/pip install -U <paquet>`, tests, essai, puis
-  `./arxivreader lock` et committer `requirements.lock`. Lire les notes de version du paquet avant.
-- Version majeure de pypdf : comparer avant et après, sur les PDF de la bibliothèque (lecture seule), le texte de
-  chaque page (`localpdf.read_pdf`), le tampon arXiv, `latexml._pdf_size` et le placement des pages
-  (`texstructure.locate_pages`). pypdf 7.0 (1.11.27) : seul changement, une espace autour des indices et exposants
-  (« H 2 p » au lieu de « H 2p ») ; tampons, tailles et pages identiques.
-- Mac : l'environnement est dans `.venv.nosync` (iCloud ignore les noms en `.nosync`), `.venv` n'est qu'un lien ;
-  `./arxivreader` le crée ainsi (Linux : `.venv` ordinaire). Raison : Documents est synchronisé par iCloud, qui
-  recréait dans un `.venv` refait ou mis à jour les anciennes versions des fichiers en copies « nom 2.py », « claude 3 »
-  (fichiers fantômes, `dataless` : les déplacer un à un les télécharge), embarquées ensuite par l'application (2 776
-  dans un .venv, 1 744 dans l'app 1.11.26). `build.sh` refuse de construire s'il en trouve (`find .venv/ -name
-  '* [0-9]*'`). Refaire l'environnement : `rm -rf .venv .venv.nosync && ./arxivreader`.
-- Outils de la version Windows (`windows/build-requirements.txt`) et actions GitHub (`.github/workflows`) : à vérifier
-  aussi à chaque audit (`gh api repos/actions/<action>/releases/latest`), notes des versions majeures lues avant :
-  download-artifact 8 échoue si le condensé du fichier ne correspond pas, upload-artifact 7 ajoute `archive` (vrai par
-  défaut) ; le téléchargement par nom (`name:`) est inchangé.
-- Changer de version de Python : `.venv` refait avec la nouvelle version ; `build.sh` crée le Python embarqué
-  depuis le cache de conda-forge (`miniforge`, `conda create --offline`) à la même version : il faut d'abord la
-  télécharger dans ce cache (`conda create` sans `--offline`), avec l'accord de l'utilisateur.
+- `requirements.txt`: wanted packages; `requirements.lock`: exact, tested versions, which `.venv` installs and
+  which the application embeds (`build.sh` copies `.venv`, and refuses to build if it differs from the lock).
+- To update, deliberately and one package at a time: `.venv/bin/pip install -U <paquet>`, tests, test run, then
+  `./arxivreader lock` and commit `requirements.lock`. Read the package's release notes beforehand.
+- pypdf major version: compare before and after, on the library's PDFs (read-only), the text of
+  each page (`localpdf.read_pdf`), the arXiv stamp, `latexml._pdf_size` and the placement of the pages
+  (`texstructure.locate_pages`). pypdf 7.0 (1.11.27): only change, a space around subscripts and superscripts
+  ("H 2 p" instead of "H 2p"); stamps, sizes and pages identical.
+- Mac: the environment is in `.venv.nosync` (iCloud ignores names ending in `.nosync`), `.venv` is only a link;
+  `./arxivreader` creates it this way (Linux: ordinary `.venv`). Reason: Documents is synchronised by iCloud, which
+  recreated, in a rebuilt or updated `.venv`, the old versions of files as copies "name 2.py", "claude 3"
+  (ghost files, `dataless`: moving them one by one downloads them), then embedded by the application (2 776
+  in one .venv, 1 744 in app 1.11.26). `build.sh` refuses to build if it finds any (`find .venv/ -name
+  '* [0-9]*'`). To rebuild the environment: `rm -rf .venv .venv.nosync && ./arxivreader`.
+- Tools of the Windows version (`windows/build-requirements.txt`, `Microsoft.Web.WebView2` package of
+  `windows/shell/arXivReader.csproj`) and GitHub Actions (`.github/workflows`): to be checked
+  as well at every audit (`gh api repos/actions/<action>/releases/latest`), release notes of major versions read beforehand:
+  download-artifact 8 fails if the file's digest does not match, upload-artifact 7 adds `archive` (true by
+  default); download by name (`name:`) is unchanged.
+- Changing the Python version: `.venv` rebuilt with the new version; `build.sh` creates the embedded Python
+  from the conda-forge cache (`miniforge`, `conda create --offline`) at the same version: it must first be
+  downloaded into this cache (`conda create` without `--offline`), with the user's agreement.
 
-## 9. Pièges connus
+## 9. Known pitfalls
 
-- Lien vers un autre article depuis l'article lu (« Ouvrir l'article », « Ouvrir Theorem 4.3 » : aperçu d'un renvoi,
-  pastille de la bibliographie) : un simple `href="#/paper/…"` remplacerait l'article lu dans son onglet. Ces liens
-  portent `.cross-open` et passent par `reader.openCross`, depuis `interceptLinks` et non par un écouteur posé sur le
-  lien, car `clean` recopie la pastille dans les aperçus sans ses écouteurs (nouvel onglet au premier plan, ⌘-clic en
-  arrière-plan, comme `readArxiv` pour les identifiants arXiv) ; clic du milieu : gestionnaire commun d'app.js.
+- Link to another paper from the paper being read ("Open the paper", "Open Theorem 4.3": preview of a cross-reference,
+  bibliography pill): a plain `href="#/paper/…"` would replace the paper being read in its tab. These links
+  carry `.cross-open` and go through `reader.openCross`, from `interceptLinks` and not through a listener set on the
+  link, because `clean` copies the pill into the previews without its listeners (new tab in the foreground, ⌘-click in the
+  background, like `readArxiv` for arXiv identifiers); middle click: common handler in app.js.
 
-- Sections masquées du lecteur (`lazypaint.js`) : une section loin de l'écran garde la hauteur mesurée avant d'être
-  masquée. Tout changement qui modifie la hauteur de sections hors de l'écran (taille du texte, largeur, volets,
-  texte caché révélé) passe par `reader.relayout(fn)` (ou `keepReadingPosition`, qui l'appelle) : tout est réaffiché
-  le temps du calcul, puis les hauteurs sont reprises. Les sections (`.lazy-paint`) s'étendent sur la marge de
-  l'article (`--paper-pad`) : une section masquée ne dessine rien hors de son cadre
-  (repères, flèches des preuves, notes, marque-pages sont dans cette marge) ; les marges qui sortaient de la section
-  (titre en haut, dernier paragraphe ou preuve en bas) sont portées par la section (`edgeChain`) : une section
-  masquée ne laisse rien sortir, ce qui suit remonterait. Pas de `flow-root` : il enfermerait le □ flottant des
-  preuves (une ligne de plus). Un élément de la marge ne doit
-  pas dépasser `--paper-pad` (26 à 32 px). `keepReadingPosition(..., { applied: true })` quand le changement est déjà
-  fait (réglages, fenêtre redimensionnée) : la place d'avant vient alors des positions retenues (`this.anchors`).
-- Version HTML par LaTeXML (`latexml.py`) : rangée dans `papers/<id>/html/`, jamais dans `content.html` à la racine
-  (sa présence fait d'un article un article d'arXiv lu en HTML : analyse, texte pour l'assistant). Les identifiants des
-  énoncés (rapprochés dans l'ordre du document, type par type), des sections, de la bibliographie et des équations
-  numérotées de la sortie sont remplacés par ceux de la structure de la source (`align_ids`) : notes et pages du PDF
-  (`structure.json`, source « tex ») servent aux deux vues ; emplacement de preuve indiqué à la main en vue HTML :
-  `latexml.reanalyze`. Fichier principal d'une source d'arXiv : `texsource.choose_main` (00README.json, sinon le
-  plus long), le même pour l'analyse et pour LaTeXML. Conversion et compilation d'un même document : l'une à la fois
-  (409). Défauts de LaTeXML 0.8.8 (Homebrew) contournés, que corrige la version de développement d'arXiv : dessins sans
-  `viewBox` (`add_viewboxes`), paquets KOMA sans équivalent qui vident la bibliographie (`LAYOUT_ONLY`, paquets vides
-  écrits dans le dossier de la conversion), chemins de recherche avec accents (« Thèse » : .bib et images
-  introuvables) remplacés par des liens symboliques au nom simple (`_ascii`), macros de l'auteur développées dans la
-  copie du `.bib` (LaTeXML le lit sans le préambule : `_expand_macros`), étiquettes des dessins TikZ sans hauteur ni
-  profondeur et matrices (diagrammes) mal posées (`FIGURE_LABELS`, chargé par `--preload` : mêmes mesures que la
-  sortie d'arXiv, matrices marquées `ltx_tikzmatrix_base` que `figures.js` ne corrige pas), hachures dont le motif
-  est perdu (`fix_patterns`), ligne de texte seul d'un nœud devenue un `<text>` SVG (enveloppée, même module),
-  renvois des dessins à largeur fixe (`_figure_refs` : numéro du `.aux`, lien gardé par `\arxivreaderref`).
-  Figures PDF (Image::Magick absent : `ltx_missing_image`) converties en PNG avant LaTeXML (`_raster_figures` : sips,
-  sinon Ghostscript de TeX ; largeur de la figure d'origine ; vrais PDF seulement (`%PDF-` : pas de PostScript pour
-  Ghostscript), dans le dossier du document, 2400 px et 180 s au plus en tout, `page=` respecté), images réduites à quelques pixels par une longueur
-  inconnue de LaTeXML (`fix_tiny_images`). Bibliographie vide (le `.bib` relu avec le préambule : pdfx, CJK… arrêtent
-  LaTeXML) : seconde conversion d'après un `.bbl` (`_lost_bibliography`, `_bbl` : compilation ou BibTeX sur les
-  citations ; `.bbl` biblatex changé en thebibliography, `_biblatex_bibliography` : fait avant la première conversion quand la
-  source charge biblatex, que LaTeXML ne connaît pas, pour ne pas convertir deux fois un livre).
-  Reste : lignes d'un nœud à plusieurs lignes un peu serrées (LaTeXML les empile sans interligne). Sous-figures
-  (`ltx_flex_figure`) côte à côte : `latexml.css`. Taille des figures (dessins, images) rapportée au texte
-  (`figures.sizeToText` : largeur LaTeXML à 100 dpi convertie en em d'après le corps du document, 10pt par défaut).
-  Hachures des pages d'arXiv (LaTeXML de développement : le `<symbol>` de la tuile enferme la suite du dessin, alors
-  invisible ; surface remplie en noir, juste avant ou juste après un groupe à motif sans tracé, ou après une
-  redéfinition du motif seule dans un `<g>`) : réparées au nettoyage (`sanitize._repair_patterns`, avant le
-  filtrage). Vérifié sur 6 articles d'arXiv trouvés en parcourant 900 pages HTML récentes. Bibliographie : le `.bib` quand tous
-  sont trouvés (un `.bbl` amsrefs lui
-  échappe), sinon le `.bbl` (`nobibtex`). Dépendances implicites (« the above lemma », phrase de justification,
-  équations du texte courant, corollaire qui suit un énoncé) : `structure.py` et `texstructure.implicit_dependencies`.
-  Étiquettes de listes inconnues de LaTeXML (« (enumi) », ex. `\greek*` de moreenum) : refaites par `relabelLists`
-  (amsfix.js) d'après la source (`texsource._label_format`), renvois et infobulles compris. Texte non imprimé :
-  `strip_hidden` retire aussi l'argument d'une macro vide (`\newcommand{\comment}[1]{}`). LaTeXML est lancé dans le dossier du document
-  sur un chemin relatif (les espaces dans les chemins le gênent), sortie dans un dossier temporaire ; bibliographie par
-  le `.bbl` de la compilation (`nobibtex`). Faite pour un état de la source (`state.json` : `compiledAt` ou version
-  arXiv, `STRUCTURE_VERSION`) : sinon « stale », refaite au clic.
+- Hidden sections of the reader (`lazypaint.js`): a section far from the screen keeps the height measured before it was
+  hidden. Any change that modifies the height of off-screen sections (text size, width, panes,
+  hidden text revealed) goes through `reader.relayout(fn)` (or `keepReadingPosition`, which calls it): everything is redisplayed
+  for the duration of the computation, then the heights are taken again. The sections (`.lazy-paint`) extend over the
+  paper's margin (`--paper-pad`): a hidden section draws nothing outside its box
+  (markers, proof arrows, notes, bookmarks are in this margin); the margins that stuck out of the section
+  (title at the top, last paragraph or proof at the bottom) are carried by the section (`edgeChain`): a hidden section
+  lets nothing out, and what follows would move up. No `flow-root`: it would enclose the floating □ of the
+  proofs (one more line). A margin element must
+  not exceed `--paper-pad` (26 to 32 px). `keepReadingPosition(..., { applied: true })` when the change is already
+  made (settings, resized window): the previous place then comes from the retained positions (`this.anchors`).
+- HTML version by LaTeXML (`latexml.py`): stored in `papers/<id>/html/`, never in `content.html` at the root
+  (its presence makes a paper an arXiv paper read as HTML: analysis, text for the assistant). The identifiers of the
+  statements (matched in document order, type by type), of the sections, of the bibliography and of the numbered equations
+  of the output are replaced by those of the source's structure (`align_ids`): notes and PDF pages
+  (`structure.json`, source "tex") serve both views; proof location indicated by hand in HTML view:
+  `latexml.reanalyze`. Main file of an arXiv source: `texsource.choose_main` (00README.json, otherwise the
+  longest), the same for the analysis and for LaTeXML. Conversion and compilation of the same document: one at a time
+  (409). Defects of LaTeXML 0.8.8 (Homebrew) worked around, which arXiv's development version fixes: drawings without
+  `viewBox` (`add_viewboxes`), KOMA packages with no equivalent that empty the bibliography (`LAYOUT_ONLY`, empty packages
+  written in the conversion folder), search paths with accents ("Thèse": .bib and images
+  not found) replaced by symbolic links with a simple name (`_ascii`), the author's macros expanded in the
+  copy of the `.bib` (LaTeXML reads it without the preamble: `_expand_macros`), labels of TikZ drawings with no height or
+  depth and badly placed matrices (diagrams) (`FIGURE_LABELS`, loaded by `--preload`: same measurements as
+  arXiv's output, matrices marked `ltx_tikzmatrix_base` that `figures.js` does not correct), hatchings whose pattern
+  is lost (`fix_patterns`), text-only line of a node turned into an SVG `<text>` (wrapped, same module),
+  cross-references of fixed-width drawings (`_figure_refs`: number from the `.aux`, link kept by `\arxivreaderref`).
+  PDF figures (Image::Magick absent: `ltx_missing_image`) converted to PNG before LaTeXML (`_raster_figures`: sips,
+  otherwise TeX's Ghostscript; width of the original figure; real PDFs only (`%PDF-`: no PostScript for
+  Ghostscript), in the document's folder, 2400 px and 180 s at most in total, `page=` respected), images reduced to a few pixels by a length
+  unknown to LaTeXML (`fix_tiny_images`). Empty bibliography (the `.bib` reread with the preamble: pdfx, CJK… stop
+  LaTeXML): second conversion from a `.bbl` (`_lost_bibliography`, `_bbl`: compilation or BibTeX on the
+  citations; biblatex `.bbl` changed to thebibliography, `_biblatex_bibliography`: done before the first conversion when the
+  source loads biblatex, which LaTeXML does not know, so as not to convert a book twice).
+  Remaining: lines of a multi-line node slightly tight (LaTeXML stacks them with no line spacing). Side-by-side
+  subfigures (`ltx_flex_figure`): `latexml.css`. Size of figures (drawings, images) relative to the text
+  (`figures.sizeToText`: LaTeXML width at 100 dpi converted to em based on the document's font size, 10pt by default).
+  Hatchings of arXiv pages (development LaTeXML: the tile's `<symbol>` encloses the rest of the drawing, which is then
+  invisible; surface filled in black, just before or just after a patterned group with no stroke, or after a
+  redefinition of the pattern alone in a `<g>`): repaired at sanitising (`sanitize._repair_patterns`, before
+  filtering). Checked on 6 arXiv papers found by going through 900 recent HTML pages. Bibliography: the `.bib` when all
+  are found (an amsrefs `.bbl` escapes it), otherwise the `.bbl` (`nobibtex`). Implicit dependencies ("the above lemma", justification sentence,
+  equations in the running text, corollary following a statement): `structure.py` and `texstructure.implicit_dependencies`.
+  List labels unknown to LaTeXML ("(enumi)", e.g. `\greek*` from moreenum): redone by `relabelLists`
+  (amsfix.js) based on the source (`texsource._label_format`), cross-references and tooltips included. Non-printed text:
+  `strip_hidden` also removes the argument of an empty macro (`\newcommand{\comment}[1]{}`). LaTeXML is launched in the document's folder
+  on a relative path (spaces in paths bother it), output in a temporary folder; bibliography through
+  the compilation's `.bbl` (`nobibtex`). Made for one state of the source (`state.json`: `compiledAt` or arXiv
+  version, `STRUCTURE_VERSION`): otherwise "stale", redone on click.
 
-- Profil joint à l'IA (`ai.reader_profile`, dans la consigne système de chaque demande, toutes tâches) : catégories du
-  feed, mots-clés, articles de l'utilisateur (titre, année, arXiv, début du résumé : `PROFILE_ABSTRACT`), articles et
-  livres de référence, auteurs suivis (au plus `PROFILE_ITEMS` par sorte), texte libre `aiProfile` des réglages
-  (`PROFILE_TEXT` caractères, `<in_their_words>`). Tout est échappé (un titre ne ferme pas le bloc). Aperçu exact :
-  `GET /api/ai/profile` (Réglages → Assistant IA). Vide : aucun bloc, consigne neutre (« The reader is a researcher »).
-  Essai de l'interface dans une copie de l'app : effacer ses `__pycache__` (Python embarqué : bytecode non revérifié).
-  Renvois des réponses : mot-clé de section sans casse mais numéro en majuscule (« la section a été… » n'est pas l'annexe
-  A), lettre seule de la table des matières seulement pour une annexe ou « A.1 » ; étiquette entre crochets entière
-  d'abord (« [EGA-IV] »), puis morceaux séparés par « , », « ; » (hors entité) ou « – ». Énumération après un mot au
-  pluriel (« Theorems 3.6, 1.2 », « Lemmas 3.5–3.8 », « §§2–3 ») : un lien par numéro connu (`listAfter`, `linkRefs`).
-  La liste se ferme après « and », garde la profondeur du premier numéro (annexes : lettres dans l'ordre), et le test
-  « of [5] » vient après elle : « Theorems 1 and 2, 3 divides n » ne relie pas le 3, « Theorems 1 and 2 of [5] » rien.
+- Profile attached for the AI (`ai.reader_profile`, in the system prompt of every request, all tasks): feed
+  categories, keywords, the user's papers (title, year, arXiv, beginning of the abstract: `PROFILE_ABSTRACT`), reference
+  papers and books, followed authors (at most `PROFILE_ITEMS` per kind), free text `aiProfile` from the settings
+  (`PROFILE_TEXT` characters, `<in_their_words>`). Everything is escaped (a title does not close the block). Exact preview:
+  `GET /api/ai/profile` (Settings → AI assistant). Empty: no block, neutral prompt ("The reader is a researcher").
+  Test run of the interface in a copy of the app: delete its `__pycache__` (embedded Python: bytecode not re-verified).
+  Cross-references in answers: section keyword case-insensitive but number in uppercase ("la section a été…" (French: "the section was…") is not appendix
+  A), a bare table-of-contents letter only for an appendix or "A.1"; whole bracketed label
+  first ("[EGA-IV]"), then pieces separated by ",", ";" (outside an entity) or "–". Enumeration after a plural word
+  ("Theorems 3.6, 1.2", "Lemmas 3.5–3.8", "§§2–3"): one link per known number (`listAfter`, `linkRefs`).
+  The list closes after "and", keeps the depth of the first number (appendices: letters in order), and the
+  "of [5]" test comes after it: "Theorems 1 and 2, 3 divides n" does not link the 3, "Theorems 1 and 2 of [5]" links nothing.
 
-- Fichiers glissés depuis l'ordinateur (barre d'import, liste de la bibliothèque : `library.importDropped`) : chemins
-  demandés à la fenêtre (`util.droppedFilePaths`) — Mac : `DropWebView` (main.swift) retient les chemins PDF/TeX du
-  glisser (draggingEntered, performDragOperation), rendus une fois (`droppedFiles` → `arxivreader:dropped`) ; Windows :
-  `postMessageWithAdditionalObjects` (fichiers → `CoreWebView2File.Path`, MainForm.cs). Puis comme le bouton
-  (`importChosen` : PDF par chemin, TeX compilé dans son dossier, `.bib` et `\input` relatifs à lui). Navigateur :
-  contenu des PDF seulement.
+- Files dragged from the computer (import bar, library list: `library.importDropped`): paths requested from the
+  window (`util.droppedFilePaths`) — Mac: `DropWebView` (main.swift) retains the PDF/TeX paths of the
+  drag (draggingEntered, performDragOperation), returned once (`droppedFiles` → `arxivreader:dropped`); Windows:
+  `postMessageWithAdditionalObjects` (files → `CoreWebView2File.Path`, MainForm.cs). Then same as the button
+  (`importChosen`: PDF by path, TeX compiled in its folder, `.bib` and `\input` relative to it). Browser:
+  PDF contents only.
 
-- Dépendances (à chaque audit) : `.venv/bin/pip list --outdated` ; avis de sécurité :
-  `gh api -X GET /advisories -f ecosystem=pip -f affects=<paquet>@<version>` pour chaque ligne de requirements.lock ;
-  pdf.js et MathJax (static/vendor, versions dans leurs README) ; Python embarqué (conda-forge) et la CI Linux (3.12 →
-  3.15). Mise à jour : tests, banc du texte caché, puis `./arxivreader lock`. Python embarqué = celui de `.venv`
-  (`build.sh` en refait une copie conda-forge de même version) : environnement conda à part,
-  `conda create -p ~/miniforge3/envs/arxivreader -c conda-forge python=3.14.X`, puis `.venv` refait dessus
-  (`rm -rf .venv .venv.nosync && PYTHON=~/miniforge3/envs/arxivreader/bin/python ./arxivreader`) ; jamais le
-  Python de base de miniforge.
+- Dependencies (at every audit): `.venv/bin/pip list --outdated`; security advisories:
+  `gh api -X GET /advisories -f ecosystem=pip -f affects=<paquet>@<version>` for each line of requirements.lock;
+  pdf.js and MathJax (static/vendor, versions in their READMEs); the Claude Agent SDK and its CLI (options and login change:
+  check whether the application must be adapted); embedded Python (conda-forge) and the Linux CI (3.12 →
+  3.15). Update: tests, hidden-text check (the 16 papers listed by arXiv:2507.06185, described further down in this file: every
+  instruction flagged, none passed on; no script in the repository), then `./arxivreader lock`. Embedded Python = the one in `.venv`
+  (`build.sh` rebuilds a conda-forge copy of the same version from it): separate conda environment,
+  `conda create -p ~/miniforge3/envs/arxivreader -c conda-forge python=3.14.X`, then `.venv` rebuilt on top of it
+  (`rm -rf .venv .venv.nosync && PYTHON=~/miniforge3/envs/arxivreader/bin/python ./arxivreader`); never
+  miniforge's base Python.
 
-- Texte invisible (`structure.mark_hidden`, au début de l'analyse : `plain` ne le garde ni dans les étiquettes ni dans
-  les titres) : couleur du texte blanche ou presque (luminance ≥ 0,9), transparente ou d'alpha nul (`_hiding`, `_color` :
-  #rgb(a), #rrggbb(aa), rgb(a)(), quelques noms ; pas la couleur d'un fond : `--ltx-bg-color`, `background-color`,
-  `--ltx-fill-color`), police minuscule, masqué, opacité < 0,1 ; marqué `.arx-hidden-text`, compté, jamais transmis à
-  l'IA (`ai._render`, qui ne lit pas non plus les dessins). Exceptions (texte blanc seulement) : fond foncé posé sur lui
-  ou un parent (`\colorbox`, `_dark_background`) ; dans un dessin, forme foncée qui couvre toute sa largeur, dessinée
-  juste avant dans le même repère (titre d'un encadré tcolorbox, `_on_dark_shape`, contraste d'au moins 2,3). Prudent :
-  une forme illisible au-dessus (déplacée, commandes relatives, image), sans surface, partielle, ou un foreignObject sans
-  largeur, et le texte reste signalé ; formes lues une fois par groupe.
-- Lettre barrée (`\not{\mathcal{D}}`, `\not D`, `\slashed{D}` : opérateur de Dirac) : LaTeXML laisse la lettre suivie de
-  U+0338, barre combinante que **Chrome dessine sur la lettre et WebKit après elle** (sur l'indice). `math.slashedLetters`
-  la remplace par la même barre non combinante de la police, ⧸ U+29F8 (barre de `\not` et de ≠ : hauteur 0,716 em,
-  profondeur 0,215 em, boîte de la largeur d'un « = »), sans largeur, au début de la lettre — comme TeX place `\not` ;
-  devant tout l'indice si la lettre en est la base (`attachScripts`), qui reste placé comme pour `\mathcal{D}_m`.
-  Lettre gardée calligraphique (`restoreCalligraphic`). TeX des titres, résumés et notes : `\not` devant une lettre
-  ou un groupe → `\arxivslash` (`\rlap{\mathrm{⧸}}#1`) ; `\not` de MathJax pose la barre sur l'indice, `\unicode`
-  la prend dans une police de secours ; relations `\not=`, `\not\in`… et `\cancel` de l'auteur intacts. Vérifié
-  sur 2610.36240 **dans WebKit (copie de l'app, ARXIVREADER_EVAL + WINDOWSHOT) et dans Chrome**.
+- Invisible text (`structure.mark_hidden`, at the start of the analysis: `plain` keeps it neither in labels nor in
+  titles): text color white or nearly white (luminance ≥ 0,9), transparent or zero alpha (`_hiding`, `_color`:
+  #rgb(a), #rrggbb(aa), rgb(a)(), a few names; not a background color: `--ltx-bg-color`, `background-color`,
+  `--ltx-fill-color`), tiny font, hidden, opacity < 0,1; marked `.arx-hidden-text`, counted, never passed to
+  the AI (`ai._render`, which does not read drawings either). Exceptions (white text only): dark background set on it
+  or on a parent (`\colorbox`, `_dark_background`); in a drawing, a dark shape covering its full width, drawn
+  immediately before in the same coordinate frame (title of a tcolorbox box, `_on_dark_shape`, contrast of at least 2,3). Conservative:
+  an unreadable shape on top (moved, relative commands, image), with no surface, partial, or a foreignObject with no
+  width, and the text stays flagged; shapes read once per group.
+- Slashed letter (`\not{\mathcal{D}}`, `\not D`, `\slashed{D}`: Dirac operator): LaTeXML leaves the letter followed by
+  U+0338, a combining slash that **Chrome draws on the letter and WebKit after it** (on the subscript). `math.slashedLetters`
+  replaces it with the font's same non-combining slash, ⧸ U+29F8 (slash of `\not` and of ≠: height 0,716 em,
+  depth 0,215 em, box the width of an "="), with no width, at the start of the letter — as TeX places `\not`;
+  in front of the whole subscript if the letter is its base (`attachScripts`), which stays placed as for `\mathcal{D}_m`.
+  Letter kept calligraphic (`restoreCalligraphic`). TeX of titles, abstracts and notes: `\not` before a letter
+  or a group → `\arxivslash` (`\rlap{\mathrm{⧸}}#1`); MathJax's `\not` puts the slash on the subscript, `\unicode`
+  takes it from a fallback font; relations `\not=`, `\not\in`… and the author's `\cancel` left intact. Verified
+  on 2610.36240 **in WebKit (copy of the app, ARXIVREADER_EVAL + WINDOWSHOT) and in Chrome**.
 
-- Couleurs de l'auteur (latexml.css, fin) : `--ltx-fg-color` / `--ltx-bg-color` de LaTeXML, et `mathcolor` /
-  `mathbackground` des formules mis dans ces variables par `amsfix.colorVariables` (sinon MathJax ou le navigateur les
-  figent : noir imposé invisible en mode sombre). Telles quelles en mode clair ; en mode sombre, oklch de même teinte,
-  texte éclairci (luminosité ≥ 0,72, le noir devient blanc), fond assombri (≤ 0,35 ; blanc ou presque : transparent, c'est la couleur de la
-  page), filets `\rule` éclaircis comme le texte ; jamais dans les dessins ni leurs étiquettes HTML (`.figure-card`, fond
-  blanc : du texte noir y deviendrait blanc sur blanc). Vérifié sur les 16 articles d'arXiv à consignes cachées recensés par arXiv:2507.06185 (versions citées) : chaque
-  consigne signalée, aucune transmise, aucun autre signalement. Lecteur : « Afficher » va au premier passage, « Suivant »
-  aux autres. Figures SVG insérées par `<object data>` : changées en `<img>` au nettoyage (`sanitize._objects_to_images`).
+- Author colors (latexml.css, end): LaTeXML's `--ltx-fg-color` / `--ltx-bg-color`, and the `mathcolor` /
+  `mathbackground` of formulas put into these variables by `amsfix.colorVariables` (otherwise MathJax or the browser
+  freezes them: imposed black invisible in dark mode). Unchanged in light mode; in dark mode, oklch of the same hue,
+  text lightened (lightness ≥ 0,72, black becomes white), background darkened (≤ 0,35; white or nearly white: transparent, it is the color of the
+  page), `\rule` lines lightened like the text; never in drawings or their HTML labels (`.figure-card`, white
+  background: black text there would become white on white). Verified on the 16 arXiv papers with hidden prompts listed by arXiv:2507.06185 (cited versions): each
+  prompt flagged, none passed on, no other flag. The reader: "Show" goes to the first passage, "Next"
+  to the others. SVG figures inserted via `<object data>`: changed to `<img>` during sanitizing (`sanitize._objects_to_images`).
 
-- Auteurs suivis et homonymes : une seule règle, `relevance.follows` (même personne d'après le nom, article pas écarté,
-  catégories gardées), utilisée par le feed (`score_items`), la recherche des articles récents
-  (`profile.followed_author_papers`) et les alertes (`alerts._who`, `forget_unfollowed`). Toute nouvelle façon de
-  reconnaître un auteur suivi passe par elle. Catégories normalisées comme arXiv les écrit (`profile.clean_category`).
+- Followed authors and homonyms: a single rule, `relevance.follows` (same person according to the name, paper not dismissed,
+  categories kept), used by the feed (`score_items`), the search for recent papers
+  (`profile.followed_author_papers`) and the alerts (`alerts._who`, `forget_unfollowed`). Any new way of
+  recognizing a followed author goes through it. Categories normalized as arXiv writes them (`profile.clean_category`).
 
-- Assistant et documents sans texte ou trop longs : un PDF scanné (`ai.without_text`) envoie les pages autour de la
-  question en JPEG (7 avant, 3 après, 12 Mo au plus : les plus éloignées laissées de côté) ; un document au-delà de
-  `PAPER_LIMIT` part réduit à son début et à une fenêtre autour de la question (`ai._focus`, `ai._window`), sauf
-  résumé et relecture. Un article sous la limite part toujours entier.
+- Assistant and documents without text or too long: a scanned PDF (`ai.without_text`) sends the pages around the
+  question as JPEG (7 before, 3 after, 12 MB at most: the furthest ones left out); a document beyond
+  `PAPER_LIMIT` is sent reduced to its beginning and a window around the question (`ai._focus`, `ai._window`), except
+  summary and review. A paper under the limit is sent whole, except a summary or review of a section when the paper and the
+  attached context (`_chapter_context`) do not fit within the limit (`room = max(limit // 2, limit - len(context))`,
+  `_reduced_to_section`). Paper beyond the limit, question asked on the summary or review of a section: that section takes
+  priority over the window, unless the question targets a precise passage (`node`, `quote`, `zone`) found in the text; the
+  displayed page, attached to every question in PDF mode, is not one.
 
-- Fluidité de l'onglet IA (mesurée le 29/10/2026 dans WebKit, 21 réponses longues, 64 000 px de fil) : le fil est en
-  `contain: strict` (défilement 23 → 17 ms par image) ; la variable `--ai-scrollbar` n'est posée que si elle change
-  (posée à chaque défilement, elle refaisait le style de tout le fil) ; pendant le glissement de la poignée du panneau,
-  le fil suit la poignée à chaque image, mais seules les réponses visibles sont recomposées : `.reader.resizing
-  .ai-answer { content-visibility: auto }`, les autres gardent leur dernière hauteur (`contain-intrinsic-size: auto`),
-  le fil ne saute pas (54 → 16 ms par image, écart au bord du panneau 0 px). Écartés : fil figé jusqu'au relâchement
-  (1.11.12, grand vide en élargissant), recomposé toutes les 100–200 ms (le vide restait visible un instant). La mise
-  en place a lieu dès l'appui ; curseur et clics bloqués par un voile (`.resize-shield`), pas par des propriétés
-  héritées posées sur `.reader` (tout l'article recalculé : ~400 ms au départ du glissement) ; mouvements écoutés sur
-  la fenêtre (le voile ne doit jamais rester).
-  Premier passage sur l'onglet IA (1,6 s → 0,46 s) : MathJax en `adaptiveCSS: false` (`math.js`), sinon il ajoute des
-  règles à sa feuille de style pour chaque caractère nouveau d'une réponse, et WebKit recalcule tout l'article (~1 s) ;
-  et l'onglet IA est marqué sur le panneau (`data-tab`), pas sur la racine du lecteur (sinon ~180 ms de recalcul de
-  l'article à chaque passage) ; sa largeur par défaut (`AI_PANEL_W`) n'est posée que sans largeur choisie
-  (`applyPanelWidth`). Écarté :
-  `content-visibility: auto` sur les réponses (aussi rapide, mais hauteurs estimées : la position gardée de chaque
-  sous-onglet tomberait ailleurs, et WebKit ne compense pas les sauts en remontant). Le relâchement coûte encore
-  ~250 ms : recomposition de l'article entier à la nouvelle largeur.
+- Smoothness of the AI tab (measured on 29/10/2026 in WebKit, 21 long answers, 64 000 px of thread): the thread is
+  `contain: strict` (scrolling 23 → 17 ms per frame); the `--ai-scrollbar` variable is set only if it changes
+  (set on every scroll, it restyled the whole thread); while the panel handle is dragged,
+  the thread follows the handle on every frame, but only the visible answers are laid out again: `.reader.resizing
+  .ai-answer { content-visibility: auto }`, the others keep their last height (`contain-intrinsic-size: auto`),
+  the thread does not jump (54 → 16 ms per frame, gap at the panel edge 0 px). Rejected: thread frozen until release
+  (1.11.12, large blank area when widening), laid out again every 100–200 ms (the blank area stayed visible for a moment). The
+  setup happens on press; cursor and clicks blocked by an overlay (`.resize-shield`), not by inherited properties
+  set on `.reader` (whole paper recalculated: ~400 ms at the start of the drag); moves listened to on
+  the window (the overlay must never remain).
+  First visit to the AI tab (1,6 s → 0,46 s): MathJax with `adaptiveCSS: false` (`math.js`), otherwise it adds
+  rules to its stylesheet for every new character of an answer, and WebKit recalculates the whole paper (~1 s);
+  and the AI tab is marked on the panel (`data-tab`), not on the root of the reader (otherwise ~180 ms of recalculation of
+  the paper on every visit); its default width (`AI_PANEL_W`) is set only when no width has been chosen
+  (`applyPanelWidth`). Rejected:
+  `content-visibility: auto` on the answers (just as fast, but estimated heights: the kept position of each
+  sub-tab would land elsewhere, and WebKit does not compensate for jumps when scrolling up). Release still costs
+  ~250 ms: layout of the entire paper at the new width.
 
-- Jeton de session (`config.TOKEN`, `ARXIVREADER_TOKEN`) : tiré au hasard par la fenêtre Mac (`main.swift`), la
-  fenêtre Windows (`Program.cs`), le lanceur Windows en mode navigateur (`launcher.py`) et `./arxivreader` ; la page
-  s'ouvre par `/?t=<jeton>` (cookie HttpOnly, SameSite=Strict, puis redirection vers `/`), les fenêtres envoient
-  l'en-tête `X-ArXivReader-Token`. Le serveur l'écrit dans `server.token` (lisible par l'utilisateur seul, retiré à
-  l'arrêt) pour qu'un lanceur rouvre une fenêtre. Sans la variable (tests, essais), l'API ne le demande pas. Essai
-  dans une copie de l'app : `curl` sans le jeton doit répondre 403.
-- Clés d'API dans le trousseau (`app/keystore.py`, seulement avec `ARXIVREADER_KEYCHAIN=1`) : macOS par l'outil
-  `security` (commande d'écriture sur l'entrée standard, jamais en argument), Windows par CredWriteW ; une entrée
-  par clé et par bibliothèque (chemin résumé), donc une copie d'essai ne touche jamais les vraies clés. `db`
-  les lit et les écrit à la place de la base, les y migre au démarrage, et s'y replie si le trousseau refuse.
-  `app.check` (vérification, à la main ou chaque semaine) l'active lui-même dans `main()`.
+- Session token (`config.TOKEN`, `ARXIVREADER_TOKEN`): randomly generated by the Mac window (`main.swift`), the
+  Windows window (`Program.cs`), the Windows launcher in browser mode (`launcher.py`) and `./arxivreader`; the page
+  opens via `/?t=<jeton>` (HttpOnly cookie, SameSite=Strict, then redirect to `/`), the windows send the
+  `X-ArXivReader-Token` header. The server writes it to `server.token` (readable by the user only, removed on
+  shutdown) so that a launcher can reopen a window. Without the variable (tests, test runs), the API does not require it. Test run
+  in a copy of the app: `curl` without the token must respond 403.
+- API keys in the keychain (`app/keystore.py`, only with `ARXIVREADER_KEYCHAIN=1`): macOS through the
+  `security` tool (write command on standard input, never as an argument), Windows through CredWriteW; one entry
+  per key and per library (path digest), so a test copy never touches the real keys. `db`
+  reads and writes them in place of the database, migrates them into the keychain at startup, and falls back to the database if the keychain refuses.
+  `app.check` (verification, by hand or weekly) enables it itself in `main()`.
 
-- Comptes des assistants (réglages, `accountControls`) : changer de compte = étape « switch » d'`open_setup`
-  (déconnexion puis connexion dans le Terminal ou l'invite de commandes). Claude : un navigateur déjà connecté à
-  claude.ai reprendrait ce compte, donc connexion hors de sa session par `$BROWSER` (la CLI l'appelle sans shell avec le
-  lien ; vérifié sur 2.1.319, à revérifier si le SDK change, sans jamais se déconnecter : HOME et `CLAUDE_CONFIG_DIR`
-  temporaires, pseudo-terminal, tuer avant la fin). Mac (`_private_browser`, `PRIVATE_WINDOW`) : Chrome, Edge, Brave,
-  Firefox en fenêtre privée ; Safari, sans commande pour cela, ou navigateur inconnu : lien copié, consigne affichée.
-  Windows : `BROWSER` inexistant, la CLI affiche le lien, consigne affichée. La connexion simple (« login ») ne change
-  pas. Se déconnecter = `/api/ai/logout`
-  (`ai.logout` : `claude auth logout`, `codex logout`). Autre compte Claude : sa liste de modèles est relue
-  (`_claude_status` compare l'adresse). Les onglets IA ouverts oublient l'état des assistants (événement
-  `arxivreader:ai-accounts`). Ne jamais lancer une déconnexion pendant un essai : la connexion Claude est celle de
-  Claude Code sur la machine.
+- Assistant accounts (settings, `accountControls`): changing account = "switch" step of `open_setup`
+  (logout then login in the Terminal or the command prompt). Claude: a browser already logged in to
+  claude.ai would pick that account back up, so the login happens outside its session through `$BROWSER` (the CLI calls it without a shell with the
+  link; verified on 2.1.319, to be re-verified if the SDK changes, without ever logging out: temporary HOME and `CLAUDE_CONFIG_DIR`,
+  pseudo-terminal, kill before the end). Mac (`_private_browser`, `PRIVATE_WINDOW`): Chrome, Edge, Brave,
+  Firefox in a private window; Safari, which has no command for this, or an unknown browser: link copied, instruction displayed.
+  Windows: `BROWSER` does not exist, the CLI displays the link, instruction displayed. The plain login ("login") does not
+  change. Logging out = `/api/ai/logout`
+  (`ai.logout`: `claude auth logout`, `codex logout`). Another Claude account: its list of models is re-read
+  (`_claude_status` compares the address). AI tabs that are open forget the state of the assistants (event
+  `arxivreader:ai-accounts`). Never start a logout during a test run: the Claude login is that of
+  Claude Code on the machine.
 
-- Choix de l'assistant dans l'onglet IA (`Assistant.modelPicker`), qui écrit `aiProvider`, le modèle et le
-  niveau. Assistant par défaut (`aiDefault`, vide : le dernier choisi) : remis dans `aiProvider` au lancement du serveur
-  (`select_default_assistant`) et dès qu'on le choisit ; un assistant qui vient de devenir prêt dans les réglages remplace
-  celui utilisé si ce dernier ne l'est pas vraiment (`adoptIfActiveNotReady` ; `inconclusive` : vérification sans réponse claire — réseau, délai, quota, réponse illisible —, jamais de bascule ; seuls un refus explicite ou un serveur local éteint comptent comme « pas prêt »). Les réglages ne servent qu'à configurer chaque assistant (`configuring`, jamais enregistré ; `/api/ai/status?provider=`) ; un
-  compte changé, ou la section quittée (fermeture de la fenêtre), y déclenche `arxivreader:ai-accounts`, qui fait revérifier les assistants. La
-  liste vient de l'état de l'assistant choisi et de `/api/ai/partners` (les autres, prêts). Changer d'assistant
-  (`switchAssistant`) reprend leurs états déjà connus, posés avant d'enregistrer le réglage : l'enregistrement
-  redessine le panneau aussitôt (`reader`, `onSettingsChange`), qui relancerait sinon les vérifications.
+- Choice of the assistant in the AI tab (`Assistant.modelPicker`), which writes `aiProvider`, the model and the
+  level. Default assistant (`aiDefault`, empty: the last one chosen): put back into `aiProvider` when the server starts
+  (`select_default_assistant`) and as soon as it is chosen; an assistant that has just become ready in the settings replaces
+  the one in use if the latter is not actually ready (`adoptIfActiveNotReady`; `inconclusive`: check without a clear answer — network, timeout, quota, unreadable response —, never a switch; only an explicit refusal or a local server that is off count as "not ready"). The settings serve only to configure each assistant (`configuring`, never saved; `/api/ai/status?provider=`); an
+  account changed, or the section left (closing the window), triggers `arxivreader:ai-accounts` there, which makes the assistants be re-checked. The
+  list comes from the state of the chosen assistant and from `/api/ai/partners` (the others, ready). Changing assistant
+  (`switchAssistant`) reuses their already known states, set before saving the setting: saving
+  redraws the panel immediately (`reader`, `onSettingsChange`), which would otherwise restart the checks.
 
-- Relecture croisée (`ai.cross_review`, appelée par la route de l'IA quand la demande porte `second`) : relectures
-  des deux assistants en parallèle, comparaison par le second, synthèse par le premier ; toutes les demandes passent
-  par `build_prompt` (même texte, sans le texte invisible ; limite d'article propre à chaque assistant). Les
-  relectures jointes vont dans des balises `<review>`, déclarées « à analyser » dans `SYSTEM`. Étapes enregistrées
-  dans la colonne `steps` de l'échange (la synthèse), marqueurs `[[both]]`, `[[a]]`, `[[b]]`, `[[dispute]]`,
-  `[[withdrawn]]` montrés en étiquettes (`LiveAnswer.html`, posées après le Markdown) et écrits en clair dans les
-  notes, la copie et l'export (`ai._marker_words`). Une erreur du second assistant porte son nom et le code
-  « other » : un code « login » ferait croire le premier déconnecté. Assistants prêts : `/api/ai/partners`
-  (`ai.partners`, vérifiés en parallèle ; gardés deux minutes par la page).
+- Cross-review (`ai.cross_review`, called by the AI route when the request carries `second`): reviews
+  by the two assistants in parallel, comparison by the second one, synthesis by the first one; all the requests go
+  through `build_prompt` (same text, without the invisible text; paper limit specific to each assistant). The
+  attached reviews go into `<review>` tags, declared "to be analysed" in `SYSTEM`. Steps saved
+  in the `steps` column of the exchange (the synthesis), markers `[[both]]`, `[[a]]`, `[[b]]`, `[[dispute]]`,
+  `[[withdrawn]]` shown as labels (`LiveAnswer.html`, placed after the Markdown) and written out in plain words in the
+  notes, the copy and the export (`ai._marker_words`). An error from the second assistant carries its name and the code
+  "other": a "login" code would make the first one appear logged out. Ready assistants: `/api/ai/partners`
+  (`ai.partners`, checked in parallel; kept for two minutes by the page).
 
-- Consignes de relecture (`REVIEW_GUIDANCE`, `REVIEW_VERDICT`, `REVIEW_STYLE`, `REVIEW_POINTS`, `REVIEW_CHECKED`,
-  communes à l'article, au chapitre, à la synthèse croisée et à celle du livre) : le rapport d'un référé. Verdict
-  d'abord (quatre phrases au plus, sans liste, avec ce qui tient malgré tout), puis les points classés Critical /
-  Serious / Minor ; chaque point grave est complet à lui seul : titre en gras avec (certain) ou (suspected), puis un
-  ou deux paragraphes de prose, réparation comprise (pas de champs ni de sous-puces, pas de sections « Main results »
-  ni « What survives », qui répétaient les points) ; coquilles en un seul point ; « What I checked » en une ou deux
-  phrases. Un auteur relit son propre texte avec : une erreur est toujours dite, une réparation ne la retire jamais,
-  une preuve fausse n'est pas un résultat faux. `SYSTEM` demande de la prose (une liste seulement pour des éléments
-  parallèles, un niveau d'imbrication au plus) et interdit les vérifications affirmées sans contenu (« I checked
-  this », « numerically ») : l'assistant n'a pas d'outil de calcul. Résumé : nouveauté revendiquée, limites et questions
-  ouvertes. Relecture d'un chapitre : se termine par sa fiche (`CHAPTER_RECORD`) ; l'échange porte alors `card = 1`
-  (colonne `card`, posée par `ai.finish`).
+- Review prompts (`REVIEW_GUIDANCE`, `REVIEW_VERDICT`, `REVIEW_STYLE`, `REVIEW_POINTS`, `REVIEW_CHECKED`,
+  common to the paper, the chapter, the cross-review synthesis and the book synthesis): a referee's report. Verdict
+  first (at most four sentences, no list, with what holds nonetheless), then the points ranked Critical /
+  Serious / Minor; each severe point is complete on its own: bold title with (certain) or (suspected), then one
+  or two paragraphs of prose, repair included (no fields or sub-bullets, no "Main results"
+  or "What survives" sections, which repeated the points); typos in a single point; "What I checked" in one or two
+  sentences. An author reviews their own text with it: an error is always stated, a repair never removes it,
+  a wrong proof is not a wrong result. `SYSTEM` asks for prose (a list only for parallel items, at most one level of
+  nesting) and forbids checks claimed without content ("I checked
+  this", "numerically"): the assistant has no computing tool. Summary: claimed novelty, limitations and open
+  questions. Review of a chapter: ends with its record card (`CHAPTER_RECORD`); the exchange then carries `card = 1`
+  (column `card`, set by `ai.finish`).
 
-- Rendu des réponses (`LiveAnswer`, `markdown.js`) : la réponse est coupée en blocs aux lignes vides (`splitBlocks`,
-  rendus au fil du flux) ; `markdownToHtml` gère les listes imbriquées (pile de listes, retrait d'au moins deux
-  espaces de plus). Un bloc qui commence en retrait est la suite de l'élément de liste du bloc précédent (paragraphe
-  d'un point de relecture) : classe `ai-continued`, même retrait que la liste.
+- Rendering of answers (`LiveAnswer`, `markdown.js`): the answer is cut into blocks at blank lines (`splitBlocks`,
+  rendered as the stream arrives); `markdownToHtml` handles nested lists (stack of lists, indent of at least two
+  more spaces). A block that starts indented is the continuation of the list item of the previous block (paragraph
+  of a review point): class `ai-continued`, same indent as the list.
 
-- Livre, tous les chapitres en parallèle (`app/bookjob.py`, routes `/api/papers/{id}/ai/book`, `…/book/stop`) : tâche
-  de fond du serveur (`asyncio`), une par livre et par sorte, `PARALLEL` chapitres à la fois (relecture croisée :
-  `ai.cross_review` pour chacun) ; elle continue si la page se ferme, s'arrête avec le serveur (`stop_all` dans
-  `lifespan`) ou quand l'article est supprimé (`forget`, depuis `library.remove_paper` : d'un autre fil, il confie
-  l'oubli à la boucle du serveur, `_forget`, seule à toucher `jobs`). Chaque
-  chapitre fini est un échange ordinaire (cible : le chapitre) ; à l'arrêt ou sur une erreur, un chapitre inachevé est
-  supprimé et la synthèse commencée close « stopped » (`close_open`). Un nouveau lancement reprend le dernier document
-  terminé de chaque chapitre (`reusable` ; relecture : avec `card`), sauf `fresh`. Synthèse : échange de cible
-  `ai.BOOK` (« @book »), consigne `BOOK_PROMPTS` construite par `ai.book_prompt` : sommaire, renvois entre chapitres
-  (`_book_links`), documents des chapitres dans `<chapter_review>` / `<chapter_summary>` (balises neutralisées, début
-  et fin gardés si trop long, `_cut_middle` ; relecture : la dernière partie, depuis le dernier titre « ### », gardée
-  entière si elle tient dans 7/10 de la part : c'est la fiche, repérée par sa place car le modèle traduit son titre),
-  jamais le texte du livre. État (`state`) gardé une heure après la fin (erreur montrée à la page), purgé à chaque
-  lancement ou relevé (`_purge`) ; tâche finie : livre et réponses libérés. Côté page : première entrée du menu `chapterBar` (`bookPlace`), présentation
-  `bookIntro`, progression `bookProgress` mise à jour sur place (`bookLive` ; temps écoulé
-  `job.elapsed`, pas d'estimation du temps restant, souvent fausse ; durée totale dans le message de fin), suivi `pollJobs` toutes les 2 s tant
-  qu'une tâche tourne, 10 s après trois échecs, arrêt et panneau refait si l'article n'existe plus (404) ; un changement
-  d'état recharge les échanges, `reloadExchanges`, qui garde l'objet de la demande en cours et fait pointer les saisies
-  (`pending`, `docPending` : réponse à, question refaite) vers les nouveaux objets, puis refait le panneau ; avis
-  « chapitre en cours » seulement sur un échange de la tâche (`chapters[].exchange`, `synthesis.exchange`) ; `reusable` comme côté serveur ; liens vers les chapitres sous la synthèse
-  (`bookChips`). « Tout le livre » (un seul envoi, tronqué au-delà de `paper_limit`) a disparu des livres.
+- Book, all chapters in parallel (`app/bookjob.py`, routes `/api/papers/{id}/ai/book`, `…/book/stop`): background
+  job of the server (`asyncio`), one per book and per kind, `PARALLEL` chapters at a time (cross-review:
+  `ai.cross_review` for each); it continues if the page closes, stops with the server (`stop_all` in
+  `lifespan`) or when the paper is deleted (`forget`, from `library.remove_paper`: from another thread, it hands
+  the forgetting to the server loop, `_forget`, the only one to touch `jobs`). Each
+  finished chapter is an ordinary exchange (target: the chapter); on stopping or on an error, an unfinished chapter is
+  deleted and the synthesis already begun is closed as "stopped" (`close_open`). A new launch reuses the last finished document
+  of each chapter (`reusable`; review: with `card`), except with `fresh`. Synthesis: exchange with target
+  `ai.BOOK` ("@book"), prompt `BOOK_PROMPTS` built by `ai.book_prompt`: table of contents, cross-references between chapters
+  (`_book_links`), documents of the chapters in `<chapter_review>` / `<chapter_summary>` (tags neutralised, beginning
+  and end kept if too long, `_cut_middle`; review: the last part, from the last "###" heading, kept
+  whole if it fits in 7/10 of the share: that is the record card, located by its position because the model translates its title),
+  never the text of the book. State (`state`) kept for one hour after the end (error shown to the page), purged at each
+  launch or poll (`_purge`); finished job: book and answers released. Page side: first entry of the `chapterBar` menu (`bookPlace`), presentation
+  `bookIntro`, progress `bookProgress` updated in place (`bookLive`; elapsed time
+  `job.elapsed`, no estimate of the remaining time, often wrong; total duration in the final message), tracking `pollJobs` every 2 s as long
+  as a job is running, 10 s after three failures, stop and panel rebuilt if the paper no longer exists (404); a change
+  of state reloads the exchanges, `reloadExchanges`, which keeps the object of the request in progress and points the inputs
+  (`pending`, `docPending`: reply to, redone question) to the new objects, then rebuilds the panel; "chapter in progress"
+  notice only on an exchange of the job (`chapters[].exchange`, `synthesis.exchange`); `reusable` as on the server side; links to the chapters below the synthesis
+  (`bookChips`). "Whole book" (a single send, truncated beyond `paper_limit`) has disappeared from books.
 
-- Articles, section par section : `structure.assign_sections` (appelé par `assign_chapters` quand ce n'est pas un livre)
-  pose `sections` (premier niveau du sommaire, sauf références et remerciements ; au moins deux), `chapter` (section de
-  l'énoncé) et `provedIn` (liste des sections de sa preuve, souvent une autre, passage indiqué à la main compris) sur chaque énoncé. `ai.parts_of` donne les chapitres
-  sinon les sections : `bookjob`, la route `/ai/book` et le paramètre `chapter` servent aux deux. Une section part avec
-  **tout l'article** (notations souvent fixées dans le texte courant), consignes `SECTION_PROMPTS` et, pour la synthèse,
-  `SECTIONS_PROMPTS`, dérivées de celles des livres (`_to_sections`, `_rewritten` : une phrase disparue fait échouer
-  l'import). `chapter_links` compte ce qu'une preuve utilise dans la section où elle est (`chapterLinks` dans `ai.js`,
-  même règle) ; `<statements_proved_here>` liste les énoncés écrits ailleurs et prouvés là. Article trop long pour
-  l'assistant (modèle local) : `_reduced_to_section`, y compris pour les questions posées sur la relecture d'une section. Relecture croisée : `scope` garde la comparaison et la synthèse sur la section. Version HTML (LaTeXML) dont les sections diffèrent de la structure du serveur : pas de menu (`sections` vidé dans la route). Côté page (`ai.js`) : le même menu `chapterBar`, entrées article
-  entier (valeur vide), `SECTIONS` (tâche parallèle) puis sections ; textes `ai.sections.*` (`tb`, `tnb`, sinon ceux du
-  livre). Graphe : `reader.sectionGraph`, tout l'article par défaut (`graphSection`). Onglet Énoncés inchangé : le suivi au
-  défilement reste propre aux livres. Le menu s'appelle Portée / Scope pour les articles comme pour les livres.
-- Livres, résumé et relecture par chapitre : `structure.assign_chapters` (HTML d'arXiv et `texstructure`) marque
-  `book`, liste `chapters` (chapitres et annexes de premier niveau, d'après le `kind` des entrées du sommaire) et pose
-  `chapter` sur chaque énoncé. La demande porte `chapter` (résumé ou relecture seulement, sinon 400) ; `build_prompt`
-  n'envoie que ce chapitre (`_chapter_text` : élément du HTML, sinon n-ième `\chapter` de la source développée),
-  le sommaire et `_chapter_context` : énoncés d'autres chapitres utilisés (`<used_statements>`) et qui en dépendent,
-  en chaîne par `usedBy` (`<dependent_statements>`, avec `depends_on`), énoncés seuls, au plus `CHAPTER_STATEMENTS`.
-  Consignes `CHAPTER_PROMPTS`, et `CHAPTER_SYNTHESIS` pour une relecture croisée. Côté page (`ai.js`) : menu
-  `chapterBar`, fils par chapitre (`chapterOf`, positions par `place`), listes `chapterLinksBox` ; chapitre lu par
-  défaut : `reader.readingChapter`. Onglet Énoncés d'un livre : menu `statements-chapter` à la place du titre du
-  chapitre (`bookChapters`, commun avec le graphe ; `statementsChapter` suit `chapterOfReading` en défilant et dans
-  le PDF, `followStatementsChapter` ; un choix dans le menu, `statementsChosen`, tient tant que le chapitre lu reste
-  `chosenWhileReading` ; « Tout le livre » choisi tient toujours) ; pendant une recherche, plus de menu : tout le livre, rangé par chapitre.
-  Pages dans le PDF d'un livre lu en HTML : LaTeXML numérote sections et énoncés à la suite (« 7 », « 7.10 », annexes
-  « 9.B.1 »), le PDF par chapitre (« 2.3 », « 2.3.10 », « A.2.1 ») ; `texstructure._book_sections` refait les numéros
-  du PDF pour les ancres (`subsection.2.3.10`…) et le texte cherché ; les numéros des énoncés seulement si le livre les
-  numérote d'après la section du HTML (`_numbered_by_section`, sinon un « Theorem 1.4 » numéroté par chapitre irait à
-  `subsection.1.1.4`), avec le libellé d'origine en repli de la recherche. Changer ce calcul : augmenter `PAGES_VERSION`.
-  Texte d'un chapitre TeX : compté et découpé sur `ai.tex_body` (source sans texte masqué, comme pour tout le
-  document : `strip_hidden`). Énoncés joints : au plus `limit / 4` caractères en tout, balises de données neutralisées
-  (`DATA_TAGS`) ; titre du chapitre réduit à une ligne sans balise dans la consigne. Brouillon et « Edit » : un par fil
-  (`Assistant.draft`, clé `place`) ; choix de chapitre gardé quand la structure est refaite (preuve indiquée).
+- Papers, section by section: `structure.assign_sections` (called by `assign_chapters` when it is not a book)
+  sets `sections` (first level of the table of contents, except references and acknowledgements; at least two), `chapter` (section of
+  the statement) and `provedIn` (list of the sections of its proof, often another one, passage indicated by hand included) on each statement. `ai.parts_of` gives the chapters,
+  otherwise the sections: `bookjob`, the `/ai/book` route and the `chapter` parameter serve both. A section is sent with
+  **the whole paper** (notation often fixed in the running text), prompts `SECTION_PROMPTS` and, for the synthesis,
+  `SECTIONS_PROMPTS`, derived from those of the books (`_to_sections`, `_rewritten`: a sentence that has disappeared makes the
+  import fail). `chapter_links` counts what a proof uses in the section where it is located (`chapterLinks` in `ai.js`,
+  same rule); `<statements_proved_here>` lists the statements written elsewhere and proved there. Paper too long for
+  the assistant (local model): `_reduced_to_section`, including for questions asked about the review of a section. Cross-review: `scope` keeps the comparison and the synthesis on the section. HTML version (LaTeXML) whose sections differ from the server's structure: no menu (`sections` emptied in the route). Page side (`ai.js`): the same `chapterBar` menu, entries whole
+  paper (empty value), `SECTIONS` (parallel job) then sections; texts `ai.sections.*` (`tb`, `tnb`, otherwise those of the
+  book). Graph: `reader.sectionGraph`, the whole paper by default (`graphSection`). "Statements" tab unchanged: following on
+  scroll remains specific to books. The menu is called Portée / Scope for papers as well as for books.
+- Books, summary and review by chapter: `structure.assign_chapters` (arXiv HTML and `texstructure`) marks
+  `book`, lists `chapters` (top-level chapters and appendices, according to the `kind` of the table of contents entries) and sets
+  `chapter` on each statement. The request carries `chapter` (summary or review only, otherwise 400); `build_prompt`
+  sends only that chapter (`_chapter_text`: element of the HTML, otherwise n-th `\chapter` of the expanded source),
+  the table of contents and `_chapter_context`: statements of other chapters that are used (`<used_statements>`) and that depend on it,
+  in a chain through `usedBy` (`<dependent_statements>`, with `depends_on`), statements only, at most `CHAPTER_STATEMENTS`.
+  Prompts `CHAPTER_PROMPTS`, and `CHAPTER_SYNTHESIS` for a cross-review. Page side (`ai.js`): menu
+  `chapterBar`, threads per chapter (`chapterOf`, positions by `place`), `chapterLinksBox` lists; chapter read by
+  default: `reader.readingChapter`. "Statements" tab of a book: menu `statements-chapter` in place of the title of the
+  chapter (`bookChapters`, shared with the graph; `statementsChapter` follows `chapterOfReading` while scrolling and in
+  the PDF, `followStatementsChapter`; a choice in the menu, `statementsChosen`, holds as long as the chapter being read remains
+  `chosenWhileReading`; "Whole book" when chosen always holds); during a search, no more menu: the whole book, sorted by chapter.
+  Pages in the PDF of a book read in HTML: LaTeXML numbers sections and statements consecutively ("7", "7.10", appendices
+  "9.B.1"), the PDF by chapter ("2.3", "2.3.10", "A.2.1"); `texstructure._book_sections` recomputes the PDF numbers
+  for the anchors (`subsection.2.3.10`…) and the searched text; the numbers of the statements only if the book
+  numbers them after the section of the HTML (`_numbered_by_section`, otherwise a "Theorem 1.4" numbered by chapter would go to
+  `subsection.1.1.4`), with the original label as a fallback for the search. Changing this computation: increase `PAGES_VERSION`.
+  Text of a TeX chapter: counted and cut on `ai.tex_body` (source without hidden text, as for the whole
+  document: `strip_hidden`). Attached statements: at most `limit / 4` characters in total, data tags neutralised
+  (`DATA_TAGS`); title of the chapter reduced to one line without tags in the prompt. Draft and "Edit": one per thread
+  (`Assistant.draft`, key `place`); chapter choice kept when the structure is rebuilt (proof indicated).
 
-- Dessins TikZ, étiquettes faites d'un paragraphe (minipage, `\parbox` : encadré tcolorbox) : le texte va à la ligne
-  (`white-space: normal`, boîte en `inline-block` même quand LaTeXML en fait un `ltx_inline-sectional-block` ; paragraphes
-  et listes en blocs, puce sur la ligne de son texte : tout y est en `span`), posé par le haut de sa boîte et tenu dans la plus petite forme du dessin qui le contient
-  (`figures.shapesOf`, même marge à droite qu'à gauche, police réduite d'un quart au plus s'il est trop haut) ; dessins
-  « remember picture, overlay » (1 × 1 sans trait) masqués (`figure-overlay`), comme sur arXiv.
+- TikZ drawings, labels made of a paragraph (minipage, `\parbox`: tcolorbox frame): the text wraps
+  (`white-space: normal`, box as `inline-block` even when LaTeXML makes it an `ltx_inline-sectional-block`; paragraphs
+  and lists as blocks, bullet on the line of its text: everything in there is `span`), positioned by the top of its box and kept inside the smallest shape of the drawing that contains it
+  (`figures.shapesOf`, same margin on the right as on the left, font reduced by at most a quarter if it is too tall); drawings
+  "remember picture, overlay" (1 × 1 with no stroke) hidden (`figure-overlay`), as on arXiv.
 
-- Fichiers TeX importés (`texfile.py`) : compilés dans `<temp>/arxivreader-tex/<id>`, jamais dans le dossier de
-  l'utilisateur (latexmk `-outdir`). latexmk retient qu'un `.bib` manquait et ne relance plus BibTeX : après un
-  `.bib` manquant, son état (`.fdb_latexmk`) est effacé. Les énoncés qui ont un `\label` ont un identifiant tiré de
-  lui, les autres de leur type et de leur texte (`stable_ids`, aussi à la ré-analyse : `stableIds` dans
-  structure.json). Les `.aux` de la compilation donnent les numéros imprimés et les ancres exactes des `\label`
-  (`apply_aux` : énoncés, équations ; `cite.<clé>` pour la bibliographie, lue aussi dans un `.bbl` de biblatex ou
-  d'amsrefs) ;
-  journal sans lignes coupées (`max_print_line`) ; les passages surlignés du PDF qui ont
-  bougé sont retrouvés par leur texte côté page (`PdfNotes.inPlace`/`findMoved`, ±3 pages) et leur place enregistrée.
+- Imported TeX files (`texfile.py`): compiled in `<temp>/arxivreader-tex/<id>`, never in the user's
+  folder (latexmk `-outdir`). latexmk remembers that a `.bib` was missing and no longer reruns BibTeX: after a
+  missing `.bib`, its state (`.fdb_latexmk`) is erased. Statements that have a `\label` have an identifier derived from
+  it, the others from their type and their text (`stable_ids`, also on re-analysis: `stableIds` in
+  structure.json). The `.aux` files of the compilation give the printed numbers and the exact anchors of the `\label`s
+  (`apply_aux`: statements, equations; `cite.<clé>` for the bibliography, also read from a `.bbl` of biblatex or
+  of amsrefs);
+  log without wrapped lines (`max_print_line`); the highlighted passages of the PDF that have
+  moved are found again by their text on the page side (`PdfNotes.inPlace`/`findMoved`, ±3 pages) and their position saved.
 
-- Semantic Scholar avec une clé : 1 requête/s pour toute l'application. Toute nouvelle requête passe par
-  `s2.paced(send, api_key)` (`app/s2.py`), qui espace les requêtes avec clé quel que soit le fil ; sans clé, rien
-  de commun : chaque module garde ses pauses (`related.UNKEYED_PAUSE`, `citations`), comme avant la clé.
+- Semantic Scholar with a key: 1 request/s for the whole application. Every new request goes through
+  `s2.paced(send, api_key)` (`app/s2.py`), which spaces out the requests made with a key regardless of the thread; without a key, nothing
+  is shared: each module keeps its own pauses (`related.UNKEYED_PAUSE`, `citations`), as before the key.
 
-- Le Python embarqué garde en dur des chemins de l'ordinateur où l'application a été construite (fuseaux horaires,
-  certificats SSL) : sur un autre Mac, ils n'existent pas. Le lanceur (`macos/main.swift`) donne donc
-  `PYTHONTZPATH=/usr/share/zoneinfo` et `SSL_CERT_FILE` (certificats de l'application), et `feed._zone` se rabat sur
-  les fuseaux de macOS. Pour simuler un autre Mac : `PYTHONTZPATH=/introuvable` avec le Python de l'application.
+- The embedded Python keeps hard-coded paths from the computer where the application was built (time zones,
+  SSL certificates): on another Mac, they do not exist. The launcher (`macos/main.swift`) therefore sets
+  `PYTHONTZPATH=/usr/share/zoneinfo` and `SSL_CERT_FILE` (the application's certificates), and `feed._zone` falls back on
+  the macOS time zones. To simulate another Mac: `PYTHONTZPATH=/introuvable` with the application's Python.
 
-- Le dossier Documents est synchronisé par iCloud : construire l'application ailleurs
-  (`~/Library/Caches/arXivReader-build`), sinon la signature casse ; environnement Python dans `.venv.nosync`
-  (section 8). Une tâche de fond (launchd) ne peut pas lire
-  Documents : elle utilise le code de l'application installée, sans écrire de bytecode (`PYTHONDONTWRITEBYTECODE`).
-- Un `DataTransfer` synthétique ne peut pas fixer `dropEffect` : les glissements se testent pour de bon dans
-  l'application.
-- Réglage nouveau : l'ajouter à la liste `allowed` de `/api/settings` (et à `BOOLEAN_SETTINGS` ou
-  `_valid_setting`), sinon il n'est pas enregistré.
-- Le middleware exige `Content-Type: application/json` pour toute écriture sauf `DELETE` : un `POST` sans corps
-  doit envoyer `{}`.
-- Les titres d'arXiv contiennent du TeX ; les doublons de Semantic Scholar se comparent après `related._norm`
-  (sans commandes TeX). Semantic Scholar abîme parfois des titres : préférer ceux d'arXiv. Zotero, lui, relie les
-  éléments par identifiant arXiv (`zotero.arxiv_of`, index `zotero_index`), jamais par titre.
-- La synchronisation Zotero fusionne trois états (ici, Zotero, la fois précédente) : toute modification de
-  `_sync` doit garder les tests de `tests/test_zotero.py` (écriture refusée, doublons fusionnés, sous-collection
-  profonde, dossier supprimé pendant un ajout, corbeille, retraits massifs).
-- **Aucune requête de la page ne doit attendre longtemps** (WebKit peut abandonner une requête restée environ
-  une minute sans réponse) : un import passe toujours en arrière-plan (`POST /api/papers`, mise à jour
-  `POST /api/papers/{id}/refresh` suivie par `…/importing`), une attente côté serveur est bornée à 45 s
-  (`ensure_ready`) et la page redemande ; l'API d'arXiv a un second essai patient (`arxiv.patient_get`,
-  `search._fetch`) ; le feed du jour vient du RSS, le reste (auteurs suivis, revues, citations) en arrière-plan ; le graphe des papiers liés se
-  construit en arrière-plan (`POST /api/related`, suivi par `GET /api/related/status`, arrêté par `POST /api/related/cancel` :
-  points de contrôle `related._step` et `related._wait` entre deux requêtes).
-- Ajout d'un clic (signet du feed, de la recherche, « Ajouter », dépôt sur un dossier) : `library.quick_add` inscrit
-  l'article tout de suite (`source = "pending"`, d'après ce que la page en sait) et l'importe en arrière-plan ;
-  `library.ensure_ready` fait attendre son ouverture (ou refait l'import s'il avait échoué). L'import de fond garde
-  la place dans la bibliothèque telle qu'elle est à sa fin (retiré entre-temps : reste retiré).
-- Figures : l'import garde l'adresse d'origine de chaque image (`assets.json`) ; à l'ouverture d'un article,
-  celles qui manquent sont redemandées (`library.repair_assets`, par ces adresses, sinon par un nouvel import qui
-  peut renommer les fichiers), et le lecteur suit la réparation (`/api/papers/{id}/figures`) puis recharge
-  l'article. Une image qui ne vient pas laisse une ligne dans `server.log`.
-- Les noms de personnes servent d'exemples dans l'interface : ne pas y mettre de vrais noms ni de vrais
-  identifiants (« Votre nom », « arxiv.org/a/… »).
+- The Documents folder is synced by iCloud: build the application elsewhere
+  (`~/Library/Caches/arXivReader-build`), otherwise the signature breaks; Python environment in `.venv.nosync`
+  (section 8). A background job (launchd) cannot read
+  Documents: it uses the code of the installed application, without writing bytecode (`PYTHONDONTWRITEBYTECODE`).
+- A synthetic `DataTransfer` cannot set `dropEffect`: drags must be tested for real in the
+  application.
+- New setting: add it to the `allowed` list of `/api/settings` (and to `BOOLEAN_SETTINGS` or
+  `_valid_setting`), otherwise it is not saved.
+- The middleware requires `Content-Type: application/json` for every write except `DELETE` and the upload of a PDF (`POST /api/papers/pdf` as `application/pdf`): a `POST` with no body
+  must send `{}`.
+- arXiv titles contain TeX; Semantic Scholar duplicates are compared after `related._norm`
+  (without TeX commands). Semantic Scholar sometimes damages titles: prefer arXiv's. Zotero, for its part, links
+  items by arXiv identifier (`zotero.arxiv_of`, index `zotero_index`), never by title.
+- The Zotero synchronisation merges three states (here, Zotero, the previous time): any change to
+  `_sync` must keep the tests of `tests/test_zotero.py` (write refused, duplicates merged, deep
+  subcollection, folder deleted during an addition, trash, mass removals).
+- **No request from the page may wait for long** (WebKit may abandon a request that has gone about
+  one minute without a response): an import always goes to the background (`POST /api/papers`, update
+  `POST /api/papers/{id}/refresh` tracked through `…/importing`), a server-side wait is capped at 45 s
+  (`ensure_ready`) and the page asks again; the arXiv API has a patient second attempt (`arxiv.patient_get`,
+  `search._fetch`); the daily feed comes from RSS, the rest (followed authors, journals, citations) in the background; the graph of related papers is
+  built in the background (`POST /api/related`, tracked by `GET /api/related/status`, stopped by `POST /api/related/cancel`:
+  checkpoints `related._step` and `related._wait` between two requests).
+- One-click add (bookmark in the feed, in search, "Add", drop onto a folder): `library.quick_add` registers
+  the paper immediately (`source = "pending"`, based on what the page knows about it) and imports it in the background;
+  `library.ensure_ready` makes its opening wait (or redoes the import if it had failed). The background import keeps
+  the place in the library as it is when the import ends (removed in the meantime: stays removed).
+- Figures: the import keeps the original address of each image (`assets.json`); when a paper is opened,
+  the missing ones are requested again (`library.repair_assets`, through these addresses, otherwise through a new import that
+  may rename the files), and the reader follows the repair (`/api/papers/{id}/figures`) and then reloads
+  the paper. An image that does not arrive leaves a line in `server.log`.
+- People's names serve as examples in the interface: do not put real names or real
+  identifiers there ("Your name", "arxiv.org/a/…").
 
-## 10. Journaux et diagnostic
+## 10. Logs and diagnostics
 
-- Serveur : `server.log` dans la bibliothèque (`~/Library/Application Support/arXivReader`).
-- Vérification des services : `check.json` (même dossier) et `~/Library/Logs/arXivReader-check.log`.
-- Synchronisation Zotero : dernier état dans les réglages (`zoteroLastSync`, `zoteroLastError`,
-  `zoteroLastErrorCode`, `zoteroReport`), visible dans Réglages > Zotero.
+- Server: `server.log` in the library (`~/Library/Application Support/arXivReader`).
+- Services check: `check.json` (same folder) and `~/Library/Logs/arXivReader-check.log`.
+- Zotero synchronisation: last state in the settings (`zoteroLastSync`, `zoteroLastError`,
+  `zoteroLastErrorCode`, `zoteroReport`), visible in Settings > Zotero.

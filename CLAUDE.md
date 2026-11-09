@@ -1,6 +1,6 @@
 # arXivReader
 
-Avant toute modification, lire les instructions de maintenance (règles, boucle de travail, publication, services
-extérieurs, pièges connus) :
+Before any change, read the maintenance instructions (rules, work loop, release, external services, known
+pitfalls):
 
 @MAINTENANCE.md
