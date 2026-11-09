@@ -470,6 +470,8 @@ a.button.primary { text-decoration: none; }
 .preview .ltx_proof { display: none; }
 .preview-footer { display: flex; justify-content: space-between; gap: 12px; margin-top: 8px; font: 13px var(--font-ui); color: var(--muted); }
 .preview-footer button { border: 0; background: transparent; color: var(--link); cursor: pointer; padding: 0; font: inherit; }
+.preview-footer a { color: var(--link); }
+.bib-actions { display: flex; flex-wrap: wrap; gap: 2px 12px; }
 
 /* ---------- Panneau latéral ---------- */
 .tabs { display: flex; border-bottom: 1px solid var(--border); padding: 0 6px; position: sticky; top: 0; background: var(--surface); z-index: 2; }
@@ -788,6 +790,9 @@ mark.hl.hl-display > mjx-container[display="true"] { margin: .2em 0 !important; 
   border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: var(--shadow); }
 .context-menu-item { padding: 7px 12px; border: 0; border-radius: 6px; background: none; color: var(--text); font: 13.5px var(--font-ui); text-align: left; cursor: pointer; }
 .context-menu-item:hover, .context-menu-item:focus-visible { background: var(--surface-hover); outline: none; }
+.context-menu-search { display: flex; flex-wrap: wrap; gap: 2px 10px; max-width: 300px; margin-top: 4px; padding: 7px 12px 4px; border-top: 1px solid var(--border); font: 13px var(--font-ui); color: var(--muted); }
+.context-menu-search a { color: var(--link); text-decoration: none; }
+.context-menu-search a:hover, .context-menu-search a:focus-visible { text-decoration: underline; outline: none; }
 .hl-toolbar {
   position: fixed; z-index: 55; display: flex; align-items: center; gap: 6px; padding: 6px 8px;
   background: var(--surface); border: 1px solid var(--border-strong); border-radius: 999px; box-shadow: var(--shadow);
@@ -809,7 +814,8 @@ mark.hl.hl-display > mjx-container[display="true"] { margin: .2em 0 !important; 
 .popover-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .popover-colors { display: flex; gap: 8px; }
 
-.note-editor { display: grid; gap: 6px; }
+/* minmax(0, 1fr) : une formule longue (sans coupure possible avant MathJax 4) n'élargit pas la colonne, elle défile dans sa boîte */
+.note-editor { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
 .note-tabs { display: flex; align-items: center; gap: 4px; }
 .note-tabs .spacer { flex: 1; }
 .note-tab { border: 0; background: transparent; color: var(--muted); padding: 3px 8px; border-radius: 6px; cursor: pointer; font: 13px var(--font-ui); }
@@ -819,7 +825,7 @@ mark.hl.hl-display > mjx-container[display="true"] { margin: .2em 0 !important; 
   background: var(--surface); color: var(--text); font: 14px/1.5 var(--font-mono);
 }
 .note-input:focus { outline: none; border-color: var(--focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 22%, transparent); }
-.note-preview { min-height: 72px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
+.note-preview { min-height: 72px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; overflow: auto hidden; }
 .note-help { margin: 0; font-size: 12.5px; }
 .markdown { font-family: var(--paper-font); font-size: 15px; line-height: 1.5; }
 .markdown p { margin: 0 0 .5em; }
@@ -865,9 +871,9 @@ mark.hl.hl-display > mjx-container[display="true"] { margin: .2em 0 !important; 
 .progress-bar span { display: block; height: 100%; background: var(--state); }
 .notes-progress { margin: 0 4px; }
 .legend .dot.state-understood, .legend .dot.state-review, .legend .dot.state-verified { background: var(--state); }
-.notes-list { display: grid; gap: 8px; }
+.notes-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .note-card {
-  display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
   cursor: pointer; text-align: left;
 }
 .note-card:hover { border-color: var(--border-strong); background: var(--surface-soft); }
@@ -881,6 +887,7 @@ mark.hl.hl-display > mjx-container[display="true"] { margin: .2em 0 !important; 
 .hl-border-pink { border-left-color: #e2559a; }
 .note-block-title { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; }
 .note-body { font-size: 14.5px; }
+.note-body, .note-card .note-quote { overflow: auto hidden; }
 
 /* ---------- Onglet IA (Claude) ---------- */
 .ai-icon { display: inline-flex; width: 16px; height: 16px; flex: none; }

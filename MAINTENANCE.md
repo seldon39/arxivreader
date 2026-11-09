@@ -266,6 +266,11 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   link, because `clean` copies the pill into the previews without its listeners (new tab in the foreground, ⌘-click in the
   background, like `readArxiv` for arXiv identifiers); middle click: common handler in app.js.
 
+- Rendered notes and long formulas: MathJax 3 cannot break an inline formula, so a CSS grid column that holds one must be
+  `minmax(0, 1fr)` and the note must scroll in its own box (`overflow: auto hidden`), otherwise the formula widens the
+  column and everything in it. A `.note-popover` is placed before it reaches its final height (text area grown, preview
+  rendered): the `ResizeObserver` of `openPopover` moves it back inside the window, since scrolling the page closes it.
+
 - Hidden sections of the reader (`lazypaint.js`): a section far from the screen keeps the height measured before it was
   hidden. Any change that modifies the height of off-screen sections (text size, width, panes,
   hidden text revealed) goes through `reader.relayout(fn)` (or `keepReadingPosition`, which calls it): everything is redisplayed

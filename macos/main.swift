@@ -11,6 +11,8 @@ import WebKit
 
 let french = Locale.preferredLanguages.first?.hasPrefix("fr") ?? true
 func tr(_ fr: String, _ en: String) -> String { french ? fr : en }
+// Version d'essai (macos/build-beta.sh) : bibliothèque, port et réglages à part de la version stable
+let isBeta = Bundle.main.bundleIdentifier == "local.arxivreader.beta"
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var tabs: [Tab] = []
@@ -24,7 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // bibliothèque : ~/Library/Application Support/arXivReader (ARXIVREADER_LIBRARY pour essayer sur une copie)
     let support = ProcessInfo.processInfo.environment["ARXIVREADER_LIBRARY"].map { URL(fileURLWithPath: $0, isDirectory: true) }
         ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("arXivReader", isDirectory: true)
+            .appendingPathComponent(isBeta ? "arXivReader Beta" : "arXivReader", isDirectory: true)
 
     // ---------- Démarrage et arrêt ----------
 
@@ -36,7 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let first = openTab(routes.first ?? "", beside: nil)
         for route in routes.dropFirst() { openTab(route, beside: first.window, front: false) }
         NSApp.activate(ignoringOtherApps: true)
-        port = freePort(preferred: 8720)
+        port = freePort(preferred: isBeta ? 8730 : 8720)
         startServer()
     }
 
@@ -68,6 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         env["ARXIVREADER_LIBRARY"] = support.path
         env["ARXIVREADER_WATCH_PARENT"] = "1"  // s'arrête seul si l'application disparaît sans l'arrêter
         env["ARXIVREADER_TOKEN"] = token
+        if isBeta { env["ARXIVREADER_NO_ALERTS"] = "1" }  // ni alertes en double, ni écriture dans Zotero depuis l'essai
         env["ARXIVREADER_KEYCHAIN"] = "1"  // clés d'API dans le trousseau de session (app/keystore.py)
         env["PYTHONNOUSERSITE"] = "1"
         env["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -524,7 +527,7 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
         webView.allowsBackForwardNavigationGestures = true
         if #available(macOS 13.3, *) { webView.isInspectable = true }
         window.isReleasedWhenClosed = false
-        window.title = "arXivReader"
+        window.title = isBeta ? "arXivReader Beta" : "arXivReader"
         window.minSize = NSSize(width: 420, height: 480)
         window.tabbingIdentifier = "arXivReader"
         window.tabbingMode = .automatic
@@ -534,7 +537,7 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
         // titre de l'onglet et de la fenêtre : celui de la page (article lu, « Bibliothèque », « Feed »)
         titleObserver = webView.observe(\.title) { [weak self] web, _ in
             let title = web.title ?? ""
-            self?.window.title = title.isEmpty ? "arXivReader" : title
+            self?.window.title = title.isEmpty ? (isBeta ? "arXivReader Beta" : "arXivReader") : isBeta ? "β \(title)" : title
         }
     }
 

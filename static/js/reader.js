@@ -1294,9 +1294,13 @@ class Reader {
     return copy;
   }
 
+  // Référence : l'importer depuis arXiv, ou la retrouver (DOI, MathSciNet, zbMATH : dans le navigateur, seulement au clic)
   bibActions(entry) {
-    if (!entry?.arxiv?.length) return null;
-    return h("span", {}, entry.arxiv.map((arxivId) => h("button", {
+    if (!entry) return null;
+    const plain = (entry.text || "").replace(/\b(?:doi:\s*|https?:\/\/|arXiv:\s*)\S+/gi, "").replace(/\s+/g, " ").trim();
+    const citation = encodeURIComponent([...plain].slice(0, 500).join(""));  // par caractères : jamais une moitié de symbole
+    const link = (label, href) => h("a", { href, target: "_blank", rel: "noopener noreferrer", title: t("reader.openOutside") }, label);
+    return h("span", { class: "bib-actions" }, (entry.arxiv || []).map((arxivId) => h("button", {
       type: "button",
       onclick: async () => {
         try {
@@ -1306,7 +1310,10 @@ class Reader {
           toastError(error);
         }
       },
-    }, `${t("reader.import")} arXiv:${arxivId}`)));
+    }, `${t("reader.import")} arXiv:${arxivId}`)),
+    entry.doi && link("DOI", `https://doi.org/${entry.doi.split("/").map(encodeURIComponent).join("/")}`),
+    citation && link("MathSciNet", `https://mathscinet.ams.org/mref?ref=${citation}&dataType=mathscinet`),
+    citation && link("zbMATH", `https://zbmath.org/citationmatching/?q=${citation}`));
   }
 
   // Identifiants arXiv des références (repérés par l'analyse) : liens qui ouvrent l'article dans l'application
