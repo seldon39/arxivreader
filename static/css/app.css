@@ -80,6 +80,9 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 .tex { font-family: var(--font-math); font-style: italic; }
+.tex-accent { position: relative; display: inline-block; }
+.tex-accent-mark { position: absolute; left: 0; right: 0; top: -.3em; text-align: center; line-height: 1; font-style: normal; pointer-events: none; }
+.tex-accent.under .tex-accent-mark { top: auto; bottom: -.35em; }
 html, body { margin: 0; }
 /* place de la barre de défilement toujours réservée (barres visibles avec une souris) : une liste qui s'allonge
    (dossiers déroulés) ne décale plus la page vers la gauche */

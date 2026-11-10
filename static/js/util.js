@@ -162,19 +162,45 @@ const TEX_SYMBOLS = {
   Gamma: "Γ", Delta: "Δ", Theta: "Θ", Lambda: "Λ", Xi: "Ξ", Pi: "Π", Sigma: "Σ", Phi: "Φ", Psi: "Ψ",
   Omega: "Ω", infty: "∞", partial: "∂", nabla: "∇", times: "×", cdot: "·", to: "→", leq: "≤", geq: "≥",
   ell: "ℓ", hbar: "ℏ", otimes: "⊗", oplus: "⊕", subset: "⊂", in: "∈", sim: "∼", cong: "≅",
+  langle: "⟨", rangle: "⟩", ldots: "…", cdots: "⋯", mapsto: "↦", hookrightarrow: "↪", wedge: "∧", circ: "∘",
 };
 const BLACKBOARD = { C: "ℂ", R: "ℝ", Z: "ℤ", Q: "ℚ", N: "ℕ", P: "ℙ", H: "ℍ" };
 
 // Ponctuation de TeX hors formules : tirets (« -- », « --- ») et espaces (« \ », « \, », « ~ »)
 const texText = (text) => text.replace(/---/g, "—").replace(/--/g, "–").replace(/\\,/g, "\u2009").replace(/\\[ ;:]/g, " ").replace(/~/g, " ");
 
+// Accents (\widetilde{\nabla}, \bar z…) : caractère combinant après la base
+const TEX_ACCENTS = { widetilde: "\u0303", tilde: "\u0303", widehat: "\u0302", hat: "\u0302", bar: "\u0304",
+  overline: "\u0305", underline: "\u0332", vec: "\u20d7", dot: "\u0307", ddot: "\u0308", check: "\u030c", breve: "\u0306" };
+
 function texToText(tex) {
   return tex
+    .replace(/\\(widetilde|tilde|widehat|hat|bar|overline|underline|vec|dot|ddot|check|breve)(?![A-Za-z])\s*(?:\{((?:[^{}]|\{[^{}]*\})*)\}|(\\[A-Za-z]+|[^\s\\{}]))/g,
+      (_, accent, group, single) => `${group ?? single}${TEX_ACCENTS[accent]}`)
+    .replace(/\\(?:left|right|[bB]igg?[lrm]?)(?![A-Za-z])\s*/g, "")
+    .replace(/\\[dt]?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, "$1/$2")
     .replace(/\\mathbb\{?([A-Z])\}?/g, (_, c) => BLACKBOARD[c] || c)
-    .replace(/\\(?:mathcal|mathrm|mathbf|mathfrak|operatorname|text|mathit)\{([^}]*)\}/g, "$1")
+    .replace(/\\(?:mathcal|mathscr|mathrm|mathbf|mathsf|mathtt|boldsymbol|bm|mathfrak|operatorname|text|textrm|textbf|textit|emph|mathit)\{([^}]*)\}/g, "$1")
     .replace(/\\(?:rm|it|bf|sf|tt|cal|scriptstyle|displaystyle)\b\s*/g, "")
     .replace(/\\([A-Za-z]+)/g, (_, name) => TEX_SYMBOLS[name] ?? name)
     .replace(/\\[,;! ]/g, " ");
+}
+
+// Accent sur une lettre : dessiné au-dessus par un élément à part (les polices mathématiques placent mal, ou pas
+// du tout, le caractère combinant : le tilde de ∇̃ disparaissait)
+const SPACING_ACCENTS = { "\u0303": "˜", "\u0302": "ˆ", "\u0304": "¯", "\u0305": "¯", "\u0332": "_", "\u20d7": "→",
+  "\u0307": "˙", "\u0308": "¨", "\u030c": "ˇ", "\u0306": "˘" };
+function accented(text) {
+  const nodes = [];
+  let last = 0;
+  for (const match of text.matchAll(/(.)([\u0302-\u0308\u030c\u0332\u20d7])/gu)) {
+    nodes.push(text.slice(last, match.index),
+      h("span", { class: `tex-accent${match[2] === "\u0332" ? " under" : ""}` }, match[1],
+        h("span", { class: "tex-accent-mark", "aria-hidden": "true" }, SPACING_ACCENTS[match[2]])));
+    last = match.index + match[0].length;
+  }
+  nodes.push(text.slice(last));
+  return nodes.filter((node) => node !== "");
 }
 
 // Indices et exposants (x_{n}, e^{-f}) en <sub>/<sup>, le reste en texte.
@@ -183,11 +209,11 @@ function scripted(tex) {
   const pattern = /([_^])(?:\{([^{}]*)\}|(\\?.))/g;
   let last = 0;
   for (const match of tex.matchAll(pattern)) {
-    nodes.push(tex.slice(last, match.index).replace(/[{}]/g, ""));
-    nodes.push(h(match[1] === "_" ? "sub" : "sup", {}, (match[2] ?? match[3]).replace(/[{}]/g, "")));
+    nodes.push(...accented(tex.slice(last, match.index).replace(/[{}]/g, "")));
+    nodes.push(h(match[1] === "_" ? "sub" : "sup", {}, ...accented((match[2] ?? match[3]).replace(/[{}]/g, ""))));
     last = match.index + match[0].length;
   }
-  nodes.push(tex.slice(last).replace(/[{}]/g, ""));
+  nodes.push(...accented(tex.slice(last).replace(/[{}]/g, "")));
   return nodes;
 }
 

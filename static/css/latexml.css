@@ -137,7 +137,10 @@ section.ltx_subsection, section.ltx_subsubsection, section.ltx_paragraph { margi
 table.ltx_eqn_table { width: 100%; border-collapse: collapse; margin: .55em 0; display: table; text-align: left; }
 .ltx_eqn_cell { white-space: nowrap; padding: .12em 0; text-indent: 0; }
 .ltx_eqn_center_padleft, .ltx_eqn_center_padright { width: 50%; }
-.ltx_eqn_left_padleft, .ltx_eqn_right_padright { width: 0; }
+/* 1px, pas 0 : WebKit, quand l'équation remplit juste la largeur, répartit la réduction entre les colonnes de largeur
+   fixée au prorata de leur largeur ; toutes nulles, il divise par zéro, la colonne passe à 2^25 px et la formule sort
+   de l'écran (blanc à sa place : théorème 2.3 de 2611.10775) */
+.ltx_eqn_left_padleft, .ltx_eqn_right_padright { width: 1px; }
 .ltx_eqn_eqno { text-align: right; white-space: nowrap; padding-left: 1em; }
 .ltx_leqno .ltx_eqn_eqno.ltx_align_left { text-align: left; padding: 0 1em 0 0; }
 .eq-scroll { overflow-x: auto; overflow-y: hidden; max-width: 100%; scrollbar-width: thin; }
