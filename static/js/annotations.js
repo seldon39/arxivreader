@@ -1020,9 +1020,8 @@ export class Annotator {
     placePdf(this.pdf?.readingHeights?.(inPdf.map(({ a }) => a), (heights) => { if (pdfList.isConnected) placePdf(heights); }) || new Map());
     const htmlList = h("div", { class: "notes-list" }, this.singleView ? [] : inHtml.map(({ a }) => cards.get(a.id)));
     // Gestion : corbeille sur chaque carte ; « Sélectionner » : une case par carte, et dans l'en-tête de chaque section
-    // « Tout » et la corbeille de sa sélection ; hors sélection, la corbeille d'une section la vide entière (second
-    // clic pour confirmer). Toute suppression s'annule depuis son toast. Sections dépliables : celle de la vue lue
-    // ouverte, tant que le lecteur n'en a pas déplié ou replié une lui-même
+    // « Tout » et, dès qu'une de ses cartes est cochée, la corbeille de sa sélection. Toute suppression s'annule depuis
+    // son toast. Sections dépliables : celle de la vue lue ouverte, tant que le lecteur n'en a pas déplié ou replié une
     this.selected = new Set([...this.selected].filter((id) => cards.has(id)));
     const groups = this.singleView ? [{ key: "all", ids: located.map(({ a }) => a.id), list: pdfList }]
       : [{ key: "html", ids: inHtml.map(({ a }) => a.id), list: htmlList }, { key: "pdf", ids: inPdf.map(({ a }) => a.id), list: pdfList }]
@@ -1138,46 +1137,36 @@ export class Annotator {
       ids.forEach((id) => (all.checked ? this.selected.add(id) : this.selected.delete(id)));
       refresh();
     });
+    // corbeille de la section : seulement quand des cartes de cette section sont cochées (pour la vider : « Tout »)
     const trash = h("button", { class: "button small-button danger notes-group-trash", type: "button" });
-    let confirming = null;  // vider toute la section : second clic dans les 4 s
+    const head = h("div", { class: "notes-group-head" }, toggle, allLabel, trash);
     const chosen = () => ids.filter((id) => this.selected.has(id));
     const update = () => {
       const open = !titled || isOpen(key);
       if (titled) toggle.setAttribute("aria-expanded", String(open));
       list.hidden = !open;
       allLabel.hidden = !this.selecting;
-      const k = chosen().length;
+      head.hidden = !titled && !this.selecting;  // une seule vue : pas d'en-tête hors sélection
+      const k = this.selecting ? chosen().length : 0;
       all.checked = k > 0 && k === ids.length;
       all.indeterminate = k > 0 && k < ids.length;
-      if (this.selecting && confirming) { clearTimeout(confirming); confirming = null; }
-      const label = this.selecting ? t("notes.trashSelected", { n: k })
-        : confirming ? t("notes.trashConfirm", { n: ids.length }) : t(titled ? "notes.trashGroup" : "notes.trashAll", { n: ids.length });
-      trash.replaceChildren(h("span", { class: "notes-trash-icon", html: icons.trash }),
-        this.selecting ? ` ${k}` : confirming ? ` ${label}` : "");
+      const label = t("notes.trashSelected", { n: k });
+      trash.replaceChildren(h("span", { class: "notes-trash-icon", html: icons.trash }), ` ${k}`);
       trash.title = label;
       trash.setAttribute("aria-label", label);
-      trash.classList.toggle("confirming", Boolean(confirming));
-      trash.disabled = this.selecting && !k;
+      trash.hidden = !k;
+      trash.disabled = false;
     };
     refreshers.push(update);
     trash.addEventListener("click", (event) => {
-      if (event.detail > 1) return;  // un double-clic n'arme pas et ne confirme pas d'un coup
-      const targets = this.selecting ? chosen() : ids;
-      if (!targets.length) return;
-      if (!this.selecting && !confirming) {
-        confirming = setTimeout(() => { confirming = null; update(); }, 4000);
-        update();
-        return;
-      }
-      clearTimeout(confirming);
-      confirming = null;
+      if (event.detail > 1) return;  // double-clic : une seule suppression
+      const targets = chosen();
+      if (!this.selecting || !targets.length) return;
       targets.forEach((id) => this.selected.delete(id));
       update();
-      trash.disabled = true;  // jusqu'au nouveau rendu du panneau, après la suppression
       this.removeMany(targets);
     });
-    return h("div", { class: `notes-group notes-group-${key}` },
-      h("div", { class: "notes-group-head" }, toggle, allLabel, trash), list);
+    return h("div", { class: `notes-group notes-group-${key}` }, head, list);
   }
 
   destroy() {

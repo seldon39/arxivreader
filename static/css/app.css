@@ -885,7 +885,7 @@ mark.hl.hl-display > mjx-container[display="true"] { margin: .2em 0 !important; 
 .legend .dot.state-understood, .legend .dot.state-review, .legend .dot.state-verified { background: var(--state); }
 .notes-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 /* onglet Notes : en-tête (« Sélectionner »), sections « Dans le HTML » et « Dans le PDF » dépliables, avec à droite
-   de leur intitulé « Tout » (mode sélection) et leur corbeille */
+   de leur intitulé « Tout » (mode sélection) et la corbeille de leurs cartes cochées */
 .notes-head { display: flex; align-items: center; gap: 8px; }
 .notes-head h3 { flex: 1; min-width: 0; }
 .notes-group + .notes-group { margin-top: 6px; }
@@ -902,7 +902,7 @@ mark.hl.hl-display > mjx-container[display="true"] { margin: .2em 0 !important; 
 .notes-all { display: inline-flex; align-items: center; gap: 4px; font: 12px var(--font-ui); color: var(--muted); cursor: pointer; white-space: nowrap; }
 .notes-all[hidden] { display: none; }
 .notes-group-trash { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-.notes-group-trash.confirming { background: var(--accent); border-color: var(--accent); color: var(--on-accent, #fff); }
+.notes-group-trash[hidden], .notes-group-head[hidden] { display: none; }
 .notes-trash-icon, .note-trash { display: inline-flex; }
 .notes-trash-icon svg, .note-trash svg { width: 15px; height: 15px; fill: currentColor; }
 .notes-list[hidden] { display: none; }
