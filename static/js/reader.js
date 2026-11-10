@@ -470,6 +470,7 @@ class Reader {
       (paper.source === "local-pdf" || this.texFile) && h("button", { class: "chip chip-button", type: "button", onclick: () => this.editMeta() }, t("reader.editMeta")),
       paper.source !== "none" && h("span", { class: "chip" }, t(`reader.source.${paper.source}`)),
       paper.doi && h("a", { class: "chip", href: `https://doi.org/${paper.doi}`, target: "_blank", rel: "noopener noreferrer" }, `DOI ${paper.doi}`),
+      ...this.paperFindLinks(paper),
     );
     this.article.append(meta);
     if (paper.archived_of) {
@@ -1375,6 +1376,21 @@ class Reader {
     return [doi && entry.doi && link("DOI", `https://doi.org/${entry.doi.split("/").map(encodeURIComponent).join("/")}`),
       citation && link("MathSciNet", `https://mathscinet.ams.org/mref?ref=${citation}&dataType=mathscinet`),
       citation && link("zbMATH", `https://zbmath.org/citationmatching/?q=${citation}`)].filter(Boolean);
+  }
+
+  // L'article lui-même dans zbMATH et MathSciNet (puces de l'en-tête, à côté du DOI). zbMATH : par DOI, sinon par
+  // numéro arXiv (zbMATH recense aussi beaucoup de prépublications). MathSciNet : sa recherche de citations (gratuite),
+  // avec auteurs, titre, revue et DOI connus. Ce sont des recherches : le site dit lui-même s'il ne trouve rien
+  paperFindLinks(paper) {
+    const chip = (label, href) => h("a", { class: "chip", href, target: "_blank", rel: "noopener noreferrer", title: t("reader.openOutside") }, label);
+    const journal = (paper.journal_ref || "").trim();
+    const arxivId = (paper.arxiv_id || "").replace(/v\d+$/, "");  // avec « v2 », zbMATH ne trouve rien
+    const zbQuery = paper.doi ? `doi:${paper.doi}` : arxivId ? `arxiv:${arxivId}` : "";
+    const citation = paper.title && [(paper.authors || []).join(", "), paper.title, journal, paper.doi && `doi:${paper.doi}`]
+      .filter(Boolean).join(", ").replace(/\s+/g, " ").trim();
+    return [citation && chip("MathSciNet", `https://mathscinet.ams.org/mref?ref=${encodeURIComponent([...citation].slice(0, 500).join(""))}&dataType=mathscinet`),
+      zbQuery && chip("zbMATH", `https://zbmath.org/?q=${encodeURIComponent(zbQuery)}`)]
+      .filter(Boolean);
   }
 
   // Ligne de liens sous chaque entrée de la bibliographie, en fin d'entrée : les ancres des surlignages, comptées
