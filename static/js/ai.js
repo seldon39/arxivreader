@@ -1415,6 +1415,10 @@ export class Assistant {
         .then((spots) => { exchange.found = before.map((found, i) => (found === undefined ? Boolean(spots[i]) : found)); this.onChange(); });
     }
     const rows = proposals.map((proposal, i) => {
+      if (proposal.delete != null) {  // suppression : l'annotation visée, si elle est toujours là
+        const item = this.deletedItem(proposal);
+        return { proposal, found: Boolean(item), kind: "delete", item };
+      }
       if (proposal.quote) {
         const view = this.surfaceOf(proposal);
         const kind = proposal.pin ? "pin" : proposal.zone && view === "pdf" ? "zone" : "highlight";
@@ -1446,13 +1450,21 @@ export class Assistant {
     apply.addEventListener("click", async () => {
       apply.disabled = true;
       const chosen = rows.filter((_, i) => boxes[i].checked && !boxes[i].disabled);
+      // suppressions choisies : marquées « supprimée » ensuite (les autres lignes introuvables le restent)
+      exchange.deletedRows = new Set(rows.flatMap((row, i) => (row.kind === "delete" && boxes[i].checked && !boxes[i].disabled ? [i] : [])));
       const undo = await this.applyProposals(chosen, this.scopesOf(exchange), providerOf(exchange.model), ABOUT_NOTES.test(exchange.question || ""));
-      if (!undo) { toast(t("ai.proposals.noneApplied"), { error: true }); label(); return; }
+      if (undo.nothing) {  // rien de fait : passages introuvables, ou notes déjà supprimées (erreur du serveur : déjà dite)
+        if (!undo.failed) toast(undo.gone && !undo.skipped ? t("ai.proposals.alreadyGone", { n: undo.gone }) : t("ai.proposals.noneApplied"), { error: true });
+        label();
+        return;
+      }
       exchange.applied = 1;
       api.setAIApplied(exchange.id, true).catch(toastError);
       this.onChange();
       let undone = false; // le bouton Annuler ne sert qu'une fois
-      toast(t("ai.proposals.done", { n: undo.count }) + (undo.skipped ? ` ${t("ai.proposals.skipped", { n: undo.skipped })}` : ""), { action: { label: t("common.undo"), onClick: async () => {
+      const done = [undo.count && t("ai.proposals.done", { n: undo.count }), undo.deleted && t("ai.proposals.deletedDone", { n: undo.deleted }),
+        undo.skipped && t("ai.proposals.skipped", { n: undo.skipped }), undo.gone && t("ai.proposals.alreadyGone", { n: undo.gone })].filter(Boolean).join(" ");
+      toast(done, { action: { label: t("common.undo"), onClick: async () => {
         if (undone) return;
         undone = true;
         const failures = await undo.run();
@@ -1466,7 +1478,8 @@ export class Assistant {
       const { proposal } = row;
       // article à deux vues : celle où la proposition sera placée ; zone et note épinglée nommées
       const where = row.view && this.views.length > 1 ? t(row.view === "pdf" ? "ai.proposals.inPdf" : "ai.proposals.inHtml") : "";
-      const what = row.kind === "note"
+      const what = row.kind === "delete" ? this.deletionPreview(row)
+        : row.kind === "note"
         ? h("div", { class: "ai-proposal-target" }, h("span", { class: "ai-icon", html: icons.note }),
           t(row.onProof ? "ai.proposals.onProof" : "ai.proposals.onStatement", { label: row.node?.label || proposal.statement || "?" }))
         : [row.kind !== "highlight" || where ? h("div", { class: "ai-proposal-target" }, row.kind === "pin" && h("span", { class: "ai-icon", html: icons.note }),
@@ -1475,7 +1488,8 @@ export class Assistant {
       const note = proposal.note ? h("div", { class: "markdown ai-proposal-note" }) : null;
       if (note) note.innerHTML = markdownToHtml(proposal.note, { refs: this.refs });
       return h("label", { class: `ai-proposal${row.found ? "" : " missing"}` }, boxes[i],
-        h("span", { class: "ai-proposal-body" }, what, note, row.found === false && h("span", { class: "badge warn" }, t("ai.proposals.notFound"))));
+        h("span", { class: "ai-proposal-body" }, what, note, row.found === false && h("span", { class: "badge warn" },
+          t(row.kind !== "delete" ? "ai.proposals.notFound" : applied && exchange.deletedRows?.has(i) ? "ai.proposals.deleted" : "ai.proposals.deleteGone"))));
     }));
     list.addEventListener("click", (event) => {
       const ref = event.target.closest("a.ai-ref");
@@ -1487,6 +1501,33 @@ export class Assistant {
     return h("div", { class: "ai-proposals" },
       h("div", { class: "ai-proposals-head" }, t("ai.proposals.title", { n: proposals.length })),
       list, h("div", { class: "ai-card-actions" }, apply));
+  }
+
+  // aperçu d'une suppression proposée : « Supprimer · <nature> · <vue, page> », puis le passage ou la note visés
+  deletionPreview(row) {
+    const item = row.item;
+    const pdf = item?.target?.pdf;
+    const nature = !item ? "" : item.kind === "bookmark" ? t("ai.proposals.delBookmark", { name: item.quote || "" })
+      : item.kind === "block" ? t("ai.proposals.delBlock", { label: this.blockLabel(item.target?.id) })
+      : item.kind === "note" ? t("notes.freeNote") : pdf?.rect ? t("ai.proposals.zone") : t("ai.proposals.delHighlight");
+    const where = !item ? "" : pdf ? t("notes.pdfPage", { page: pdf.page }) : this.views.length > 1 ? t("ai.proposals.inHtml") : "";
+    const quote = item && item.kind === "highlight" && !pdf?.rect && item.quote;
+    const thumb = item && pdf?.rect && item.image && h("img", { class: "ai-proposal-zone", src: `/api/annotations/${item.id}/image`, alt: t("notes.zone") });
+    const text = item && item.kind !== "bookmark" && !quote && item.note ? h("div", { class: "markdown ai-proposal-note" }) : null;
+    if (text) text.innerHTML = markdownToHtml(item.note.length > 400 ? `${item.note.slice(0, 400)}…` : item.note);
+    return [h("div", { class: "ai-proposal-target ai-proposal-delete" }, h("span", { class: "ai-icon", html: icons.trash }),
+      [t("ai.proposals.delete"), nature, where].filter(Boolean).join(" · ")),
+      quote && h("blockquote", { class: `note-quote hl-border-${COLORS.includes(item.color) ? item.color : "yellow"}` }, quote),
+      thumb, text];
+  }
+
+  // énoncé, ou preuve d'un énoncé (« Preuve — Lemme 2.1 », comme dans l'onglet Notes), d'une note d'énoncé
+  blockLabel(id) {
+    const node = this.byId.get(id);
+    if (node) return node.label;
+    const element = id ? this.find(id) : null;
+    const proofOf = element?.matches?.(".ltx_proof") && this.byId.get(element.dataset.proofOf);
+    return proofOf ? `${t("reader.proof")} — ${proofOf.label}` : id || "?";
   }
 
   // place dans le PDF du passage qu'une proposition remplace : le nouveau est cherché d'abord près de lui
@@ -1510,10 +1551,22 @@ export class Assistant {
 
   // annotation que remplace une proposition ; remise par « Annuler », elle a un nouveau numéro (même uid) : suivi
   replacedItem(proposal) {
-    if (proposal.replaces == null) return null;
-    let id = String(proposal.replaces);
-    for (let hops = 0; this.restoredIds?.has(id) && hops < 20; hops++) id = this.restoredIds.get(id);
+    return proposal.replaces == null ? null : this.itemOf(proposal.replaces);
+  }
+
+  // annotation de l'article lu, par son numéro ; une annotation remise (« Annuler ») est suivie sous son nouveau numéro
+  itemOf(number) {
+    let id = String(number);
+    const restored = this.annotator.restoredIds;
+    for (let hops = 0; restored?.has(id) && hops < 20; hops++) id = restored.get(id);
     return this.annotator.items.find((a) => String(a.id) === id) || null;
+  }
+
+  // annotation qu'une proposition « delete » demande de supprimer (DELETE_PROMPT dans ai.py) ; la fiche de lecture
+  // n'en est pas une
+  deletedItem(proposal) {
+    const item = this.itemOf(proposal.delete);
+    return item && DELETABLE.includes(item.kind) ? item : null;
   }
 
   // Crée les annotations choisies ; renvoie de quoi tout annuler (ou null si rien n'a pu être fait).
@@ -1527,8 +1580,22 @@ export class Assistant {
     const written = new Set();  // énoncés (ou preuves) dont la note vient d'être écrite : leur ancienne note reste
     const extended = [];  // notes libres du HTML complétées par une note épinglée : [id, texte d'avant]
     let skipped = 0;  // propositions choisies qui n'ont pas pu être placées (texte changé, page sans texte)
+    let deleted = 0;  // annotations supprimées à la demande du lecteur (remises par « Annuler », avec `removed`)
+    let gone = 0;  // suppressions choisies dont l'annotation n'est déjà plus là
+    let failed = 0;  // suppressions refusées par le serveur (déjà signalées par toastError)
+    // suppressions d'abord : une note d'énoncé supprimée puis réécrite par une autre proposition garde la nouvelle
+    rows = [...rows.filter((row) => row.kind === "delete"), ...rows.filter((row) => row.kind !== "delete")];
     for (const row of rows) {
       const { proposal } = row;
+      if (row.kind === "delete") {
+        const item = this.deletedItem(proposal);
+        if (!item || removed.some((old) => old.id === item.id)) { gone++; continue; }  // déjà supprimée (ou listée deux fois)
+        try {
+          const kept = await this.annotator.remove(item.id);
+          if (kept) { removed.push(kept); deleted++; } else gone++;
+        } catch (error) { failed++; toastError(error); }
+        continue;
+      }
       const own = aboutNotes && proposal.author === "reader"; // adaptation : note du lecteur reprise telle quelle (ADAPT_PROMPT dans ai.py)
       // remplacée seulement par une annotation de même nature (passage par passage, note d'énoncé par note
       // d'énoncé) : sinon son état de lecture se perdrait ; jamais une zone du PDF (son image serait perdue)
@@ -1592,9 +1659,11 @@ export class Assistant {
       }
     }
     const count = created.length + previousNotes.size + extended.length;
-    if (!count) return null;
+    if (!count && !deleted) return { nothing: true, gone, failed, skipped };
     return {
       count,
+      deleted,
+      gone,
       skipped,
       // renvoie le nombre d'échecs (0 : tout est annulé)
       run: async () => {
@@ -1611,10 +1680,7 @@ export class Assistant {
         }
         // anciennes notes remises en dernier : une note d'énoncé remplacée retrouve son énoncé même si une autre
         // proposition y avait écrit
-        for (const annotation of removed) {
-          const back = await attempt(this.annotator.restore(annotation));
-          if (back?.id != null) (this.restoredIds ||= new Map()).set(String(annotation.id), String(back.id));
-        }
+        for (const annotation of removed) await attempt(this.annotator.restore(annotation));  // numéro suivi par restore
         return failures;
       },
     };
@@ -1636,14 +1702,16 @@ function parseProposals(answer) {
   if (match[2] !== "```") return { text, items: [] };
   try {
     const items = JSON.parse(match[1]);
-    // note épinglée : seulement avec sa note
-    return { text, items: Array.isArray(items) ? items.filter((item) => item && ((item.quote && (!item.pin || item.note)) || (item.statement && item.note))) : [] };
+    // note épinglée : seulement avec sa note ; suppression : un numéro d'annotation
+    return { text, items: Array.isArray(items) ? items.filter((item) => item && ((item.quote && (!item.pin || item.note)) || (item.statement && item.note)
+      || (item.delete != null && /^\d+$/.test(String(item.delete))))) : [] };
   } catch {
     return { text, items: [] };
   }
 }
 
 const currentModel = () => modelFor(settings);
+const DELETABLE = ["highlight", "note", "block", "bookmark"];  // ce que l'IA peut proposer de supprimer
 
 const svg = (d) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
 const ARROW_UP = svg("M11 20V7.8l-5.6 5.6L4 12l8-8 8 8-1.4 1.4L13 7.8V20z");

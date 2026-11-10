@@ -13,6 +13,19 @@ import { markdownToHtml } from "./markdown.js";
 import { typesetTex } from "./math.js";
 import { debounce, h, icons, toast, toastError } from "./util.js";
 
+// image d'une zone du PDF, en data URL (gardée avant sa suppression, pour « Annuler »)
+async function imageData(id) {
+  const response = await fetch(`/api/annotations/${id}/image`);
+  if (!response.ok) throw new Error(String(response.status));
+  const blob = await response.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 export const COLORS = ["yellow", "green", "blue", "pink"];
 export const STATES = ["understood", "review", "verified"];
 const UI = ".proof-toggle, .block-note, .state-pill, .proof-pointer, .picture-missing, .bib-links"; // ajouts de l'application (pas du texte)
@@ -409,6 +422,10 @@ export class Annotator {
     this.items = [];
     this.popover = null;
     this.toolbar = null;
+    // onglet Notes : mode sélection, notes cochées, sections HTML et PDF dépliées (null : celle de la vue lue)
+    this.selecting = false;
+    this.selected = new Set();
+    this.groupsOpen = null;
   }
 
   async load() {
@@ -507,7 +524,13 @@ export class Annotator {
       this.onChange();
     };
     const button = h("button", { class: "button small-button danger", type: "button" }, t("notes.deleteNote"));
-    button.addEventListener("click", () => { this.popoverClosed = null; this.closePopover(); remove(); });
+    // « Supprimer » : avec « Annuler » (une note vidée puis fermée disparaît sans lui)
+    button.addEventListener("click", () => {
+      annotation.note = editor.querySelector("textarea")?.value ?? annotation.note;  // texte tapé : gardé pour « Annuler »
+      this.popoverClosed = null;
+      this.closePopover();
+      this.removeMany([id]);
+    });
     const editor = noteEditor({ value: annotation.note || "", placeholder: t("notes.placeholderFree"), autofocus: focus,
       onSave: async (note) => { Object.assign(annotation, await api.updateAnnotation(id, { note })); this.onChange(); } });
     this.openPopover(anchor, [
@@ -774,16 +797,81 @@ export class Annotator {
     return annotation;
   }
 
-  // Annotation supprimée remise telle quelle (annulation d'une adaptation de notes par l'IA)
+  // Annotation supprimée remise telle quelle (« Annuler » d'une suppression, ou d'une adaptation de notes par l'IA) ;
+  // zone du PDF : avec son image, gardée par `remove` (le serveur efface la sienne avec la zone)
   async restore(old) {
     const { kind, target, color, quote, note, state, author, uid, created_at } = old;  // même identité, même date
-    const annotation = await api.addAnnotation(this.paperId, { kind, target, color, quote, note, state, author, uid, created_at });
+    const annotation = await api.addAnnotation(this.paperId, { kind, target, color, quote, note, state, author, uid, created_at,
+      ...(old.imageData ? { image: old.imageData } : {}) });
     this.items = this.items.filter((a) => a.id !== annotation.id).concat(annotation);
-    if (kind === "highlight" && target?.pdf) this.pdf?.repaint(annotation);
+    // nouveau numéro (même uid) : suivi, pour les propositions de l'IA qui visent l'ancien (`replaces`, `delete`)
+    (this.restoredIds ||= new Map()).set(String(old.id), String(annotation.id));
+    if (target?.pdf && ["highlight", "note"].includes(kind)) this.pdf?.repaint(annotation);
     else if (kind === "highlight") annotation.orphan = !paint(this.content, annotation);
+    else if (kind === "note") this.paintFreeNotes();
+    else if (kind === "bookmark") this.onBookmarks?.();
     this.refreshBadges();
     this.onChange();
     return annotation;
+  }
+
+  // Suppression d'une annotation, quelle qu'elle soit (onglet Notes, propositions de l'IA) : renvoie ce qu'il faut pour
+  // la remettre (restore), ou null si elle n'existe plus
+  async remove(id) {
+    const annotation = this.items.find((a) => a.id === id);
+    if (!annotation) return null;
+    const kept = { ...annotation };
+    if (annotation.target?.pdf?.rect && annotation.image) kept.imageData = await imageData(id).catch(() => null);
+    if (annotation.kind === "block") await this.deleteBlock(id);
+    else if (annotation.kind === "bookmark") {
+      await api.deleteAnnotation(id);
+      this.items = this.items.filter((a) => a.id !== id);
+      this.onBookmarks?.();
+      this.onChange();
+    } else await this.removeHighlight(id);
+    return kept;
+  }
+
+  // Plusieurs changements d'affilée (suppression ou remise de plusieurs notes) : le panneau n'est redessiné qu'à la fin.
+  // Lots imbriqués ou simultanés : seul le plus extérieur garde et remet le vrai rappel (sinon il resterait muet)
+  async quietly(work) {
+    if (!this.quietDepth) { this.loudChange = this.onChange; this.onChange = () => {}; }
+    this.quietDepth = (this.quietDepth || 0) + 1;
+    try { return await work(); } finally {
+      if (--this.quietDepth === 0) { this.onChange = this.loudChange; this.onChange(); }
+    }
+  }
+
+  // Suppression de plusieurs annotations, avec un toast « Annuler » qui les remet toutes. Les suppressions se font
+  // l'une après l'autre ; rapprochées (toast encore affiché, pas annulé), un seul « Annuler » les remet toutes
+  removeMany(ids) {
+    const run = (this.removing || Promise.resolve()).then(() => this.removeNow(ids));
+    this.removing = run.catch(() => {});
+    return run;
+  }
+
+  async removeNow(ids) {
+    const removed = [];
+    await this.quietly(async () => {
+      for (const id of ids) {
+        try { const kept = await this.remove(id); if (kept) removed.push(kept); } catch (error) { toastError(error); }
+      }
+    });
+    if (!removed.length) return;
+    const last = this.lastRemoval;
+    const batch = last && !last.undone && Date.now() - last.at < 6500 ? last : { removed: [], undone: false };
+    batch.removed.push(...removed);
+    batch.at = Date.now();
+    this.lastRemoval = batch;
+    const n = batch.removed.length;
+    toast(n === 1 ? t("notes.deletedOne") : t("notes.deletedMany", { n }), { action: { label: t("common.undo"),
+      onClick: async () => {
+        if (batch.undone) return;
+        batch.undone = true;
+        await this.quietly(async () => {
+          for (const old of batch.removed) await this.restore(old).catch(toastError);
+        });
+      } } });
   }
 
   async deleteBlock(annotationId) {
@@ -827,13 +915,10 @@ export class Annotator {
       return button;
     }));
     const remove = h("button", { class: "button small-button danger", type: "button" }, t("notes.deleteHighlight"));
-    remove.addEventListener("click", async () => {
-      try { await api.deleteAnnotation(id); } catch (error) { toastError(error); return; }
-      unpaint(this.content, id);
-      this.items = this.items.filter((a) => a.id !== id);
-      this.pdf?.removed(annotation);
+    remove.addEventListener("click", () => {
+      annotation.note = this.popover?.querySelector(".note-editor textarea")?.value ?? annotation.note;  // texte tapé : gardé pour « Annuler »
       this.closePopover();
-      this.onChange();
+      this.removeMany([id]);
     });
     this.openPopover(anchor, [
       h("div", { class: "popover-head" }, colors, authorBadge(annotation), h("span", { class: "spacer" }), remove),
@@ -934,13 +1019,37 @@ export class Annotator {
     };
     placePdf(this.pdf?.readingHeights?.(inPdf.map(({ a }) => a), (heights) => { if (pdfList.isConnected) placePdf(heights); }) || new Map());
     const htmlList = h("div", { class: "notes-list" }, this.singleView ? [] : inHtml.map(({ a }) => cards.get(a.id)));
-    const sections = this.singleView
-      ? [pdfList]
-      : [...(inHtml.length ? [h("h4", { class: "notes-subtitle" }, t("notes.inHtml", { n: inHtml.length })), htmlList] : []),
-        ...(inPdf.length ? [h("h4", { class: "notes-subtitle" }, t("notes.inPdf", { n: inPdf.length })), pdfList] : [])];
-    body.append(h("div", { class: "panel-section" }, h("h3", {}, t("notes.annotations", { n: located.length })),
-      located.length ? sections : h("div", { class: "notes-list" }, h("p", { class: "hint" }, t("notes.none"))),
-      h("p", { class: "hint" }, t("notes.howTo"))));
+    // Gestion : corbeille sur chaque carte ; « Sélectionner » : une case par carte, et dans l'en-tête de chaque section
+    // « Tout » et la corbeille de sa sélection ; hors sélection, la corbeille d'une section la vide entière (second
+    // clic pour confirmer). Toute suppression s'annule depuis son toast. Sections dépliables : celle de la vue lue
+    // ouverte, tant que le lecteur n'en a pas déplié ou replié une lui-même
+    this.selected = new Set([...this.selected].filter((id) => cards.has(id)));
+    const groups = this.singleView ? [{ key: "all", ids: located.map(({ a }) => a.id), list: pdfList }]
+      : [{ key: "html", ids: inHtml.map(({ a }) => a.id), list: htmlList }, { key: "pdf", ids: inPdf.map(({ a }) => a.id), list: pdfList }]
+        .filter((group) => group.ids.length);
+    const refreshers = [];
+    const refresh = () => refreshers.forEach((update) => update());
+    this.refreshPanel = refresh;  // vue changée : sections repliées ou dépliées sans tout redessiner (notesFollowView)
+    for (const [id, card] of cards) this.cardTools(card, id, refreshers, refresh);
+    const section = h("div", { class: `panel-section notes-annotations${this.selecting ? " selecting" : ""}` });
+    const select = located.length ? h("button", { class: "button small-button notes-select", type: "button" }) : null;
+    if (select) {
+      refreshers.push(() => {
+        select.textContent = t(this.selecting ? "notes.selectDone" : "notes.select");
+        select.setAttribute("aria-pressed", String(this.selecting));
+        section.classList.toggle("selecting", this.selecting);
+      });
+      select.addEventListener("click", () => {
+        this.selecting = !this.selecting;
+        if (!this.selecting) this.selected.clear();
+        refresh();
+      });
+    }
+    section.append(h("div", { class: "notes-head" }, h("h3", {}, t("notes.annotations", { n: located.length })), select),
+      ...(located.length ? groups.map((group) => this.notesGroup(group, refreshers, refresh)) : [h("div", { class: "notes-list" }, h("p", { class: "hint" }, t("notes.none")))]),
+      h("p", { class: "hint" }, t("notes.howTo")));
+    refresh();
+    body.append(section);
     // export : fiche, énoncés et preuves, passages, en Markdown (dossier Téléchargements) ; .zip avec les images des zones
     if (located.length || (this.general?.note || "").trim() || this.items.some((a) => a.kind === "bookmark")) {
       body.append(h("div", { class: "panel-section" }, h("a", { class: "button small-button", download: "",
@@ -977,10 +1086,98 @@ export class Annotator {
     const note = h("div", { class: "markdown note-body" });
     if (annotation.note) note.innerHTML = markdownToHtml(annotation.note);
     const found = element || inPdf;
-    return h("div", { class: `note-card${found ? "" : " orphan"}`, role: "button", tabindex: 0, onclick: go,
-      onkeydown: (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); go(); } }, title: found ? t("panel.showInText") : t("notes.orphan") },
+    // mode sélection : un clic sur la carte la coche (au lieu de montrer la note)
+    const act = () => { if (this.selecting) card.querySelector(".note-check")?.click(); else go(); };
+    const card = h("div", { class: `note-card${found ? "" : " orphan"}`, role: "button", tabindex: 0, onclick: act,
+      onkeydown: (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); act(); } }, title: found ? t("panel.showInText") : t("notes.orphan") },
       head, inPdf && h("span", { class: "badge" }, t("notes.pdfPage", { page: annotation.target.pdf.page })),
       annotation.note && note, authorBadge(annotation), !found && h("span", { class: "badge warn" }, t("notes.orphan")));
+    return card;
+  }
+
+  // case (mode sélection) et corbeille d'une carte ; leurs clics et touches ne vont pas à la carte
+  cardTools(card, id, refreshers, refresh) {
+    const own = (event) => event.stopPropagation();
+    const box = h("input", { type: "checkbox", class: "note-check", "aria-label": t("notes.selectOne"), onclick: own, onkeydown: own });
+    box.addEventListener("change", () => {
+      if (box.checked) this.selected.add(id); else this.selected.delete(id);
+      refresh();
+    });
+    const trash = h("button", { class: "note-trash", type: "button", title: t("notes.trash"), "aria-label": t("notes.trash"),
+      html: icons.trash, onkeydown: own });
+    trash.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (event.detail > 1 || trash.disabled) return;  // double-clic : le second clic tomberait sur la carte remontée à sa place
+      trash.disabled = true;
+      this.selected.delete(id);
+      this.removeMany([id]);
+    });
+    card.prepend(h("span", { class: "note-tools" }, box, trash));  // en haut à droite, sur une ligne
+    refreshers.push(() => {
+      box.checked = this.selected.has(id);
+      box.tabIndex = this.selecting ? 0 : -1;
+      card.classList.toggle("checked", this.selecting && box.checked);
+    });
+  }
+
+  // section de l'onglet Notes (HTML, PDF ; `all` : article lu dans une seule vue, sans titre ni repli)
+  notesGroup({ key, ids, list }, refreshers, refresh) {
+    const titled = key !== "all";
+    const isOpen = (k) => this.groupsOpen?.[k] ?? (this.currentView?.() || "html") === k;
+    const toggle = titled ? h("button", { class: "notes-group-toggle", type: "button" },
+      h("span", { class: "notes-chevron", "aria-hidden": "true" }), t(key === "pdf" ? "notes.inPdf" : "notes.inHtml", { n: ids.length })) : h("span", { class: "spacer" });
+    if (titled) {
+      toggle.addEventListener("click", () => {
+        this.groupsOpen = { html: isOpen("html"), pdf: isOpen("pdf"), [key]: !isOpen(key) };
+        refresh();
+      });
+    }
+    const all = h("input", { type: "checkbox" });
+    const allLabel = h("label", { class: "notes-all", title: t("notes.selectAllHint") }, all, t("notes.selectAll"));
+    all.addEventListener("change", () => {
+      ids.forEach((id) => (all.checked ? this.selected.add(id) : this.selected.delete(id)));
+      refresh();
+    });
+    const trash = h("button", { class: "button small-button danger notes-group-trash", type: "button" });
+    let confirming = null;  // vider toute la section : second clic dans les 4 s
+    const chosen = () => ids.filter((id) => this.selected.has(id));
+    const update = () => {
+      const open = !titled || isOpen(key);
+      if (titled) toggle.setAttribute("aria-expanded", String(open));
+      list.hidden = !open;
+      allLabel.hidden = !this.selecting;
+      const k = chosen().length;
+      all.checked = k > 0 && k === ids.length;
+      all.indeterminate = k > 0 && k < ids.length;
+      if (this.selecting && confirming) { clearTimeout(confirming); confirming = null; }
+      const label = this.selecting ? t("notes.trashSelected", { n: k })
+        : confirming ? t("notes.trashConfirm", { n: ids.length }) : t(titled ? "notes.trashGroup" : "notes.trashAll", { n: ids.length });
+      trash.replaceChildren(h("span", { class: "notes-trash-icon", html: icons.trash }),
+        this.selecting ? ` ${k}` : confirming ? ` ${label}` : "");
+      trash.title = label;
+      trash.setAttribute("aria-label", label);
+      trash.classList.toggle("confirming", Boolean(confirming));
+      trash.disabled = this.selecting && !k;
+    };
+    refreshers.push(update);
+    trash.addEventListener("click", (event) => {
+      if (event.detail > 1) return;  // un double-clic n'arme pas et ne confirme pas d'un coup
+      const targets = this.selecting ? chosen() : ids;
+      if (!targets.length) return;
+      if (!this.selecting && !confirming) {
+        confirming = setTimeout(() => { confirming = null; update(); }, 4000);
+        update();
+        return;
+      }
+      clearTimeout(confirming);
+      confirming = null;
+      targets.forEach((id) => this.selected.delete(id));
+      update();
+      trash.disabled = true;  // jusqu'au nouveau rendu du panneau, après la suppression
+      this.removeMany(targets);
+    });
+    return h("div", { class: `notes-group notes-group-${key}` },
+      h("div", { class: "notes-group-head" }, toggle, allLabel, trash), list);
   }
 
   destroy() {

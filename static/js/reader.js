@@ -131,6 +131,10 @@ class Reader {
     this.annotator.singleView = this.texOnly;  // onglet Notes : une seule liste (pas de sections HTML et PDF)
     // clic droit dans l'article : marque-page sur le paragraphe cliqué
     this.annotator.onBookmarkAt = (element, rect) => this.addBookmark({ element, rect });
+    // marque-page supprimé ou remis (onglet Notes, propositions de l'IA, « Annuler ») : rubans redessinés
+    this.annotator.onBookmarks = () => this.paintBookmarks();
+    // onglet Notes : section (HTML ou PDF) de la vue lue dépliée
+    this.annotator.currentView = () => (this.pdfMode ? "pdf" : "html");
     // onglet Notes : marque-pages en tête
     this.annotator.renderBookmarks = () => bookmarkSection(this.annotator.items, {
       paper: this.paper, find: (id) => this.find(id), go: (annotation) => this.goToBookmark(annotation),
@@ -273,6 +277,11 @@ class Reader {
   }
 
   // `restore` : retour au HTML sans endroit connu → dernière position de lecture (sauf si un endroit précis suit)
+  // onglet Notes ouvert : ses sections suivent la vue lue, tant que le lecteur n'en a déplié ou replié aucune
+  notesFollowView() {
+    if (this.tab === "notes" && this.annotator && !this.annotator.groupsOpen) this.annotator.refreshPanel?.();  // sans redessiner (fiche en cours de saisie)
+  }
+
   async setView(view, { save = true, restore = true } = {}) {
     if (this.texOnly || (view === "pdf") === this.pdfMode) return;
     // jeton : une bascule plus récente (ou un énoncé choisi entre-temps) l'emporte sur les suites de celle-ci
@@ -295,6 +304,7 @@ class Reader {
       const from = this.wordAt(this.htmlText, anchor, save);
       this.pdfMode = true;
       this.root.dataset.view = "pdf";
+      this.notesFollowView();
       if (!this.pdf) this.createPdf();
       scrollTo({ top: 0, behavior: "instant" });
       await this.loadPages();
@@ -313,6 +323,7 @@ class Reader {
       const estimate = this.htmlSpot(location);
       this.pdfMode = false;
       delete this.root.dataset.view;
+      this.notesFollowView();
       this.anchors = null;
       // le HTML a pu être mis en page caché (article ouvert dans le PDF, fenêtre redimensionnée) :
       // figures et formules larges recalculées maintenant qu'il est affiché
