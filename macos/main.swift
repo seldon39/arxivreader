@@ -577,7 +577,7 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
         }
         guard let body = message.body as? [String: Any], body["action"] as? String == "openTab",
               let route = body["route"] as? String,
-              route.range(of: "^#/[A-Za-z0-9/._%~-]*$", options: .regularExpression) != nil else { return }
+              route.range(of: "^#/[A-Za-z0-9/._%~-]*(\\?[A-Za-z0-9._%~=&-]*)?$", options: .regularExpression) != nil else { return }
         // comme Safari : nouvel onglet en arrière-plan (⇧ en plus : affiché aussitôt)
         app.openTab(route, beside: window, front: body["front"] as? Bool ?? false)
     }

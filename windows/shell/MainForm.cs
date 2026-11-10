@@ -27,7 +27,7 @@ namespace ArxivReader
             public DateTime[] Crashes = new DateTime[0];
         }
 
-        static readonly Regex Route = new Regex(@"^#/[A-Za-z0-9/._%~-]*$");
+        static readonly Regex Route = new Regex(@"^#/[A-Za-z0-9/._%~-]*(\?[A-Za-z0-9._%~=&-]*)?$");  // « #/search?terms=… » : paramètres encodés
 
         readonly string library;
         readonly Server server;

@@ -1434,7 +1434,9 @@ class Reader {
         : [found.title && { field: "title", value: found.title, op: "and" }, found.author && { field: "author", value: found.author, op: "and" }].filter(Boolean);
       if (!terms.length) terms.push({ field: "all", value: (entry.text || "").replace(/\$[^$]*\$/g, " ").split(/\s+/).slice(0, 12).join(" "), op: "and" });
       this.hidePreview();
-      openRoute(`#/search?terms=${encodeURIComponent(JSON.stringify(terms))}`, Boolean(nativeBridge), front);
+      // tout encodé (même ! ' ( ) *) : l'application Mac ou Windows n'ouvre un onglet que sur une adresse sans autres signes
+      const encoded = encodeURIComponent(JSON.stringify(terms)).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+      openRoute(`#/search?terms=${encoded}`, Boolean(nativeBridge), front);
     } catch (error) {
       toastError(error);
     } finally {
