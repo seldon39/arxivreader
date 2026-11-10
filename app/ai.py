@@ -848,7 +848,7 @@ ORDINAL_VERSION = {"1ère": 1, "1ere": 1, "1re": 1, "1st": 1, "2e": 2, "2ème": 
 VERSION_NAMED = re.compile(r"(?:(?<![a-z])v\.?\s?|\bversions?\s+(?:n[°ºo]\.?\s*)?)(\d+)\b"
                            rf"|\b({'|'.join(ORDINAL_VERSION)})\s+version\b|\bversion\s+(initiale|originale|d'origine|de\s+d[eé]part)\b", re.I)
 # balises des deux blocs : neutralisées dans ce qu'ils citent, le reste du texte restant tel quel (notes recopiées mot à mot)
-PREVIOUS_TAGS = re.compile(r"</?(?=(?:previous_version|previous_annotations|current_annotations|other_version|annotation|statement|quote|note)\b)", re.I)
+PREVIOUS_TAGS = re.compile(r"</?(?=(?:previous_version|previous_annotations|current_annotations|other_version|annotation|statement|quote|anchor|note)\b)", re.I)
 # note complétée par l'IA : son nom, y compris l'IA locale dans les deux langues (proposition acceptée, applyProposals
 # dans ai.js), ou réponse enregistrée dans les notes (saveToNotes : « **modèle · titre** — *date, non vérifié* »)
 ASSISTANT_NOTE = re.compile(rf"\s*\*\*(?:(?:{'|'.join([*providers.NAMES.values(), 'IA locale', 'local AI'])})\*\* — "
@@ -895,7 +895,8 @@ PLACES_PROMPT = """Besides passages and notes on statements (format in your inst
 formula or a figure, from the words just before it to the words just after it>", "color": "<colour>", "note": "<note>"}; \
 the application draws the rectangle around the lines of that passage;
 - a pinned note, with no highlighted passage: {"surface": "html" or "pdf", "pin": true, "quote": "<a few words of \
-<paper> where the note goes>", "note": "<the note>"}.
+<paper> where the note goes>", "note": "<the note>"}. A note pinned in the HTML (kind="note" with surface="html") \
+gives in <anchor> the beginning of the paragraph it is pinned to: place it at that paragraph.
 A passage placed in the PDF is found there by its words only (formulas, references and citations are skipped): quote a \
 passage with several words of text that occur only once in the paper. An entry placed in the PDF may give "page": \
 <page of the PDF of the version being read> when you know it, to help find the passage. In the HTML, a zone becomes the \
@@ -1055,6 +1056,10 @@ def _annotations_block(version, current=False):
         lines.append(f"<annotation {attributes}>")
         if item["quote"] and not bookmark:
             lines.append(f"<quote>{_neutral(item['quote'])}</quote>")
+        pinned = index.get(target.get("id")) if item["kind"] == "note" and not pdf else None
+        if pinned is not None:  # note épinglée au HTML : début du paragraphe, pour la retrouver (dans le PDF aussi)
+            anchor = element_text(pinned)
+            lines.append(f"<anchor>{_neutral(anchor if len(anchor) <= ANCHOR else anchor[:ANCHOR] + ' […]')}</anchor>")
         if item["note"]:
             note = item["note"] if not current or len(item["note"]) <= DELETE_NOTE else item["note"][:DELETE_NOTE] + " […]"
             lines.append(f"<note>{_neutral(note)}</note>")
@@ -1072,6 +1077,7 @@ _DELETE_VERB = (r"\b(?:supprim|effac|enl[eè]v|[oô]t(?:e|er|ez|es)\b|retir|vir(
 _DELETE_OBJECT = (r"\b(?:annotations?\b|surlign|highlight|zones?\b|marque-?pages?\b|bookmarks?\b|notes?\b|commentaires?\b"
                   r"|comments?\b|passages?\s+surlign)")
 _DELETING = re.compile(rf"{_DELETE_VERB}.{{0,80}}?{_DELETE_OBJECT}|{_DELETE_OBJECT}.{{0,60}}?{_DELETE_VERB}", re.I | re.S)
+ANCHOR = 200  # début du paragraphe d'une note épinglée au HTML, dans les listes jointes
 DELETE_NOTE = 600  # longueur d'une note dans la liste jointe : assez pour la reconnaître
 
 DELETE_PROMPT = """The reader may be asking you to delete some of their annotations of this paper. \
@@ -1092,7 +1098,8 @@ say briefly which annotations you propose to delete and how many, then end your 
 another version, tell them to open that version and ask there.
 
 If the reader's message is not such a request (an ordinary question that happens to mention removing something), \
-ignore this paragraph and the list, and simply answer it."""
+ignore this paragraph and the list, and simply answer it. In every case, begin directly with what you say to the \
+reader, without notes to yourself."""
 
 
 def asks_deletion(question):

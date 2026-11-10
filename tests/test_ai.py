@@ -1170,8 +1170,12 @@ class PreviousVersion(unittest.TestCase):
         self.assertIn('kind="general" author="user">\n<note>Fiche de lecture</note>', listing)
         self.assertIn('kind="bookmark" surface="html" name="Mon repère" author="user">\n</annotation>', listing)  # son nom n'est pas un passage cité
         self.assertIn('kind="note" surface="pdf" page="4" author="user">', listing)
-        self.assertIn('kind="note" surface="html" author="assistant">\n<note>**Claude Opus · Résumé**', listing)  # réponse enregistrée dans les notes
+        self.assertIn('kind="note" surface="html" author="assistant">\n<anchor>Remark outside any statement.</anchor>\n'
+                      '<note>**Claude Opus · Résumé**', listing)  # réponse enregistrée dans les notes, avec son paragraphe
+        self.assertIn('kind="note" surface="pdf" page="4" author="user">\n<note>Note libre</note>', listing)  # PDF : la page
         self.assertEqual(listing.count("<annotation "), 9)  # pas l'emplacement de preuve
+        with unittest.mock.patch.object(ai, "ANCHOR", 6):  # paragraphe long : son début
+            self.assertIn("<anchor>Remark […]</anchor>", self.block(self.ask("adapte mes notes de la v1")[1], "previous_annotations"))
 
     def test_views_listed(self):
         self.archive(1, noted=False)
