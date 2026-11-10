@@ -1442,7 +1442,28 @@ class Reader {
       onclick: (event) => { event.preventDefault(); this.lookUpArxiv(entry, event.currentTarget, event); } }, t("reader.lookUpArxiv"));
     return [lookUp, doi && entry.doi && link("DOI", `https://doi.org/${entry.doi.split("/").map(encodeURIComponent).join("/")}`),
       citation && link("MathSciNet", `https://mathscinet.ams.org/mref?ref=${citation}&dataType=mathscinet`),
-      citation && link("zbMATH", `https://zbmath.org/citationmatching/?q=${citation}`)].filter(Boolean);
+      citation && this.zbmathLink(entry, plain, link)].filter(Boolean);
+  }
+
+  // zbMATH : sa page de recherche de citations ne se remplit plus depuis l'adresse. Le lien mène d'abord à sa
+  // recherche ordinaire, remplie (auteur et mots de la référence) ; au survol (ou au clavier), le serveur demande à
+  // zbMATH le document cité et, s'il est trouvé sûrement, le lien mène à sa page. Ouvert par un vrai clic : les
+  // applications Mac et Windows n'ouvrent un lien extérieur que sur un clic
+  zbmathLink(entry, plain, link) {
+    const words = plain.replace(/\$[^$]*\$/g, " ").match(/[^\s\d.,:;()[\]"“”«»]{2,}/gu) || [];
+    const anchor = link("zbMATH", `https://zbmath.org/?q=${encodeURIComponent(words.slice(0, 14).join(" "))}`);
+    let asked = false;
+    const resolve = () => {
+      if (asked) return;
+      asked = true;
+      api.referenceZbmath(entry).then((found) => {
+        if (/^https:\/\/zbmath\.org\//.test(found?.url || "")) anchor.href = found.url;
+        if (found?.zbl) anchor.title = `zbMATH · Zbl ${found.zbl}`;
+      }).catch(() => { asked = false; });  // hors ligne : la recherche remplie reste
+    };
+    anchor.addEventListener("pointerenter", resolve);
+    anchor.addEventListener("focus", resolve);
+    return anchor;
   }
 
   // « Chercher sur arXiv » : version arXiv de la référence (Semantic Scholar, par DOI ou titre) cherchée par son numéro

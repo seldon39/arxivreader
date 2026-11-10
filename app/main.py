@@ -1084,6 +1084,17 @@ def reference_arxiv(body: ReferenceLookup):
         return {"arxivId": None, "title": (title or localpdf.guess_title(text))[:300], "author": localpdf.first_author(text)[:100]}
 
 
+@app.post("/api/references/zbmath")
+def reference_zbmath(body: ReferenceLookup):
+    """Référence de la bibliographie d'un article dans zbMATH (lien « zbMATH », demandé au survol) : la page du
+    document s'il est trouvé sûrement, sinon la recherche de zbMATH déjà remplie ; sans réseau, cette recherche."""
+    text, title = body.text[:2000], body.title[:500]
+    try:
+        return localpdf.reference_zbmath(text, title)
+    except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError):
+        return {"zbl": None, "url": localpdf.zbmath_search(text, title)}
+
+
 class PaperMeta(BaseModel):
     title: str
     authors: list[str] = []

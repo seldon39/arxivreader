@@ -219,3 +219,26 @@ class LocalPdf(unittest.TestCase):
         with mock.patch.object(localpdf, "_s2", side_effect=localpdf.httpx.ConnectError("offline")):
             response = self.client.post("/api/references/arxiv", json={"text": text})
         self.assertEqual(response.json(), {"arxivId": None, "title": "The action functional in Noncommutative geometry", "author": "Connes"})
+
+    def test_reference_zbmath(self):
+        """Lien « zbMATH » d'une référence : page du document trouvé sûrement par la recherche de citations de zbMATH,
+        sinon sa recherche ordinaire remplie (auteur et titre devinés) ; sans réseau, cette recherche."""
+        text = "A. Connes.: The action functional in Noncommutative geometry. Comm. Math. Phys. 117, 673-683, (1988)."
+        search = "https://zbmath.org/?q=Connes%20The%20action%20functional%20in%20Noncommutative%20geometry"
+        asked = []
+
+        def match(cited):
+            asked.append(cited)
+            return {"results": [{"zbl_id": "0658.53068", "probability": 0.98}]}
+        self.assertEqual(localpdf.reference_zbmath(text, match=match), {"zbl": "0658.53068", "url": "https://zbmath.org/?q=an%3A0658.53068"})
+        self.assertEqual(asked, [text])
+        # peu probable, sans résultat, ou numéro mal formé : la recherche remplie
+        for results in ([{"zbl_id": "0658.53068", "probability": 0.2}], [], [{"zbl_id": "javascript:1", "probability": 1}]):
+            self.assertEqual(localpdf.reference_zbmath(text, match=lambda cited: {"results": results}), {"zbl": None, "url": search})
+        # formules ôtées de la référence envoyée
+        localpdf.reference_zbmath("X. Ma, The $J$-twist of $D$, Ann. 2020", match=lambda cited: asked.append(cited) or {})
+        self.assertNotIn("$", asked[-1])
+        # route : sans réseau, la recherche remplie
+        with mock.patch.object(localpdf, "_zbmath_match", side_effect=localpdf.httpx.ConnectError("offline")):
+            response = self.client.post("/api/references/zbmath", json={"text": text})
+        self.assertEqual(response.json(), {"zbl": None, "url": search})

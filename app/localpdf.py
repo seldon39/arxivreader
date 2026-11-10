@@ -366,6 +366,47 @@ def first_author(text):
     return ""
 
 
+ZBMATH = "https://zbmath.org"
+ZBMATH_SURE = 0.5  # probabilité donnée par zbMATH au-dessus de laquelle la référence est bien ce document
+ZBL_ID = re.compile(r"^\d{4}\.\d{5}$")
+
+
+def _zbmath_match(text):
+    """Recherche de citations de zbMATH (son interface publique, en JSON) : une seule demande, courte."""
+    with httpx.Client(headers={"User-Agent": "arXivReader"}, timeout=8) as client:
+        response = client.get(f"{ZBMATH}/citationmatching/match", params={"q": text, "n": 1})
+    response.raise_for_status()
+    return response.json()
+
+
+def zbmath_query(text, title=""):
+    """Recherche zbMATH remplie pour une référence : premier auteur et titre deviné, en mots (sans formules)."""
+    guessed = (title or "").strip() or guess_title(text)
+    words = " ".join(filter(None, [first_author(text), re.sub(r"\$[^$]*\$", " ", guessed)]))
+    return re.sub(r"\s+", " ", words).strip()[:200]
+
+
+def zbmath_search(text, title=""):
+    """Adresse de la recherche zbMATH remplie pour une référence."""
+    query = zbmath_query(text, title)
+    return f"{ZBMATH}/?q={quote(query)}" if query else f"{ZBMATH}/"
+
+
+def reference_zbmath(text, title="", match=None):
+    """Référence de bibliographie dans zbMATH : {"zbl", "url"}. La page du document que la recherche de citations de
+    zbMATH trouve sûrement (probabilité ≥ ZBMATH_SURE), sinon sa recherche ordinaire, déjà remplie (zbl None). Sa page
+    de recherche de citations ne se remplit pas depuis l'adresse : elle n'est plus ouverte."""
+    fallback = {"zbl": None, "url": zbmath_search(text, title)}
+    cited = re.sub(r"\s+", " ", re.sub(r"\$[^$]*\$", " ", text or "")).strip()[:1000]
+    if not cited:
+        return fallback
+    best = (((match or _zbmath_match)(cited) or {}).get("results") or [None])[0] or {}
+    zbl = str(best.get("zbl_id") or "")
+    if ZBL_ID.match(zbl) and float(best.get("probability") or 0) >= ZBMATH_SURE:
+        return {"zbl": zbl, "url": f"{ZBMATH}/?q={quote('an:' + zbl)}"}
+    return fallback
+
+
 def reference_arxiv(text, title="", doi="", api_key=None, get_s2=None):
     """Version arXiv d'une référence de bibliographie, pour la page Recherche : {"arxivId", "title", "author"}.
     Semantic Scholar : par DOI, sinon par titre (le titre trouvé doit figurer dans la référence) ; arxivId None si
