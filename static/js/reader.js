@@ -1441,6 +1441,9 @@ class Reader {
     const front = !wantsNewTab(event) || event.shiftKey;
     if (link.dataset.loading) return;
     link.dataset.loading = "1";
+    // toujours un nouvel onglet : dans un navigateur, ouvert tout de suite (pendant le clic, sinon il serait bloqué),
+    // puis mené à la page Recherche quand la référence est cherchée
+    const tab = nativeBridge ? null : window.open("", "_blank");
     try {
       const found = await api.referenceArxiv(entry);
       const terms = found.arxivId ? [{ field: "id", value: found.arxivId, op: "and" }]
@@ -1449,8 +1452,13 @@ class Reader {
       this.hidePreview();
       // tout encodé (même ! ' ( ) *) : l'application Mac ou Windows n'ouvre un onglet que sur une adresse sans autres signes
       const encoded = encodeURIComponent(JSON.stringify(terms)).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
-      openRoute(`#/search?terms=${encoded}`, Boolean(nativeBridge), front);
+      const route = `#/search?terms=${encoded}`;
+      if (tab) {
+        tab.opener = null;
+        tab.location.href = `${location.origin}${location.pathname}${route}`;
+      } else openRoute(route, true, front);
     } catch (error) {
+      tab?.close();
       toastError(error);
     } finally {
       delete link.dataset.loading;
