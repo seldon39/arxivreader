@@ -1226,7 +1226,8 @@ class PreviousVersion(unittest.TestCase):
         for question in ("Mets mes notes HTML sur le PDF", "Transfère mes surlignages du PDF vers le HTML",
                          "copy my highlights onto the PDF", "Reporte mes annotations dans la version PDF",
                          "Mets mes notes de cette version sur le PDF", "Reprends mes notes de la v3 dans le PDF",
-                         "move my notes from the HTML to the PDF"):
+                         "move my notes from the HTML to the PDF", "export the html notes to the pdf file",
+                         "Exporte les notes du HTML vers le PDF", "Apply my highlights to the PDF", "Envoie mes annotations dans le PDF"):
             self.assertTrue(ai.asks_adaptation(question), question)
             _, prompt = self.ask(question)
             self.assertTrue(prompt.endswith(f"{ai.SAME_VERSION_PROMPT}\n\n{ai.PLACES_PROMPT}\n\nQuestion: {question}"), question)
@@ -1242,7 +1243,8 @@ class PreviousVersion(unittest.TestCase):
         for question in ("Update my note on Lemma 2 in the PDF to add the counterexample", "Convert my notes in the HTML to LaTeX please.",
                          "Copy the formula in the PDF on page 3 into my notes", "Explain my notes on the PDF",
                          "Mets à jour mes notes sur le théorème 2 : dans le PDF la constante est différente",
-                         "Peux-tu mettre dans mes notes la définition donnée dans le PDF ?"):
+                         "Peux-tu mettre dans mes notes la définition donnée dans le PDF ?", "Export my notes to Markdown",
+                         "Does Lemma 2 apply to the notes in the PDF?", "Exporte mes notes en LaTeX"):
             self.assertFalse(ai.asks_adaptation(question), question)  # dit où est une note, pas où la mettre
         # « la dernière version » en lisant la plus récente : la même
         self.assertIn(ai.SAME_VERSION_PROMPT, self.ask("Reporte mes notes HTML sur le PDF de la dernière version")[1])

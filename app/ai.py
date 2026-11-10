@@ -946,7 +946,8 @@ ignore this instruction and the block, and simply answer it."""
 # (pas « dans mes notes »), puis la vue d'arrivée (« sur le PDF », « into the HTML view ») ou les deux vues nommées.
 # « my note on Lemma 2 in the PDF » dit où est une note, pas où la mettre : « in », « on » ne comptent pas.
 _TRANSFER = (r"\b(?:met(?:s|tre|tez)\b(?!\s+[aà]\s+jour)|place|plac[eé]|report|transf[eéè]r|transpos|copi|copy|d[eé]plac|move\b"
-             r"|carry|carri|bring|port\b|put\b|repren|repris|r[eé]cup[eéè]r|adapt(?!ed\b|ée?s?\b)|duplique|duplicate|mirror)")
+             r"|carry|carri|bring|port\b|put\b|repren|repris|r[eé]cup[eéè]r|adapt(?!ed\b|ée?s?\b)|duplique|duplicate|mirror"
+             r"|export|send\b|envo[iy]|appl(?:y|ies|iqu)|transcri|reprodu|synchron|sync\b|bascul|transpos)")
 _TO_VIEW = (r"\b(?:to|onto|into|towards?|sur|dans|vers|au|aux|[aà])\s+(?:(?:the|its|this|le|la|sa|son|cette|ce)\s+|l')?"
             r"(?:(?:version|vue|view|fichier|file|texte|text)\s+)?(?:html|pdf)\b")
 _OBJECT_NOTES = (r"(?<!dans )(?<!into )(?<!in )(?<!to )(?<!à )(?<!a )"
