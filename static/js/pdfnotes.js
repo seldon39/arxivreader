@@ -306,6 +306,7 @@ export class PdfNotes {
         const content = await page.getTextContent({ includeMarkedContent: true, disableNormalization: true });
         const starts = [];
         const tops = [];
+        const items = [];  // morceaux de texte : position dans le texte de la page et place sur la page (points du PDF)
         let at = 0;
         for (const item of content.items) {
           const length = (item.str || "").length;
@@ -313,6 +314,8 @@ export class PdfNotes {
             const [, y] = viewport.convertToViewportPoint(item.transform[4], item.transform[5]);
             starts.push(at);
             tops.push((y - Math.hypot(item.transform[2], item.transform[3])) / viewport.height);  // haut de la ligne
+            items.push({ start: at, end: at + length, x: item.transform[4], y: item.transform[5], width: item.width || 0,
+              height: item.height || Math.hypot(item.transform[2], item.transform[3]) });
           }
           at += length;
         }
@@ -327,10 +330,49 @@ export class PdfNotes {
           }
           return tops[low];
         };
-        return { viewport, heightAt };
+        return { viewport, heightAt, items };
       })().catch(() => null));
     }
     return this.pages.get(number);
+  }
+
+  // passage situé dans le PDF ({page, start, endPage, end}) : rectangle qui couvre ses lignes sur sa première page
+  // (fractions de la page depuis le haut à gauche, comme une zone dessinée) et point où épingler une note (début du
+  // passage, en points du PDF) ; null si le passage n'a pas de texte placé sur la page
+  async placeOf(target) {
+    const app = await this.view.ready();
+    const page = app && await this.geometry(app, target.page);
+    if (!page) return null;
+    // fractions de la page telle qu'elle est affichée (rotation choisie dans pdf.js comprise), comme une zone dessinée
+    const pdfPage = await app.pdfDocument.getPage(target.page);
+    const viewport = pdfPage.getViewport({ scale: 1, rotation: (pdfPage.rotate + (app.pdfViewer.pagesRotation || 0)) % 360 });
+    const end = (target.endPage ?? target.page) > target.page ? Infinity : target.end;
+    const boxes = [];  // une boîte par morceau de texte du passage, dans l'ordre du texte
+    let first = null;
+    for (const item of page.items) {
+      if (item.end <= target.start || item.start >= end) continue;
+      const length = item.end - item.start;
+      // morceau coupé par le début ou la fin du passage : sa part, en proportion des caractères
+      const from = Math.max(0, target.start - item.start) / length, to = Math.min(length, end - item.start) / length;
+      const corners = [[item.x + item.width * from, item.y - 0.25 * item.height], [item.x + item.width * to, item.y + item.height]]
+        .map(([x, y]) => viewport.convertToViewportPoint(x, y));
+      boxes.push([Math.min(corners[0][0], corners[1][0]), Math.min(corners[0][1], corners[1][1]),
+        Math.max(corners[0][0], corners[1][0]), Math.max(corners[0][1], corners[1][1]), item.height]);
+      first ??= { left: item.x + item.width * from, top: item.y + item.height };
+    }
+    if (!boxes.length) return null;
+    // passage qui passe à la colonne suivante (texte qui remonte, à droite de ce qui précède) : seulement la partie où il
+    // commence, sinon le rectangle couvrirait les deux colonnes
+    let box = boxes[0].slice(0, 4);
+    for (const [x0, y0, x1, y1, height] of boxes.slice(1)) {
+      if (y1 < box[1] - 2 * height && x0 > box[0] + (box[2] - box[0]) / 2) break;
+      box = [Math.min(box[0], x0), Math.min(box[1], y0), Math.max(box[2], x1), Math.max(box[3], y1)];
+    }
+    const pad = 4;  // un peu de marge autour du texte (points)
+    const rect = [(box[0] - pad) / viewport.width, (box[1] - pad) / viewport.height, (box[2] + pad) / viewport.width, (box[3] + pad) / viewport.height]
+      .map((value) => Math.min(1, Math.max(0, value)));
+    if (!(rect[0] < rect[2] && rect[1] < rect[3])) return null;
+    return { rect, top: first.top, left: first.left };
   }
 
   // boîte de la page sans sa bordure (celle de la couche de texte), en coordonnées du cadre
@@ -653,6 +695,33 @@ export class PdfNotes {
   async addHighlight({ target, quote, color = "yellow", note = null, author = null }) {
     const annotation = await api.addAnnotation(this.annotator.paperId, { kind: "highlight", target: { pdf: target }, color,
       quote: Array.from(quote).slice(0, 1500).join(""), note, author });  // sans couper un caractère en deux
+    this.annotator.items.push(annotation);
+    this.repaint(annotation);
+    this.annotator.onChange();
+    return annotation;
+  }
+
+  // zone proposée par l'assistant (adaptation des notes) : rectangle autour des lignes du passage situé dans le PDF,
+  // avec son image comme une zone dessinée ; null si le passage n'a pas de place sur la page
+  async addZone({ target, quote, color = "yellow", note = null, author = null }) {
+    const place = await this.placeOf(target);
+    if (!place || !this.app) return null;
+    const zone = { page: target.page, rect: place.rect };
+    const image = await this.zoneImage(zone).catch(() => null);
+    const annotation = await api.addAnnotation(this.annotator.paperId, { kind: "highlight", target: { pdf: zone }, color,
+      quote: Array.from(quote || "").slice(0, 1500).join("") || null, note, author, image });
+    this.annotator.items.push(annotation);
+    this.repaint(annotation);
+    this.annotator.onChange();
+    return annotation;
+  }
+
+  // note épinglée proposée par l'assistant : au début du passage situé dans le PDF
+  async addPin({ target, note }) {
+    const place = await this.placeOf(target);
+    if (!place) return null;
+    const annotation = await api.addAnnotation(this.annotator.paperId, { kind: "note", note,
+      target: { pdf: { page: target.page, top: place.top, left: place.left }, version: this.annotator.version ?? null } });
     this.annotator.items.push(annotation);
     this.repaint(annotation);
     this.annotator.onChange();

@@ -22,7 +22,7 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup, Comment, NavigableString, Tag
 
-from . import annotations, export, localpdf, db, library, providers, texfile
+from . import annotations, export, latexml, localpdf, db, library, providers, texfile
 from .config import LIBRARY
 from .structure import defines_macro, passage_elements, top_sections
 
@@ -825,9 +825,19 @@ _MENTIONS_COMPILATION = re.compile(r"\brecompil|\b(?:previous|last|new|earlier|o
 
 
 def asks_adaptation(question, tex=False):
+    # « mets mes notes HTML sur le PDF » : notes à reporter dans l'autre vue de l'article (_same_version)
+    return _asks_other_version(question, tex) or (not tex and _asks_view_change(question))
+
+
+def _asks_other_version(question, tex=False):
+    """Notes d'une autre version (ou, `tex`, de la compilation précédente) à adapter."""
     mentions = (_MENTIONS_VERSION, _MENTIONS_COMPILATION) if tex else (_MENTIONS_VERSION,)
     return any(_ADAPT_DIRECTLY.search(sentence) or (any(m.search(sentence) for m in mentions) and _ADAPT_NEAR.search(sentence))
-               for sentence in re.split(r"[.?!;](?=\s*$|\s+[A-ZÀ-Ý])", question))  # pas après « Thm. 3 », « v. 1 » ni « cf. la v1 »
+               for sentence in _sentences(question))
+
+
+def _sentences(question):
+    return re.split(r"[.?!;](?=\s*$|\s+[A-ZÀ-Ý])", question)  # pas après « Thm. 3 », « v. 1 » ni « cf. la v1 »
 
 
 # relance d'une adaptation, dans son fil : les blocs sont joints à nouveau (l'historique n'a plus les notes d'origine)
@@ -867,8 +877,8 @@ In the reader's language, explain briefly what changed between the two versions 
 annotations that were not found. End your answer with the annotations block (format in your instructions) holding \
 those to place on the version being read: quotes copied from <paper>, not from <previous_version>; statement labels \
 as they are in <paper>; the colour of the original annotation. Do not propose reading states. That block only holds \
-passages and statements: give a general reading note (kind="general") in your answer instead, and leave out of the \
-block bookmarks and annotations that have only a reading state.
+passages, statements, zones and pinned notes: give a general reading note (kind="general") in your answer instead, \
+and leave out of the block bookmarks and annotations that have only a reading state.
 
 If the reader's message is in fact not such a request (an ordinary question that happens to mention their notes), \
 ignore this instruction and the two blocks, and simply answer it."""
@@ -876,6 +886,120 @@ ignore this instruction and the two blocks, and simply answer it."""
 
 def _neutral(text):
     return PREVIOUS_TAGS.sub(lambda m: m.group(0).replace("<", "&lt;"), text)  # ne referme pas le bloc
+
+
+# ---------- Vues HTML et PDF : notes reprises d'une vue à l'autre (même version ou non), placées par l'application ----------
+
+PLACES_PROMPT = """Besides passages and notes on statements (format in your instructions), the block may hold:
+- a zone of the PDF: {"surface": "pdf", "zone": true, "quote": "<passage of <paper> whose lines the zone covers: for a \
+formula or a figure, from the words just before it to the words just after it>", "color": "<colour>", "note": "<note>"}; \
+the application draws the rectangle around the lines of that passage;
+- a pinned note, with no highlighted passage: {"surface": "html" or "pdf", "pin": true, "quote": "<a few words of \
+<paper> where the note goes>", "note": "<the note>"}.
+A passage placed in the PDF is found there by its words only (formulas, references and citations are skipped): quote a \
+passage with several words of text that occur only once in the paper. An entry placed in the PDF may give "page": \
+<page of the PDF of the version being read> when you know it, to help find the passage. In the HTML, a zone becomes the \
+passage it covered (a highlight). Annotations are only placed on the version being read (<paper>): if the reader \
+wants them on another version, tell them to open that version and ask again there, and give no block."""
+
+VIEWS_PROMPT = """The version being read has two views: its HTML text and its PDF. In <previous_annotations>, each \
+annotation made on a passage or a place says in which view it was made: surface="html" or surface="pdf" \
+(zone="yes": a rectangle drawn on a region of a PDF page; its quote, if any, is the text the PDF gives inside it, often \
+garbled for formulas). Notes on statements (kind="block") belong to their statement and appear in both views. {which}\
+Unless the reader says where to place them, place each annotation in the view where it was made. Give each entry of \
+the block "surface": "html" or "pdf": the view of the version being read where the application places it."""
+
+DEFAULT_VIEW = """Unless the reader says which ones to carry over (those of the PDF, or all of them), take only those \
+made on the HTML (surface="html") with the notes on statements, and end your explanation, just before the block, with \
+one short sentence in the reader's language saying so and offering to do the same with the notes of the PDF, such as \
+"J'ai repris les notes posées sur la version HTML. Si vous pensiez à celles du PDF, précisez-le et je les reprendrai." \
+(in English: "I carried over the notes made on the HTML version. If you meant those on the PDF, say so and I will \
+carry them over."). """
+
+ONE_VIEW = """The version being read only has its {view}: every annotation is placed there, whatever the view it was \
+made in (surface="html" or surface="pdf" in <previous_annotations>; zone="yes": a rectangle drawn on a region of a PDF \
+page, its quote, if any, being the text the PDF gives inside it). Give each entry of the block "surface": "{surface}"."""
+
+SAME_VERSION_PROMPT = """The reader asks to carry over their annotations of the version being read from one of its \
+views to the other: from its HTML text to its PDF, or from its PDF to its HTML text. They are listed in \
+<previous_annotations>, each with the view where it was made: surface="html" or surface="pdf" (zone="yes": a \
+rectangle drawn on a region of a PDF page; its quote, if any, is the text the PDF gives inside it, often garbled for \
+formulas).
+
+Take as the source the view the reader names as the origin; if they only name the destination, the other view. Leave \
+out notes on statements (kind="block"): they belong to their statement and already appear in both views. Leave out \
+bookmarks, the general reading note and annotations that already have their counterpart in the destination (same \
+passage, same note). The originals stay where they are.
+
+A note must be reproduced word for word. Never invent content. To an annotation of author="user", add "author": \
+"reader" in the block below, so that it stays the reader's; never add that field to any other entry.
+
+In the reader's language, say briefly what you carried over and list what could not be placed (for example a zone \
+around a figure without text) with the reason. End your answer with the annotations block (format in your \
+instructions), each entry with "surface": the destination view, quotes copied from <paper>, and the colour of the \
+original annotation. Do not propose reading states.
+
+If the reader's message is in fact not such a request (an ordinary question that happens to mention their notes), \
+ignore this instruction and the block, and simply answer it."""
+
+# Transfert d'une vue à l'autre : verbe de transfert (pas « mets à jour », « update », « convert »), les notes en objet
+# (pas « dans mes notes »), puis la vue d'arrivée (« sur le PDF », « into the HTML view ») ou les deux vues nommées.
+# « my note on Lemma 2 in the PDF » dit où est une note, pas où la mettre : « in », « on » ne comptent pas.
+_TRANSFER = (r"\b(?:met(?:s|tre|tez)\b(?!\s+[aà]\s+jour)|place|plac[eé]|report|transf[eéè]r|transpos|copi|copy|d[eé]plac|move\b"
+             r"|carry|carri|bring|port\b|put\b|repren|repris|r[eé]cup[eéè]r|adapt(?!ed\b|ée?s?\b)|duplique|duplicate|mirror)")
+_TO_VIEW = (r"\b(?:to|onto|into|towards?|sur|dans|vers|au|aux|[aà])\s+(?:(?:the|its|this|le|la|sa|son|cette|ce)\s+|l')?"
+            r"(?:(?:version|vue|view|fichier|file|texte|text)\s+)?(?:html|pdf)\b")
+_OBJECT_NOTES = (r"(?<!dans )(?<!into )(?<!in )(?<!to )(?<!à )(?<!a )"
+                 r"\b(?:annotations\b|surlignages\b|surlign[eé]s\b|(?:my|our|mes|nos|the|les|ces|these)\s+(?:(?!lecture\b)\w+\s+)?"
+                 r"(?:notes|annotations|highlights|surlignages|commentaires|comments|remarques)\b(?!\s+de\s+cours))")
+_VIEW_CHANGE = re.compile(rf"{_TRANSFER}.{{0,80}}?{_OBJECT_NOTES}.{{0,80}}?{_TO_VIEW}"
+                          rf"|{_TRANSFER}.{{0,80}}?{_OBJECT_NOTES}(?=.*\bhtml\b)(?=.*\bpdf\b)", re.I | re.S)
+
+
+def _asks_view_change(question):
+    return any(_VIEW_CHANGE.search(sentence) for sentence in _sentences(question))
+_THIS_VERSION = re.compile(r"\b(?:cette|this|the\s+current|current|la\s+m[eê]me|the\s+same|same)\s+version\b"
+                           r"|\bversion\s+(?:actuelle|courante|lue|en\s+cours)\b", re.I)
+_VIEW_NAMED = re.compile(r"\b(?:versions?|vues?|views?)\s+(?:html|pdf)\b|\b(?:html|pdf)\s+(?:versions?|views?)\b", re.I)
+
+
+def _views(paper):
+    """Vues d'une version dans l'application : « html » (page d'arXiv, ou version HTML expérimentale prête d'un fichier
+    TeX) et/ou « pdf » ; comme le lecteur (texOnly, viewSwitch dans reader.js)."""
+    html = (library.paper_dir(paper["id"]) / "content.html").exists() \
+        or (paper.get("source") in latexml.SOURCES and latexml.state(paper) == "ready")
+    pdf = paper.get("source") not in (None, "none", library.PENDING)
+    return tuple(view for view, present in (("html", html), ("pdf", pdf)) if present)
+
+
+def _other_version_meant(paper, question):
+    """La demande parle d'une autre version que celle lue (« de la v2 », « version précédente ») — pas de « la version
+    PDF » ni de la version lue elle-même."""
+    if any(n != paper["version"] for n in _versions_named(question)):
+        return True
+    rest = VERSION_NAMED.sub(" ", _THIS_VERSION.sub(" ", _VIEW_NAMED.sub(" ", question)))
+    if not paper.get("archived_of"):  # version la plus récente : « la dernière version » est celle lue
+        rest = _NEWEST.sub(" ", rest)
+    return bool(_MENTIONS_VERSION.search(rest))
+
+
+def _versions_named(question):
+    return [int(digits) if digits else ORDINAL_VERSION.get(word.lower(), 1) for digits, word, after in VERSION_NAMED.findall(question)]
+
+
+def _same_version(paper, question):
+    """Notes de la version lue à reporter d'une vue à l'autre (« mets mes notes HTML sur le PDF »)."""
+    return len(_views(paper)) == 2 and not _other_version_meant(paper, question) and _asks_view_change(question)
+
+
+def _views_prompt(source, paper):
+    """Consigne sur les vues pour une adaptation entre versions : où sont les notes de `source`, où les placer."""
+    views = _views(paper)
+    if len(views) == 1:
+        return ONE_VIEW.format(view="PDF" if views[0] == "pdf" else "HTML text", surface=views[0])
+    items = [a for a in annotations.list_for(source["id"]) if a["kind"] in ("highlight", "note")]  # marque-pages : pas repris
+    both = any((a["target"] or {}).get("pdf") for a in items) and any(not (a["target"] or {}).get("pdf") for a in items)
+    return VIEWS_PROMPT.format(which=DEFAULT_VIEW if both else "")
 
 
 def _version_to_adapt(paper, question):
@@ -886,8 +1010,7 @@ def _version_to_adapt(paper, question):
     notes = annotations.counts()
     versions = {v["version"]: v for v in (main, *db.archives_of(main["id"]))
                 if v["id"] != paper["id"] and v["source"] != library.PENDING and notes.get(v["id"])}
-    named = [int(digits) if digits else ORDINAL_VERSION.get(word.lower(), 1) for digits, word, after in VERSION_NAMED.findall(question)]
-    named = [n for n in named if n != paper["version"]]
+    named = [n for n in _versions_named(question) if n != paper["version"]]
     if named:
         return versions.get(named[0])
     return versions.get(max((n for n in versions if n < paper["version"]), default=min(versions, default=None)))
@@ -916,7 +1039,10 @@ def _annotations_block(version):
         target = item["target"] or {}
         on, label = place(target)
         bookmark = item["kind"] == "bookmark"  # marque-page : son nom est dans `quote`
-        fields = {"n": number, "kind": item["kind"], "on": on, "label": label, "page": (target.get("pdf") or {}).get("page"),
+        pdf = target.get("pdf") or {}
+        view = ("pdf" if pdf else "html") if item["kind"] in ("highlight", "note", "bookmark") else None
+        fields = {"n": number, "kind": item["kind"], "surface": view, "zone": "yes" if pdf.get("rect") else None,
+                  "on": on, "label": label, "page": pdf.get("page"),
                   "name": item["quote"] if bookmark else None,
                   "author": "assistant" if item["author"] or ASSISTANT_NOTE.match(item["note"] or "") else "user",
                   "color": item["color"], "state": item["state"]}
@@ -1030,13 +1156,25 @@ def _adapting(paper, question, room, thread=()):
         previous = tex_body((folder / texfile.PREVIOUS_SOURCE).read_text(encoding="utf-8"))
         text = _neutral(_cut_middle(previous, room))
         return TEX_ADAPT_PROMPT, (f'<previous_version version="previous compilation">\n{text}\n</previous_version>', listing)
+    if not _views(paper):  # article sans texte (résumé seul) : rien où placer des notes
+        return ()
+    # même version, de sa vue HTML à son PDF (ou l'inverse) : son texte est déjà joint ; une relance qui nomme une
+    # version (« Réessaie avec la v1 ») va à l'autre circuit
+    if _same_version(paper, asked) and not _other_version_meant(paper, question):
+        if not any(a["kind"] in ("highlight", "note") for a in annotations.list_for(paper["id"])):
+            return ()
+        return f"{SAME_VERSION_PROMPT}\n\n{PLACES_PROMPT}", (_annotations_block(paper),)
+    # demande qui ne parlait que des vues (article à une seule vue) : pas une adaptation d'une autre version
+    if not (_asks_other_version(asked) or _other_version_meant(paper, question)):
+        return ()
     version = _version_to_adapt(paper, f"{question} {asked}")  # une version nommée dans la relance d'abord
     if version is None:
         return ()
     listing = _annotations_block(version)
-    room = max(0, room - len(listing) - len(ADAPT_PROMPT) - len(question))
+    instruction = f"{ADAPT_PROMPT}\n\n{_views_prompt(version, paper)}\n\n{PLACES_PROMPT}"
+    room = max(0, room - len(listing) - len(instruction) - len(question))
     text = _neutral(_cut_middle(_load(version["id"])[2], room))
-    return ADAPT_PROMPT, (f'<previous_version version="{version["version"]}">\n{text}\n</previous_version>', listing)
+    return instruction, (f'<previous_version version="{version["version"]}">\n{text}\n</previous_version>', listing)
 
 
 # ---------- Question sur une autre version de l'article : son texte est joint (téléchargé au besoin) ----------

@@ -450,6 +450,37 @@ export class Annotator {
     } catch (error) { toastError(error); }
   }
 
+  // note épinglée proposée par l'assistant (adaptation des notes) : sur le paragraphe où commence le passage cité ;
+  // ce paragraphe a déjà la sienne → texte ajouté à la suite. Renvoie {annotation, previous} (previous : texte d'avant),
+  // ou {block} : énoncé ou preuve, dont la note reçoit le texte
+  async addPin(range, note) {
+    const start = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement;
+    // dans un énoncé ou une preuve : leur note (comme un clic à la main, openFreeNote) — l'appelant l'écrit
+    const block = start?.closest(".ltx_theorem[id], .ltx_proof[id]");
+    if (block && this.content.contains(block)) return { block: block.id };
+    const element = start?.closest(".ltx_para[id], .ltx_abstract[id], section[id]");
+    if (!element || !this.content.contains(element)) return null;
+    const existing = this.items.find((a) => a.kind === "note" && a.target?.id === element.id);
+    if (existing) {
+      const previous = existing.note || "";
+      await this.setFreeNote(existing.id, previous ? `${previous}\n\n---\n\n${note}` : note);
+      return { annotation: existing, previous };
+    }
+    const annotation = await api.addAnnotation(this.paperId, { kind: "note", note, target: { id: element.id, version: this.version ?? null } });
+    this.items.push(annotation);
+    this.paintFreeNotes();
+    this.onChange();
+    return { annotation, previous: null };
+  }
+
+  // texte d'une note libre remplacé (assistant : note ajoutée à la suite, puis remise par « Annuler »)
+  async setFreeNote(id, note) {
+    const annotation = this.items.find((a) => a.id === id);
+    if (!annotation) return;
+    Object.assign(annotation, await api.updateAnnotation(id, { note }));
+    this.onChange();
+  }
+
   paintFreeNotes() {
     this.content.querySelectorAll(".free-note").forEach((button) => button.remove());
     this.content.querySelectorAll(".fn-anchor").forEach((element) => element.classList.remove("fn-anchor"));
@@ -769,6 +800,7 @@ export class Annotator {
     const removed = this.items.find((a) => a.id === id);
     this.items = this.items.filter((a) => a.id !== id);
     if (removed) this.pdf?.removed(removed);
+    if (removed?.kind === "note" && !removed.target?.pdf) this.paintFreeNotes();
     this.onChange();
   }
 

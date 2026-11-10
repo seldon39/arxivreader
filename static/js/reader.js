@@ -145,7 +145,9 @@ class Reader {
       navigate: (id) => this.navigate(id),
       onChange: (options) => this.onAssistantChange(options),
       inPdf: () => this.pdfMode,
-      pdfQuote: this.texOnly ? (quote, near) => this.pdfQuote(quote, near) : null,
+      // vues où l'assistant peut placer des notes : le PDF aussi pour un article qui a les deux (chargé au besoin)
+      views: this.texOnly ? ["pdf"] : this.viewSwitch ? ["html", "pdf"] : ["html"],
+      pdfQuote: this.texOnly || this.viewSwitch ? (quote, near) => this.pdfQuote(quote, near) : null,
       contextPages: (center, signal) => this.contextPages(center, signal),
       currentPage: () => this.pdf?.frame.contentWindow?.PDFViewerApplication?.pdfViewer?.currentPageNumber || null,
       readingChapter: () => this.readingChapter(),
@@ -293,14 +295,7 @@ class Reader {
       const from = this.wordAt(this.htmlText, anchor, save);
       this.pdfMode = true;
       this.root.dataset.view = "pdf";
-      if (!this.pdf) {
-        this.pdf = new PdfView(this.pdfUrl(), this.paper.title);
-        // à l'ouverture (vue PDF gardée), l'annotateur n'existe pas encore : PdfNotes créé juste après lui
-        if (this.annotator) this.pdfNotes = this.makePdfNotes();
-        this.pdfView = h("div", { class: "paper pdf-mode pdf-view" }, this.pdf.frame);
-        this.scroller.append(this.pdfView);
-        this.followPdf();
-      }
+      if (!this.pdf) this.createPdf();
       scrollTo({ top: 0, behavior: "instant" });
       await this.loadPages();
       if (!current()) return;
@@ -364,6 +359,24 @@ class Reader {
   }
 
   // Lecture dans le PDF : la position de lecture suit (même article rouvert plus tard, dans le HTML ou le PDF)
+  // vue PDF d'un article qui a aussi son HTML : créée au premier passage dans le PDF, ou avant (masquée) quand
+  // l'assistant doit y placer des notes
+  createPdf() {
+    this.pdf = new PdfView(this.pdfUrl(), this.paper.title);
+    // à l'ouverture (vue PDF gardée), l'annotateur n'existe pas encore : PdfNotes créé juste après lui
+    if (this.annotator) this.pdfNotes = this.makePdfNotes();
+    this.pdfView = h("div", { class: "paper pdf-mode pdf-view" }, this.pdf.frame);
+    this.scroller.append(this.pdfView);
+    this.followPdf();
+  }
+
+  // PDF chargé sans quitter le HTML (masqué) : notes de l'assistant à y placer
+  ensurePdf() {
+    if (this.pdf || this.texOnly || !this.viewSwitch || this.destroyed) return;
+    this.createPdf();
+    this.pdf.load(1);
+  }
+
   followPdf() {
     const follow = debounce(async (location) => {
       if (!this.pdfMode || this.destroyed) return;
@@ -2499,6 +2512,7 @@ class Reader {
   // réglages que la couche de texte de pdf.js : positions identiques à celles des passages surlignés à la main. Lu une
   // fois (la promesse est gardée : deux recherches simultanées ne relisent pas le PDF ; un échec est réessayé)
   pdfLetters() {
+    this.ensurePdf();
     this.pdfLettersDone ||= this.readPdfLetters().then((result) => {
       if (!result) this.pdfLettersDone = null;
       return result;

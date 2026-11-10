@@ -93,6 +93,8 @@ const modelOf = (provider) => modelFor({ ...settings, aiProvider: provider });
 
 // Livre : relecture, résumé de tous les chapitres en parallèle (tâche du serveur, bookjob) ; cible de la synthèse
 // question qui parle de notes, ou relance : seule une telle demande peut rendre au lecteur une note (author = "reader")
+// en-tête d'une note écrite par un assistant (« **Claude** — *non vérifié* », « **Claude Opus · Résumé** — … »)
+const ASSISTANT_HEADER = /^\s*\*\*[^*\n]{1,80}\*\* — /;
 const ABOUT_NOTES = /\b(?:notes?|annotations?|surlign|highlights?|remarques?|relectures?|reviews?|comments?|commentaires?|refai|recommenc|r[eé]essa|retente|redo|retry|try\s+again|do\s+it\s+again|once\s+more|encore\s+une\s+fois|essa[iy]e\s+encore|de\s+nouveau)/i;
 const BOOK = "@book";
 const SECTIONS = "@sections";  // article, menu Portée : toutes les sections en parallèle, puis synthèse
@@ -127,12 +129,14 @@ function readyPartners(provider) {
 export class Assistant {
   // `inPdf()` : article lu dans son PDF (la consigne mentionne alors les zones) ; `contextPages(center)` : pages du
   // PDF autour de `center` (page affichée si null), en images, pour un article sans texte (scan)
-  // `pdfQuote(quote)` : article lu dans son seul PDF (fichier TeX) — passage proposé cherché dans le PDF par ses mots,
-  // { target, text } ou null ; les passages proposés y sont surlignés (sinon dans le HTML)
+  // `pdfQuote(quote, near)` : passage proposé cherché dans le PDF par ses mots, { target, text } ou null (le PDF est
+  // chargé au besoin) ; `views` : vues où placer les propositions — ["pdf"] pour un article lu dans son seul PDF,
+  // ["html", "pdf"] pour un article qui a les deux (chaque proposition dit la sienne : `surface`, sinon le HTML)
   constructor({ paper, structure, find, navigate, annotator, onChange, equationIds, inPdf = () => false, contextPages = null,
-    currentPage = null, readingChapter = () => null, pdfQuote = null }) {
+    currentPage = null, readingChapter = () => null, pdfQuote = null, views = ["html"] }) {
     this.paper = paper;
     this.pdfQuote = pdfQuote;
+    this.views = pdfQuote ? views : views.filter((view) => view !== "pdf");
     this.inPdf = inPdf;
     this.currentPage = currentPage;  // page du PDF qu'on lit
     this.readingChapter = readingChapter;  // livre : chapitre de l'endroit lu (résumé, relecture de ce chapitre par défaut)
@@ -1401,14 +1405,21 @@ export class Assistant {
     const byLabel = new Map(this.structure.nodes.map((n) => [normalize(n.label), n]));
     // résultat de la recherche gardé avec la réponse (l'onglet se redessine souvent)
     // article lu dans son PDF : passages cherchés dans le PDF (en attente : undefined, case grisée), puis nouveau rendu
+    // passages à placer dans le PDF : cherchés dans son texte (en attente : undefined, case grisée), puis nouveau rendu
     exchange.found ||= proposals.map((proposal) => (!proposal.quote ? null
-      : this.pdfQuote ? undefined : Boolean(rangeForQuote(content, proposal.quote, this.scopesOf(exchange)))));
-    if (this.pdfQuote && !exchange.locating && exchange.found.includes(undefined)) {
-      exchange.locating = Promise.all(proposals.map((proposal) => (proposal.quote ? this.pdfQuote(proposal.quote, this.replacedPlace(proposal)).catch(() => null) : null)))
-        .then((spots) => { exchange.found = spots.map((spot, i) => (proposals[i].quote ? Boolean(spot) : null)); this.onChange(); });
+      : this.surfaceOf(proposal) === "pdf" ? undefined : Boolean(rangeForQuote(content, proposal.quote, this.scopesOf(exchange)))));
+    if (!exchange.locating && exchange.found.includes(undefined)) {
+      const before = exchange.found;
+      exchange.locating = Promise.all(proposals.map((proposal, i) => (before[i] === undefined
+        ? this.pdfQuote(proposal.quote, this.nearOf(proposal)).catch(() => null) : null)))
+        .then((spots) => { exchange.found = before.map((found, i) => (found === undefined ? Boolean(spots[i]) : found)); this.onChange(); });
     }
     const rows = proposals.map((proposal, i) => {
-      if (proposal.quote) return { proposal, found: exchange.found[i], kind: "highlight" };
+      if (proposal.quote) {
+        const view = this.surfaceOf(proposal);
+        const kind = proposal.pin ? "pin" : proposal.zone && view === "pdf" ? "zone" : "highlight";
+        return { proposal, found: exchange.found[i], kind, view };
+      }
       const node = byLabel.get(normalize(proposal.statement));
       const proofId = node?.proofs[0];
       const onProof = Boolean(proposal.on === "proof" && proofId && this.find(proofId)?.matches(".ltx_proof"));
@@ -1416,25 +1427,32 @@ export class Assistant {
       return { proposal, found: Boolean(id && this.find(id)), kind: "note", id, node, onProof };
     });
     const applied = Boolean(exchange.applied);
-    const boxes = rows.map((row) => h("input", { type: "checkbox", checked: row.found && !applied, disabled: !row.found || applied }));
+    // cases décochées par le lecteur : gardées quand le panneau est redessiné (fin de la recherche dans le PDF)
+    exchange.unchecked ||= new Set();
+    const boxes = rows.map((row, i) => h("input", { type: "checkbox", checked: row.found && !applied && !exchange.unchecked.has(i), disabled: !row.found || applied }));
     const count = () => boxes.filter((b) => b.checked && !b.disabled).length;
     const apply = h("button", { class: "button small-button primary", type: "button" });
+    // passages encore cherchés dans le PDF : pas d'application partielle (l'échange serait marqué appliqué sans eux)
+    const locating = () => exchange.found.includes(undefined);
     const label = () => {
-      apply.textContent = exchange.applied ? t("ai.proposals.applied") : t("ai.proposals.apply", { n: count() });
-      apply.disabled = Boolean(exchange.applied) || !count();
+      apply.textContent = exchange.applied ? t("ai.proposals.applied") : locating() ? t("ai.proposals.locating") : t("ai.proposals.apply", { n: count() });
+      apply.disabled = Boolean(exchange.applied) || locating() || !count();
     };
-    boxes.forEach((box) => box.addEventListener("change", label));
+    boxes.forEach((box, i) => box.addEventListener("change", () => {
+      if (box.checked) exchange.unchecked.delete(i); else exchange.unchecked.add(i);
+      label();
+    }));
     label();
     apply.addEventListener("click", async () => {
       apply.disabled = true;
       const chosen = rows.filter((_, i) => boxes[i].checked && !boxes[i].disabled);
       const undo = await this.applyProposals(chosen, this.scopesOf(exchange), providerOf(exchange.model), ABOUT_NOTES.test(exchange.question || ""));
-      if (!undo) { label(); return; }
+      if (!undo) { toast(t("ai.proposals.noneApplied"), { error: true }); label(); return; }
       exchange.applied = 1;
       api.setAIApplied(exchange.id, true).catch(toastError);
       this.onChange();
       let undone = false; // le bouton Annuler ne sert qu'une fois
-      toast(t("ai.proposals.done", { n: undo.count }), { action: { label: t("common.undo"), onClick: async () => {
+      toast(t("ai.proposals.done", { n: undo.count }) + (undo.skipped ? ` ${t("ai.proposals.skipped", { n: undo.skipped })}` : ""), { action: { label: t("common.undo"), onClick: async () => {
         if (undone) return;
         undone = true;
         const failures = await undo.run();
@@ -1446,10 +1464,14 @@ export class Assistant {
     });
     const list = h("div", { class: "ai-proposals-list" }, rows.map((row, i) => {
       const { proposal } = row;
-      const what = row.kind === "highlight"
-        ? h("blockquote", { class: `note-quote hl-border-${COLORS.includes(proposal.color) ? proposal.color : "yellow"}` }, proposal.quote)
-        : h("div", { class: "ai-proposal-target" }, h("span", { class: "ai-icon", html: icons.note }),
-          t(row.onProof ? "ai.proposals.onProof" : "ai.proposals.onStatement", { label: row.node?.label || proposal.statement || "?" }));
+      // article à deux vues : celle où la proposition sera placée ; zone et note épinglée nommées
+      const where = row.view && this.views.length > 1 ? t(row.view === "pdf" ? "ai.proposals.inPdf" : "ai.proposals.inHtml") : "";
+      const what = row.kind === "note"
+        ? h("div", { class: "ai-proposal-target" }, h("span", { class: "ai-icon", html: icons.note }),
+          t(row.onProof ? "ai.proposals.onProof" : "ai.proposals.onStatement", { label: row.node?.label || proposal.statement || "?" }))
+        : [row.kind !== "highlight" || where ? h("div", { class: "ai-proposal-target" }, row.kind === "pin" && h("span", { class: "ai-icon", html: icons.note }),
+            [row.kind === "zone" ? t("ai.proposals.zone") : row.kind === "pin" ? t("ai.proposals.pin") : "", where].filter(Boolean).join(" · ")) : null,
+          h("blockquote", { class: row.kind === "pin" ? "note-quote" : `note-quote hl-border-${COLORS.includes(proposal.color) ? proposal.color : "yellow"}` }, proposal.quote)];
       const note = proposal.note ? h("div", { class: "markdown ai-proposal-note" }) : null;
       if (note) note.innerHTML = markdownToHtml(proposal.note, { refs: this.refs });
       return h("label", { class: `ai-proposal${row.found ? "" : " missing"}` }, boxes[i],
@@ -1472,6 +1494,20 @@ export class Assistant {
     return this.replacedItem(proposal)?.target?.pdf || null;
   }
 
+  // où chercher d'abord un passage dans le PDF : place de celui qu'il remplace, sinon la page que l'assistant indique
+  nearOf(proposal) {
+    const page = Number(proposal.page);
+    return this.replacedPlace(proposal) || (Number.isInteger(page) && page > 0 ? { page, start: 0 } : null);
+  }
+
+  // vue où placer une proposition : celle qu'elle nomme (« surface », adaptation des notes) si l'article l'a ; sinon le
+  // HTML, ou le PDF pour un article lu dans son seul PDF ; une zone va dans le PDF s'il y en a un
+  surfaceOf(proposal) {
+    if (this.views.length < 2) return this.views[0] || "html";
+    const named = String(proposal.surface || "").toLowerCase();
+    return named === "pdf" || (proposal.zone && named !== "html") ? "pdf" : "html";
+  }
+
   // annotation que remplace une proposition ; remise par « Annuler », elle a un nouveau numéro (même uid) : suivi
   replacedItem(proposal) {
     if (proposal.replaces == null) return null;
@@ -1489,27 +1525,46 @@ export class Assistant {
     const removed = [];  // anciennes annotations remplacées
     const statesCopied = [];  // énoncés qui ont reçu l'état de lecture d'une note remplacée
     const written = new Set();  // énoncés (ou preuves) dont la note vient d'être écrite : leur ancienne note reste
+    const extended = [];  // notes libres du HTML complétées par une note épinglée : [id, texte d'avant]
+    let skipped = 0;  // propositions choisies qui n'ont pas pu être placées (texte changé, page sans texte)
     for (const row of rows) {
       const { proposal } = row;
       const own = aboutNotes && proposal.author === "reader"; // adaptation : note du lecteur reprise telle quelle (ADAPT_PROMPT dans ai.py)
       // remplacée seulement par une annotation de même nature (passage par passage, note d'énoncé par note
       // d'énoncé) : sinon son état de lecture se perdrait ; jamais une zone du PDF (son image serait perdue)
       const candidate = this.replacedItem(proposal);
-      const old = candidate && !removed.includes(candidate)
-        && candidate.kind === (row.kind === "highlight" ? "highlight" : "block") && !candidate.target?.pdf?.rect ? candidate : null;
+      const sameKind = { highlight: "highlight", note: "block" }[row.kind];
+      const old = candidate && !removed.includes(candidate) && candidate.kind === sameKind && !candidate.target?.pdf?.rect ? candidate : null;
       try {
         let placed = false;
-        if (row.kind === "highlight") {
+        if (row.kind !== "note") {  // passage, zone ou note épinglée
           const color = COLORS.includes(proposal.color) ? proposal.color : "yellow";
           const values = { color, note: proposal.note || null, author: own ? null : author };
-          if (this.pdfQuote) {  // lu dans le PDF : surligné dans le PDF, à l'endroit où ses mots se trouvent
-            const spot = await this.pdfQuote(proposal.quote, old?.target?.pdf);
-            if (!spot || !this.annotator.pdf) continue;
-            created.push((await this.annotator.pdf.addHighlight({ target: spot.target, quote: spot.text, ...values })).id);
+          // note épinglée : une note libre, qui ne garde pas l'auteur (comme une note d'énoncé, son en-tête le dit) ;
+          // note d'un assistant recopiée d'une vue à l'autre : déjà son en-tête
+          const pinned = own || ASSISTANT_HEADER.test(proposal.note || "") ? proposal.note
+            : `**${authorName(author)}** — *${t("ai.unverified")}*\n\n${proposal.note}`;
+          if (row.view === "pdf") {  // dans le PDF, à l'endroit où ses mots se trouvent
+            const spot = await this.pdfQuote(proposal.quote, old?.target?.pdf || this.nearOf(proposal));
+            if (!spot || !this.annotator.pdf) { skipped++; continue; }
+            const made = row.kind === "zone" ? await this.annotator.pdf.addZone({ target: spot.target, quote: spot.text, ...values })
+              : row.kind === "pin" ? await this.annotator.pdf.addPin({ target: spot.target, note: pinned })
+              : await this.annotator.pdf.addHighlight({ target: spot.target, quote: spot.text, ...values });
+            if (!made) { skipped++; continue; }
+            created.push(made.id);
           } else {
             const range = rangeForQuote(this.annotator.content, proposal.quote, scopes); // retrouvé à nouveau : le texte a pu changer
-            if (!range) continue;
-            created.push((await this.annotator.highlightRange(range, values)).id);
+            if (!range) { skipped++; continue; }
+            if (row.kind === "pin") {
+              const pin = await this.annotator.addPin(range, pinned);
+              if (!pin) { skipped++; continue; }
+              if (pin.block) {  // dans un énoncé ou une preuve : sa note (comme une note posée à la main)
+                if (!previousNotes.has(pin.block)) previousNotes.set(pin.block, this.annotator.block(pin.block)?.note || "");
+                await this.annotator.appendNote(pin.block, pinned);
+                written.add(pin.block);
+              } else if (pin.previous === null) created.push(pin.annotation.id);
+              else if (!extended.some(([id]) => id === pin.annotation.id)) extended.push([pin.annotation.id, pin.previous]);
+            } else created.push((await this.annotator.highlightRange(range, values)).id);
           }
           placed = true;
         } else if (proposal.note) {
@@ -1536,15 +1591,17 @@ export class Assistant {
         toastError(error);
       }
     }
-    const count = created.length + previousNotes.size;
+    const count = created.length + previousNotes.size + extended.length;
     if (!count) return null;
     return {
       count,
+      skipped,
       // renvoie le nombre d'échecs (0 : tout est annulé)
       run: async () => {
         let failures = 0;
         const attempt = (promise) => promise.catch((error) => { failures++; toastError(error); });
         for (const id of created) await attempt(this.annotator.removeHighlight(id));
+        for (const [id, note] of extended.reverse()) await attempt(this.annotator.setFreeNote(id, note));
         for (const [id, state] of statesCopied) await attempt(this.annotator.setState(id, state));  // même état : retiré
         for (const [id, note] of previousNotes) {
           const block = this.annotator.block(id);
@@ -1579,7 +1636,8 @@ function parseProposals(answer) {
   if (match[2] !== "```") return { text, items: [] };
   try {
     const items = JSON.parse(match[1]);
-    return { text, items: Array.isArray(items) ? items.filter((item) => item && (item.quote || (item.statement && item.note))) : [] };
+    // note épinglée : seulement avec sa note
+    return { text, items: Array.isArray(items) ? items.filter((item) => item && ((item.quote && (!item.pin || item.note)) || (item.statement && item.note))) : [] };
   } catch {
     return { text, items: [] };
   }
