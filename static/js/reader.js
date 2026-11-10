@@ -109,7 +109,7 @@ class Reader {
     this.bindEvents();
     this.annotator = new Annotator({
       paperId: paper.id, content: this.content, nodes: this.nodes,
-      navigate: (target) => (typeof target === "string" ? this.navigate(target) : this.navigateElement(target)),
+      navigate: (target) => (typeof target === "string" ? this.navigate(target) : this.showElement(target)),
       // une note enregistrée ne redessine pas le panneau (l'éditeur en cours de saisie resterait perdu) :
       // seules les pastilles d'état sont mises à jour, sauf dans l'onglet Notes qui résume tout
       onChange: () => {
@@ -1218,6 +1218,13 @@ class Reader {
     const offset = element.getBoundingClientRect().top - this.viewTop() - 12;
     const near = Math.abs(offset) < innerHeight * 1.5;
     scrollTo({ top: Math.round(scrollY + offset), behavior: smooth && near ? "smooth" : "instant" });
+  }
+
+  // élément de l'article HTML (passage surligné choisi dans l'onglet Notes) : lu dans le PDF, retour au HTML d'abord
+  // (caché, l'élément n'a pas de position) ; un marque-page fait de même (goToBookmark)
+  async showElement(element) {
+    if (this.pdfMode && !this.texOnly) await this.setView("html", { save: false });
+    if (!this.destroyed && !this.pdfMode && this.content.contains(element)) this.navigateElement(element);
   }
 
   navigateElement(element, { remember = true } = {}) {
