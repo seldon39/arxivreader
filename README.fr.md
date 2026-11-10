@@ -131,10 +131,18 @@ pas, avec `.venv` comme lien vers lui. L'adresse est http://127.0.0.1:8710/ ; le
 - **Mise en page « papier AMS »** (classe amsart) : texte en Charter ou Computer Modern, formules
   rendues par **MathJax** (règles de TeX, polices Computer Modern, même rendu dans Safari, Firefox et
   Chrome) ; le MathML du navigateur reste disponible dans les réglages.
+- **Commandes de police inconnues de LaTeXML** (`\EuScript`, `\scr`, `\EuFrak`, `\Bbb`…), que le HTML d'arXiv laisse
+  en texte brut avant la lettre : la lettre s'affiche dans la police voulue, calligraphique, script, gothique ou
+  ajourée. Une formule dont le texte contient un renvoi ou une citation (`\text{par \eqref{…}}`) est elle aussi
+  composée par MathJax, et le renvoi reste un lien.
 - **Dessin absent de la version HTML** (PSTricks… : LaTeXML n'en garde que les étiquettes) : un avertissement
   à sa place, avec un bouton « Voir dans le PDF ».
 - **Affiliations des auteurs** sous le résumé, une ligne par auteur (nom, adresse, courriel), avec les notes de
   première page (financements, mots-clés, classification).
+- **L'article dans les bases** : à côté de la pastille DOI de l'en-tête, les pastilles « MathSciNet » et « zbMATH »
+  cherchent l'article dans le navigateur (zbMATH par DOI, sinon par numéro arXiv ; MathSciNet avec auteurs, titre,
+  référence de revue et DOI dans sa recherche de citations). Ce sont des recherches : le site dit lui-même s'il ne
+  trouve rien.
 - **Formules copiées en LaTeX** : ⌘C sur une sélection copie ses formules en `$…$` (en ligne) et `\[…\]` (hors
   texte) au lieu des symboles de MathJax ; un bouton « TeX » fait de même dans la barre de sélection ; ⌥-clic sur
   une formule : son TeX seul.
@@ -207,6 +215,18 @@ dossiers, affichés en fin de sa ligne ; « Filtres » permet aussi de réduire 
 « Tri » ordonne les articles par dernière lecture, ajout, publication, ou par ordre alphabétique (titre ou
 premier auteur, A → Z ou Z → A, les dossiers étant alors rangés par nom dans le même sens).
 
+## Recherche dans la bibliothèque
+
+Le champ de recherche de la bibliothèque (« Rechercher dans la bibliothèque : titres, auteurs, texte des articles,
+notes… ») filtre les cartes sur les titres, auteurs et autres métadonnées et, à partir de 3 caractères, cherche aussi
+dans le texte des articles et dans vos notes. Sous les filtres, « Dans le texte et les notes (n) » liste les résultats
+groupés par article : notes et surlignages d'abord, puis passages du texte, trois au plus par article. Chaque résultat
+donne sa nature (Note, Surlignage, Énoncé, Texte), l'énoncé ou la section où il se trouve (ou « PDF, p. n ») et un
+extrait avec ses formules ; un clic ouvre l'article à cet endroit, et un surlignage, une note libre ou une annotation
+du PDF s'ouvre dans sa propre vue (HTML ou PDF). La recherche ignore accents et majuscules, trouve les mots dans les
+formules (leur TeX), couvre les PDF importés (par page) et les notes des anciennes versions d'un article (signalées
+« · version k »). 200 résultats au plus.
+
 ## Zotero
 
 Réglages, rubrique « Zotero » : avec une clé personnelle de l'API web de Zotero (créée sur
@@ -249,7 +269,12 @@ Menu **Feed** en haut, quatre onglets :
   sont réduits à une ligne (clic pour déplier). Un clic sur le titre ouvre l'article sans l'ajouter à la
   bibliothèque (cache vidé après 30 jours sans lecture) ; le **signet** l'ajoute ou l'en retire
   (aussi dans la barre du lecteur). En tête : les nouveaux articles des **auteurs suivis**,
-  même hors de vos catégories ; un homonyme (même nom, autre personne) ? 👎 sur son article → « Pas ce … (homonyme) » :
+  même hors de vos catégories, puis les **nouvelles versions d'articles de votre bibliothèque** : ceux dont arXiv a
+  publié depuis 45 jours une version pas encore installée, avec le changement (« v1 → v2 »), la date et le
+  commentaire des auteurs ; « Mettre à jour vers la v2 » l'installe (voir [Versions d'un
+  article](#versions-dun-article)). arXiv est interrogé au plus toutes les six heures (« Mettre à jour » l'interroge
+  à nouveau) ; un réglage masque cette section, qui n'envoie aucune notification. Ces sections, comme « Citent vos
+  articles », sont repliées par défaut : un clic sur l'intertitre en ouvre une, et votre choix est gardé. Un homonyme (même nom, autre personne) ? 👎 sur son article → « Pas ce … (homonyme) » :
   l'article n'est plus signalé, et l'auteur peut n'être suivi que dans les catégories des articles gardés (modifiables
   sous son nom, dans le Profil). Tri « Ordre arXiv » possible. 👍 / 👎 affinent le tri. Les flèches de part et d'autre de la date
   d'annonce mènent aux jours précédents ; au-delà d'une semaine, ils viennent de l'API de recherche
@@ -291,6 +316,38 @@ dans un nouvel onglet, l'article lu reste dans le sien (⌘-clic : en arrière-p
 Les identifiants arXiv de la bibliographie (« arXiv:2101.00001 ») ouvrent l'article cité dans un nouvel onglet
 (⌘-clic : en arrière-plan), qu'il soit dans la bibliothèque ou non ; l'article lu reste dans le sien.
 
+Chaque référence de la bibliographie se termine par une ligne de liens qui la retrouvent, reprise dans son aperçu au
+survol :
+- **Chercher sur arXiv**, pour une référence sans numéro arXiv : arXivReader demande à Semantic Scholar sa version
+  arXiv (par son DOI, sinon par son titre, qui doit figurer dans la référence), puis ouvre la page Recherche dans un
+  nouvel onglet sur ce numéro arXiv, ou à défaut sur le titre et le premier auteur devinés, et lance la recherche ;
+  vous pouvez la corriger (dans les applications Mac et Windows, ⌘-clic ou Ctrl-clic ouvre l'onglet en arrière-plan).
+- **DOI** (si la référence en a un et n'y renvoie pas déjà), **MathSciNet** (le texte de la référence dans sa
+  recherche de citations) et **zbMATH** : une recherche zbMATH remplie avec le premier auteur et le titre ; au survol
+  (ou au clavier), arXivReader demande le document à la recherche de citations de zbMATH et, quand zbMATH le trouve
+  sûrement, le lien mène directement à sa page (son info-bulle indique le numéro Zbl).
+
+Ces liens s'ouvrent dans le navigateur, seulement au clic ; une référence qui est un article déjà lu ici (dans la
+bibliothèque ou simplement ouvert) commence la ligne par « Ouvrir l'article » au lieu de « Chercher sur arXiv ». La ligne ne fait pas partie du texte :
+elle n'est pas sélectionnée avec lui et ne déplace pas les surlignages.
+
+## Versions d'un article
+
+Chaque version arXiv d'un article garde son texte, ses notes et ses réponses IA. Dans le lecteur, la pastille
+« arXiv:ID · version n » (info-bulle « Versions de cet article sur arXiv ») ouvre un menu qui liste toutes les versions, de la
+dernière à la 1, avec leur nombre de notes et de réponses IA, et indique celle en cours de lecture, la dernière et
+celles à télécharger. Choisir une version l'ouvre ; une version absente de cet ordinateur est téléchargée en
+arrière-plan. Si arXiv ne répond pas, le menu ne montre que les versions de cet ordinateur.
+
+Mettre à jour un article (menu Version, « Mettre à jour depuis arXiv » sur sa carte, ou le feed) installe la nouvelle
+version sans notes : vos notes restent sur la version précédente, qui s'ouvre depuis le menu (« Mis à jour en
+version 2. Vos notes restent sur la version 1 : ouvrez-la depuis le menu Version. »). Une ancienne version s'ouvre
+dans sa propre page, avec le numéro de version dans le titre de l'onglet et une ligne « Vous lisez la version k.
+Dernière version installée : version n » qui mène à la version principale ; elle ne peut pas être ajoutée seule à la
+bibliothèque. Des notes importées d'un autre ordinateur vont sur la version où elles ont été prises, téléchargée au
+besoin. Une page du lecteur restée ouverte sur une version remplacée entre-temps dans un autre onglet n'y ajoute plus ni
+notes, ni états de lecture, ni questions à l'IA : un message propose de la recharger. Les notes exportées d'une ancienne version portent son numéro (« 0806.2370v1 … »).
+
 ## Articles sans version HTML
 
 Quand arXiv ne propose pas de version HTML, l'article se lit dans son PDF, affiché dans le lecteur.
@@ -326,7 +383,13 @@ pdflatex, BibTeX ou Biber, puis pdflatex), dans un dossier de travail à elle : 
 Énoncés, preuves, dépendances et bibliographie sont lus dans la source, et Claude reçoit la source TeX. Les `.bib`
 sont cherchés dans le dossier du fichier, puis dans votre installation TeX ; un `.bib` introuvable est signalé et
 peut être choisi à la main (retenu). **Recompiler et recharger** (barre du lecteur) relit la source : les notes
-d'un énoncé le suivent (retrouvé par son `\label`, sinon par son texte), et les passages surlignés sont retrouvés là où ils ont bougé. L'onglet
+d'un énoncé le suivent (retrouvé par son `\label`, sinon par son texte), et les passages surlignés sont retrouvés là où ils ont bougé.
+Quand une modification laisse des notes sans place (énoncé sans `\label` dont le texte a été réécrit, passage surligné
+dans le PDF qui a changé ou disparu), le bilan de compilation le dit (« Le texte a changé : n note(s) n'ont plus leur
+place… ») avec un bouton « Demander à l'IA » : il écrit « Adapte mes notes à la nouvelle compilation. » dans l'onglet
+Questions, sans l'envoyer. L'assistant compare la nouvelle source à la précédente et propose les notes déplacées ou
+adaptées ; une proposition appliquée remplace l'ancienne note et garde son état de lecture, et « Annuler » remet les
+anciennes notes. Marque-pages, notes libres et zones encadrées du PDF ne sont pas concernés. L'onglet
 Énoncés commence par des vérifications : erreurs LaTeX, renvois et citations non définis, énoncés sans preuve
 trouvée, lemmes jamais utilisés. Un livre (avec `\chapter`) a ses énoncés classés par chapitre, et le graphe montre
 un chapitre à la fois. Sans TeX (MacTeX, MiKTeX ou TeX Live), le PDF compilé à côté du fichier (`main.pdf` pour
@@ -417,8 +480,18 @@ il suffit de la fermer et d'aller dans le feed.
 - **Marque-pages** : clic droit → « Ajouter un marque-page » (ou ⌘D), avec un nom au choix. Un ruban rouge marque l'endroit dans la marge ; tous sont listés en tête de l'onglet Notes
   (un clic y ramène, en passant du HTML au PDF au besoin). Un marque-page posé sur une version arXiv antérieure est
   signalé (« posé sur la v1 ») ; l'ouvrir et l'enregistrer le confirme pour la version actuelle.
-- **Onglet Notes** du panneau : progression de lecture, fiche de lecture de l'article, toutes les
-  annotations dans l'ordre de l'article (un clic y ramène).
+- **Onglet Notes** du panneau : progression de lecture, fiche de lecture de l'article, puis les annotations en deux
+  sections dépliables, « Dans le HTML (n) » dans l'ordre de l'article et « Dans le PDF (n) » par page, puis de haut en
+  bas (passages surlignés, zones et notes épinglées ensemble) ; celle de la vue lue est ouverte, et suit la vue tant
+  que vous n'avez pas vous-même déplié ou replié une section. Un clic y ramène, en changeant de vue au besoin. Un
+  article lu dans une seule vue (PDF importé, fichier TeX de l'ordinateur, article arXiv sans version HTML) garde une
+  seule liste.
+- **Supprimer des notes** : chaque carte (passage surligné, zone, note libre, note d'énoncé) a une corbeille
+  (« Supprimer cette note »). « Sélectionner » ajoute une case à chaque carte et une case « Tout » à chaque section ;
+  la corbeille de la section supprime alors les cartes cochées (« Supprimer la sélection (n) »), et « Terminer »
+  quitte le mode sélection. Chaque suppression affiche un message avec « Annuler », qui remet aussi les images des
+  zones et les états de lecture ; des suppressions rapprochées partagent un seul « Annuler ». Les boutons
+  « Supprimer » des fenêtres de note et de surlignage proposent aussi « Annuler ».
 - Notes en Markdown (**gras**, *italique*, listes, citations) avec formules `$…$`, `$$…$$`,
   enregistrées automatiquement. Un article annoté n'est jamais effacé du cache.
 - **Import** : Réglages > Lecture > « Importer des notes… » relit les fichiers exportés par arXivReader (un `.md` ou le
@@ -430,8 +503,10 @@ il suffit de la fermer et d'aller dans le feed.
   qui ne vient pas d'arXivReader, ou modifié depuis, est refusé ; un autre ordinateur est accepté une fois (son
   empreinte est dans ses réglages).
 - **Export** : « Exporter les notes (Markdown) » en bas de l'onglet Notes (fiche de lecture, énoncés et preuves
-  avec leur état, passages surlignés par section, formules en LaTeX) ; Réglages > Lecture : toutes les notes,
-  un fichier par article, dans une archive .zip (dossier Téléchargements).
+  avec leur état, passages surlignés par section, formules en LaTeX), un .zip avec les images dans un dossier
+  `images/` quand l'article a des zones encadrées du PDF ; Réglages > Lecture, « Exporter la bibliothèque et les
+  notes (.zip) » : toutes les notes, un fichier par article, avec ces images, dans une archive .zip (dossier
+  Téléchargements).
 
 ## Claude sur l'article (étape 4)
 
@@ -477,10 +552,40 @@ il suffit de la fermer et d'aller dans le feed.
   ceux connectés), modèle (Opus, Fable, Sonnet, Haiku… selon votre abonnement) et niveau de réflexion au choix sous
   le champ de chaque sous-onglet de l'IA ; de même pour Codex et Gemini,
   d'après la liste de votre compte ou de votre clé. Les réponses sont conservées avec l'article.
-- **Annotations proposées par Claude** : bouton *Annoter* sur un énoncé, ou toute demande du type « surligne… /
-  annote… ». Claude joint une liste d'annotations (passages cités mot pour mot, couleur, note ; notes sur un
-  énoncé ou une preuve) : chaque passage est retrouvé dans l'article, vous cochez ce que vous gardez,
-  *Appliquer* les crée (marquées « Claude ») et *Annuler* les retire. Claude n'écrit jamais lui-même.
+- **Autres versions de l'article** : demandez ce qui a changé (« qu'est-ce qui a changé depuis la version 1 ? »,
+  « quoi de neuf dans la dernière version ? ») ou posez une question sur une version nommée : le texte de cette
+  version part avec la question (téléchargé d'abord au besoin), et la réponse indique où sont les changements
+  (section, énoncé, équation, avec la numérotation de chaque version).
+- Claude peut aussi annoter l'article, et traite vos notes de la même façon : il ne fait que **proposer**. Sa réponse
+  se termine par « Annotations proposées (n) », chaque passage étant retrouvé dans l'article ; vous cochez ce que vous
+  gardez, rien ne change avant *Appliquer la sélection (n)*, et *Annuler*, dans la confirmation, remet tout comme
+  avant. Claude n'écrit jamais lui-même. Les annotations ne sont posées ou supprimées que sur la version lue.
+  - **Annoter** : bouton *Annoter* sur un énoncé, ou toute demande du type « surligne… / annote… », aussi dans
+    l'onglet *Relecture* pour marquer les points de la relecture. Claude propose des passages cités mot pour mot
+    (couleur, note) et des notes sur un énoncé ou une preuve. Les nouvelles annotations sont marquées du nom de
+    l'assistant. Une note qui a déjà un texte sur un énoncé ou une preuve n'est jamais réécrite : l'ajout de Claude va
+    dessous, après un séparateur, signé « **Claude** — *non vérifié* ».
+  - **Reporter des notes entre le HTML et le PDF** : « mets mes notes HTML sur le PDF », « exporte les notes html vers
+    le pdf » (mettre, copier, déplacer, reporter, exporter, envoyer, appliquer, transcrire…, avec le HTML ou le PDF
+    pour destination). Claude reçoit les annotations de l'article et propose leurs équivalents dans l'autre vue ; vos
+    notes d'origine restent en place, et les notes d'énoncé, déjà dans les deux vues, ne sont pas recopiées. Un
+    article lu en HTML charge son PDF en arrière-plan pour les y placer : le bouton affiche « Recherche dans le PDF… »
+    tant qu'elles ne sont pas situées, et la confirmation indique combien n'ont pas pu être placées.
+  - **Reprendre les notes d'une autre version** : « adapte mes notes de la v1 », « adapte les notes html de la v2 au
+    pdf de la v5 ». Claude reconnaît chaque énoncé à son contenu plutôt qu'à son numéro, dit brièvement ce qui a
+    changé pour ces notes, liste celles qu'il n'a pas retrouvées et propose les notes de la version lue. D'une
+    version qui a des notes dans les deux vues, il reprend par défaut celles du HTML et propose de faire de même avec
+    celles du PDF.
+  - Dans les deux cas, dans un article à deux vues, chaque proposition dit où elle ira (« dans le HTML » / « dans le
+    PDF »), et elle peut aussi être une *Zone* (rectangle tracé autour des lignes du passage cité dans le PDF, avec son
+    image) ou une *Note épinglée* (dans la marge du PDF, ou sur un paragraphe du HTML ; une note libre déjà posée sur
+    ce paragraphe n'est jamais réécrite, l'ajout va dessous). Vos notes que Claude garde telles quelles ou dont il ne
+    change que les numéros restent les vôtres (sans signature, pas marquées comme celles de l'assistant) ; quand elles
+    viennent d'une autre version, les notes écrites par un assistant sont réévaluées.
+  - **Supprimer des notes** : « supprime mes surlignages jaunes de la section 3 », « enlève les notes de l'IA dans le
+    PDF ». Claude reçoit la liste des annotations de l'article et propose celles à supprimer, montrées sous la forme
+    « Supprimer · <nature> · <vue ou page> » avec le passage, l'image de la zone ou la note ; si la demande est
+    ambiguë, il pose la question au lieu de deviner. Supprimer une note d'énoncé retire aussi son état de lecture.
 - **Liens dans les réponses** : énoncés, équations, sections (« Section 3.2 », « §2.1 », « Appendix A ») et
   références (« [12] », « Smith and Jones (2007) ») cités par l'assistant sont des liens, avec le même aperçu au
   survol que dans l'article.
@@ -489,7 +594,8 @@ il suffit de la fermer et d'aller dans le feed.
   dans *Réglages → Assistant IA → Votre profil* (domaine, niveau, ce qu'il faut détailler). Les réglages montrent
   exactement ce qui est envoyé. Le profil adapte le niveau et signale les vrais liens avec vos travaux ; il n'adoucit
   jamais une relecture.
-- Claude ne reçoit que le texte de l'article (le texte invisible est retiré), votre profil et la demande : aucun
+- Claude ne reçoit que le texte de l'article (le texte invisible est retiré), votre profil et la demande (et, si la
+  demande en a besoin, le texte d'une autre version ou les annotations de l'article) : aucun
   outil, ni fichiers, ni réseau, ni commandes, ni réglages Claude Code personnels ; rien n'est gardé côté Claude Code.
 
 ### Autres assistants (Réglages → Assistant IA)
@@ -534,16 +640,18 @@ mais n'a pas été essayée avec un vrai compte.
   l'application, dans `library/` depuis le code source. Ailleurs, seulement ce que vous demandez : notes
   exportées (dossier Téléchargements) et, si vous activez la vérification hebdomadaire, son journal
   (`~/Library/Logs`) et sa tâche (`~/Library/LaunchAgents`).
-- Connexions sortantes : arXiv (articles, nouveautés), Semantic Scholar (recommandations, papiers liés), GitHub
-  (une fois par jour, numéro de la dernière version ; désactivable), l'assistant IA choisi, Zotero si une clé est
-  donnée ; `./arxivreader check` appelle aussi chacun d'eux.
+- Connexions sortantes : arXiv (articles, nouveautés, nouvelles versions), Semantic Scholar (recommandations,
+  papiers liés, version arXiv d'une référence pour « Chercher sur arXiv »), zbMATH (recherche de citations, quand le
+  lien zbMATH d'une référence est survolé ou atteint au clavier), GitHub (une fois par jour, numéro de la dernière
+  version ; désactivable), l'assistant IA choisi, Zotero si une clé est donnée ; `./arxivreader check` appelle aussi
+  chacun d'eux, sauf zbMATH. Les liens DOI, MathSciNet et zbMATH s'ouvrent dans le navigateur, seulement au clic.
 
 ## Maintenance
 
-L'application dépend de services qu'elle ne contrôle pas (arXiv et ses pages LaTeXML, Semantic Scholar, Zotero,
-les assistants IA, GitHub) et de WebKit, qui change avec macOS. Les tests (`tests/`) simulent ces services ;
-`./arxivreader check` les appelle vraiment, une requête minimale chacun, et vérifie la forme des réponses (✓ bon,
-✗ changé ou en panne, – non vérifié : pas de clé, quota atteint). Elle signale aussi un changement de macOS ou de
+L'application dépend de services qu'elle ne contrôle pas (arXiv et ses pages LaTeXML, Semantic Scholar, zbMATH,
+Zotero, les assistants IA, GitHub) et de WebKit, qui change avec macOS. Les tests (`tests/`) simulent ces services ;
+`./arxivreader check` les appelle vraiment (sauf zbMATH), une requête minimale chacun, et vérifie la forme des
+réponses (✓ bon, ✗ changé ou en panne, – non vérifié : pas de clé, quota atteint). Elle signale aussi un changement de macOS ou de
 WebKit depuis la fois précédente, avec les points à revoir à la main. `./arxivreader check --weekly` la lance
 chaque lundi à 10 h par l'application installée (notification macOS en cas de problème ; journal dans
 `~/Library/Logs/arXivReader-check.log`) ; `--no-weekly` l'arrête.
@@ -567,7 +675,7 @@ app/            serveur Python (FastAPI)
   feed.py       nouveautés arXiv (RSS, OAI-PMH), recommandations Semantic Scholar, repérage d'identifiants
   journals.py   revue où un article est paru (arXiv, Semantic Scholar)
   search.py     recherche dans tout arXiv (onglet Recherche) ; related.py : papiers liés (graphe) ; zotero.py : synchronisation avec Zotero ; check.py : vérification des services extérieurs ; onboarding.py : assistant de premier lancement ; export.py : export des notes ; notesync.py : export signé et import des notes d'un ordinateur à l'autre
-  folders.py    dossiers de la bibliothèque
+  folders.py    dossiers de la bibliothèque ; fulltext.py : recherche dans le texte et les notes de la bibliothèque
   profile.py    profil de recherche, pré-remplissage, auteurs suivis (homonymes) ; relevance.py : tri par pertinence
   annotations.py  surlignages, notes, état de lecture
   ai.py         texte de l'article et consignes pour Claude, appel sans outils (SDK Claude Agent) ; pages d'un
@@ -579,10 +687,11 @@ app/            serveur Python (FastAPI)
   crossrefs.py  références qui sont des articles lus ici ; citations.py : articles qui citent les vôtres
   texstructure.py  structure tirée de la source TeX et pages du PDF (articles sans version HTML)
   providers.py  autres assistants : Codex (en ligne de commande), Gemini (API), modèle local (Ollama, LM Studio)
-  localpdf.py   PDF importés de l'ordinateur (texte, titre, version arXiv)
+  localpdf.py   PDF importés de l'ordinateur (texte, titre, version arXiv) ; version arXiv et notice zbMATH
+                d'une référence de la bibliographie
   texfile.py    fichiers TeX de l'ordinateur (compilation, bibliographie, vérifications, identifiants stables)
   latexml.py    version HTML expérimentale faite par LaTeXML (fichiers TeX, articles d'arXiv sans HTML)
-  library.py    import d'un article ; db.py : base SQLite ; main.py : routes web
+  library.py    import d'un article, ses mises à jour et ses versions ; db.py : base SQLite ; main.py : routes web
 macos/          application Mac : main.swift (fenêtre, onglets, serveur), icon.swift, build.sh, release.sh
 windows/        application Windows : shell/ (fenêtre à onglets en C#, WebView2), launcher.py (serveur, construit
                 par PyInstaller), smoke.ps1 (essai de l'application construite), build-requirements.txt

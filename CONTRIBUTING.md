@@ -41,9 +41,15 @@ These are not negotiable; a change that weakens one of them will not be merged.
   is too long for the assistant, the section and the start of the paper); the synthesis of a whole book, or of a
   paper done section by section (`ai.book_prompt`, run by `app/bookjob.py`), receives the reviews or summaries of the
   chapters or sections, never the text. The reader's profile (`ai.reader_profile`) goes into the system prompt with titles
-  and names escaped; it adapts answers, never the rules (a review stays as critical for everyone).
+  and names escaped; it adapts answers, never the rules (a review stays as critical for everyone). A question may
+  also receive another arXiv version of the same paper, the source of a TeX file's previous compilation or the paper's
+  annotations, always in their own tagged blocks whose text has its tags neutralised (`ai._neutral`; a new block tag
+  goes into `ai.PREVIOUS_TAGS`). The assistant only proposes annotations (to add, adapt or delete): the page applies
+  them after the reader's choice, with Undo (`applyProposals` in `static/js/ai.js`).
 - **No telemetry, no accounts.** The only network calls are the services listed in `MAINTENANCE.md` §6 (arXiv,
-  Semantic Scholar, Zotero, GitHub releases, the AI provider the user chose).
+  Semantic Scholar, zbMATH's citation matcher, Zotero, GitHub releases, the AI provider the user chose). Links to
+  outside sites (DOI, MathSciNet, zbMATH) open in the browser, only when clicked; the server asks zbMATH about a
+  reference only when the reader points at its zbMATH link.
 - **The user's keys** (Semantic Scholar, Gemini, Zotero) are typed by the user in the settings; they never
   appear in code, logs or error messages, and on macOS and Windows are stored in the system keychain
   (`app/keystore.py`, with `ARXIVREADER_KEYCHAIN=1`; on Linux, or if the keychain refuses, they stay in the library's
@@ -103,6 +109,12 @@ The tests are offline: every external service is simulated. To make sure none go
 fake server that the proxy intercepts). `./arxivreader check` calls the real services, one minimal request each,
 to detect changes in their answers.
 
+Since 1.12, `tests/test_versions.py` covers paper versions (update, interrupted update, archived versions, the
+Versions menu routes, notes import and export, the feed's new versions), `tests/test_fulltext.py` the library's
+full-text search, `tests/test_texfile.py` the notes that lose their place after a TeX file is edited,
+`tests/test_localpdf.py` the bibliography look-ups (arXiv, zbMATH) and `tests/test_ai.py` the detection of
+questions about other versions, notes to carry over or delete.
+
 There are no automated interface tests yet ([#9](https://github.com/seldon39/arxivreader/issues/9)): check
 interface changes by hand in WebKit (Safari or the Mac app), in light and dark mode, below 900 px and on wide
 screens, and on several papers — a fix for one paper's LaTeXML output often breaks another's.
@@ -125,7 +137,25 @@ screens, and on several papers — a fix for one paper's LaTeXML output often br
 - **Dependencies**: `requirements.txt` lists what is wanted, `requirements.lock` the exact tested versions. Add
   or update one deliberately, run the tests, then `./arxivreader lock`.
 - **Settings**: a new value of a setting must also be accepted by the server (`SETTING_CHOICES` in
-  `app/main.py`), otherwise it is silently not saved.
+  `app/main.py`, or `BOOLEAN_SETTINGS` for an on/off setting), otherwise it is silently not saved.
+- **Paper versions**: an older arXiv version of a paper is a full row of `papers`, with id `<paper>v<k>`
+  (`library.archive_key`), `in_library = 0` and `archived_of` set to the main paper, which always holds the latest
+  installed version. A query that lists papers (feed, search, profile, related papers…) filters
+  `archived_of IS NULL` or uses `db.list_all_papers`; `db.archives_of(id)` lists the versions kept. A change of
+  version goes through `library._replace_version` (one SQLite transaction; the folder renames, outside it, are
+  undone at startup by `library.recover_interrupted`).
+- **Writes from the reader**: a new route that writes for an open paper page (annotations, reading state, AI)
+  takes `dependencies=READER_WRITE` in `app/main.py`, and its call in `static/js/api.js` sends the reading version
+  (`versioned(id)`): a page left on a version replaced in another tab then gets 409 `stale_version`, which
+  `toastError` shows with "Reload".
+- **Library search** (`app/fulltext.py`): no index, the files are scanned at each search (extracted text cached by
+  path and modification time). `fold()` maps one character to one character, so positions found in the folded text
+  are valid in the original; snippets are shown as text, never as HTML.
+- **Additions inside the paper's text** (like the `.bib-links` line of a bibliography entry) go at the end of their
+  element and are listed in the `UI` selector of `static/js/annotations.js`, so that highlights, counted from the
+  start of the text, do not move.
+- **Routes with parameters** (`#/search?terms=…`): the parameters are fully percent-encoded, because the Mac and
+  Windows shells only open routes that match the pattern in `macos/main.swift` and `windows/shell/MainForm.cs`.
 - **Analysis changes**: when `app/structure.py` or `app/texstructure.py` changes what it extracts or marks, bump
   `STRUCTURE_VERSION` so imported papers are re-analysed.
 - **Reader layout changes**: anything that changes the height of sections away from the screen (text size, width,

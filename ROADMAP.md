@@ -22,7 +22,8 @@ finished work or steps not yet made into an issue.
 
 ## Reading and library
 
-- [#6](https://github.com/seldon39/arxivreader/issues/6) Full-text search across the library.
+- ~~[#6](https://github.com/seldon39/arxivreader/issues/6) Full-text search across the library~~: done in 1.12.0
+  (the Library search field also searches the text of the papers, imported PDFs and the notes).
 - [#7](https://github.com/seldon39/arxivreader/issues/7) Export references as BibTeX and copy a citation
   (good first issue).
 - [#13](https://github.com/seldon39/arxivreader/issues/13) Drawings LaTeXML cannot convert (PSTricks, picture).
@@ -51,6 +52,10 @@ finished work or steps not yet made into an issue.
   1.11.4. Next: a "Link with my work" action that sends the reader's own papers in full when they fit.
 - Lighter reading of long papers full of formulas (sections far from the window not drawn, a third of the memory):
   done in 1.11.23.
+- Versions of a paper: each arXiv version keeps its own notes (Version menu in the reader), new versions of library
+  papers listed in the feed, and the AI tab compares versions and adapts notes from one version to another: done in
+  1.12.0. In the same release, the AI carries notes between the HTML and PDF views, and puts back the notes of a TeX
+  file that lost their place after an edit.
 - [#12](https://github.com/seldon39/arxivreader/issues/12) Cancelling a related-papers build should interrupt
   the request in flight.
 

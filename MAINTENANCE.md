@@ -33,7 +33,8 @@ English.
   (and their sub-collections) are modified, an item's other collections are kept.
 - **Install or release only with the user's agreement**, and only when the application has
   really quit (`pgrep -f /Applications/arXivReader.app` returns nothing: it can stay open with no
-  window). Releasing is public (GitHub): always ask.
+  window). Releasing is public (GitHub): always ask. A beta is never installed in `/Applications` and never goes
+  through `macos/release.sh` (section 5, "Betas").
 - **No download** (new library, MathJax update…) without explicit agreement.
 - Commits: messages in English, ending with the assistant's `Co-Authored-By:` line; one commit per
   coherent change; commit only when the user wants it.
@@ -44,11 +45,14 @@ English.
 |---|---|---|
 | Import, cleaned HTML, PDF | `library.py`, `arxiv.py`, `sanitize.py` | `reader.js`, `pdfview.js`, `pdfsync.js`, `lazypaint.js` (sections far from the screen not drawn) |
 | Structure (statements, proofs, dependencies) | `structure.py` (LaTeXML HTML), `texstructure.py`, `texsource.py` (TeX source) | `reader.js`, `graph.js`, `texview.js` |
-| Notes, highlights, reading state, export | `annotations.py`, `export.py`, `notesync.py` (signed export, import from one computer to another) | `annotations.js`, `markdown.js`, `bookmarks.js` (bookmarks, right-click menu), `pdfnotes.js` (passages, regions and notes in the PDF; passages found again after recompilation) |
+| Paper versions (each arXiv version with its own notes, Version menu) | `library.py` (`archive_key`, `versions_of`, `open_version`, `ensure_version`, `_replace_version`, `recover_interrupted`), `db.py` (`archived_of`, `archives_of`), `notesync.py` (`_version_of_notes`), `main.py` (`_same_version`) | `reader.js` (`versionChip`), `library.js` (`updatePaper`, shared with the feed), `api.js` (`setReadingVersion`) |
+| Notes, highlights, reading state, export | `annotations.py`, `export.py` (`paper_export`: `.md`, or `.zip` with the images of the regions), `notesync.py` (signed export, import from one computer to another) | `annotations.js` (Notes tab: sections "In the HTML" / "In the PDF", `notesGroup`, `cardTools`, `removeMany`, `restore`), `markdown.js`, `bookmarks.js` (bookmarks, right-click menu), `pdfnotes.js` (passages, regions and notes in the PDF; passages found again after recompilation; `readingHeights`, `placeOf`, `addZone`, `addPin`) |
+| Search of the library (full text and notes) | `fulltext.py` (no index), route `/api/library/search` | `library.js` (`searchText`, `drawTextHits`), `reader.js` (`showAnnotation`) |
+| Bibliography and paper links (DOI, MathSciNet, zbMATH, "Look up on arXiv") | `localpdf.py` (`reference_arxiv`, `reference_zbmath`, `zbmath_search`), routes `/api/references/arxiv`, `/api/references/zbmath` | `reader.js` (`findLinks`, `addFindLinks`, `bibActions`, `paperFindLinks`, `zbmathLink`, `lookUpArxiv`), `search.js` (`presetTerms`) |
 | PDF and TeX files from the computer | `localpdf.py` (imported PDFs: text, title, arXiv version), `texfile.py` (TeX files: compilation, bibliography, checks, identifiers taken from the `\label` commands, background jobs) | `library.js` (import), `texfile.js` (import window, reader checks), `reader.js` (Recompile, books: statements and graph by chapter) |
 | Experimental HTML version (LaTeXML) | `latexml.py` (on-demand conversion, the paper's `html/` folder, identifiers aligned with the structure of the source) | `latexml.js` ("HTML β" button, warning, waiting), `reader.js` |
 | Library, folders, selection | `library.py`, `folders.py` | `library.js`, `selection.js` |
-| Feed, profile, relevance, alerts, citations | `feed.py`, `profile.py`, `relevance.py` (`same_person`, `follows`: namesakes of followed authors), `alerts.py`, `citations.py`, `journals.py` | `feed.js` (👎 → "not this person"), `profile.js` (categories kept for an author) |
+| Feed, profile, relevance, alerts, citations | `feed.py`, `profile.py`, `relevance.py` (`same_person`, `follows`: namesakes of followed authors), `alerts.py`, `citations.py`, `journals.py`, `library.new_versions` (new versions of library papers) | `feed.js` (👎 → "not this person"; `loadNewVersions`, `newVersionCard`), `profile.js` (categories kept for an author) |
 | arXiv search | `search.py` | `search.js` |
 | Related papers (graph) | `related.py` | `related.js` |
 | Links from one paper to another (a bibliography reference that is a paper in the library) | `crossrefs.py` (`links`, `statement`, `match`) | `reader.js` (`openCross`) |
@@ -56,18 +60,21 @@ English.
 | AI | `ai.py` (Claude, Agent SDK; scans: pages attached as images; books that are too long: beginning and a window around the question), `providers.py` (Codex, Gemini, local), `bookjob.py` (book: all chapters in parallel, then synthesis) | `ai.js` (tab as a conversation: sub-tabs Questions / Summary / Review according to the root of each exchange, `viewOf`; a question on a summary or a review has that document as its parent; thread memory: `ai.thread_history` (same thread as `viewOf`: the whole Questions thread, or the document and the questions asked about it; finished or stopped, with an answer; the answered exchange even if in error, marked "[answer interrupted by an error]") and `_history_block` (`<conversation_history>`, at most `limit / HISTORY_SHARE` characters: the document and the answered exchange always, then the most recent ones; tags neutralised; not for summary, review, transcription); reading positions `positions`, ↑ ↓ buttons in the margin of the thread; cross-references in answers `buildRefs`: statements, equations,
 sections according to the number in the title (`toc`), references in brackets or author-year (`bibliography`), except the statement of a
 cited paper, "Theorem 3.1 of [12]", "[12, Theorem 3.1]"; hover preview through `reader.previewFor`), `aiproviders.js`, `reader.js` (`contextPages`: pages of a scan rendered by pdf.js) |
+| AI on annotations (notes carried between views, versions or compilations; deletions; questions on another version) | `ai.py` (`asks_adaptation`, `_adapting`, `_annotations_block`, `asks_deletion`, `_deleting`, `version_asked`, `_versions_compared`), `texfile.py` (`track_lost_notes`, `notes_to_check`) | `ai.js` (`parseProposals`, `applyProposals`, `surfaceOf`, `prefill`), `annotations.js` (`addPin`, `setFreeNote`, `restore`), `pdfnotes.js`, `reader.js` (`pdfQuote`, `ensurePdf`) |
 | Zotero | `zotero.py` | `zotero.js`, `settings.js` |
 | First launch | `onboarding.py` | `onboarding.js` |
 | Updates, service checks | `updates.py`, `check.py` | `updates.js` (in Settings → About) |
-| Formulas, DOM construction | `feed.tex_text` (TeX of titles and abstracts) | `math.js` (MathJax), `amsfix.js`, `util.js` (`h`, `withMath`, `tidyTitle`) |
+| Formulas, DOM construction | `feed.tex_text` (TeX of titles and abstracts) | `math.js` (MathJax; `undefinedFonts`, `linksInText`), `amsfix.js`, `util.js` (`h`, `withMath`, `tidyTitle`, `texToText`: TeX of titles shown as plain text) |
 | Settings | `main.py` (`allowed` list and `_valid_setting` of `/api/settings`) | `settings.js` ("About" section: version, updates, copyright, license) |
 | Interface texts | — | `i18n.js` (FR and EN blocks: same keys) |
-| Mac application | — | `macos/main.swift` (tabs, dragging onto a tab, downloads, test runs, native folder and file pickers: `chooseFolder`, `chooseFiles`), `macos/build.sh`, `macos/release.sh` |
+| Mac application | — | `macos/main.swift` (tabs, dragging onto a tab, downloads, test runs, native folder and file pickers: `chooseFolder`, `chooseFiles`; `isBeta`), `macos/build.sh`, `macos/release.sh`, `macos/build-beta.sh` (betas, section 5) |
 | Windows application | `windows/launcher.py` (windowless server, Edge fallback) | `windows/shell/` (C# window: `MainForm.cs`, `TabStrip.cs`, `Program.cs`), `windows/smoke.ps1`, `.github/workflows/windows.yml` |
 
 Database: `app/db.py` (`SCHEMA` as `CREATE TABLE IF NOT EXISTS`, columns added by `ALTER TABLE` after
 `PRAGMA table_info` in `init()`); modules that have their own tables: `related.py`, `zotero.py`, `journals.py`
-(`_ensure`).
+(`_ensure`). The `papers` table also holds the archived versions of a paper (`archived_of` not null, section 9):
+any new query that lists papers filters `archived_of IS NULL`, as `db.list_all_papers`, `feed.list_items`,
+`profile.author_categories`, `related.annotate` and `search.annotate_status` do.
 
 Page: `h(tag, attrs, …)` adds the children as text; `html:` is reserved for internal icons (`icons`). All
 text coming from arXiv, Semantic Scholar, Zotero or an AI goes through text or `withMath`, never through
@@ -159,6 +166,14 @@ pre-releases `windows-v1.9.15`… `windows-v1.9.21` and `windows-latest` remain 
 - Interface: `MAC` / `WINDOWS` in `static/js/i18n.js`; outside the Mac, ⌘ ⌥ ⇧ become Ctrl Alt Shift on display.
 - Not yet on Windows: "Copy a Library…" (menu of the Mac app), signing of the `.exe`.
 
+### Betas
+
+For future betas: work on a local `beta` branch, with `VERSION` = `X.Y.Z-beta.N` (never compared with the published
+versions, so no update is offered). `macos/build-beta.sh` builds a separate `~/Applications/arXivReader Beta.app`
+(**never `/Applications`**), with its own settings, library and port. Never `macos/release.sh` for a beta; a GitHub
+pre-release, if any, uses a tag that does not start with `v` (a `v*` tag starts the Windows workflow). Documentation is
+updated when the beta is merged into `main`, and `VERSION` goes back to `X.Y.Z` before the release.
+
 ## 6. External services: what can change, where to look
 
 Service unreachable (no network, address not found: waking from sleep, Wi-Fi reconnecting): `main._failed`
@@ -175,19 +190,25 @@ problem; log `~/Library/Logs/arXivReader-check.log`, result `check.json` in the 
 
 | Service | Used by | What usually breaks | Existing fallback |
 |---|---|---|---|
-| arXiv API `export.arxiv.org/api/query` | `arxiv.py`, `search.py`, `feed.py` (past days), `profile.py`, `onboarding.py` | slowness, 429/503, Atom fields | one request every 3 s (`arxiv._paced`, `search._wait_turn`), `with_retry` |
-| LaTeXML HTML pages `arxiv.org/html/…` | `library.py`, `sanitize.py`, `structure.py` | `ltx_*` classes, markup of statements and proofs, image paths (two forms: `x1.png` or `<id>v<n>/fig.png`, `sanitize._relative`) | ar5iv, otherwise PDF + structure extracted from the TeX (`texstructure.py`) |
+| arXiv API `export.arxiv.org/api/query` | `arxiv.py`, `search.py`, `feed.py` (past days), `profile.py`, `onboarding.py`, `library.py` (latest version of a paper: `latest_version`; new versions of the library: `new_versions` → `arxiv.fetch_latest`, one request per 100 ids) | slowness, 429/503, Atom fields | one request every 3 s (`arxiv._paced`, `search._wait_turn`), `with_retry`; Version menu: answer after `LATEST_WAIT` (20 s) at most, then only the versions on the computer; feed: last answer kept in the setting `feed.newVersions` |
+| LaTeXML HTML pages `arxiv.org/html/…` | `library.py`, `sanitize.py`, `structure.py` | `ltx_*` classes, markup of statements and proofs, image paths (two forms: `x1.png` or `<id>v<n>/fig.png`, `sanitize._relative`) | ar5iv, otherwise PDF + structure extracted from the TeX (`texstructure.py`); an archived version only from `arxiv.org/html/<id>v<k>` (`fetch_html(ar5iv=False)`: ar5iv serves its own version), otherwise TeX source and PDF |
 | RSS `rss.arxiv.org` | `feed.py` (`parse_rss`) | format of the announcements (new/cross/replace types) | OAI-PMH, then search API |
 | PDF and TeX source `arxiv.org/pdf/…`, `arxiv.org/e-print/…` | `arxiv.py` (called by `library.py`) | slowness, 429/503, format of the source archive | without source: structure taken from the HTML; without HTML or source: PDF only |
 | OAI-PMH `oaipmh.arxiv.org/oai` | `feed.py` (past days) | slow beyond one week | search API (submission window 14:00 New York) |
 | Author feed `arxiv.org/a/<id>.atom2` | `onboarding.py` | format, ORCID not linked | search by name |
-| Semantic Scholar (graph, batch, recommendations) | `related.py`, `relevance.py`, `journals.py`, `profile.py` (`_get_s2`), `citations.py`, `feed.py`, `onboarding.py`, `localpdf.py` (arXiv version of an imported PDF) | shared quota without a key (429), fields | wait and new attempt; features degraded without it |
+| Semantic Scholar (graph, batch, recommendations) | `related.py`, `relevance.py`, `journals.py`, `profile.py` (`_get_s2`), `citations.py`, `feed.py`, `onboarding.py`, `localpdf.py` (arXiv version of an imported PDF; "Look up on arXiv" of a bibliography entry, `reference_arxiv`: `/paper/DOI:…`, then `/paper/search/match` on the guessed title) | shared quota without a key (429), fields | wait and new attempt; features degraded without it; "Look up on arXiv" falls back to the guessed title and first author |
+| zbMATH citation matcher `zbmath.org/citationmatching/match` (public JSON, no key) | `localpdf.py` (`reference_zbmath`, `_zbmath_match`; route `POST /api/references/zbmath`, asked when the pointer or the focus reaches a bibliography "zbMATH" link) | fields `results`, `zbl_id`, `probability`; accepted only for a Zbl number `dddd.ddddd` and `probability ≥ ZBMATH_SURE` (0.5) | the link stays a filled zbMATH search (`zbmath_search`), also offline; not in `CHECKS` |
 | Zotero web API v3 | `zotero.py` | headers (`Total-Results`, `Last-Modified-Version`, `Backoff`), multiple writes (`successful`/`failed`), `since`/`/deleted` | safeguards: rejected write retried, mass removals held pending |
 | Claude (Agent SDK and its CLI) | `ai.py` | SDK options, list of models (`get_server_info`), sign-in | sign-in message in the settings |
 | The user's TeX (latexmk, pdflatex/xelatex, BibTeX/Biber, kpsewhich) | `texfile.py` (imported TeX files) | old latexmk (BibTeX cannot write into `-outdir`: `$bibtex_fudge=1`), MiKTeX without Perl (latexmk does not start), programs outside the PATH of an app launched from the Finder (`TEX_DIRS`) | manual compilation (LaTeX, BibTeX or Biber, LaTeX ×2); without TeX, PDF compiled next to the file |
 | The user's LaTeXML (`latexmlc`) | `latexml.py` (HTML β) | options of `latexmlc`, slowness (pgfplots, large documents), installation on Windows (Perl) | pgfplots figures replaced by a note; time limit depending on the size of the source (`latexml.timeout`: 10 min to 1 h, about 300 s per MB of TeX measured on a recent Mac, ×4 margin), then failure remembered ("Retry"); the PDF remains readable |
 | Codex CLI, Gemini API, local model | `providers.py` | CLI options (`-m`, `model_reasoning_effort`, `--image=` after the question `-`), `~/.codex/models_cache.json`, Gemini's `thinkingLevel` | — (the Gemini CLI no longer accepts free Google accounts: API with a key) |
 | GitHub releases | `updates.py` | — | silent |
+
+The DOI, MathSciNet and zbMATH links of the reader (paper header, bibliography) are ordinary addresses opened in the
+browser on click: the application itself sends nothing to doi.org or MathSciNet. If MathSciNet (`mref?ref=…&dataType=mathscinet`)
+or zbMATH (`?q=…`) change their search addresses, fix `findLinks` / `paperFindLinks` / `zbmathLink` (`reader.js`) and
+`zbmath_search` (`localpdf.py`).
 
 **Procedure when a service has changed**: reproduce with a minimal real request (like `check.py`); fix
 the module concerned; update the tests' simulation so that it resembles the new response (the fake
@@ -196,7 +217,9 @@ test for the case; check that the fallback works if the service goes down.
 
 **Caches to invalidate** when their computation changes: `STRUCTURE_VERSION` (`structure.py`, re-analysis of the imported
 papers), `PAGES_VERSION` (`library.py`, pages of the statements in the PDF), `FORMAT` (`related.py`, graphs kept for fifteen days), Zotero index (`zoteroIndexVersion`, reset
-by `_forget_all`).
+by `_forget_all`), new versions of the library (setting `feed.newVersions`: shape of its items). The text extracted by the
+full-text search (`fulltext._extracted`, `_read_labels`) is cached in memory only, keyed on the file's path and `mtime_ns`:
+a restart is enough.
 
 ## 7. WebKit and macOS
 
@@ -555,6 +578,149 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   of amsrefs);
   log without wrapped lines (`max_print_line`); the highlighted passages of the PDF that have
   moved are found again by their text on the page side (`PdfNotes.inPlace`/`findMoved`, ±3 pages) and their position saved.
+- Notes that lost their place after a recompilation of a TeX file (`texfile.py`, section « Notes après une modification du
+  texte »): `_build` calls `track_lost_notes` when `source.tex` changed. `_lost` counts the statement notes (non-empty)
+  whose identifier (`tex-txt-…`) is gone and the PDF text highlights (`target.pdf` without `rect`) whose letters (NFKD,
+  letters only, no digits) are no longer in the pypdf text of the new PDF; unreadable PDF: only passages already lost stay
+  lost. The context where the note had its place (`_context`: statement or proof, label, TeX of the statement ≤ 2000
+  characters, page) is written once in `previous.notes.json`, keyed by annotation `uid`, never overwritten; the source of the
+  replaced compilation is copied to `previous.source.tex`; both are deleted when nothing is lost (`previous.structure.json`,
+  format of the first beta, is removed). `report(pid)` recomputes `notesToCheck` on each call (`notes_to_check`). Page:
+  line of `texChecks` (`texfile.js`, `onAdaptNotes` → `Assistant.prefill`: question written, not sent), toast after the
+  reload through `sessionStorage` (`texNotes:<id>`, `Reader.notesToCheckToast`), report re-read 400 ms after an annotation
+  change (`texReportSoon`). The AI side is described under "AI on annotations" below. Tests: `tests/test_texfile.py`.
+
+- Paper versions (`library.py`, `db.py`): the main row (id without version) always carries the latest installed
+  version; an older version is a full paper row `<id>v<k>` (`archive_key`) with `in_library = 0` and `archived_of` = id of
+  the main paper, its own folder `papers/<id>v<k>`, its own notes and AI exchanges. When `_import` gets another version,
+  `_replace_version` renames the old folder to the archive folder, writes the archive row (`db.write_paper(connection, …)`,
+  inside the caller's transaction), moves notes and exchanges to it (`_move_notes`: the unique `general`, `block`, `proof`
+  rows are merged), then renames the new folder in. The database work is one SQLite transaction; the renames are outside
+  it: any failure puts the old folder back, and `recover_interrupted()` (called by `main.lifespan`) undoes a half-done
+  rename and clears hidden staging folders at startup. A version that already exists as an archive (notes imported from
+  another computer) is absorbed back into the main paper (`_absorb`, marker `.absorbed`). `ensure_version` /
+  `import_version` download a missing version (`arxiv.org/html/<id>v<k>` only, then TeX source and PDF); a failed download
+  removes the pending row unless it holds imported notes. `versions_of` builds the menu (`latest_version`: one arXiv
+  request, kept `LATEST_KEEP` = 1 h, answer within `LATEST_WAIT` = 20 s or `offline`); `open_version` returns
+  `{id, running}` (latest version: `update_in_background`; otherwise `ensure_version`). Routes:
+  `GET /api/papers/{id}/versions`, `POST /api/papers/{id}/versions/{version}` (502 with code `offline` on `ArxivError`);
+  refresh refused for an archive; `GET /api/papers/{id}` adds `mainVersion` for an archive and answers 404 for a failed
+  one. An archive never enters the library (`set_in_library` refuses), is never repaired by re-import and is removed with its
+  paper (`remove_paper`); `clean_cache` keeps a main paper whose archive has notes. Notes imported from another computer go
+  to their version (`notesync._version_of_notes`, `archived_of` in `PAPER_FIELDS`); an archive's export is named after its id
+  (`export.filename`). Tab left open on a replaced version: the page sends `X-ArXivReader-Version` on the reader's writes
+  (`api.setReadingVersion`, `versioned()`); `main._same_version` (`READER_WRITE`: annotation POST, proofs PUT/DELETE, `ai`,
+  `ai/book`, position) answers 409 `stale_version`, shown with "Reload" (`util.toastError`, key `reader.stale`). Editing an
+  existing annotation by id is not checked (the note followed its text). Page: `reader.versionChip` (menu `contextMenuAt`,
+  polls `api.importing`), version notice, tab title "(vk)", library toggle hidden for an archive; `library.updatePaper`
+  chooses the toast (`library.updatedMarks` when the previous version has notes or answers). Tests: `tests/test_versions.py`.
+
+- New versions in the feed: `library.new_versions(force)` lists library papers with a newer arXiv version of the last
+  `NEW_VERSIONS_DAYS` (45) that is not installed; arXiv asked at most every `NEW_VERSIONS_KEEP` (6 h), `force` from the
+  feed's Refresh (`GET /api/feed/new-versions?force=true`). The answer is kept in the setting `feed.newVersions` (shown at once
+  and offline); an empty arXiv answer erases nothing and a paper missing from a batch keeps its entry; old-style ids are
+  compared through `bare` (arXiv answers `math/0601001` for `math.DG/0601001`). Page: `loadNewVersions` runs apart from the
+  feed (arXiv can be slow), with a counter (`versionsAsked`) against out-of-order answers; `showNewVersions` redraws only this
+  section and keeps the reading position; `newVersionCard` updates through `library.updatePaper(…, {expectNew: true})` and a
+  module-level `updating` set, so the spinner survives redraws; the end of an update, and a change of `feedNewVersions` in
+  the settings, dispatch `arxivreader:feed-sections`. Settings `feedNewVersions` and `newVersionsCollapsed` (`allowed` and
+  `BOOLEAN_SETTINGS`). Foldable feed sections are folded by default (`foldableSection`, `collapsedByDefault = true`); the
+  reader's choice stays in `citingCollapsed`, `followedCollapsed`, `newVersionsCollapsed`.
+
+- Full-text search of the library (`fulltext.py`, `GET /api/library/search?q=`, query cut to 300 characters): no index.
+  Each search reads `content.html` (or `text.json` of an imported PDF) of the library papers, most recently opened first;
+  extracted text cached by `lru_cache` on (path, `mtime_ns`), `CACHED_FILES`. `fold` removes accents and case through a 1:1
+  character mapping (`_Folding`), so a position in the folded text is valid in the original: a new equivalence must keep
+  one character for one. `_pieces`: `<math>` replaced by its `alttext` between `$…$`, blocks separate words; literal
+  dollars become `PLAIN_DOLLAR` (U+FF04), so a remaining `$` always delimits a formula. `_locate`: one hit per paragraph or
+  statement (LaTeXML ids; a statement is `div.ltx_theorem`), `MAX_PER_PAPER` = 3; `_snippet` never cuts a word or a formula.
+  Annotations of library papers and of their archived versions (`ANNOTATED_PAPERS`) come first, notes before highlights,
+  bookmark names counting as notes. Target of a hit: element id, `top` (title, abstract), or `annotation-<id>` (highlight,
+  free note, anything placed in the PDF, label "PDF, p. n"), opened in place by `reader.showAnnotation` (bookmark, PDF
+  annotation through `annotator.revealPdf`, HTML mark through `showElement`). `MIN_QUERY` 3, `MAX_RESULTS` 200. Page:
+  `searchText` / `drawTextHits` (`library.js`, debounced 300 ms, `typesetTex`): snippets are set as text, never as HTML.
+  `reader.navigate` also targets `.ltx_figure`, `.ltx_table`, `.ltx_proof`. Tests: `tests/test_fulltext.py`.
+
+- AI on annotations (`ai.py`, task `ask` only, in `build_prompt`). Three kinds of request are recognised in the question
+  by regular expressions; each one has its sentences in `tests/test_ai.py` and `tests/test_versions.py`: change a
+  regular expression only with a test for the sentence that made it necessary.
+  - Notes carried over: `asks_adaptation(question, tex)` = `_asks_other_version` (`_ADAPT_CLEAR`, `_ADAPT`, `_NOTES`,
+    `_NOTES_ALL`, `_MENTIONS_VERSION`; sentence split that ignores "Thm. 3", "v. 1"; TeX file: `_MENTIONS_COMPILATION`) or
+    `_asks_view_change` (`_VIEW_CHANGE`: a verb of `_TRANSFER`, notes `_OBJECT_NOTES`, destination `_TO_VIEW` html|pdf).
+    Retries: `REDO_ADAPTING`, `_adaptation_redone`. `_adapting` returns (instruction, blocks): same version →
+    `SAME_VERSION_PROMPT` + `PLACES_PROMPT` with `_annotations_block(paper)`; another version (`_version_to_adapt`: the
+    named one, otherwise the most recent previous annotated one) → `<previous_version>` (cut by `_cut_middle` to the room
+    left) and `<previous_annotations>`, `ADAPT_PROMPT` + `_views_prompt` (`VIEWS_PROMPT` and `DEFAULT_VIEW` when the source
+    has notes in both views, `ONE_VIEW` for a single-view paper) + `PLACES_PROMPT`; recompiled TeX file
+    (`_previous_compilation`) → `TEX_ADAPT_PROMPT` with `_tex_annotations_block`. `_annotations_block` gives the place
+    (statement or proof, through `export._structure`), `surface="html|pdf"`, `zone="yes"`, an `<anchor>` (first `ANCHOR`
+    = 200 characters of the paragraph) for a note pinned to the HTML, and `author=assistant` (`ASSISTANT_NOTE`).
+    `_views(paper)` mirrors `texOnly` / `viewSwitch` of `reader.js`: change both together.
+  - Deletions: `asks_deletion` (`_DELETING`: `_DELETE_VERB` near `_DELETE_OBJECT`, per sentence); `_deleting` also applies
+    when the previous question of the thread was a deletion (answer to a clarifying question); a deletion bypasses
+    `_versions_compared`. `_annotations_block(version, current=True)` → `<current_annotations>` with the real ids, without
+    the `general` note, notes cut at `DELETE_NOTE` (600); `DELETE_PROMPT`.
+  - Questions on another version: `version_asked` (named version, "latest version", or the previous one when asking what
+    changed; a bare "v1" only with a version or change word, `_VERSION_WORD`); `_other_version` downloads it
+    (`library.ensure_version`, then `ensure_ready`, bounded wait); `_versions_compared` adds `<other_version>` and
+    `VERSION_PROMPT` before `TASK_PROMPTS["ask"]`; not for an adaptation or a deletion.
+  Text put in these blocks goes through `_neutral` (`PREVIOUS_TAGS`): a new tag used in a block is added to
+  `PREVIOUS_TAGS`. Page (`ai.js`): `parseProposals` reads the proposals (`quote`, `note`, `surface`, `zone`, `pin`, `page`,
+  `replaces`, `delete`; a `pin` needs a note; `delete` accepts numeric ids). `applyProposals` applies deletions first
+  (`DELETABLE`: highlight, note, block, bookmark; `deletedItem` / `itemOf` follow `annotator.restoredIds` after an undo),
+  then the placements: `surfaceOf`, `nearOf` (replaced place, otherwise page hint); in the PDF through
+  `reader.pdfQuote(quote, near)` (quote found in the pdf.js text layer: `proseOf` strips formulas, references, footnotes;
+  `lettersOf`; pieces within 400 letters; whole-word edges; ambiguous without `near` → null) and `PdfNotes.placeOf` (rectangle
+  around the passage's lines, one column, rotation-aware, 4 pt margin), `addZone` (with its image), `addPin`; in the HTML,
+  `Annotator.addPin` (inside a statement or proof: added to its note; existing free note: appended after `---`, put back by
+  `setFreeNote` on undo). A paper read in HTML loads a hidden PDF (`reader.createPdf` / `ensurePdf`); "Apply" stays disabled
+  while `exchange.found` holds an undefined entry (`ai.proposals.locating`). `exchange.unchecked` keeps unticked boxes
+  across redraws. Authorship: when the question matches `ABOUT_NOTES`, proposals with author "reader" stay the reader's
+  (no "**Claude** —" header; `ASSISTANT_HEADER` avoids a double header). `replaces`: the new note replaces the old one
+  (same kind only, never a region) and copies its reading state; Undo goes through `Annotator.restore`, which re-posts `uid`
+  and `created_at` (`annotations.create` accepts an unused 32-hex `uid`).
+
+- Notes tab (`annotations.js`): located annotations split into `inHtml` (document order, `compareDocumentPosition`) and
+  `inPdf` (`placePdf`: page, then height in the page; `PdfNotes.readingHeights` measures heights in the pdf.js text layer
+  and re-sorts the cards when the measurements arrive; stored `rect` / `top` before that). `singleView` (`reader.texOnly`):
+  one group `all` without title. Groups `notesGroup`, card tools `cardTools` (checkbox and trash), state `selecting`,
+  `selected`, `groupsOpen`; `refreshPanel` lets `reader.notesFollowView` open the current view's section without a full
+  redraw. `remove(id)` handles statement notes (`deleteBlock`, reading state lost), bookmarks, highlights and notes, and keeps
+  a copy for `restore` (region image as a data URL, `imageData`); `removeMany` serialises deletions and gathers those within
+  6.5 s under one Undo; `quietly` holds `onChange` during a batch. A section's trash appears only when some of its cards are
+  ticked. Bookmarks and the reading notes are not cards. `Reader.showElement` goes back to the HTML view
+  (`setView("html", { save: false, restore: false })`) before showing an HTML mark. Export: `export.zone_images` → `.zip` with
+  `images/` (`paper_export`, `library_zip`), route `GET /api/papers/{id}/notes` (the old `/notes.md` still answers).
+  Tests: `tests/test_export.py`.
+
+- Bibliography links (`reader.js`): `findLinks` builds the line ("Look up on arXiv" when the entry has no arXiv number, DOI,
+  MathSciNet, zbMATH; citation stripped of DOI, URL and arXiv ids, cut to 500 code points); `addFindLinks` (after
+  `linkArxivReferences`) appends `div.bib-links` at the **end** of each `.ltx_bibitem`, so highlight anchors counted from the
+  start do not move; `.bib-links` is in the UI selector of `annotations.js`, removed from previews by `clean`, and
+  `user-select: none`. `loadCrossLinks` puts "Open the paper" at the start of the line and removes "Look up on arXiv".
+  `zbmathLink`: filled search, resolved once on `pointerenter` / `focus` through `POST /api/references/zbmath`, only a
+  `https://zbmath.org/` address accepted. `lookUpArxiv`: in a browser, `window.open("", "_blank")` during the click
+  (otherwise blocked), `opener` set to null, then sent to the route; closed on error; native apps: `openRoute(route, true,
+  front)`. Route `#/search?terms=<JSON>` fully percent-encoded (also `! ' ( ) *`): the openTab regex of `macos/main.swift`
+  and `windows/shell/MainForm.cs` only accepts `\?[A-Za-z0-9._%~=&-]*`; `search.presetTerms` checks the terms (≤ 6, known
+  `FIELDS`), runs the search and replaces the address by `#/search` (Back does not rerun it). Paper header:
+  `paperFindLinks` (arXiv id without `vN`: zbMATH finds nothing with it). Tests: `tests/test_localpdf.py`.
+
+- Fonts unknown to arXiv's LaTeXML (`\EuScript`, `\scr`, `\EuFrak`, `\Bbb`…: left as `<mtext class="undefined">` before the
+  letter): `math.undefinedFonts(root)` (called in `reader.finishLayout` before MathJax and in `typesetFragment`) replaces the
+  command (with an optional invisible `<mo>`) and the letter, alone or base of `msub`/`msup`…, by the Unicode letter
+  (`ALPHABETS`, with the letters encoded elsewhere) and arXiv's font class (`FONT_CLASS`), as for `\mathcal`; an unknown
+  case stays visible. `MACROS` define `\EuScript`, `\scr`, `\EuFrak` for TeX. Links inside formula text (`\text{by
+  \eqref{…}}`): when MathJax refuses a formula because of HTML in `<mtext>`, `convert()` retries on a clone through
+  `linksInText` (links as `href` on mtext pieces, `ltx_font_*` kept, `\rule` as `<mspace>`, gives up on svg and img), and
+  `restoreLinks` puts arXiv's `ltx_` classes back on the `<a>` and opens external links in the browser. Verified in WebKit
+  and Chrome (section 4).
+- Equations aligned left or right (`latexml.css`): `.ltx_eqn_left_padleft` and `.ltx_eqn_right_padright` are 1px wide, not
+  0. With every fixed-width column at 0, WebKit divides by zero when sharing the shrink and the column jumps to 2^25 px
+  (blank in place of the equation; theorem 2.3 of arXiv 2611.10775). Do not set them back to 0.
+- Statement titles as plain text (`util.texToText`): accents become combining characters (`TEX_ACCENTS`), and `accented()`
+  draws each one as a separate, absolutely positioned span (`SPACING_ACCENTS`, `.tex-accent`, `.tex-accent-mark`): math
+  fonts misplace combining characters (the tilde of ∇̃ disappeared). `\left`/`\right`/`\big…` dropped, `\frac` → a/b.
 
 - Semantic Scholar with a key: 1 request/s for the whole application. Every new request goes through
   `s2.paced(send, api_key)` (`app/s2.py`), which spaces out the requests made with a key regardless of the thread; without a key, nothing
@@ -595,7 +761,11 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
 - Figures: the import keeps the original address of each image (`assets.json`); when a paper is opened,
   the missing ones are requested again (`library.repair_assets`, through these addresses, otherwise through a new import that
   may rename the files), and the reader follows the repair (`/api/papers/{id}/figures`) and then reloads
-  the paper. An image that does not arrive leaves a line in `server.log`.
+  the paper. An image that does not arrive leaves a line in `server.log`. A repair by new import (`_reimport_installed`)
+  passes the installed source (`_import(…, same_source)`): if the new text comes from another source, nothing is replaced
+  and the paper goes into `_repair_refused` (in memory: not retried before a restart); images missing from the new import
+  are copied from the old `assets/`. An ar5iv paper is re-imported only if its installed version is the latest (ar5iv serves
+  its own version); archived versions are never repaired this way.
 - People's names serve as examples in the interface: do not put real names or real
   identifiers there ("Your name", "arxiv.org/a/…").
 

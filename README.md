@@ -128,10 +128,17 @@ sync, with `.venv` as a link to it. The address is http://127.0.0.1:8710/; the s
 - **AMS "paper" layout** (amsart class): text in Charter or Computer Modern, formulas rendered by
   **MathJax** (TeX rules, Computer Modern fonts, same rendering in Safari, Firefox and Chrome);
   the browser's own MathML is still available in the settings.
+- **Font commands unknown to LaTeXML** (`\EuScript`, `\scr`, `\EuFrak`, `\Bbb`…), which arXiv's HTML leaves as raw
+  text before the letter: the letter is shown in the intended calligraphic, script, Fraktur or blackboard font. A
+  formula whose text contains a reference or a citation (`\text{by \eqref{…}}`) is typeset by MathJax too, and the
+  reference stays a link.
 - **Drawing missing from the HTML version** (PSTricks…: LaTeXML keeps only its labels): a warning in its
   place, with a "See in the PDF" button.
 - **Authors' affiliations** under the abstract, one line per author (name, address, email), with the
   first-page notes (funding, keywords, classification).
+- **The paper in the databases**: next to the DOI chip of the header, the "MathSciNet" and "zbMATH" chips look the
+  paper up in the browser (zbMATH by DOI, otherwise by arXiv number; MathSciNet with authors, title, journal
+  reference and DOI in its citation search). These are searches: the site says itself when it finds nothing.
 - **Copy formulas as LaTeX**: ⌘C on a selection copies its formulas as `$…$` (inline) and `\[…\]` (displayed)
   instead of MathJax's symbols; a "TeX" button does the same in the selection bar; ⌥-click a formula to copy
   its TeX alone.
@@ -198,6 +205,17 @@ above the folders, cover the whole library, and their results come first, above 
 "Sort" orders papers by last read, added, published, or alphabetically (title or first author, A → Z or
 Z → A, folders then being sorted by name in the same order).
 
+## Searching the library
+
+The library's search field ("Search the library: titles, authors, full text, notes…") filters the cards on titles,
+authors and other metadata, and, from 3 characters on, also searches the text of the papers and your notes. Below the
+filters, "In the text and notes (n)" lists the matches grouped by paper: notes and highlights first, then passages of
+the text, at most three per paper. Each match gives its kind (Note, Highlight, Statement, Text), the statement or
+section it is in (or "PDF, p. n") and an extract with its formulas; a click opens the paper at that place, and a
+highlight, a free note or an annotation of the PDF opens in its own view (HTML or PDF). The search ignores accents and
+case, finds words inside formulas (their TeX), covers imported PDFs (by page) and the notes of older versions of a
+paper (marked "· version k"). At most 200 results.
+
 ## Zotero
 
 Settings, "Zotero" section: with a personal Zotero web API key (created at zotero.org/settings/keys/new, library
@@ -236,7 +254,12 @@ papers to the library. Run it again from the Profile ("Getting-started assistant
   shown ("followed author", "close to …", keyword); papers of low relevance are reduced to one line (click
   to unfold). Clicking the title opens the paper without adding it to the library (cache cleared after
   30 days without reading); the **bookmark** adds it to or removes it from the library (also in the reader's
-  toolbar). At the top: new papers by your **followed authors**, even outside your categories. A namesake
+  toolbar). At the top: new papers by your **followed authors**, even outside your categories, then the **new
+  versions of papers in your library**: papers for which arXiv posted, in the last 45 days, a version not installed
+  yet, with the change ("v1 → v2"), the date and the authors' comment; "Update to v2" installs it (see
+  [Versions of a paper](#versions-of-a-paper)). arXiv is asked at most every six hours ("Refresh" asks again); a
+  setting hides this section, which sends no notification. These sections, like "Citing your papers", are folded by
+  default: a click on the heading opens one, and your choice is kept. A namesake
   (same name, another person)? 👎 on their paper → "Not this … (namesake)": the paper is no longer flagged, and the
   author can be followed only in the categories of the papers you kept (editable under the name, in Profile).
   "arXiv order" sorting is available. 👍 / 👎 refine the ranking. The arrows next to the announcement date
@@ -279,6 +302,36 @@ stays in its own (⌘-click: in the background).
 arXiv identifiers in the bibliography ("arXiv:2101.00001") open the cited paper in a new tab (⌘-click: in
 the background), whether it is in the library or not; the paper you were reading stays in its own tab.
 
+Each bibliography entry ends with a line of links that look the reference up, also shown in its preview on hover:
+- **Look up on arXiv**, for a reference without an arXiv number: arXivReader asks Semantic Scholar for its arXiv
+  version (by DOI, otherwise by its title, which must appear in the reference), then opens the Search page in a new
+  tab on that arXiv number, or else on the guessed title and first author, and runs the search; you can correct it
+  (in the Mac and Windows apps, ⌘-click or Ctrl-click opens the tab in the background).
+- **DOI** (when the entry has one and does not already link to it), **MathSciNet** (the text of the reference in
+  its citation search) and **zbMATH**: a zbMATH search filled with the first author and title; on hover (or with the
+  keyboard), arXivReader asks zbMATH's citation matcher for the document and, when zbMATH finds it reliably, the link
+  leads straight to its page (its tooltip gives the Zbl number).
+
+These links open in the browser, only when clicked; a reference that is a paper already read in arXivReader (in the
+library or simply opened) starts the line with "Open the paper" instead of "Look up on arXiv". The line is not part of the text: it is not selected with it and
+does not move highlights.
+
+## Versions of a paper
+
+Each arXiv version of a paper keeps its own text, notes and AI answers. In the reader, the chip "arXiv:ID · version n"
+(tooltip "Versions of this paper on arXiv") opens a menu listing every version, from the latest down to 1, with its number of
+notes and AI answers, and marking the one being read, the latest and those still to download. Choosing a version opens
+it; one that is not on this computer is downloaded in the background. If arXiv does not answer, the menu shows only
+the versions on this computer.
+
+Updating a paper (the Version menu, "Update from arXiv" on its card, or the feed) installs the new version without notes:
+your notes stay on the previous version, which opens from the menu ("Updated to version 2. Your notes stay on
+version 1: open it from the Version menu."). An older version opens in its own page, with the version in the tab
+title and a line "You are reading version k. Latest installed: version n" leading to the main version; it cannot be
+added to the library on its own. Notes imported from another computer go to the version they were taken on, which is
+downloaded if needed. A reader page left open on a version that was replaced in another tab in the meantime no longer
+adds notes, reading states or AI questions to it: a message offers to reload. Exported notes of an older version carry its number ("0806.2370v1 …").
+
 ## Papers without an HTML version
 
 When arXiv has no HTML version, the paper is read in its PDF, shown inside the reader.
@@ -312,7 +365,13 @@ Biber, then pdflatex), in a work folder of its own: nothing is written in your f
 proofs, dependencies and the bibliography from the source, and Claude receives the TeX source. The `.bib` files
 are looked for in the file's folder, then in your TeX installation; a missing one is reported and can be chosen
 by hand (remembered). **Recompile and reload** (toolbar of the reader) reads the source again: notes on a
-statement stay on it (found by its `\label`, otherwise by its text), and highlighted passages are found again where they moved. The
+statement stay on it (found by its `\label`, otherwise by its text), and highlighted passages are found again where they moved.
+When an edit leaves notes without a place (a statement without `\label` whose text was rewritten, a passage
+highlighted in the PDF that changed or was removed), the compilation report says so ("The text has changed: n
+note(s) lost their place…") with an "Ask the AI" button: it writes "Adapt my notes to the new compilation." in the
+Questions tab, without sending it. The assistant compares the new source with the previous one and proposes the notes
+moved or adapted; an applied proposal replaces the old note and keeps its reading state, and Undo brings the old notes
+back. Bookmarks, free notes and framed PDF regions are not affected. The
 Statements tab starts with checks: LaTeX errors, undefined references and citations, statements without a proof
 found, lemmas never used. A book (with `\chapter`) has its statements grouped by chapter, and the graph shows one
 chapter at a time. Without TeX (MacTeX, MiKTeX or TeX Live), the PDF compiled next to the file (`main.pdf` for
@@ -399,8 +458,17 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
 - **Bookmarks**: right-click → "Add bookmark" (or ⌘D), with a name of your choice. A red ribbon marks the place in the margin; all bookmarks are listed at the top of the Notes tab (a click
   takes you there, switching between HTML and PDF if needed). A bookmark set on an earlier arXiv version is flagged
   ("set on v1"); opening and saving it confirms it for the current version.
-- **Notes tab** of the panel: reading progress, the paper's reading sheet, all annotations in the order of
-  the paper (a click takes you there).
+- **Notes tab** of the panel: reading progress, the paper's reading sheet, then the annotations in two foldable
+  sections, "In the HTML (n)" in the order of the paper and "In the PDF (n)" by page, then from top to bottom
+  (highlights, regions and pinned notes together); the section of the view being read is open, and follows the
+  view until you fold or unfold a section yourself. A click takes you
+  there, switching view if needed. A paper read in a single view (imported PDF, TeX file from your computer, arXiv paper without an HTML
+  version) keeps one list.
+- **Deleting notes**: each card (highlight, region, free note, note on a statement) has a trash icon ("Delete this
+  note"). "Select" adds a checkbox to every card and an "All" box to each section; the section's trash then deletes
+  the ticked cards ("Delete the selection (n)"), and "Done" leaves selection mode. Each deletion shows a message with
+  Undo, which also restores region images and reading states; deletions in quick succession share one Undo. The
+  "Delete" buttons of the note and highlight boxes also offer Undo.
 - Notes in Markdown (**bold**, *italics*, lists, quotes) with formulas `$…$`, `$$…$$`, saved automatically.
   An annotated paper is never removed from the cache.
 - **Import**: Settings > Reading > "Import notes…" reads back files exported by arXivReader (one `.md` or the
@@ -411,8 +479,9 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   arXivReader, or modified since, are refused; another computer is accepted once (its fingerprint is shown in its
   settings).
 - **Export**: "Export notes (Markdown)" at the bottom of the Notes tab (reading sheet, statements and proofs with
-  their state, highlighted passages by section, formulas in LaTeX); Settings > Reading: all notes, one file per
-  paper, in a .zip archive (Downloads folder).
+  their state, highlighted passages by section, formulas in LaTeX), a .zip with the images in an `images/` folder
+  when the paper has framed PDF regions; Settings > Reading, "Export library and notes (.zip)": all notes, one
+  file per paper, with these images, in a .zip archive (Downloads folder).
 
 ## Claude on the paper
 
@@ -456,10 +525,38 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   Assistant (among those connected), model (Opus, Fable, Sonnet, Haiku… depending on your subscription) and
   reasoning level chosen under the field of each AI sub-tab; likewise for Codex
   and Gemini, from the list of your account or key. Answers are kept with the paper.
-- **Annotations suggested by Claude**: *Annotate* button on a statement, or any request such as
-  "highlight… / annotate…". Claude attaches a list of annotations (passages quoted word for word, colour,
-  note; notes on a statement or a proof): each passage is located in the paper, you tick what you keep,
-  *Apply* creates them (marked "Claude") and *Cancel* removes them. Claude never writes anything itself.
+- **Other versions of the paper**: ask what changed ("what changed since version 1?", "what is new in the latest
+  version?") or a question about a named version: the text of that version goes with the question (downloaded first
+  if needed), and the answer says where the changes are (section, statement, equation, as numbered in each version).
+- Claude can also annotate the paper, and handles your notes in the same way: it only **proposes**. Its answer ends
+  with "Proposed annotations (n)", each passage being located in the paper; you tick what you keep, nothing changes
+  before *Apply the selection (n)*, and *Undo*, in the confirmation, puts everything back as it was. Claude never
+  writes anything itself. Annotations are only placed on, or deleted from, the version being read.
+  - **Annotate**: *Annotate* button on a statement, or any request such as "highlight… / annotate…", also in the
+    *Review* tab to mark the points of the review. Claude proposes passages quoted word for word (colour, note)
+    and notes on a statement or a proof. New annotations are marked with the assistant's name. A note that already
+    has text on a statement or a proof is never rewritten: Claude's addition goes below it, after a separator, signed
+    "**Claude** — *unverified*".
+  - **Carry notes over between the HTML and the PDF**: "put my HTML notes on the PDF", "export the html notes to the
+    pdf" (put, copy, move, carry, export, send, apply, transcribe…, with the HTML or the PDF as destination). Claude
+    receives the paper's annotations and proposes their counterparts in the other view; your originals stay where
+    they are, and notes on statements, already in both views, are not copied. A paper read in HTML loads its PDF in
+    the background to place them: the button shows "Searching the PDF…" until they are located, and the
+    confirmation says how many could not be placed.
+  - **Carry notes over from another version**: "adapt my notes from v1", "adapt the HTML notes of v2 to the PDF of
+    v5". Claude identifies each statement by its content rather than its number, says briefly what changed for these
+    notes, lists those it could not find, and proposes the notes for the version being read. From a version with
+    notes in both views, it takes the HTML notes by default and offers to do the same with those of the PDF.
+  - In both cases, in a paper with both views, each proposal says where it goes ("in the HTML" / "in the PDF"), and
+    it may also be a *Zone* (a rectangle drawn around the lines of the quoted passage in the PDF, with its image) or a
+    *Pinned note* (in the PDF margin, or on an HTML paragraph; a free note already on that paragraph is never
+    rewritten, the addition goes below it). Your notes that Claude keeps unchanged or only renumbers stay yours (no
+    signature, not marked as the assistant's); when notes come from another version, notes written by an assistant
+    are re-evaluated.
+  - **Delete notes**: "delete my yellow highlights in section 3", "remove the AI notes from the PDF". Claude receives
+    the list of the paper's annotations and proposes those to delete, shown as "Delete · <kind> · <view or page>"
+    with the passage, the region's image or the note; when the request is ambiguous, it asks instead of guessing.
+    Deleting a note on a statement also removes its reading state.
 - **Links in answers**: statements, equations, sections ("Section 3.2", "§2.1", "Appendix A") and references
   ("[12]", "Smith and Jones (2007)") mentioned by the assistant are links, with the same preview on hover as in the
   paper.
@@ -467,7 +564,8 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   keywords, followed authors, reference papers and books, feed categories) and what you write about yourself in
   *Settings → AI assistant → Your profile* (field, level, what to detail). The settings show exactly what is sent.
   The profile adapts the level and points out real connections with your work; it never softens a review.
-- Claude only receives the text of the paper (invisible text removed), your profile and the request: no tools,
+- Claude only receives the text of the paper (invisible text removed), your profile and the request (and, when
+  the request needs them, the text of another version or the paper's annotations): no tools,
   no files, no network, no commands, no personal Claude Code settings; nothing is kept on the Claude Code side.
 
 ### Other assistants (Settings → AI assistant)
@@ -510,17 +608,19 @@ but has not been tried with a real account.
 - Data (SQLite database + one folder per paper) in `~/Library/Application Support/arXivReader` for the app,
   in `library/` when run from source. Elsewhere, only what you ask for: exported notes (Downloads folder) and,
   if you turn the weekly check on, its log (`~/Library/Logs`) and its job (`~/Library/LaunchAgents`).
-- Outgoing connections: arXiv (papers, new papers), Semantic Scholar (recommendations, related papers), GitHub
-  (once a day, number of the latest version; can be turned off), the chosen AI assistant, Zotero if a key is
-  given; `./arxivreader check` also calls each of them.
+- Outgoing connections: arXiv (papers, new papers, new versions), Semantic Scholar (recommendations, related
+  papers, arXiv version of a reference on "Look up on arXiv"), zbMATH (citation matcher, when the zbMATH link of a
+  reference is hovered or focused), GitHub (once a day, number of the latest version; can be turned off), the chosen
+  AI assistant, Zotero if a key is given; `./arxivreader check` also calls each of them, except zbMATH. DOI,
+  MathSciNet and zbMATH links open in the browser, only when clicked.
 
 ## Maintenance
 
-The application depends on services it does not control (arXiv and its LaTeXML pages, Semantic Scholar, Zotero,
-the AI assistants, GitHub) and on WebKit, which changes with macOS. The tests (`tests/`) simulate these services;
-`./arxivreader check` really calls them, one minimal request each, and checks the shape of the answers (✓ fine,
-✗ changed or down, – not checked: no key, quota reached). It also reports a change of macOS or WebKit since the
-previous time, with the points to review by hand. `./arxivreader check --weekly` runs it every Monday at 10 am
+The application depends on services it does not control (arXiv and its LaTeXML pages, Semantic Scholar, zbMATH,
+Zotero, the AI assistants, GitHub) and on WebKit, which changes with macOS. The tests (`tests/`) simulate these
+services; `./arxivreader check` really calls them (except zbMATH), one minimal request each, and checks the shape
+of the answers (✓ fine, ✗ changed or down, – not checked: no key, quota reached). It also reports a change of macOS
+or WebKit since the previous time, with the points to review by hand. `./arxivreader check --weekly` runs it every Monday at 10 am
 through the installed application (macOS notification if something is wrong; log in
 `~/Library/Logs/arXivReader-check.log`); `--no-weekly` stops it.
 
@@ -543,7 +643,7 @@ app/            Python server (FastAPI)
   feed.py       new arXiv papers (RSS, OAI-PMH), Semantic Scholar recommendations, identifier detection
   journals.py   journal where a paper appeared (arXiv, Semantic Scholar)
   search.py     search across arXiv (Search tab); related.py: related papers (graph); zotero.py: Zotero synchronisation; check.py: check of the external services; onboarding.py: getting-started assistant; export.py: notes export; notesync.py: signed notes export and import between computers
-  folders.py    library folders
+  folders.py    library folders; fulltext.py: search in the text and notes of the library
   profile.py    research profile, prefill, followed authors (namesakes); relevance.py: relevance ranking
   annotations.py  highlights, notes, reading state
   ai.py         paper text and instructions for Claude, called without tools (Claude Agent SDK); pages of a scan
@@ -555,10 +655,11 @@ app/            Python server (FastAPI)
   crossrefs.py  references that are papers read here; citations.py: papers citing yours
   texstructure.py  structure from the TeX source and PDF pages (papers without an HTML version)
   providers.py  other assistants: Codex (command line), Gemini (API), local model (Ollama, LM Studio)
-  localpdf.py   PDFs imported from the computer (text, title, arXiv version)
+  localpdf.py   PDFs imported from the computer (text, title, arXiv version); arXiv version and zbMATH entry
+                of a bibliography reference
   texfile.py    TeX files from the computer (compilation, bibliography, checks, stable ids)
   latexml.py    experimental HTML version made by LaTeXML (TeX files, arXiv papers without HTML)
-  library.py    importing a paper; db.py: SQLite database; main.py: web routes
+  library.py    importing a paper, its updates and versions; db.py: SQLite database; main.py: web routes
 macos/          Mac app: main.swift (window, tabs, server), icon.swift, build.sh, release.sh
 windows/        Windows app: shell/ (C# window with tabs, WebView2), launcher.py (server, built with PyInstaller),
                 smoke.ps1 (test of the built app), build-requirements.txt
