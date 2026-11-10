@@ -743,6 +743,18 @@ export class Annotator {
     return annotation;
   }
 
+  // Annotation supprimée remise telle quelle (annulation d'une adaptation de notes par l'IA)
+  async restore(old) {
+    const { kind, target, color, quote, note, state, author, uid, created_at } = old;  // même identité, même date
+    const annotation = await api.addAnnotation(this.paperId, { kind, target, color, quote, note, state, author, uid, created_at });
+    this.items = this.items.filter((a) => a.id !== annotation.id).concat(annotation);
+    if (kind === "highlight" && target?.pdf) this.pdf?.repaint(annotation);
+    else if (kind === "highlight") annotation.orphan = !paint(this.content, annotation);
+    this.refreshBadges();
+    this.onChange();
+    return annotation;
+  }
+
   async deleteBlock(annotationId) {
     await api.deleteAnnotation(annotationId);
     this.items = this.items.filter((a) => a.id !== annotationId);

@@ -116,6 +116,7 @@ class Reader {
         if (this.destroyed) return;
         if (this.tab === "notes") this.renderPanel();
         else this.refreshNodeItems();
+        if (this.texFile) this.texReportSoon();  // notes à replacer : compte du bilan tenu à jour
       },
       aiActions: (id) => this.assistant.actionsFor(id, { compact: true }),
       onAskAI: (quote) => this.assistant.setPassage(quote),
@@ -140,6 +141,7 @@ class Reader {
       navigate: (id) => this.navigate(id),
       onChange: (options) => this.onAssistantChange(options),
       inPdf: () => this.pdfMode,
+      pdfQuote: this.texOnly ? (quote, near) => this.pdfQuote(quote, near) : null,
       contextPages: (center, signal) => this.contextPages(center, signal),
       currentPage: () => this.pdf?.frame.contentWindow?.PDFViewerApplication?.pdfViewer?.currentPageNumber || null,
       readingChapter: () => this.readingChapter(),
@@ -184,6 +186,7 @@ class Reader {
       if (this.destroyed) return;
       if (this.startAt) this.showInPdf(this.startAt);
       this.loadCrossLinks();
+      this.notesToCheckToast();
       return;
     }
     if (this.pdfMode) {
@@ -2304,10 +2307,25 @@ class Reader {
     if (!this.destroyed && this.tab === "statements") this.renderPanel();
   }
 
+  // note créée, modifiée ou supprimée : bilan relu un peu après (plusieurs changements d'affilée : une seule lecture)
+  // panneau redessiné seulement si le compte change (sinon une note en cours de saisie serait perdue)
+  texReportSoon() {
+    clearTimeout(this.texReportTimer);
+    this.texReportTimer = setTimeout(async () => {
+      if (this.destroyed) return;
+      const before = this.texReport?.notesToCheck || 0;
+      const report = (await api.texReport(this.paper.id).catch(() => ({}))).report;
+      if (!report || this.destroyed) return;
+      this.texReport = report;
+      if (this.tab === "statements" && (report.notesToCheck || 0) !== before) this.renderPanel();
+    }, 400);
+  }
+
   texChecks() {
     return texChecks(this.texReport, this.nodes, {
       hasProof: (node) => this.hasProof(node),
       show: (ids) => { this.onlyIds = new Set(ids); this.renderPanel(); },
+      onAdaptNotes: () => this.adaptNotes(),
       onChooseBib: (name) => chooseBibFor(this.paper.id, name, (result) => this.afterCompile(result)),
     });
   }
@@ -2335,8 +2353,135 @@ class Reader {
       return;
     }
     const page = this.pdf?.frame.contentWindow?.PDFViewerApplication?.pdfViewer?.currentPageNumber;
-    try { if (page) sessionStorage.setItem(`texPage:${this.paper.id}`, String(page)); } catch { /* stockage indisponible */ }
+    try {
+      if (page) sessionStorage.setItem(`texPage:${this.paper.id}`, String(page));
+      if (result.report.notesToCheck) sessionStorage.setItem(`texNotes:${this.paper.id}`, String(result.report.notesToCheck));
+      else sessionStorage.removeItem(`texNotes:${this.paper.id}`);
+    } catch { /* stockage indisponible */ }
     dispatchEvent(new HashChangeEvent("hashchange"));
+  }
+
+  // texte modifié alors que l'article a des notes (texfile.track_lost_notes) : message après le rechargement, et dans le
+  // bilan de l'onglet Énoncés ; l'IA les adapte sur demande (onglet Questions, question écrite d'avance, non envoyée)
+  notesToCheckToast() {
+    let count = 0;
+    try {
+      count = Number(sessionStorage.getItem(`texNotes:${this.paper.id}`)) || 0;
+      sessionStorage.removeItem(`texNotes:${this.paper.id}`);
+    } catch { /* stockage indisponible */ }
+    if (count) toast(t("tex.notesToCheck", { n: count }), { duration: 15000, action: { label: t("tex.notesAskAI"), icon: icons.sparkle, onClick: () => this.adaptNotes() } });
+  }
+
+  adaptNotes() { this.assistant?.prefill(t("tex.adaptQuestion")); }
+
+  // Passage proposé par l'assistant, cherché dans le PDF par ses mots (lettres et chiffres seulement, sans accents : la
+  // source TeX et le texte du PDF diffèrent par les formules, les commandes, la ponctuation et les césures) :
+  // { target, text } ou null. Formules et renvois (\ref, \cite) sautés : les morceaux de texte entre eux doivent se
+  // suivre de près (d'une page à la suivante aussi), le premier et le dernier sur des mots entiers. `near` (place d'un
+  // passage remplacé, {page, start}) : l'occurrence la plus proche ; sans lui, un passage présent plusieurs fois n'est
+  // pas choisi au hasard (null).
+  async pdfQuote(quote, near = null) {
+    const segments = proseOf(quote);
+    const kept = segments.map((piece, index) => ({ piece, index })).filter(({ piece }) => piece.length >= 3);
+    const pieces = kept.map(({ piece }) => piece);
+    // assez de mots pour être sans ambiguïté (les morceaux très courts, souvent pris dans un autre mot, ne comptent pas)
+    if (pieces.filter((piece) => piece.length >= 4).join("").length < 12) return null;
+    const doc = await this.pdfLetters();
+    if (!doc) return null;
+    const { text, page, starts, ends, raws, breaks } = doc;
+    const letters = pieces.reduce((sum, piece) => sum + piece.length, 0);
+    // mot coupé à cette position du texte d'une page ? (pdf.js colle les morceaux de texte, d'une ligne à l'autre
+    // aussi : leur jonction sépare deux mots)
+    const inWord = (number, at) => /[\p{L}\p{N}]/u.test(raws[number][at - 1] || "") && /[\p{L}\p{N}]/u.test(raws[number][at] || "")
+      && !breaks[number].has(at);
+    // bord de la citation vérifié seulement s'il est du texte (« $n$th » : « th » peut être collé à la formule ; un
+    // morceau trop court, sauté, laisse le premier gardé au milieu d'un mot)
+    const checkFirst = kept[0].index === 0;
+    const checkLast = kept[kept.length - 1].index === segments.length - 1;
+    const found = new Map();  // fin du passage → début le plus proche (le plus serré)
+    let tries = 0;
+    for (let from = text.indexOf(pieces[0]); from >= 0 && found.size < 50 && tries++ < 5000; from = text.indexOf(pieces[0], from + 1)) {
+      // début et fin sur des mots entiers du texte du PDF
+      if (checkFirst && inWord(page[from], starts[from])) continue;
+      let end = from + pieces[0].length;
+      let gaps = 0;
+      for (const piece of pieces.slice(1)) {
+        // formule entre deux morceaux : 400 lettres au plus (recherche bornée à cette fenêtre)
+        const at = text.slice(end, end + 400 + piece.length).indexOf(piece);
+        if (at < 0) { end = -1; break; }
+        gaps += at;
+        end += at + piece.length;
+      }
+      if (end < 0 || gaps > 2 * letters + 100 || (checkLast && inWord(page[end - 1], ends[end - 1]))) continue;
+      found.set(end, from);
+    }
+    const spans = [...found].map(([end, from]) => [from, end]);
+    if (!spans.length || (spans.length > 1 && !near)) return null;
+    const distance = ([from]) => Math.abs(page[from] - near.page) * 1e7 + Math.abs(starts[from] - (near.start ?? 0));
+    const [from, end] = spans.length > 1 ? spans.reduce((best, span) => (distance(span) < distance(best) ? span : best)) : spans[0];
+    const first = page[from];
+    const last = page[end - 1];
+    const start = starts[from];
+    const stop = ends[end - 1];
+    // texte lu comme une sélection à la main : fin de ligne et changement de page comptés comme une espace
+    const parts = [];
+    for (let number = first; number <= last; number++) {
+      parts.push(doc.textOf(number, number === first ? start : 0, number === last ? stop : raws[number].length));
+    }
+    return { target: { page: first, start, endPage: last, end: stop }, text: parts.join(" ").replace(/\s+/g, " ").trim() };
+  }
+
+  // Texte de tout le PDF réduit à ses lettres (lettersOf), avec la page et la position dans la page de chacune ; mêmes
+  // réglages que la couche de texte de pdf.js : positions identiques à celles des passages surlignés à la main. Lu une
+  // fois (la promesse est gardée : deux recherches simultanées ne relisent pas le PDF ; un échec est réessayé)
+  pdfLetters() {
+    this.pdfLettersDone ||= this.readPdfLetters().then((result) => {
+      if (!result) this.pdfLettersDone = null;
+      return result;
+    }, (error) => {
+      this.pdfLettersDone = null;
+      throw error;
+    });
+    return this.pdfLettersDone;
+  }
+
+  async readPdfLetters() {
+    const app = await this.pdf?.ready();
+    const doc = app?.pdfDocument;
+    if (!doc) return null;
+    const result = { text: "", page: [], starts: [], ends: [], raws: [], breaks: [], eols: [] };
+    const parts = [];
+    for (let number = 1; number <= doc.numPages; number++) {
+      const content = await (await doc.getPage(number)).getTextContent({ includeMarkedContent: true, disableNormalization: true });
+      const raw = content.items.map((item) => item.str || "").join("");
+      const { text, starts, ends } = lettersOf(raw);
+      result.raws[number] = raw;
+      result.breaks[number] = new Set();  // débuts des morceaux de texte
+      result.eols[number] = new Set();  // fins de ligne (hasEOL de pdf.js)
+      content.items.reduce((at, item) => {
+        const next = at + (item.str || "").length;
+        result.breaks[number].add(at);
+        if (item.hasEOL) result.eols[number].add(next);
+        return next;
+      }, 0);
+      parts.push(text);
+      for (let i = 0; i < text.length; i++) {
+        result.page.push(number);
+        result.starts.push(starts[i]);
+        result.ends.push(ends[i]);
+      }
+    }
+    result.text = parts.join("");
+    // texte d'une page entre deux positions, une espace à chaque fin de ligne
+    result.textOf = (number, from, to) => {
+      let out = "";
+      for (let at = from; at < to; at++) {
+        if (at > from && result.eols[number].has(at)) out += " ";
+        out += result.raws[number][at];
+      }
+      return out;
+    };
+    return result;
   }
 
   recompiledPage() {
@@ -2386,4 +2531,69 @@ function canScroll(element, dx, dy) {
     && (dy < 0 ? element.scrollTop > 0 : element.scrollTop + element.clientHeight < element.scrollHeight - 1)) return true;
   return Boolean(dx && /auto|scroll/.test(style.overflowX) && element.scrollWidth > element.clientWidth + 1
     && (dx < 0 ? element.scrollLeft > 0 : element.scrollLeft + element.clientWidth < element.scrollWidth - 1));
+}
+
+// Lettres et chiffres d'un texte, en minuscules, avec la position de chacun dans le texte (passages cherchés dans le
+// PDF). Ligatures du PDF (ﬁ) et lettres mathématiques (𝑥) ramenées à leurs lettres simples (NFKC), à la même position
+function lettersOf(raw) {
+  let text = "";
+  const starts = [];  // début et fin dans `raw` du caractère d'où vient chaque lettre
+  const ends = [];
+  for (let index = 0; index < raw.length;) {
+    const char = String.fromCodePoint(raw.codePointAt(index));
+    // NFKD : ligatures (ﬁ) en lettres, accents (é, e + accent combinant, accent seul d'un PDF en OT1 : « e´ ») ôtés
+    for (const letter of char.normalize("NFKD").toLowerCase()) {
+      if (!/[\p{L}\p{N}]/u.test(letter)) continue;
+      text += letter;
+      starts.push(index);
+      ends.push(index + char.length);
+    }
+    index += char.length;
+  }
+  return { text, starts, ends };
+}
+
+// Morceaux de texte d'un extrait de source TeX (lettres et chiffres), dans l'ordre, sans ses formules, ses renvois,
+// ses notes de bas de page ni ses commentaires ; une commande de mise en forme (\emph{…}, \textbf{…}) garde son texte,
+// une autre commande coupe le morceau (le texte qu'elle imprime n'est pas dans la source) et perd son premier argument
+// (\textcolor{red}{…}, \vspace{2pt}) ; un lien (\href{url}{texte}) garde son texte, une adresse (\url{…}) coupe ; un
+// accent (\'e) laisse sa lettre. Morceaux vides gardés : le premier (dernier) est vide si l'extrait commence (finit) par
+// une formule ou une commande, ce que pdfQuote regarde pour vérifier ses bords
+const DISPLAY = "equation|align|alignat|flalign|gather|multline|eqnarray|displaymath|math";
+function proseOf(quote) {
+  const text = dropBalanced(String(quote)
+    .replace(/\\url\{[^}]*\}/g, "\u0000")
+    .replace(/\\href\{[^}]*\}/g, "")
+    .replace(/(^|[^\\])((?:\\\\)*)%.*$/gm, "$1$2")
+    .replace(/\\\\\*?(?:\[[^\]]*\])?/g, " "), /\\(?:footnote|footnotetext|thanks)(?![A-Za-z])(?:\[[^\]]*\])?\s*\{/g);
+  return text
+    .replace(new RegExp(`\\\\begin\\{(${DISPLAY})(\\*?)\\}[\\s\\S]*?\\\\end\\{\\1\\2\\}`, "g"), "\u0000")
+    .replace(/\$\$[\s\S]*?\$\$|\$[^$]*\$|\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\]/g, "\u0000")
+    .replace(/\\(?:begin|end)\{[^}]*\}(?:\[[^\]]*\])?/g, "\u0000")
+    .replace(/\\(?:eq|page|v|auto|name|c|C)?ref\*?\{[^}]*\}|\\hyperref\[[^\]]*\]|\\(?:cite[a-zA-Z]*|label|index)\*?(?:\[[^\]]*\])*\{[^}]*\}/g, "\u0000")
+    .replace(/\\["'`^~=.]|\\[cvuHkr](?![A-Za-z])/g, "")
+    .replace(/\\(?:emph|text(?:bf|it|sc|rm|sf|tt|up|md|sl|normal)?|underline|mbox)\s*(?=\{)/g, "")
+    .replace(/\\[A-Za-z@]+\*?(?:\[[^\]]*\])*(?:\{[^{}]*\})?/g, "\u0000")
+    .split("\u0000")
+    .map((piece) => lettersOf(piece).text);
+}
+
+// Commandes trouvées par `opening` (qui finit sur l'accolade ouvrante) ôtées avec leur argument, accolades équilibrées
+// (une note de bas de page peut en contenir plusieurs niveaux) ; remplacées par une coupure de morceau
+function dropBalanced(text, opening) {
+  let out = "";
+  let last = 0;
+  for (const match of text.matchAll(opening)) {
+    if (match.index < last) continue;
+    let depth = 1;
+    let at = match.index + match[0].length;
+    for (; at < text.length && depth; at++) {
+      if (text[at] === "\\") at++;
+      else if (text[at] === "{") depth++;
+      else if (text[at] === "}") depth--;
+    }
+    out += text.slice(last, match.index) + "\u0000";
+    last = at;
+  }
+  return out + text.slice(last);
 }

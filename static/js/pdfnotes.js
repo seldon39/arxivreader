@@ -571,6 +571,16 @@ export class PdfNotes {
     }
   }
 
+  // passage proposé par l'assistant, déjà situé dans le PDF ({page, start, endPage, end}) : surligné
+  async addHighlight({ target, quote, color = "yellow", note = null, author = null }) {
+    const annotation = await api.addAnnotation(this.annotator.paperId, { kind: "highlight", target: { pdf: target }, color,
+      quote: Array.from(quote).slice(0, 1500).join(""), note, author });  // sans couper un caractère en deux
+    this.annotator.items.push(annotation);
+    this.repaint(annotation);
+    this.annotator.onChange();
+    return annotation;
+  }
+
   // appelés par l'annotateur
   recolor(id) { const a = this.annotator.items.find((x) => x.id === id); if (a && isPdf(a)) this.repaint(a); }
   removed(annotation) { if (isPdf(annotation)) this.repaint(annotation); }

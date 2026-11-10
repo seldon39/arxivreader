@@ -26,10 +26,11 @@ import sys
 import tempfile
 import threading
 import time
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 
-from . import db, texstructure
+from . import annotations, db, texstructure
 from .library import paper_dir, paper_lock, write_atomic, write_atomic_bytes
 from .structure import NEEDS_PROOF
 from .texsource import DOCUMENTCLASS, INPUT, input_target, MAX_FILE_BYTES, MAX_FILES, MAX_TOTAL_BYTES, USEPACKAGE, _strip_comments, analyze_text
@@ -364,6 +365,107 @@ def stable_ids(structure):
     return structure
 
 
+# ---------- Notes après une modification du texte ----------
+
+# Texte modifié : une note peut avoir perdu sa place — note d'un énoncé sans \label dont le texte a changé (son
+# identifiant tex-txt-… n'existe plus), passage surligné du PDF qui n'est plus dans le nouveau PDF. Chacune garde le
+# contexte de la compilation où elle a été prise (énoncé, numéro, texte, page), relevé la première fois qu'elle se perd
+# et jamais remplacé ensuite : plusieurs recompilations avant l'adaptation ne le font pas oublier. L'IA s'en sert pour
+# la replacer (« adapte mes notes », ai._adapting), avec la source de la compilation précédente.
+# Repérées par leur uid (gardé quand « Annuler » remet une note remplacée) ; celles qui n'existent plus ne comptent pas.
+PREVIOUS_SOURCE = "previous.source.tex"
+PREVIOUS_NOTES = "previous.notes.json"
+_OLD_PREVIOUS = "previous.structure.json"  # forme de la première bêta : supprimée
+STATEMENT_CHARS = 2000
+
+
+def letters(text):
+    """Lettres seulement, sans accents ni casse : texte du PDF (pypdf) et passages surlignés (couche de texte de pdf.js)
+    comparés ainsi — sans les chiffres, que pdf.js met à la place de certains symboles (« 7→ » pour ↦, « 6= » pour ≠)."""
+    return "".join(ch for ch in unicodedata.normalize("NFKD", text).lower() if ch.isalpha())
+
+
+def _pdf_letters(pdf):
+    """Texte du PDF compilé réduit à ses lettres ; None s'il est illisible (rien n'est alors compté comme perdu)."""
+    import io
+
+    import pypdf
+    try:
+        return letters(" ".join(page.extract_text() or "" for page in pypdf.PdfReader(io.BytesIO(pdf)).pages))
+    except Exception:
+        return None
+
+
+def _lost(item, ids, pdf_text, records):
+    """Note qui a perdu sa place dans la nouvelle compilation (ids : énoncés et preuves ; pdf_text : lettres du PDF ;
+    records : notes déjà perdues). Ni états de lecture seuls, ni marque-pages, ni notes libres, ni zones : fixés à une
+    page, rien à adapter. PDF illisible : les passages déjà perdus le restent, les autres ne sont pas comptés."""
+    target = item["target"] or {}
+    if item["kind"] == "block":
+        return bool((item["note"] or "").strip()) and target.get("id") not in ids
+    if item["kind"] == "highlight" and target.get("pdf") and not target["pdf"].get("rect"):
+        quote = letters(item["quote"] or "")
+        if pdf_text() is None:
+            return item["uid"] in records
+        return bool(quote) and quote not in pdf_text()
+    return False
+
+
+def _context(structure, item):
+    """Où était la note dans la compilation `structure` : énoncé (ou sa preuve), numéro, texte de l'énoncé, page."""
+    target = item["target"] or {}
+    if item["kind"] != "block":
+        return {"page": (target.get("pdf") or {}).get("page")}
+    nodes = {node["id"]: node for node in structure.get("nodes", [])}
+    on, node = "statement", nodes.get(target.get("id"))
+    if node is None:
+        proof = next((p for p in structure.get("proofBlocks", []) if p.get("id") == target.get("id")), None)
+        on, node = "proof", nodes.get((proof or {}).get("of"))
+    if node is None:
+        return {}
+    return {"on": on, "label": node.get("label"), "statement": (node.get("tex") or "")[:STATEMENT_CHARS], "page": node.get("page")}
+
+
+def lost_notes(folder):
+    """{uid: contexte} des notes qui ont perdu leur place (previous.notes.json)."""
+    try:
+        records = json.loads((folder / PREVIOUS_NOTES).read_text(encoding="utf-8"))
+        return records if isinstance(records, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def notes_to_check(pid, folder=None):
+    """Annotations encore à replacer (celles remplacées ou supprimées depuis ne comptent plus)."""
+    records = lost_notes(folder or paper_dir(pid))
+    return [item for item in annotations.list_for(pid) if item["uid"] in records] if records else []
+
+
+def track_lost_notes(pid, folder, structure, pdf):
+    """Nouvelle compilation au texte modifié (`structure`, `pdf`) : relève les notes qui ont perdu leur place, avec le
+    contexte de la compilation où elles l'avaient, et garde la source de cette compilation ; renvoie leur nombre."""
+    try:
+        old = json.loads((folder / "structure.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        old = {}
+    records = lost_notes(folder)
+    items = annotations.list_for(pid)
+    ids = {node["id"] for node in structure.get("nodes", [])} | {p.get("id") for p in structure.get("proofBlocks", [])}
+    cache = []
+    pdf_text = lambda: (cache or cache.append(_pdf_letters(pdf)) or cache)[0]  # lu seulement s'il y a des passages
+    kept = {item["uid"]: records.get(item["uid"]) or _context(old, item) for item in items if _lost(item, ids, pdf_text, records)}
+    (folder / _OLD_PREVIOUS).unlink(missing_ok=True)
+    if not kept:
+        for name in (PREVIOUS_SOURCE, PREVIOUS_NOTES):
+            (folder / name).unlink(missing_ok=True)
+        return 0
+    # source de la compilation remplacée (une note perdue plus tôt a son propre contexte : énoncé et texte d'alors)
+    if (folder / "source.tex").is_file():
+        shutil.copyfile(folder / "source.tex", folder / PREVIOUS_SOURCE)
+    write_atomic(folder / PREVIOUS_NOTES, json.dumps(kept, ensure_ascii=False))
+    return len(kept)
+
+
 # ---------- Import et recompilation ----------
 
 def _settings(pid):
@@ -435,7 +537,14 @@ def choose_bib(pid, name, path):
 
 
 def report(pid):
-    return _settings(pid).get("report")
+    """Bilan de la dernière compilation ; notes à replacer comptées maintenant (celles replacées depuis n'y sont plus)."""
+    rep = _settings(pid).get("report")
+    if rep is None:
+        return None
+    rep = {key: value for key, value in rep.items() if key != "notesToCheck"}
+    if count := len(notes_to_check(pid)):
+        rep["notesToCheck"] = count
+    return rep
 
 
 # Compilation en arrière-plan (une minute ou plus pour un livre : la page ne garde pas une requête ouverte aussi
@@ -528,6 +637,8 @@ def _build(pid, settings):
         settings["report"] = rep
         if previous:  # recompilation ratée : l'article reste lisible (PDF précédent), le bilan dit pourquoi
             write_atomic(paper_dir(pid) / "texfile.json", json.dumps(settings, ensure_ascii=False))
+            if count := len(notes_to_check(pid)):  # notes toujours à replacer : encore dites
+                rep = {**rep, "notesToCheck": count}
         return {"paper": previous, "report": rep}
     pdf = pdf_path.read_bytes()
     bbl = next((p.read_text(encoding="utf-8", errors="replace") for p in (out / f"{main.stem}.bbl", root / f"{main.stem}.bbl")
@@ -548,6 +659,9 @@ def _build(pid, settings):
     settings["report"] = rep
     folder = paper_dir(pid)
     folder.mkdir(parents=True, exist_ok=True)
+    if previous and (folder / "source.tex").is_file() and (folder / "source.tex").read_text(encoding="utf-8") != source:
+        if count := track_lost_notes(pid, folder, structure, pdf):
+            rep["notesToCheck"] = count
     write_atomic_bytes(folder / "paper.pdf", pdf)
     write_atomic(folder / "source.tex", source)
     write_atomic(folder / "structure.json", json.dumps(structure, ensure_ascii=False))

@@ -107,6 +107,102 @@ class TexFile(unittest.TestCase):
         self.assertFalse(texstructure.extract(ARTICLE)["book"])
         self.assertEqual(texstructure.extract(ARTICLE)["toc"][0]["title"], "1. Results")  # article : inchangé
 
+    def test_changed_text_tracks_lost_notes(self):
+        """Texte modifié : les notes qui ont perdu leur place (énoncé sans \\label réécrit, passage absent du nouveau PDF)
+        sont signalées avec le contexte de la compilation où elles l'avaient, gardé jusqu'à ce qu'elles soient replacées
+        (plusieurs recompilations entre-temps) ; « adapte mes notes » joint cette source et ces notes seulement."""
+        from tests.test_localpdf import make_pdf
+        from app import ai
+        unlabelled = ARTICLE.replace(r"\begin{lemma}\label{lem:a}", r"\begin{lemma}")
+        (self.project / "main.tex").write_text(unlabelled, encoding="utf-8")
+        (self.project / "main.pdf").write_bytes(make_pdf(["Averages on the sphere", "Lemma 1.1. Lemma A."]))
+        with mock.patch.object(texfile, "find_tool", lambda name: None):
+            paper = texfile.import_tex(self.project / "main.tex")["paper"]
+            pid = paper["id"]
+            folder = library.paper_dir(pid)
+            lemma = next(n["id"] for n in library.load_structure(pid)["nodes"] if n["label"] == "Lemma 2.1")
+            self.assertTrue(lemma.startswith("tex-txt-lemma-"))
+            # sans note : rien de gardé, rien à signaler
+            (self.project / "main.tex").write_text(unlabelled.replace("Unused.", "Unused, really."), encoding="utf-8")
+            self.assertNotIn("notesToCheck", texfile.recompile(pid)["report"])
+            self.assertFalse((folder / texfile.PREVIOUS_SOURCE).exists())
+            note = annotations.create(pid, "block", target={"id": lemma}, note="Voir la preuve de Knuth.", state="review")
+            annotations.create(pid, "block", target={"id": "tex-lbl-prop:b"}, note="Toujours en place.")
+            annotations.create(pid, "block", target={"id": "tex-lbl-lem:unused"}, state="understood")  # état seul
+            annotations.create(pid, "general", note="Fiche.")
+            kept = annotations.create(pid, "highlight", target={"pdf": {"page": 1, "start": 0, "endPage": 1, "end": 8}},
+                                      quote="Averages on the", color="yellow")
+            gone = annotations.create(pid, "highlight", target={"pdf": {"page": 1, "start": 0, "endPage": 1, "end": 8}},
+                                      quote="A sentence that is gone", color="green")
+            # même texte : rien à signaler
+            self.assertNotIn("notesToCheck", texfile.recompile(pid)["report"])
+            self.assertFalse((folder / texfile.PREVIOUS_SOURCE).exists())
+            # texte de l'énoncé modifié : sa note et le passage absent du PDF ont perdu leur place
+            (self.project / "main.tex").write_text(unlabelled.replace("Lemma A.", "Lemma A, rewritten."), encoding="utf-8")
+            self.assertEqual(texfile.recompile(pid)["report"]["notesToCheck"], 2)
+            records = texfile.lost_notes(folder)
+            self.assertEqual(set(records), {note["uid"], gone["uid"]})
+            self.assertEqual(records[note["uid"]], {"on": "statement", "label": "Lemma 2.1", "statement": "Lemma A.", "page": None}
+                             | {"page": records[note["uid"]]["page"]})
+            # nouvelle modification avant l'adaptation : le contexte d'origine reste, la source précédente est la dernière
+            # remplacée (celle que l'IA compare à la nouvelle)
+            (self.project / "main.tex").write_text(unlabelled.replace("Lemma A.", "Lemma A, rewritten twice."), encoding="utf-8")
+            self.assertEqual(texfile.recompile(pid)["report"]["notesToCheck"], 2)
+            # PDF illisible : les passages déjà perdus restent signalés, les autres ne sont pas comptés
+            records = texfile.lost_notes(folder)
+            unreadable = lambda: None
+            self.assertTrue(texfile._lost(gone, set(), unreadable, records))
+            self.assertFalse(texfile._lost(kept, set(), unreadable, records))
+        self.assertIn("Lemma A, rewritten.",(folder / texfile.PREVIOUS_SOURCE).read_text(encoding="utf-8"))
+        self.assertEqual(texfile.lost_notes(folder)[note["uid"]]["statement"], "Lemma A.")
+        self.assertFalse(any(kept["uid"] in texfile.lost_notes(folder) for _ in [0]))
+        self.assertEqual(texfile.report(pid)["notesToCheck"], 2)
+        paper = db.get_paper(pid)
+        structure = library.load_structure(pid)
+        _, prompt = ai.build_prompt(paper, structure, "ask", question="Adapte mes notes à la nouvelle compilation.", language="fr")
+        self.assertIn(ai.TEX_ADAPT_PROMPT, prompt)
+        previous = prompt[prompt.index('<previous_version version="previous compilation">'):prompt.index("</previous_version>")]
+        self.assertIn("Lemma A, rewritten.", previous)
+        self.assertNotIn("rewritten twice", previous)
+        listing = prompt[prompt.index("<previous_annotations"):prompt.index("</previous_annotations>")]
+        self.assertIn(f'id="{note["id"]}" kind="block" on="statement" label="Lemma 2.1"', listing)
+        self.assertIn("<statement>Lemma A.</statement>", listing)
+        self.assertIn("A sentence that is gone", listing)
+        for absent in ("Fiche.", "Toujours en place.", "Averages on the", 'state="understood"'):
+            self.assertNotIn(absent, listing)
+        # question ordinaire, ou qui parle de compiler sans demander d'adapter : aucun des deux blocs
+        for question in ("Que dit le lemme 2.1 ?", "Peux-tu compiler la liste des lemmes ?"):
+            _, ordinary = ai.build_prompt(paper, structure, "ask", question=question, language="fr")
+            self.assertNotIn("<previous_version", ordinary)
+        _, again = ai.build_prompt(paper, structure, "ask", question="Reprends mes notes de la compilation précédente.", language="fr")
+        self.assertIn(ai.TEX_ADAPT_PROMPT, again)
+        # note remplacée (supprimée) : plus comptée ; remise par « Annuler » (même uid) : de nouveau comptée
+        annotations.delete(note["id"])
+        self.assertEqual(texfile.report(pid)["notesToCheck"], 1)
+        response = self.client.post(f"/api/papers/{pid}/annotations", json={
+            "kind": "block", "target": {"id": lemma}, "note": note["note"], "state": "review", "uid": note["uid"],
+            "created_at": note["created_at"]})
+        self.assertEqual((response.json()["uid"], response.json()["created_at"]), (note["uid"], note["created_at"]))
+        self.assertEqual(texfile.report(pid)["notesToCheck"], 2)
+        # toutes replacées : plus de message ni d'adaptation
+        annotations.delete(response.json()["id"])
+        annotations.delete(gone["id"])
+        self.assertNotIn("notesToCheck", texfile.report(pid))
+        self.assertIsNone(ai._previous_compilation(paper))
+        # article arXiv : la compilation précédente n'a pas de sens
+        self.assertIsNone(ai._previous_compilation({**paper, "source": "arxiv-html"}))
+
+    def test_compile_wording_only_for_tex_adaptation(self):
+        from app import ai
+        for question in ("Convert my notes to LaTeX so I can compile them.", "Compile my notes and copy them into a summary.",
+                         "Copy my highlights into a compiled list."):
+            self.assertFalse(ai.asks_adaptation(question), question)
+            self.assertFalse(ai.asks_adaptation(question, tex=True), question)
+        self.assertTrue(ai.asks_adaptation("Adapte mes notes après la recompilation.", tex=True))
+        self.assertTrue(ai.asks_adaptation("Reprends mes notes de la compilation précédente.", tex=True))
+        self.assertFalse(ai.asks_adaptation("Reprends mes notes de la compilation précédente."))
+        self.assertTrue(ai.asks_adaptation("Adapte mes notes à la nouvelle compilation."))
+
     def test_rejects_non_main_files(self):
         with self.assertRaises(texfile.TexError):
             texfile.main_file(self.project / "sections" / "intro.tex")

@@ -235,6 +235,8 @@ class AnnotationRequest(BaseModel):
     state: str | None = None
     author: str | None = None  # « claude » : proposée par Claude, acceptée par vous
     image: str | None = None  # zone du PDF : son image (PNG en base64), pour l'onglet Notes
+    uid: str | None = None  # annotation remise par « Annuler » : son identité et sa date
+    created_at: str | None = None
 
 
 class SetupRequest(BaseModel):
@@ -633,7 +635,7 @@ def add_annotation(paper_id: str, body: AnnotationRequest):
     try:
         return annotations.create(paper_id, body.kind, body.target, body.color, (body.quote or "")[:5000] or None,
                                   (body.note or "")[:100000] if body.note is not None else None, body.state, body.author,
-                                  annotations.png_bytes(body.image))
+                                  annotations.png_bytes(body.image), body.uid, body.created_at)
     except ValueError:
         raise HTTPException(400, "Bad annotation")
 

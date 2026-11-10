@@ -87,9 +87,15 @@ def get(annotation_id):
 AUTHORS = (None, "claude", "codex", "gemini", "local")  # annotation proposée par l'IA, acceptée
 
 
-def create(paper_id, kind, target=None, color=None, quote=None, note=None, state=None, author=None, image=None):
+RESTORED_UID = re.compile(r"[0-9a-f]{32}")
+CREATED_AT = re.compile(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d")
+
+
+def create(paper_id, kind, target=None, color=None, quote=None, note=None, state=None, author=None, image=None,
+           uid=None, created_at=None):
     """Nouvelle annotation ; pour un énoncé, une preuve ou la fiche de lecture, met à jour l'existante. `image` (PNG) :
-    celle d'une zone du PDF, montrée dans l'onglet Notes."""
+    celle d'une zone du PDF, montrée dans l'onglet Notes. `uid`, `created_at` : annotation supprimée puis remise
+    (« Annuler ») — elle garde son identité (synchronisation, notes à replacer d'un fichier TeX) et sa place."""
     if kind not in KINDS or (color and color not in COLORS) or (state and state not in STATES):
         raise ValueError("bad annotation")
     if zone_of(target):
@@ -114,9 +120,14 @@ def create(paper_id, kind, target=None, color=None, quote=None, note=None, state
                 "SELECT id FROM annotations WHERE paper_id = ? AND kind = 'block' AND json_extract(target, '$.id') = ?",
                 (paper_id, (target or {}).get("id"))).fetchone()
         if not existing:
+            if not (uid and RESTORED_UID.fullmatch(uid)
+                    and not connection.execute("SELECT 1 FROM annotations WHERE uid = ?", (uid,)).fetchone()):
+                uid = uuid.uuid4().hex
             cursor = connection.execute(
-                "INSERT INTO annotations (paper_id, kind, target, color, quote, note, state, author, uid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (paper_id, kind, json.dumps(target) if target else None, color, quote, note, state, author, uuid.uuid4().hex))
+                "INSERT INTO annotations (paper_id, kind, target, color, quote, note, state, author, uid, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))",
+                (paper_id, kind, json.dumps(target) if target else None, color, quote, note, state, author, uid,
+                 created_at if created_at and CREATED_AT.fullmatch(created_at) else None))
             created = cursor.lastrowid
     if not existing:
         item = get(created)  # relu après l'enregistrement (fin du bloc « with »)

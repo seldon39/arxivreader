@@ -78,6 +78,11 @@ export function importTexFile(path, pdf = null) {
     const show = (result) => {
       paper = result.paper || paper;
       const report = result.report;
+      // document déjà importé, réimporté après une modification : message des notes à l'ouverture (Reader.notesToCheckToast)
+      try {
+        if (paper && report.notesToCheck) sessionStorage.setItem(`texNotes:${paper.id}`, String(report.notesToCheck));
+        else if (paper) sessionStorage.removeItem(`texNotes:${paper.id}`);  // compte d'une compilation précédente périmé
+      } catch { /* stockage indisponible */ }
       body.replaceChildren(...texSteps(report, { onChooseBib: paper && chooseBib }).map(stepElement));
       actions.replaceChildren(paper
         ? h("button", { class: "button primary", value: "open" }, t(report.missingBibs.length ? "tex.openWithoutBib" : "tex.open"))
@@ -105,13 +110,15 @@ export function importTexFile(path, pdf = null) {
 
 // Vérifications en tête de l'onglet Énoncés : compilation, bibliographie, renvois, preuves, lemmes inutilisés.
 // `show(ids)` : n'afficher que ces énoncés ; `onChooseBib(name)` ; `hasProof(node)`
-export function texChecks(report, nodes, { show, onChooseBib, hasProof }) {
+export function texChecks(report, nodes, { show, onChooseBib, hasProof, onAdaptNotes }) {
   if (!report) return null;
   const lines = [];
   const line = (state, text, action) => lines.push(h("div", { class: `tex-check ${state}` }, h("span", { class: "tex-dot", "aria-hidden": "true" }, "●"),
-    h("span", {}, text), action && h("button", { class: "link-button", type: "button", onclick: action.run }, action.label)));
+    // texte et bouton dans une même colonne : un texte long revient à la ligne sous lui-même, pas sous la puce
+    h("span", { class: "tex-check-text" }, text, action && [" ", h("button", { class: "link-button", type: "button", onclick: action.run }, action.label)])));
   for (const name of report.missingBibs) line("warn", t("tex.bibMissing", { name }), { label: t("tex.chooseBib"), run: () => onChooseBib(name) });
   if (!report.pdf) line("error", t("tex.lastFailed"));
+  if (report.notesToCheck) line("warn", t("tex.notesToCheck", { n: report.notesToCheck }), { label: t("tex.notesAskAI"), run: onAdaptNotes });
   const error = report.errors[0];
   if (error) line(report.pdf ? "warn" : "error", `${error.file}:${error.line} — ${error.message}`);
   if (report.undefinedRefs.length) line("error", t("tex.undefinedRefs", { n: report.undefinedRefs.length, keys: report.undefinedRefs.slice(0, 3).join(", ") }));

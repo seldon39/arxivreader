@@ -127,9 +127,12 @@ function readyPartners(provider) {
 export class Assistant {
   // `inPdf()` : article lu dans son PDF (la consigne mentionne alors les zones) ; `contextPages(center)` : pages du
   // PDF autour de `center` (page affichée si null), en images, pour un article sans texte (scan)
+  // `pdfQuote(quote)` : article lu dans son seul PDF (fichier TeX) — passage proposé cherché dans le PDF par ses mots,
+  // { target, text } ou null ; les passages proposés y sont surlignés (sinon dans le HTML)
   constructor({ paper, structure, find, navigate, annotator, onChange, equationIds, inPdf = () => false, contextPages = null,
-    currentPage = null, readingChapter = () => null }) {
+    currentPage = null, readingChapter = () => null, pdfQuote = null }) {
     this.paper = paper;
+    this.pdfQuote = pdfQuote;
     this.inPdf = inPdf;
     this.currentPage = currentPage;  // page du PDF qu'on lit
     this.readingChapter = readingChapter;  // livre : chapitre de l'endroit lu (résumé, relecture de ce chapitre par défaut)
@@ -623,6 +626,15 @@ export class Assistant {
   place(view, chapter = this.chapterOf[view]) { return this.byChapter(view) ? `${view}:${chapter || ""}` : view; }
 
   // question en cours de saisie (et « Edit » en cours) : une par fil, donc par chapitre dans un livre
+  // question écrite d'avance dans l'onglet Questions, ouvert ; envoyée seulement par le lecteur
+  // question écrite d'avance (non envoyée) : brouillon repris de zéro — passage, zone, réponse à un échange ou
+  // modification en cours l'enverraient par un autre circuit, sans les blocs de l'adaptation (ai.py, build_prompt)
+  prefill(question) {
+    this.view = "questions";
+    Object.assign(this.pending, { quote: null, zone: null, parent: null, replaces: null, question });
+    this.onChange({ show: true, focus: true });
+  }
+
   draft(view, chapter = this.chapterOf[view]) {
     return view === "questions" ? this.pending : (this.docPending[this.place(view, chapter)] ||= { question: "" });
   }
@@ -1388,7 +1400,13 @@ export class Assistant {
     const normalize = (label) => String(label || "").toLowerCase().replace(/[.\s]+$/, "").replace(/\s+/g, " ").trim();
     const byLabel = new Map(this.structure.nodes.map((n) => [normalize(n.label), n]));
     // résultat de la recherche gardé avec la réponse (l'onglet se redessine souvent)
-    exchange.found ||= proposals.map((proposal) => (proposal.quote ? Boolean(rangeForQuote(content, proposal.quote, this.scopesOf(exchange))) : null));
+    // article lu dans son PDF : passages cherchés dans le PDF (en attente : undefined, case grisée), puis nouveau rendu
+    exchange.found ||= proposals.map((proposal) => (!proposal.quote ? null
+      : this.pdfQuote ? undefined : Boolean(rangeForQuote(content, proposal.quote, this.scopesOf(exchange)))));
+    if (this.pdfQuote && !exchange.locating && exchange.found.includes(undefined)) {
+      exchange.locating = Promise.all(proposals.map((proposal) => (proposal.quote ? this.pdfQuote(proposal.quote, this.replacedPlace(proposal)).catch(() => null) : null)))
+        .then((spots) => { exchange.found = spots.map((spot, i) => (proposals[i].quote ? Boolean(spot) : null)); this.onChange(); });
+    }
     const rows = proposals.map((proposal, i) => {
       if (proposal.quote) return { proposal, found: exchange.found[i], kind: "highlight" };
       const node = byLabel.get(normalize(proposal.statement));
@@ -1435,7 +1453,7 @@ export class Assistant {
       const note = proposal.note ? h("div", { class: "markdown ai-proposal-note" }) : null;
       if (note) note.innerHTML = markdownToHtml(proposal.note, { refs: this.refs });
       return h("label", { class: `ai-proposal${row.found ? "" : " missing"}` }, boxes[i],
-        h("span", { class: "ai-proposal-body" }, what, note, !row.found && h("span", { class: "badge warn" }, t("ai.proposals.notFound"))));
+        h("span", { class: "ai-proposal-body" }, what, note, row.found === false && h("span", { class: "badge warn" }, t("ai.proposals.notFound"))));
     }));
     list.addEventListener("click", (event) => {
       const ref = event.target.closest("a.ai-ref");
@@ -1449,22 +1467,70 @@ export class Assistant {
       list, h("div", { class: "ai-card-actions" }, apply));
   }
 
-  // Crée les annotations choisies ; renvoie de quoi tout annuler (ou null si rien n'a pu être fait)
+  // place dans le PDF du passage qu'une proposition remplace : le nouveau est cherché d'abord près de lui
+  replacedPlace(proposal) {
+    return this.replacedItem(proposal)?.target?.pdf || null;
+  }
+
+  // annotation que remplace une proposition ; remise par « Annuler », elle a un nouveau numéro (même uid) : suivi
+  replacedItem(proposal) {
+    if (proposal.replaces == null) return null;
+    let id = String(proposal.replaces);
+    for (let hops = 0; this.restoredIds?.has(id) && hops < 20; hops++) id = this.restoredIds.get(id);
+    return this.annotator.items.find((a) => String(a.id) === id) || null;
+  }
+
+  // Crée les annotations choisies ; renvoie de quoi tout annuler (ou null si rien n'a pu être fait).
+  // `replaces` (fichier TeX modifié, TEX_ADAPT_PROMPT dans ai.py) : l'annotation adaptée prend la place de l'ancienne,
+  // supprimée (remise par « Annuler ») ; une note d'énoncé remplacée sur le même énoncé est réécrite, pas complétée
   async applyProposals(rows, scopes = [], author = "claude", aboutNotes = false) {
     const created = [];
     const previousNotes = new Map();
+    const removed = [];  // anciennes annotations remplacées
+    const statesCopied = [];  // énoncés qui ont reçu l'état de lecture d'une note remplacée
+    const written = new Set();  // énoncés (ou preuves) dont la note vient d'être écrite : leur ancienne note reste
     for (const row of rows) {
       const { proposal } = row;
       const own = aboutNotes && proposal.author === "reader"; // adaptation : note du lecteur reprise telle quelle (ADAPT_PROMPT dans ai.py)
+      // remplacée seulement par une annotation de même nature (passage par passage, note d'énoncé par note
+      // d'énoncé) : sinon son état de lecture se perdrait ; jamais une zone du PDF (son image serait perdue)
+      const candidate = this.replacedItem(proposal);
+      const old = candidate && !removed.includes(candidate)
+        && candidate.kind === (row.kind === "highlight" ? "highlight" : "block") && !candidate.target?.pdf?.rect ? candidate : null;
       try {
+        let placed = false;
         if (row.kind === "highlight") {
-          const range = rangeForQuote(this.annotator.content, proposal.quote, scopes); // retrouvé à nouveau : le texte a pu changer
-          if (!range) continue;
           const color = COLORS.includes(proposal.color) ? proposal.color : "yellow";
-          created.push((await this.annotator.highlightRange(range, { color, note: proposal.note || null, author: own ? null : author })).id);
+          const values = { color, note: proposal.note || null, author: own ? null : author };
+          if (this.pdfQuote) {  // lu dans le PDF : surligné dans le PDF, à l'endroit où ses mots se trouvent
+            const spot = await this.pdfQuote(proposal.quote, old?.target?.pdf);
+            if (!spot || !this.annotator.pdf) continue;
+            created.push((await this.annotator.pdf.addHighlight({ target: spot.target, quote: spot.text, ...values })).id);
+          } else {
+            const range = rangeForQuote(this.annotator.content, proposal.quote, scopes); // retrouvé à nouveau : le texte a pu changer
+            if (!range) continue;
+            created.push((await this.annotator.highlightRange(range, values)).id);
+          }
+          placed = true;
         } else if (proposal.note) {
           if (!previousNotes.has(row.id)) previousNotes.set(row.id, this.annotator.block(row.id)?.note || "");
-          await this.annotator.appendNote(row.id, own ? proposal.note : `**${authorName(author)}** — *${t("ai.unverified")}*\n\n${proposal.note}`);
+          const text = own ? proposal.note : `**${authorName(author)}** — *${t("ai.unverified")}*\n\n${proposal.note}`;
+          if (old?.kind === "block" && old.target?.id === row.id) await this.annotator.saveBlock(row.id, { note: text });
+          else await this.annotator.appendNote(row.id, text);
+          written.add(row.id);
+          // état de lecture de l'ancienne note (énoncé qui a perdu son \label) : repris s'il n'y en a pas ; note passée
+          // sur une preuve (qui ne montre pas d'état) : état mis sur son énoncé
+          const stateId = row.onProof ? row.node?.id : row.id;
+          if (old?.kind === "block" && old.state && stateId && old.target?.id !== stateId && !this.annotator.block(stateId)?.state) {
+            await this.annotator.saveBlock(stateId, { state: old.state });
+            statesCopied.push([stateId, old.state]);
+          }
+          placed = true;
+        }
+        if (placed && old && !(old.kind === "block" && written.has(old.target?.id))) {
+          if (old.kind === "highlight") await this.annotator.removeHighlight(old.id);
+          else await this.annotator.deleteBlock(old.id);
+          removed.push(old);
         }
       } catch (error) {
         toastError(error);
@@ -1479,11 +1545,18 @@ export class Assistant {
         let failures = 0;
         const attempt = (promise) => promise.catch((error) => { failures++; toastError(error); });
         for (const id of created) await attempt(this.annotator.removeHighlight(id));
+        for (const [id, state] of statesCopied) await attempt(this.annotator.setState(id, state));  // même état : retiré
         for (const [id, note] of previousNotes) {
           const block = this.annotator.block(id);
           // note créée par l'application seule (ni note ni état avant) : supprimée plutôt que vidée
           if (!note && block && !block.state) await attempt(this.annotator.deleteBlock(block.id));
           else await attempt(this.annotator.saveBlock(id, { note }));
+        }
+        // anciennes notes remises en dernier : une note d'énoncé remplacée retrouve son énoncé même si une autre
+        // proposition y avait écrit
+        for (const annotation of removed) {
+          const back = await attempt(this.annotator.restore(annotation));
+          if (back?.id != null) (this.restoredIds ||= new Map()).set(String(annotation.id), String(back.id));
         }
         return failures;
       },

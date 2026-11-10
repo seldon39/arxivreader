@@ -22,7 +22,7 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup, Comment, NavigableString, Tag
 
-from . import annotations, export, localpdf, db, library, providers
+from . import annotations, export, localpdf, db, library, providers, texfile
 from .config import LIBRARY
 from .structure import defines_macro, passage_elements, top_sections
 
@@ -818,8 +818,15 @@ _ADAPT_DIRECTLY = re.compile(rf"{_ADAPT_CLEAR}(?:\s+over|\s+across)?\s+(?:(?!to\
 _ADAPT_NEAR = re.compile(rf"{_ADAPT}.{{0,100}}?{_NOTES}|{_NOTES}.{{0,100}}?{_ADAPT}", re.I | re.S)
 
 
-def asks_adaptation(question):
-    return any(_ADAPT_DIRECTLY.search(sentence) or (_MENTIONS_VERSION.search(sentence) and _ADAPT_NEAR.search(sentence))
+# fichier TeX recompilé : « reprends mes notes de la compilation précédente » (seulement là : « compile » est un mot
+# ordinaire dans une autre question)
+_MENTIONS_COMPILATION = re.compile(r"\brecompil|\b(?:previous|last|new|earlier|old|former|pr[eé]c[eé]dente|derni[eè]re|nouvelle|ancienne)\s+compilation\b"
+                                   r"|\bcompilation\s+(?:pr[eé]c[eé]dente|ancienne|nouvelle|derni[eè]re|d'avant)\b", re.I)
+
+
+def asks_adaptation(question, tex=False):
+    mentions = (_MENTIONS_VERSION, _MENTIONS_COMPILATION) if tex else (_MENTIONS_VERSION,)
+    return any(_ADAPT_DIRECTLY.search(sentence) or (any(m.search(sentence) for m in mentions) and _ADAPT_NEAR.search(sentence))
                for sentence in re.split(r"[.?!;](?=\s*$|\s+[A-ZÀ-Ý])", question))  # pas après « Thm. 3 », « v. 1 » ni « cf. la v1 »
 
 
@@ -831,7 +838,7 @@ ORDINAL_VERSION = {"1ère": 1, "1ere": 1, "1re": 1, "1st": 1, "2e": 2, "2ème": 
 VERSION_NAMED = re.compile(r"(?:(?<![a-z])v\.?\s?|\bversions?\s+(?:n[°ºo]\.?\s*)?)(\d+)\b"
                            rf"|\b({'|'.join(ORDINAL_VERSION)})\s+version\b|\bversion\s+(initiale|originale|d'origine|de\s+d[eé]part)\b", re.I)
 # balises des deux blocs : neutralisées dans ce qu'ils citent, le reste du texte restant tel quel (notes recopiées mot à mot)
-PREVIOUS_TAGS = re.compile(r"</?(?=(?:previous_version|previous_annotations|other_version|annotation|quote|note)\b)", re.I)
+PREVIOUS_TAGS = re.compile(r"</?(?=(?:previous_version|previous_annotations|other_version|annotation|statement|quote|note)\b)", re.I)
 # note complétée par l'IA : son nom, y compris l'IA locale dans les deux langues (proposition acceptée, applyProposals
 # dans ai.js), ou réponse enregistrée dans les notes (saveToNotes : « **modèle · titre** — *date, non vérifié* »)
 ASSISTANT_NOTE = re.compile(rf"\s*\*\*(?:(?:{'|'.join([*providers.NAMES.values(), 'IA locale', 'local AI'])})\*\* — "
@@ -924,12 +931,84 @@ def _annotations_block(version):
     return "\n".join(lines)
 
 
-def _adaptation_redone(question, thread):
+TEX_ADAPT_PROMPT = """The reader writes this document themselves and recompiled it after editing its TeX source. \
+<paper> is the new source and <previous_version> the source of the compilation before it. The annotations in \
+<previous_annotations> have lost their place: the application no longer finds in the new compilation what they were \
+made on (a statement without a \\label whose text changed, a highlighted passage that changed or disappeared). Some may \
+have been made on an older compilation. Each one has an id; a note on a statement gives that statement as it was \
+when the note lost its place (label, page, and its text in <statement>).
+
+Identify each statement by its mathematical content and its context, never by its number or label, which may have \
+changed. If <previous_version> is cut, rely on what is left of it, on the statements and on the quoted passages.
+
+For each annotation, decide one of the following:
+- move it, because the text it is about has moved or its statement lost its label;
+- adapt it, because that text has changed (renumber the statements, equations or sections it cites if needed);
+- if the assistant wrote it (author="assistant", or the part of a note that begins "**Claude** — ", \
+"**Claude Opus · Summary** — " or the name of another assistant), re-evaluate it: still valid, corrected in this \
+version, or to be rechecked, with the reason;
+- if the text it was about is gone, say so and leave it out of the block below.
+If you are in doubt, say that the annotation was not found rather than guess.
+
+A kept note must be reproduced word for word. Never invent content that the note did not have. The note of an entry \
+replaces the whole old note: give it complete. To an annotation of author="user" that you only move or renumber, add \
+"author": "reader" in the block below, so that it stays the reader's. Do the same for a note that mixes the reader's \
+text and parts written by an assistant: the reader's text word for word, each assistant part keeping its first line \
+("**Claude** — …") and re-evaluated as above. Never add that field to any other entry.
+
+In the reader's language, explain briefly what changed for these notes and list those that were not found. End your \
+answer with the annotations block (format in your instructions), each entry with "replaces": <id of the annotation it \
+replaces>: once the reader accepts it, the new one takes the place of the old one. A highlighted passage stays a \
+passage (quote) and a note on a statement stays a note on a statement. Quotes are copied from <paper>; prefer a \
+passage of words to a formula, since the application finds the passage in the compiled PDF by its words. Statement \
+labels as they are in <paper>; the colour of the original annotation. Do not propose reading states: the application \
+carries them over.
+
+If the reader's message is in fact not such a request (an ordinary question that happens to mention their notes), \
+ignore this instruction and the two blocks, and simply answer it."""
+
+
+def _previous_compilation(paper):
+    """Fichier TeX de l'ordinateur dont des notes ont perdu leur place à une recompilation (texfile.track_lost_notes) :
+    dossier où sont la source de la compilation où elles l'avaient et leur contexte ; sinon None (toutes replacées)."""
+    if paper.get("source") != texfile.SOURCE:
+        return None
+    folder = library.paper_dir(paper["id"])
+    if not (folder / texfile.PREVIOUS_SOURCE).is_file() or not texfile.notes_to_check(paper["id"], folder):
+        return None
+    return folder
+
+
+def _tex_annotations_block(paper, folder):
+    """Bloc <previous_annotations> d'un fichier TeX : les annotations qui ont perdu leur place, chacune avec son
+    identifiant et le contexte de la compilation où elle a été prise (énoncé ou preuve, numéro, page, texte)."""
+    records = texfile.lost_notes(folder)
+    lines = ['<previous_annotations version="previous compilation">']
+    for item in texfile.notes_to_check(paper["id"], folder):
+        context = records.get(item["uid"]) or {}
+        fields = {"id": item["id"], "kind": item["kind"], "on": context.get("on"), "label": context.get("label"),
+                  "page": context.get("page"),
+                  "author": "assistant" if item["author"] or ASSISTANT_NOTE.match(item["note"] or "") else "user",
+                  "color": item["color"], "state": item["state"]}
+        attributes = " ".join(f'{key}="{html.escape(str(value), quote=True)}"' for key, value in fields.items() if value)
+        lines.append(f"<annotation {attributes}>")
+        if context.get("statement"):
+            lines.append(f"<statement>{_neutral(context['statement'])}</statement>")
+        if item["quote"]:
+            lines.append(f"<quote>{_neutral(item['quote'])}</quote>")
+        if item["note"]:
+            lines.append(f"<note>{_neutral(item['note'])}</note>")
+        lines.append("</annotation>")
+    lines.append("</previous_annotations>")
+    return "\n".join(lines)
+
+
+def _adaptation_redone(question, thread, tex=False):
     """Relance d'une adaptation (« Réessaie… »), l'échange précédent du fil `thread` en étant une : sa question ; sinon None."""
     if REDO_ADAPTING.search(question):
         for exchange in reversed(thread):
             asked = exchange.get("question") or ""
-            if asks_adaptation(asked):
+            if asks_adaptation(asked, tex):
                 return asked
             if not REDO_ADAPTING.search(asked):
                 return None
@@ -937,18 +1016,27 @@ def _adaptation_redone(question, thread):
 
 
 def _adapting(paper, question, room, thread=()):
-    """Question demandant d'adapter les notes d'une autre version, s'il y en a : blocs à joindre (texte de cette version
-    dans la place qui reste sous la limite, `room`, l'article lu restant entier) ; sinon ()."""
-    asked = question if asks_adaptation(question) else _adaptation_redone(question, thread)
+    """Question demandant d'adapter les notes d'une autre version, s'il y en a (ou, pour un fichier TeX modifié, celles
+    de sa compilation précédente) : (consigne, blocs à joindre) — texte de l'autre version dans la place qui reste sous
+    la limite, `room`, l'article lu restant entier ; sinon ()."""
+    folder = _previous_compilation(paper)
+    tex = folder is not None
+    asked = question if asks_adaptation(question, tex) else _adaptation_redone(question, thread, tex)
     if not asked:
         return ()
+    if folder is not None:  # fichier TeX modifié : notes à adapter au nouveau texte, sur le même document
+        listing = _tex_annotations_block(paper, folder)
+        room = max(0, room - len(listing) - len(TEX_ADAPT_PROMPT) - len(question))
+        previous = tex_body((folder / texfile.PREVIOUS_SOURCE).read_text(encoding="utf-8"))
+        text = _neutral(_cut_middle(previous, room))
+        return TEX_ADAPT_PROMPT, (f'<previous_version version="previous compilation">\n{text}\n</previous_version>', listing)
     version = _version_to_adapt(paper, f"{question} {asked}")  # une version nommée dans la relance d'abord
     if version is None:
         return ()
     listing = _annotations_block(version)
     room = max(0, room - len(listing) - len(ADAPT_PROMPT) - len(question))
     text = _neutral(_cut_middle(_load(version["id"])[2], room))
-    return f'<previous_version version="{version["version"]}">\n{text}\n</previous_version>', listing
+    return ADAPT_PROMPT, (f'<previous_version version="{version["version"]}">\n{text}\n</previous_version>', listing)
 
 
 # ---------- Question sur une autre version de l'article : son texte est joint (téléchargé au besoin) ----------
@@ -1128,7 +1216,7 @@ def build_prompt(paper, structure, task, target=None, quote=None, question=None,
         replied = True
     adapted = _adapting(paper, question, limit - sum(map(len, parts)), history or ([parent] if parent else [])) if task == "ask" and question else ()
     if adapted:
-        extra, instruction = (*extra, *adapted), ADAPT_PROMPT
+        extra, instruction = (*extra, *adapted[1]), adapted[0]
     elif task == "ask" and question and not instruction and not asks_adaptation(question):  # adaptation : son propre circuit
         compared = _versions_compared(paper, question, limit - sum(map(len, parts)), history or ([parent] if parent else []))
         if compared:
