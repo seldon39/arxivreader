@@ -1067,6 +1067,23 @@ def pdf_arxiv_match(paper_id: str):
         return {"arxiv": None}  # réseau, Semantic Scholar : rien à proposer
 
 
+class ReferenceLookup(BaseModel):
+    text: str = ""
+    title: str = ""
+    doi: str = ""
+
+
+@app.post("/api/references/arxiv")
+def reference_arxiv(body: ReferenceLookup):
+    """Référence de la bibliographie d'un article : sa version arXiv (Semantic Scholar), pour la page Recherche
+    (« Chercher sur arXiv ») ; sans réseau ou sans résultat, titre et premier auteur devinés."""
+    text, title, doi = body.text[:2000], body.title[:500], body.doi.strip()[:200]
+    try:
+        return localpdf.reference_arxiv(text, title, doi, _s2_key())
+    except (httpx.HTTPError, ValueError, KeyError, TypeError):
+        return {"arxivId": None, "title": (title or localpdf.guess_title(text))[:300], "author": localpdf.first_author(text)[:100]}
+
+
 class PaperMeta(BaseModel):
     title: str
     authors: list[str] = []

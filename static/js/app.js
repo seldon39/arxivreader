@@ -32,11 +32,11 @@ async function route() {
   scrollTo({ top: 0, behavior: "instant" });
   const match = location.hash.match(/^#\/paper\/(.+)$/);
   const feedMatch = location.hash.match(/^#\/feed(?:\/(recommended|import|profile))?$/);
-  const searchMatch = location.hash === "#/search";
+  const searchMatch = location.hash.match(/^#\/search(?:\?(.*))?$/);  // « ?terms=… » : recherche préremplie, lancée
   const relatedMatch = location.hash.match(/^#\/related(?:\/(.+))?$/);
   const section = match ? "paper" : feedMatch ? "#/feed" : searchMatch ? "#/search" : relatedMatch ? "#/related" : "#/";
   if (!match) {
-    navigation.listHash = location.hash || "#/";
+    navigation.listHash = searchMatch ? "#/search" : location.hash || "#/";  // recherche préremplie : pas relancée au retour
     defineMacros([]).catch(() => {});  // macros de l'article quitté : plus valables dans le feed, la recherche…
   }
   // titre de l'onglet (et de la fenêtre) : la page ; le lecteur y met le titre de l'article
@@ -48,7 +48,7 @@ async function route() {
   });
   try {
     const dispose = feedMatch ? await renderFeed(view, feedMatch[1] || "arxiv")
-      : searchMatch ? await renderSearch(view)
+      : searchMatch ? await renderSearch(view, new URLSearchParams(searchMatch[1] || ""))
       : relatedMatch ? await renderRelated(view, relatedMatch[1] ? decodeURIComponent(relatedMatch[1]) : null)
       : match ? await renderReader(view, ...decodeURIComponent(match[1]).split("/"), () => token === routeToken)
         : await renderLibrary(view, { restoreTo: scrollMemory.get(location.hash) || 0 });

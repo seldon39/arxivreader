@@ -34,7 +34,24 @@ const state = {
   results: null, // { items, total, start, pageSize, request }
 };
 
-export async function renderSearch(root) {
+// Recherche venue d'ailleurs (« Chercher sur arXiv » d'une référence) : `terms` en JSON dans l'adresse ; options
+// remises par défaut, recherche lancée, adresse ramenée à « #/search » (un retour ne la relance pas)
+function presetTerms(params) {
+  let terms;
+  try { terms = JSON.parse(params?.get("terms") || "null"); } catch { return null; }
+  if (!Array.isArray(terms)) return null;
+  terms = terms.slice(0, 6).filter((term) => term && FIELDS.includes(term.field) && typeof term.value === "string" && term.value.trim())
+    .map((term, i) => ({ field: term.field, value: term.value.slice(0, 300), op: i && OPERATORS.includes(term.op) ? term.op : "and" }));
+  return terms.length ? terms : null;
+}
+
+export async function renderSearch(root, params = null) {
+  const preset = presetTerms(params);
+  if (params?.has("terms")) history.replaceState(null, "", "#/search");
+  if (preset) {
+    Object.assign(state, { terms: preset, categories: new Set(), cross: true, sort: "relevance", page: 0, results: null,
+      dates: { mode: "all", year: new Date().getFullYear(), from: "", to: "" } });
+  }
   const termsBox = h("div", { class: "search-terms" });
   const optionsBox = h("div", { class: "search-options" });
   const go = h("button", { class: "button primary", type: "submit" }, t("search.go"));
@@ -192,9 +209,10 @@ export async function renderSearch(root) {
   const form = h("form", { class: "search-form", onsubmit: (event) => { event.preventDefault(); run(formRequest()); } },
     termsBox, optionsBox, h("div", { class: "search-go" }, go, h("span", { class: "muted small" }, t("search.hint")), busy));
   root.replaceChildren(h("section", { class: "search-page" }, h("h1", {}, t("search.title")), form, resultsBox));
-  drawTerms(state.results ? null : 0);
+  drawTerms(state.results || preset ? null : 0);
   drawOptions();
   drawResults();
+  if (preset) run(formRequest());
   const stopSelection = useSelectionBar({ papers: () => null }); // résultats sélectionnés : « Ranger dans… »
   return () => { running++; resetAbstractObserver(); stopSelection(); };
 }

@@ -304,3 +304,87 @@ def arxiv_match(paper, api_key=None, get_s2=None):
             found, via = candidate, "title"
     arxiv = ((found or {}).get("externalIds") or {}).get("ArXiv")
     return {"arxivId": arxiv, "title": found.get("title") or paper["title"], "via": via} if arxiv else None
+
+
+# ---------- Référence d'une bibliographie : sa version arXiv (« Chercher sur arXiv ») ----------
+
+ARXIV_ID = re.compile(r"^(?:\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?/\d{7})$")
+_INITIAL = re.compile(r"(?:^|[\s,.\-])[A-Z]\.?(?=[\s,.\-]|$)")
+_PARTICLES = {"and", "de", "van", "von", "der", "den", "la", "le", "di", "da", "du", "del", "et"}
+
+
+def _authorish(piece):
+    """Morceau d'une liste d'auteurs (« J. Wang », « L. Boutet de Monvel and V. Guillemin », « [BG] »)."""
+    if piece.startswith("["):
+        return True
+    words = [w for w in re.findall(r"[^\W\d_][^\s,]*", piece) if w.lower() not in _PARTICLES]
+    return bool(words) and all(w[0].isupper() for w in words) and (bool(_INITIAL.search(piece)) or len(words) <= 1)
+
+
+def _trim(part):
+    """Morceau entre deux points : sans les auteurs en tête, ni la revue après (« , J. Math. Phys. 54 »)."""
+    pieces = [p.strip() for p in part.split(",") if p.strip()]
+    while pieces and _authorish(pieces[0]):
+        pieces.pop(0)
+    if not pieces:
+        return ""
+    kept = [pieces[0]]
+    for piece in pieces[1:]:  # suite du titre : commence en minuscule (« the Heat Equation »), sans chiffres
+        if not re.match(r"[a-z]", piece) or re.search(r"\d", piece):
+            break
+        kept.append(piece)
+    return ", ".join(kept)
+
+
+def guess_title(text):
+    """Titre probable d'une référence écrite à la main : entre guillemets, sinon le plus long morceau fait de mots
+    (entre points ou deux-points), sans auteurs ni revue ; formules ôtées (recherche par mots). Approximatif : il
+    remplit la recherche, que l'on peut corriger."""
+    text = re.sub(r"\s+", " ", re.sub(r"\$[^$]*\$", " ", text or "")).strip()
+    text = re.sub(r"(?<![\w-])-(?=\w)", "", text)  # « $J$-twist » : « -twist »
+    quoted = re.search(r"[“\"«]\s*([^”\"»]{12,}?)\s*[”\"»]", text)
+    if quoted:
+        return quoted.group(1).strip(" ,.")
+    best, score = "", 0
+    for part in re.split(r"(?<=[^\W\d_]{2})[.:;](?:\s+|$)|(?<=[^\W\d_]{2} [A-Z])\.\s+|\s[.:]\s|:\s+", text):
+        part = _trim(part.strip(" ,.:;"))
+        words = re.findall(r"[^\W\d_]{2,}", part)
+        if len(words) < 2:
+            continue
+        value = len(words) - 0.5 * len(re.findall(r"\d", part))
+        if value > score:
+            best, score = part, value
+    return best
+
+
+def first_author(text):
+    """Nom du premier auteur d'une référence (« M. Wodzicki » → Wodzicki, « Ma, X., … » → Ma), ou ""."""
+    head = re.sub(r"^\s*\[[^\]]*\]\s*", "", text or "")
+    for word in re.findall(r"[^\W\d_][^\s,.:;]*", head):
+        if len(word) >= 2 and word[0].isupper() and word.lower() not in _PARTICLES and not word.endswith("’s"):
+            return word
+    return ""
+
+
+def reference_arxiv(text, title="", doi="", api_key=None, get_s2=None):
+    """Version arXiv d'une référence de bibliographie, pour la page Recherche : {"arxivId", "title", "author"}.
+    Semantic Scholar : par DOI, sinon par titre (le titre trouvé doit figurer dans la référence) ; arxivId None si
+    rien n'est trouvé — la recherche se fait alors par titre et premier auteur."""
+    get_s2 = get_s2 or _s2
+    fields = {"fields": "externalIds,title"}
+    guessed = (title or "").strip() or guess_title(text)
+    cited = f" {_norm(text)} "
+    found = None
+    if doi:
+        found = get_s2(f"/paper/DOI:{quote(doi, safe='/')}", fields, api_key)
+    if not (found and (found.get("externalIds") or {}).get("ArXiv")) and len(_norm(guessed).split()) >= 3:
+        candidate = get_s2("/paper/search/match", {"query": guessed, **fields}, api_key)
+        candidate = ((candidate or {}).get("data") or [None])[0] if "data" in (candidate or {}) else candidate
+        known = _norm((candidate or {}).get("title"))
+        if known and len(known.split()) >= 3 and f" {known} " in cited:  # le même article, pas un voisin
+            found = candidate
+    arxiv = ((found or {}).get("externalIds") or {}).get("ArXiv") or None
+    if arxiv and not ARXIV_ID.match(arxiv):
+        arxiv = None
+    return {"arxivId": arxiv, "title": ((found or {}).get("title") or guessed)[:300], "author": first_author(text)[:100]}
+

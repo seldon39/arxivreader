@@ -188,3 +188,34 @@ class LocalPdf(unittest.TestCase):
         (folder / "text.json").write_text(json.dumps({"pages": stored["pages"]}), encoding="utf-8")
         localpdf.redetect_all()  # corrigé à la main : jamais écrasé
         self.assertEqual((db.get_paper(paper["id"])["title"], db.get_paper(paper["id"])["authors"]), ("Mine", ["Me"]))
+
+    def test_reference_arxiv(self):
+        """« Chercher sur arXiv » d'une référence : version arXiv par DOI, sinon par titre (qui doit figurer dans la
+        référence) ; sinon titre et premier auteur devinés pour la page Recherche."""
+        text = "A. Connes.: The action functional in Noncommutative geometry. Comm. Math. Phys. 117, 673-683, (1988)."
+        self.assertEqual(localpdf.guess_title(text), "The action functional in Noncommutative geometry")
+        self.assertEqual(localpdf.first_author(text), "Connes")
+        self.assertEqual(localpdf.guess_title("X. Ma and G. Marinescu, “Toeplitz operators on symplectic manifolds,” J. Geom. Anal. 18"),
+                         "Toeplitz operators on symplectic manifolds")
+        self.assertEqual(localpdf.guess_title("L. Boutet de Monvel and V. Guillemin, The spectral theory of Toeplitz operators, Annals of Math. Studies 99"),
+                         "The spectral theory of Toeplitz operators")
+        calls = []
+
+        def s2(path, params, api_key=None):
+            calls.append(path)
+            if path.startswith("/paper/DOI:"):
+                return {"title": "X", "externalIds": {"DOI": "10.1/x"}}  # connu, sans version arXiv
+            return {"data": [{"title": "The action functional in noncommutative geometry", "externalIds": {"ArXiv": "hep-th/9901001"}}]}
+        found = localpdf.reference_arxiv(text, doi="10.1/x", get_s2=s2)
+        self.assertEqual((found["arxivId"], found["author"]), ("hep-th/9901001", "Connes"))
+        self.assertEqual(calls, ["/paper/DOI:10.1/x", "/paper/search/match"])
+        # article voisin (titre absent de la référence) : refusé, recherche par titre deviné
+        other = localpdf.reference_arxiv(text, get_s2=lambda *a, **k: {"data": [{"title": "Noncommutative geometry and gravity", "externalIds": {"ArXiv": "1234.5678"}}]})
+        self.assertEqual(other, {"arxivId": None, "title": "The action functional in Noncommutative geometry", "author": "Connes"})
+        # identifiant mal formé : ignoré
+        self.assertIsNone(localpdf.reference_arxiv(text, get_s2=lambda *a, **k: {"title": "The action functional in noncommutative geometry",
+                                                                                   "externalIds": {"ArXiv": "javascript:1"}})["arxivId"])
+        # route : sans réseau, la recherche par titre deviné reste possible
+        with mock.patch.object(localpdf, "_s2", side_effect=localpdf.httpx.ConnectError("offline")):
+            response = self.client.post("/api/references/arxiv", json={"text": text})
+        self.assertEqual(response.json(), {"arxivId": None, "title": "The action functional in Noncommutative geometry", "author": "Connes"})

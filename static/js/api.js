@@ -80,6 +80,7 @@ export const api = {
   setInFolder: (id, paper, member) => request(member ? "PUT" : "DELETE", `/api/folders/${id}/papers/${encodeURIComponent(paper)}`, member ? {} : undefined),
   // `known` : ce que la page sait de l'article (titre, auteurs…) : inscrit tout de suite, importé en arrière-plan
   importPaper: (query, library = true, known = {}) => request("POST", "/api/papers", { query, library, ...known }),
+  referenceArxiv: (entry) => request("POST", "/api/references/arxiv", { text: entry.text || "", title: entry.title || "", doi: entry.doi || "" }),
   // ajout immédiat à la bibliothèque (import en arrière-plan), d'après ce que la page sait déjà de l'article
   quickAdd: (query, known = {}) => request("POST", "/api/papers/quick", { query, ...known }),
   setInLibrary: (id, value) => request("PUT", `/api/papers/${encodeURIComponent(id)}/library`, { in_library: value }),

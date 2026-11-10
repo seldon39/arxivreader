@@ -410,6 +410,7 @@ class Reader {
       const badge = h("a", { class: "cross-badge cross-open", href: `#/paper/${encodeURIComponent(entry.paper)}`,
         title: `${entry.title}\n${t("reader.crossOpenTab")}` }, t("reader.crossOpen"));
       const row = item.querySelector(".bib-links");
+      row?.querySelector(".bib-arxiv")?.remove();  // déjà lu ici : rien à chercher sur arXiv
       if (row) row.prepend(badge);
       else item.append(h("div", { class: "bib-links" }, badge));
     }
@@ -1412,9 +1413,33 @@ class Reader {
     const plain = (entry.text || "").replace(/\b(?:doi:\s*|https?:\/\/|arXiv:\s*)\S+/gi, "").replace(/\s+/g, " ").trim();
     const citation = encodeURIComponent([...plain].slice(0, 500).join(""));  // par caractères : jamais une moitié de symbole
     const link = (label, href) => h("a", { href, target: "_blank", rel: "noopener noreferrer", title: t("reader.openOutside") }, label);
-    return [doi && entry.doi && link("DOI", `https://doi.org/${entry.doi.split("/").map(encodeURIComponent).join("/")}`),
+    // sans numéro arXiv écrit dans la référence : sa version arXiv cherchée dans la page Recherche de l'application
+    const lookUp = !(entry.arxiv || []).length && plain && h("a", { href: "#/search", class: "bib-arxiv", title: t("reader.lookUpArxivHint"),
+      onclick: (event) => { event.preventDefault(); this.lookUpArxiv(entry, event.currentTarget, event); } }, t("reader.lookUpArxiv"));
+    return [lookUp, doi && entry.doi && link("DOI", `https://doi.org/${entry.doi.split("/").map(encodeURIComponent).join("/")}`),
       citation && link("MathSciNet", `https://mathscinet.ams.org/mref?ref=${citation}&dataType=mathscinet`),
       citation && link("zbMATH", `https://zbmath.org/citationmatching/?q=${citation}`)].filter(Boolean);
+  }
+
+  // « Chercher sur arXiv » : version arXiv de la référence (Semantic Scholar, par DOI ou titre) cherchée par son numéro
+  // dans la page Recherche, sinon par titre et premier auteur devinés (recherche modifiable). Dans l'application : un
+  // nouvel onglet, l'article lu reste dans le sien (⌘-clic : en arrière-plan)
+  async lookUpArxiv(entry, link, event) {
+    const front = !wantsNewTab(event) || event.shiftKey;
+    if (link.dataset.loading) return;
+    link.dataset.loading = "1";
+    try {
+      const found = await api.referenceArxiv(entry);
+      const terms = found.arxivId ? [{ field: "id", value: found.arxivId, op: "and" }]
+        : [found.title && { field: "title", value: found.title, op: "and" }, found.author && { field: "author", value: found.author, op: "and" }].filter(Boolean);
+      if (!terms.length) terms.push({ field: "all", value: (entry.text || "").replace(/\$[^$]*\$/g, " ").split(/\s+/).slice(0, 12).join(" "), op: "and" });
+      this.hidePreview();
+      openRoute(`#/search?terms=${encodeURIComponent(JSON.stringify(terms))}`, Boolean(nativeBridge), front);
+    } catch (error) {
+      toastError(error);
+    } finally {
+      delete link.dataset.loading;
+    }
   }
 
   // L'article lui-même dans zbMATH et MathSciNet (puces de l'en-tête, à côté du DOI). zbMATH : par DOI, sinon par
