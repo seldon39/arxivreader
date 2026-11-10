@@ -274,7 +274,7 @@ def remember(items):
 def annotate_status(items):
     """Article déjà lu ou dans la bibliothèque, avis donné (comme dans le feed)."""
     with db.connect() as connection:
-        papers = connection.execute("SELECT id, arxiv_id, in_library FROM papers").fetchall()
+        papers = connection.execute("SELECT id, arxiv_id, in_library FROM papers WHERE archived_of IS NULL").fetchall()
         status = {r["key"]: r["status"] for r in connection.execute("SELECT key, status FROM feed_status")}
     library = {r["arxiv_id"]: r["id"] for r in papers if r["in_library"]}
     cached = {r["arxiv_id"]: r["id"] for r in papers}

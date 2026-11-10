@@ -156,7 +156,7 @@ def filename(paper):
     title = re.sub(r"\$[^$]*\$", "", paper.get("title") or "")
     title = re.sub(r"[^\w\s\-]", "", title, flags=re.UNICODE)
     title = " ".join(title.split()[:6])
-    return f"{(paper['arxiv_id'] or paper['id']).replace('/', '_')} {title}".strip() + ".md"  # PDF importé : son id
+    return f"{paper['id']} {title}".strip() + ".md"  # version archivée : « 0806.2370v1 … », un fichier par version
 
 
 def _with_notes():

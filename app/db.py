@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS papers (
     added_at TEXT DEFAULT (datetime('now')),
     opened_at TEXT,
     position TEXT,
-    in_library INTEGER DEFAULT 1     -- 0 : article seulement lu (cache), pas ajouté à la bibliothèque
+    in_library INTEGER DEFAULT 1,    -- 0 : article seulement lu (cache), pas ajouté à la bibliothèque
+    archived_of TEXT                 -- version archivée d'un article arXiv : id de l'article principal (dernière version installée)
 );
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -140,6 +141,8 @@ def init():
         columns = {row["name"] for row in db.execute("PRAGMA table_info(papers)")}
         if "in_library" not in columns:
             db.execute("ALTER TABLE papers ADD COLUMN in_library INTEGER DEFAULT 1")
+        if "archived_of" not in columns:
+            db.execute("ALTER TABLE papers ADD COLUMN archived_of TEXT")
         columns = {row["name"] for row in db.execute("PRAGMA table_info(annotations)")}
         if "author" not in columns:  # « claude » : annotation proposée par Claude et acceptée
             db.execute("ALTER TABLE annotations ADD COLUMN author TEXT")
@@ -182,9 +185,16 @@ def list_papers():
 
 
 def list_all_papers():
-    """Articles de la bibliothèque et articles seulement ouverts (encore en cache)."""
+    """Articles de la bibliothèque et articles seulement ouverts (encore en cache), sans les versions archivées."""
     with connect() as db:
-        rows = db.execute("SELECT * FROM papers").fetchall()
+        rows = db.execute("SELECT * FROM papers WHERE archived_of IS NULL").fetchall()
+    return [row_to_paper(r) for r in rows]
+
+
+def archives_of(paper_id):
+    """Versions archivées d'un article, de la plus ancienne à la plus récente."""
+    with connect() as db:
+        rows = db.execute("SELECT * FROM papers WHERE archived_of = ? ORDER BY version", (paper_id,)).fetchall()
     return [row_to_paper(r) for r in rows]
 
 
@@ -194,18 +204,23 @@ def get_paper(paper_id):
     return row_to_paper(row) if row else None
 
 
-def save_paper(paper):
+def write_paper(db, paper):
+    """Fiche enregistrée sur une connexion ouverte (dans la transaction de l'appelant)."""
     values = dict(paper)
     for column in JSON_COLUMNS:
         values[column] = json.dumps(values[column], ensure_ascii=False)
     columns = ", ".join(values)
     placeholders = ", ".join(f":{c}" for c in values)
     updates = ", ".join(f"{c} = excluded.{c}" for c in values if c != "id")
+    db.execute(
+        f"INSERT INTO papers ({columns}) VALUES ({placeholders}) ON CONFLICT(id) DO UPDATE SET {updates}",
+        values,
+    )
+
+
+def save_paper(paper):
     with connect() as db:
-        db.execute(
-            f"INSERT INTO papers ({columns}) VALUES ({placeholders}) ON CONFLICT(id) DO UPDATE SET {updates}",
-            values,
-        )
+        write_paper(db, paper)
 
 
 def update_paper(paper_id, **fields):

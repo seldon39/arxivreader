@@ -135,6 +135,10 @@ def fetch_metadata(arxiv_id):
     entry = ET.fromstring(response.text).find(f"{ATOM}entry")
     if entry is None or not _text(entry, f"{ATOM}title"):
         raise ArxivError(f"Article {arxiv_id} introuvable sur arXiv")
+    return _metadata(arxiv_id, entry)
+
+
+def _metadata(arxiv_id, entry):
     entry_id = _text(entry, f"{ATOM}id")
     version = re.search(r"v(\d+)$", entry_id)
     primary = entry.find(f"{ARXIV_NS}primary_category")
@@ -154,6 +158,22 @@ def fetch_metadata(arxiv_id):
     )
 
 
+def fetch_latest(arxiv_ids):
+    """Fiche de la dernière version de chaque article, en une requête par centaine d'articles : {identifiant: Metadata}."""
+    ids = list(dict.fromkeys(arxiv_ids))
+    found = {}
+    with _client() as client:
+        for start in range(0, len(ids), 100):
+            chunk = ids[start:start + 100]
+            response = _paced(lambda: patient_get(client, API, params={"id_list": ",".join(chunk), "max_results": len(chunk)}))
+            response.raise_for_status()
+            for entry in ET.fromstring(response.text).findall(f"{ATOM}entry"):
+                key = re.search(r"abs/(.+?)(?:v\d+)?$", _text(entry, f"{ATOM}id"))
+                if key and _text(entry, f"{ATOM}title"):
+                    found[key.group(1)] = _metadata(key.group(1), entry)
+    return found
+
+
 def fetch_titles(arxiv_ids):
     """Titres et auteurs d'après arXiv, en une requête par centaine d'articles : {identifiant: (titre, auteurs)}."""
     ids = list(dict.fromkeys(arxiv_ids))
@@ -171,15 +191,15 @@ def fetch_titles(arxiv_ids):
     return found
 
 
-def fetch_html(arxiv_id, version):
-    """Version HTML (LaTeXML) de l'article : arxiv.org/html, sinon ar5iv.
+def fetch_html(arxiv_id, version, ar5iv=True):
+    """Version HTML (LaTeXML) de l'article : arxiv.org/html, sinon ar5iv (qui sert une autre version que celle demandée :
+    `ar5iv` faux pour une version archivée).
 
     Renvoie (html, url de base pour les images, nom de la source) ou None.
     """
-    candidates = [
-        (f"https://arxiv.org/html/{arxiv_id}v{version}", "arxiv-html"),
-        (f"https://ar5iv.labs.arxiv.org/html/{arxiv_id}", "ar5iv"),
-    ]
+    candidates = [(f"https://arxiv.org/html/{arxiv_id}v{version}", "arxiv-html")]
+    if ar5iv:
+        candidates.append((f"https://ar5iv.labs.arxiv.org/html/{arxiv_id}", "ar5iv"))
     with _client() as client:
         for url, source in candidates:
             response = patient_get(client, url)

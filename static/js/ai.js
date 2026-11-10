@@ -92,6 +92,8 @@ function whoOf(exchange) {
 const modelOf = (provider) => modelFor({ ...settings, aiProvider: provider });
 
 // Livre : relecture, résumé de tous les chapitres en parallèle (tâche du serveur, bookjob) ; cible de la synthèse
+// question qui parle de notes, ou relance : seule une telle demande peut rendre au lecteur une note (author = "reader")
+const ABOUT_NOTES = /\b(?:notes?|annotations?|surlignages?|highlights?|remarques?|relectures?|reviews?|comments?|commentaires?|refai|recommenc|r[eé]essa|redo|retry|try\s+again)/i;
 const BOOK = "@book";
 const SECTIONS = "@sections";  // article, menu Portée : toutes les sections en parallèle, puis synthèse
 const BOOK_TASKS = ["summary", "review"];
@@ -1408,7 +1410,7 @@ export class Assistant {
     apply.addEventListener("click", async () => {
       apply.disabled = true;
       const chosen = rows.filter((_, i) => boxes[i].checked && !boxes[i].disabled);
-      const undo = await this.applyProposals(chosen, this.scopesOf(exchange), providerOf(exchange.model));
+      const undo = await this.applyProposals(chosen, this.scopesOf(exchange), providerOf(exchange.model), ABOUT_NOTES.test(exchange.question || ""));
       if (!undo) { label(); return; }
       exchange.applied = 1;
       api.setAIApplied(exchange.id, true).catch(toastError);
@@ -1448,20 +1450,21 @@ export class Assistant {
   }
 
   // Crée les annotations choisies ; renvoie de quoi tout annuler (ou null si rien n'a pu être fait)
-  async applyProposals(rows, scopes = [], author = "claude") {
+  async applyProposals(rows, scopes = [], author = "claude", aboutNotes = false) {
     const created = [];
     const previousNotes = new Map();
     for (const row of rows) {
       const { proposal } = row;
+      const own = aboutNotes && proposal.author === "reader"; // adaptation : note du lecteur reprise telle quelle (ADAPT_PROMPT dans ai.py)
       try {
         if (row.kind === "highlight") {
           const range = rangeForQuote(this.annotator.content, proposal.quote, scopes); // retrouvé à nouveau : le texte a pu changer
           if (!range) continue;
           const color = COLORS.includes(proposal.color) ? proposal.color : "yellow";
-          created.push((await this.annotator.highlightRange(range, { color, note: proposal.note || null, author })).id);
+          created.push((await this.annotator.highlightRange(range, { color, note: proposal.note || null, author: own ? null : author })).id);
         } else if (proposal.note) {
           if (!previousNotes.has(row.id)) previousNotes.set(row.id, this.annotator.block(row.id)?.note || "");
-          await this.annotator.appendNote(row.id, `**${authorName(author)}** — *${t("ai.unverified")}*\n\n${proposal.note}`);
+          await this.annotator.appendNote(row.id, own ? proposal.note : `**${authorName(author)}** — *${t("ai.unverified")}*\n\n${proposal.note}`);
         }
       } catch (error) {
         toastError(error);

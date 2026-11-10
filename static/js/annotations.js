@@ -370,7 +370,8 @@ export function noteEditor({ value = "", placeholder = "", onSave, autofocus = f
       saved = area.value;
       status.textContent = t("notes.saved");
     } catch (error) {
-      status.textContent = t("error.generic", { message: error.message });
+      status.textContent = t("error.generic", { message: error.message }); // le texte reste dans le champ
+      if (error.code === "stale_version") toastError(error);
     }
   };
   const later = debounce(save, 700);

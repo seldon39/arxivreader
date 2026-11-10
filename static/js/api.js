@@ -1,7 +1,24 @@
 // Appels au serveur local.
 
-async function request(method, url, body) {
-  const options = { method, headers: {} };
+import { t } from "./i18n.js";
+
+// Version de l'article affiché par le lecteur de cette page, jointe à ses écritures : un autre onglet a pu le mettre à
+// jour depuis, et le serveur les refuse alors (main._same_version)
+const reading = new Map();
+export const setReadingVersion = (id, version) => reading.set(id, version);
+const versioned = (id) => (reading.get(id) ? { "X-ArXivReader-Version": String(reading.get(id)) } : {});
+
+function failure(status, data) {
+  const stale = data?.detail === "stale_version";
+  const error = new Error(stale ? t("reader.stale") : (data && (data.error || data.detail)) || `HTTP ${status}`);
+  error.status = status;
+  if (stale) error.code = "stale_version";
+  else if (data && typeof data.code === "string") error.code = data.code; // cause précise (traduite par la page)
+  return error;
+}
+
+async function request(method, url, body, headers = {}) {
+  const options = { method, headers: { ...headers } };
   if (body !== undefined) {
     options.headers["Content-Type"] = "application/json";
     options.body = JSON.stringify(body);
@@ -9,13 +26,7 @@ async function request(method, url, body) {
   const response = await fetch(url, options);
   const type = response.headers.get("content-type") || "";
   const data = type.includes("application/json") ? await response.json() : await response.text();
-  if (!response.ok) {
-    const message = (data && (data.error || data.detail)) || `HTTP ${response.status}`;
-    const error = new Error(message);
-    error.status = response.status;
-    if (data && typeof data.code === "string") error.code = data.code; // cause précise (traduite par la page)
-    throw error;
-  }
+  if (!response.ok) throw failure(response.status, data);
   return data;
 }
 
@@ -61,6 +72,7 @@ export const api = {
   zoteroStatus: () => request("GET", "/api/zotero"),
   zoteroSync: () => request("POST", "/api/zotero/sync", {}),
   papersRelevance: () => request("GET", "/api/papers/relevance"),
+  librarySearch: (query) => request("GET", `/api/library/search?q=${encodeURIComponent(query)}`),
   folders: () => request("GET", "/api/folders"),
   createFolder: (name, papers = []) => request("POST", "/api/folders", { name, papers }),
   renameFolder: (id, name) => request("PUT", `/api/folders/${id}`, { name }),
@@ -76,15 +88,18 @@ export const api = {
   pages: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/pages`),
   crosslinks: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/crosslinks`),
   statement: (id, node) => request("GET", `/api/papers/${encodeURIComponent(id)}/statements/${encodeURIComponent(node)}`),
-  savePosition: (id, anchor) => request("PUT", `/api/papers/${encodeURIComponent(id)}/position`, { anchor }),
+  savePosition: (id, anchor) => request("PUT", `/api/papers/${encodeURIComponent(id)}/position`, { anchor }, versioned(id)),
   refresh: (id) => request("POST", `/api/papers/${encodeURIComponent(id)}/refresh`, {}),
   importing: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/importing`),
+  versions: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/versions`),
+  openVersion: (id, version) => request("POST", `/api/papers/${encodeURIComponent(id)}/versions/${version}`, {}),
   search: (query) => request("POST", "/api/search", query),
   // `kept` : seulement un graphe déjà gardé (aucune construction lancée)
   related: (query, refresh = false, kept = false) => request("POST", "/api/related", { query, refresh, kept }),
   relatedStatus: (id) => request("GET", `/api/related/status?id=${encodeURIComponent(id)}`),
   relatedCancel: (id) => request("POST", "/api/related/cancel", { id }),
   feed: (view, day) => request("GET", `/api/feed?view=${encodeURIComponent(view)}${day ? `&day=${day}` : ""}`),
+  feedNewVersions: (force) => request("GET", `/api/feed/new-versions${force ? "?force=true" : ""}`),
   refreshFeed: (view) => request("POST", "/api/feed/refresh", { view }),
   linkArxiv: (key, query) => request("POST", "/api/feed/arxiv", { key, query }),
   alerts: () => request("GET", "/api/alerts"),
@@ -108,11 +123,11 @@ export const api = {
   exportNotesToFolder: (lang) => request("POST", `/api/notes/export-folder?lang=${encodeURIComponent(lang)}`, {}),
   figures: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/figures`),
   annotations: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/annotations`),
-  addAnnotation: (id, body) => request("POST", `/api/papers/${encodeURIComponent(id)}/annotations`, body),
+  addAnnotation: (id, body) => request("POST", `/api/papers/${encodeURIComponent(id)}/annotations`, body, versioned(id)),
   updateAnnotation: (annotationId, body) => request("PUT", `/api/annotations/${annotationId}`, body),
   deleteAnnotation: (annotationId) => request("DELETE", `/api/annotations/${annotationId}`),
-  setProof: (id, nodeId, body) => request("PUT", `/api/papers/${encodeURIComponent(id)}/proofs/${encodeURIComponent(nodeId)}`, body),
-  clearProof: (id, nodeId) => request("DELETE", `/api/papers/${encodeURIComponent(id)}/proofs/${encodeURIComponent(nodeId)}`),
+  setProof: (id, nodeId, body) => request("PUT", `/api/papers/${encodeURIComponent(id)}/proofs/${encodeURIComponent(nodeId)}`, body, versioned(id)),
+  clearProof: (id, nodeId) => request("DELETE", `/api/papers/${encodeURIComponent(id)}/proofs/${encodeURIComponent(nodeId)}`, undefined, versioned(id)),
   aiStatus: (provider) => request("GET", `/api/ai/status${provider ? `?provider=${encodeURIComponent(provider)}` : ""}`),
   aiPartners: () => request("GET", "/api/ai/partners"),
   aiProfile: () => request("GET", "/api/ai/profile"),
@@ -124,7 +139,7 @@ export const api = {
   aiExchanges: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/ai`),
   // livre : relecture ou résumé de tous les chapitres en parallèle, puis synthèse (tâche de fond du serveur)
   aiBook: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/ai/book`),
-  startAIBook: (id, body) => request("POST", `/api/papers/${encodeURIComponent(id)}/ai/book`, body),
+  startAIBook: (id, body) => request("POST", `/api/papers/${encodeURIComponent(id)}/ai/book`, body, versioned(id)),
   stopAIBook: (id, task) => request("POST", `/api/papers/${encodeURIComponent(id)}/ai/book/stop`, { task }),
   exportAI: (exchangeId) => request("GET", `/api/ai/${exchangeId}/export`),
   paperText: (paperId) => request("GET", `/api/papers/${encodeURIComponent(paperId)}/text`),
@@ -137,12 +152,9 @@ export const api = {
 // Réponse de Claude en direct : une ligne JSON par événement ({exchange}, {delta}, {error}, {done}).
 export async function streamAI(paperId, body, onEvent, signal) {
   const response = await fetch(`/api/papers/${encodeURIComponent(paperId)}/ai`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal,
+    method: "POST", headers: { "Content-Type": "application/json", ...versioned(paperId) }, body: JSON.stringify(body), signal,
   });
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    throw new Error(data.error || data.detail || `HTTP ${response.status}`);
-  }
+  if (!response.ok) throw failure(response.status, await response.json().catch(() => ({})));
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";

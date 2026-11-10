@@ -559,7 +559,7 @@ def refresh_recommendations(api_key=None, limit=60):
 
 def list_items(view, announce_types=None, day=None):
     with db.connect() as connection:
-        papers = connection.execute("SELECT id, arxiv_id, in_library FROM papers").fetchall()
+        papers = connection.execute("SELECT id, arxiv_id, in_library FROM papers WHERE archived_of IS NULL").fetchall()
         library = {r["arxiv_id"]: r["id"] for r in papers if r["in_library"]}
         cached = {r["arxiv_id"]: r["id"] for r in papers}
         status = {r["key"]: r["status"] for r in connection.execute("SELECT key, status FROM feed_status")}

@@ -5,7 +5,20 @@ import { api } from "./api.js";
 import { t, tn } from "./i18n.js";
 import { chooseFiles, debounce, draggablePaper, droppedFilePaths, droppedPapers, formatDate, h, icons, journalChip, localDrag, mayBePaper, metaDialog, tidyTitle, timeAgo, toast, toastError, withMath } from "./util.js";
 import { importTexFile, unquote } from "./texfile.js";
+import { typesetTex } from "./math.js";
 import { addToLibrary, dragEnded, dragGroup, fileInFolder, forgetSelected, selectButton, selectionDropped, syncSelection, useSelectionBar } from "./selection.js";
+
+// Mise à jour d'un article (carte de la bibliothèque, section « nouvelles versions » du feed), suivie jusqu'à la fin ; `version` : celle installée
+export async function updatePaper({ id, version }, { expectNew = false } = {}) {
+  await api.refresh(id); // en arrière-plan : on suit l'import (aucune longue requête)
+  for (let i = 0; i < 200 && (await api.importing(id)).running; i++) await new Promise((r) => setTimeout(r, 1500));
+  // nouvelle version : elle commence sans notes, celles de l'ancienne restent sur l'ancienne
+  const now = (await api.papers()).find((p) => p.id === id);
+  if (expectNew && now?.version === version) { toast(t("feed.newVersionFailed"), { error: true, duration: 6000 }); return; } // réseau coupé, arXiv indisponible
+  const before = now && now.version !== version && (await api.versions(id)).versions.find((v) => v.version === version);
+  const marked = before && (before.notes || before.answers);
+  toast(marked ? t("library.updatedMarks", { v: now.version, old: version }) : t("library.updated"), marked ? { duration: 12000 } : {});
+}
 
 // Recherche et filtres, gardés d'une visite à l'autre (le temps de la session)
 const view = { search: "", categories: new Set(), reading: new Set(), years: new Set(), folders: new Set(), source: "any", publication: "any", sort: "opened",
@@ -287,6 +300,40 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
   }
   search.addEventListener("input", debounce(() => { view.search = search.value; refreshList(false); }, 120));
 
+  // ---- Recherche dans le texte et les notes (les cartes restent filtrées sur les métadonnées) ----
+  const textHits = h("section", { class: "text-hits", hidden: true });
+  const hitRow = (hit) => h("a", { class: "text-hit", href: `#/paper/${encodeURIComponent(hit.paperId)}${hit.target ? `/${encodeURIComponent(hit.target)}` : ""}` },
+    h("span", { class: "text-hit-head" },
+      h("span", { class: "text-hit-kind" }, t(`library.textHits.${hit.kind}`)),
+      hit.label && h("span", { class: "text-hit-label" }, hit.label)),
+    h("span", { class: "text-hit-snippet" }, hit.snippet));
+  function drawTextHits({ results, truncated }) {
+    textHits.hidden = false;
+    if (!results.length) {
+      textHits.replaceChildren(h("p", { class: "hint text-hits-none" }, t("library.textHits.none")));
+      return;
+    }
+    const byPaper = new Map(); // dans l'ordre des résultats : articles avec des notes d'abord
+    for (const hit of results) byPaper.set(hit.paperId, [...(byPaper.get(hit.paperId) || []), hit]);
+    textHits.replaceChildren(
+      h("h2", {}, t("library.textHits", { n: `${results.length}${truncated ? "+" : ""}` })),
+      h("div", { class: "text-hits-list" }, [...byPaper.values()].map((hits) => h("div", { class: "text-hit-paper" },
+        h("h3", {}, withMath(tidyTitle(hits[0].title)), hits[0].archived && ` · ${t("reader.version", { v: hits[0].version })}`),
+        hits.map(hitRow)))));
+    return typesetTex([textHits]); // formules entières des extraits (texte posé tel quel, jamais en HTML)
+  }
+  async function searchText() {
+    const query = search.value.trim();
+    if (query.length < 3) { textHits.hidden = true; textHits.replaceChildren(); return; }
+    try {
+      const found = await api.librarySearch(query);
+      if (query === search.value.trim()) await drawTextHits(found); // sinon : réponse à une frappe dépassée
+    } catch (error) {
+      if (query === search.value.trim()) toastError(error);
+    }
+  }
+  search.addEventListener("input", debounce(searchText, 300));
+
   let papers = [];
   let menu = null;
   let menuButton = null; // bouton qui a ouvert le menu (Filtres ou Tri)
@@ -522,7 +569,7 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
       list.replaceChildren(h("div", { class: "empty" }, t("library.allFiled")));
     } else if (!shown.length) {
       list.replaceChildren(h("div", { class: "empty" }, t("library.noMatch"), " ",
-        h("button", { class: "link-button", type: "button", onclick: () => { resetFilters(); view.search = ""; search.value = ""; changed(); } }, t("library.showAll"))));
+        h("button", { class: "link-button", type: "button", onclick: () => { resetFilters(); view.search = ""; search.value = ""; changed(); searchText(); } }, t("library.showAll"))));
     } else {
       showCards(shown);
     }
@@ -873,6 +920,7 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
     h("div", { class: "lib-head" }, h("h1", {}, t("library.title")), form),
     status,
     tools, activeRow,
+    textHits,
     foldersBox,
     listHead,
     list,
@@ -880,6 +928,7 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
   if (matchMedia("(hover: hover)").matches) input.focus(); // pas sur téléphone : le clavier s'ouvrirait à chaque visite
   list.replaceChildren(h("div", { class: "busy" }, h("span", { class: "spinner" }), t("common.loading")));
   await refreshList();
+  await searchText(); // retour sur la page, recherche gardée : avant que la position de défilement soit rétablie
   // ⌘F : champ de recherche de la bibliothèque
   const unsubscribeFind = setFindHandler((command) => { if (command === "open") { search.focus(); search.select(); } });
   // plusieurs articles sélectionnés : barre en bas (« Ranger dans… »), glissés ensemble sur un dossier
@@ -957,13 +1006,7 @@ function card(paper, refreshList, context = null) {
         button.disabled = true;
         button.classList.add("spinning");
         try {
-          await api.refresh(paper.id); // en arrière-plan : on suit l'import (aucune longue requête)
-          for (let i = 0; i < 200 && (await api.importing(paper.id)).running; i++) await new Promise((r) => setTimeout(r, 1500));
-          // nouvelle version : marque-pages et surlignages posés sur l'ancienne sont peut-être déplacés
-          const now = (await api.papers()).find((p) => p.id === paper.id);
-          const marked = now && now.version !== paper.version
-            && (await api.annotations(paper.id)).some((a) => ["bookmark", "highlight", "block"].includes(a.kind));
-          toast(marked ? t("library.updatedMarks", { v: now.version }) : t("library.updated"), marked ? { duration: 12000 } : {});
+          await updatePaper(paper);
           refreshList();
         }
         catch (error) { toastError(error); }

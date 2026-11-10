@@ -111,7 +111,7 @@ def _signed(payload):
     return f"<!-- {MARK}\n{text}\n-->"
 
 
-PAPER_FIELDS = ("id", "arxiv_id", "version", "title", "authors", "source", "doi", "in_library")
+PAPER_FIELDS = ("id", "arxiv_id", "version", "title", "authors", "source", "doi", "in_library", "archived_of")
 
 
 def data_block(paper, notes):
@@ -216,7 +216,7 @@ def _ensure_paper(paper, report):
     """Article exporté : présent ici (remis en bibliothèque s'il y était là-bas), sinon importé d'arXiv ; PDF importé
     absent : signalé (il faut le fichier). Un article seulement lu là-bas le reste ici. Renvoie son identifiant ici,
     ou None (entrée inutilisable : ignorée, le reste de l'import continue)."""
-    from .arxiv import ArxivError
+    from .arxiv import ArxivError, paper_key, parse_arxiv_id
     paper_id = paper.get("id") if isinstance(paper, dict) else None
     if not isinstance(paper_id, str) or not paper_id:
         return None
@@ -233,11 +233,12 @@ def _ensure_paper(paper, report):
     authors = paper.get("authors") if isinstance(paper.get("authors"), list) else []
     known = {"title": str(paper.get("title") or "")[:1000], "authors": [str(a)[:200] for a in authors[:500]]}
     try:
+        present = db.get_paper(paper_key(parse_arxiv_id(str(paper["arxiv_id"]))[0]))  # version archivée : l'article est peut-être là
         added = library.quick_add(str(paper["arxiv_id"]), known, wanted)
     except (ArxivError, ValueError):  # identifiant arXiv invalide
         report["missing"].append(known["title"] or paper_id)
         return None
-    report["papers"] += 1
+    report["papers"] += not present
     return added["id"]
 
 
@@ -257,10 +258,23 @@ def _import_folder(folder, report):
             folders.set_member(existing["id"], paper_id, True)
 
 
+def _version_of_notes(paper, paper_id):
+    """Article qui reçoit des notes prises sur la version `paper["version"]` : cet article, ou sa version archivée
+    (téléchargée en arrière-plan) si une autre version est installée ici ; les notes restent sur leur texte."""
+    version, here = paper.get("version"), db.get_paper(paper_id)
+    if type(version) is not int or version < 1 or here.get("archived_of") or here["version"] == version:
+        return paper_id
+    if here["version"] is None and not paper.get("archived_of"):
+        db.update_paper(paper_id, version=version)  # pas encore importé : library._import archivera si arXiv en a une autre
+        return paper_id
+    return library.ensure_version(here, version)
+
+
 def _import_paper(payload, report):
     paper_id = _ensure_paper(payload["paper"], report)
     if not paper_id:
         return
+    paper_id = _version_of_notes(payload["paper"], paper_id)
     for item in payload.get("annotations") or []:
         outcome = annotations.import_one(paper_id, item)
         report[outcome] += 1

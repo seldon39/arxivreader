@@ -121,6 +121,10 @@ export function metaDialog({ title, authors, heading = null, note = null, cancel
 }
 
 export function toastError(error) {
+  if (error?.code === "stale_version") { // lecteur resté sur une version remplacée depuis : le recharger l'affiche à jour
+    toast(error.message, { error: true, duration: 12000, action: { label: t("reader.reload"), icon: icons.refresh, onClick: () => dispatchEvent(new HashChangeEvent("hashchange")) } });
+    return;
+  }
   toast(error?.code === "offline" ? t("error.offline") : t("error.generic", { message: error?.message || String(error) }),
     { error: true, duration: 6000 });
 }

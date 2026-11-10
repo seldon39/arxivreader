@@ -9,6 +9,7 @@ import tempfile
 import threading
 import time
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
 
 from pathlib import Path
@@ -16,7 +17,7 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 
 from . import annotations, db, texstructure
-from .arxiv import fetch_asset, fetch_html, fetch_metadata, fetch_pdf, fetch_source, open_client, paper_key, parse_arxiv_id
+from .arxiv import ArxivError, fetch_asset, fetch_html, fetch_latest, fetch_metadata, fetch_pdf, fetch_source, open_client, paper_key, parse_arxiv_id
 from .config import PAPERS
 from .sanitize import sanitize_document
 from .structure import STRUCTURE_VERSION, extract_structure
@@ -70,51 +71,79 @@ def import_paper(query, add_to_library=True):
         pending_source = background.submit(_source, arxiv_id, None)
         meta = fetch_metadata(arxiv_id)
         paper_id = paper_key(arxiv_id)
+        _latest[arxiv_id] = (time.monotonic(), meta.version)
         with paper_lock(paper_id):
             return _import(paper_id, arxiv_id, meta, add_to_library, pending_source)
 
 
 def _import(paper_id, arxiv_id, meta, add_to_library, pending_source):
-    source = _download(paper_id, arxiv_id, meta, pending_source)  # arxiv-html, ar5iv ou none
+    from . import bookjob
+    installed = db.get_paper(paper_id)
+    # les emplacements de preuve indiqués à la main ne valent que pour le même texte
+    overrides = annotations.proof_overrides(paper_id) if installed and installed["version"] == meta.version else {}
+    staging, source = _staged(paper_id, arxiv_id, meta, pending_source, overrides)  # arxiv-html, ar5iv ou none
+    # relue après le téléchargement : place dans la bibliothèque, et version d'une fiche en attente, écrite entre-temps
+    # par un import de notes (notesync._version_of_notes)
     previous = db.get_paper(paper_id)
-    db.save_paper({
+    # autre version que celle installée : l'ancienne est archivée avec ses notes
+    new_version = previous and previous["version"] not in (None, meta.version)
+    row = {
         "id": paper_id,
-        "arxiv_id": arxiv_id,
-        "version": meta.version,
-        "title": meta.title,
-        "authors": meta.authors,
-        "abstract": meta.abstract,
-        "categories": meta.categories,
-        "primary_category": meta.primary_category,
-        "published": meta.published,
-        "updated": meta.updated,
-        "doi": meta.doi,
-        "journal_ref": meta.journal_ref,
-        "comment": meta.comment,
-        "source": source,
+        **_fields(arxiv_id, meta, source),
         "position": previous["position"] if previous else None,
         # déjà dans la bibliothèque : on l'y laisse ; sinon selon la demande (« Lire » = cache seulement)
         "in_library": 1 if add_to_library or (previous and previous.get("in_library")) else 0,
-    })
+    }
+    # cette version était archivée ici (notes importées d'un autre ordinateur) : elle redevient l'article principal
+    back = archive_key(paper_id, meta.version)
+    with paper_lock(back):
+        returning = db.get_paper(back)
+        if returning:
+            bookjob.forget(back)
+            _keep_images(paper_dir(back), staging)
+            if paper_dir(back).exists():
+                (paper_dir(back) / ABSORBED).touch()  # pour recover_interrupted : à ne pas confondre avec un dossier mis de côté
+            row["position"] = returning["position"] or row["position"]
+        if new_version:
+            bookjob.forget(paper_id)  # relecture ou résumé en cours : ni le texte ni les échanges suivants ne seraient les siens
+            _replace_version(previous, staging, row, returning)
+        else:
+            _install(paper_id, staging)
+            with db.connect() as connection:
+                db.write_paper(connection, row)
+                if returning:
+                    _absorb(connection, back, paper_id)
+        if returning:
+            _discard(paper_dir(back))
     return db.get_paper(paper_id)
 
 
-def _download(paper_id, arxiv_id, meta, pending_source):
-    folder = paper_dir(paper_id)
+def _fields(arxiv_id, meta, source):
+    return {"arxiv_id": arxiv_id, "version": meta.version, "title": meta.title, "authors": meta.authors, "abstract": meta.abstract,
+            "categories": meta.categories, "primary_category": meta.primary_category, "published": meta.published,
+            "updated": meta.updated, "doi": meta.doi, "journal_ref": meta.journal_ref, "comment": meta.comment, "source": source}
+
+
+def _staged(name, arxiv_id, meta, pending_source, overrides, ar5iv=True):
+    """(dossier de préparation rempli, propre à cet import, source) ; effacé en cas d'échec."""
     PAPERS.mkdir(parents=True, exist_ok=True)
-    # dossier de préparation propre à cet import, effacé en cas d'échec
-    staging = Path(tempfile.mkdtemp(dir=PAPERS, prefix=f".{paper_id}."))
+    staging = Path(tempfile.mkdtemp(dir=PAPERS, prefix=f".{name}."))
     try:
-        source = _fill(staging, paper_id, arxiv_id, meta, pending_source)
+        return staging, _fill(staging, arxiv_id, meta, pending_source, overrides, ar5iv)
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
-    # remplacement de l'ancienne version : l'article reste lisible jusqu'au dernier moment
+
+
+def _install(paper_id, staging):
+    """Remplacement par un nouvel import de la même version : l'article reste lisible jusqu'au dernier moment."""
+    folder = paper_dir(paper_id)
     old = folder.with_name(f".{paper_id}.old")
     shutil.rmtree(old, ignore_errors=True)
-    if folder.exists():
-        _rename(folder, old)
     try:
+        _keep_images(folder, staging)
+        if folder.exists():
+            _rename(folder, old)
         _rename(staging, folder)
     except OSError:
         if old.exists() and not folder.exists():
@@ -122,7 +151,24 @@ def _download(paper_id, arxiv_id, meta, pending_source):
         shutil.rmtree(staging, ignore_errors=True)
         raise
     shutil.rmtree(old, ignore_errors=True)
-    return source
+
+
+def _keep_images(source, target):
+    """Images des notes et des échanges (une par annotation ou par échange) : arXiv ne les redonnerait pas."""
+    for images in ("zones", "ai-images"):
+        if (source / images).exists():
+            shutil.copytree(source / images, target / images, dirs_exist_ok=True)
+
+
+def _discard(folder):
+    """Dossier effacé sans risque en cas d'arrêt brutal : d'abord caché (renommage atomique), recover_interrupted efface
+    les dossiers cachés restés. Renommage refusé : il reste en place, et sera effacé au prochain lancement."""
+    hidden = folder.with_name(f".{folder.name}.discarded")
+    try:
+        _rename(folder, hidden)
+    except OSError:
+        return
+    shutil.rmtree(hidden, ignore_errors=True)
 
 
 def _rename(source, target, attempts=6):
@@ -145,15 +191,15 @@ def _source(arxiv_id, version):
         return None
 
 
-def _fill(staging, paper_id, arxiv_id, meta, pending_source):
+def _fill(staging, arxiv_id, meta, pending_source, overrides, ar5iv=True):
     (staging / "assets").mkdir()
     source = "none"
     structure = {"toc": [], "nodes": [], "equations": {}, "bibliography": [], "hiddenText": 0}
-    fetched = fetch_html(arxiv_id, meta.version)
+    fetched = fetch_html(arxiv_id, meta.version, ar5iv=ar5iv)
     if fetched is not None:
         html, base_url, source = fetched
         fragment, assets = sanitize_document(html, base_url)
-        structure = extract_structure(fragment, annotations.proof_overrides(paper_id))
+        structure = extract_structure(fragment, overrides)
         (staging / "content.html").write_text(str(fragment), encoding="utf-8")
         # adresse d'origine de chaque image : une image qui n'a pas pu venir sera redemandée plus tard
         (staging / "assets.json").write_text(json.dumps(dict(assets)), encoding="utf-8")
@@ -218,7 +264,8 @@ def quick_add(arxiv_id, known=None, in_library=True):
 _import_slots = threading.BoundedSemaphore(3)
 
 
-def _start_import(arxiv_id, paper_id):
+def _start_import(arxiv_id, paper_id, task=None):
+    """`task` : autre travail que l'import de la dernière version (version archivée)."""
     with _imports_guard:
         if paper_id in _imports:
             return
@@ -227,7 +274,10 @@ def _start_import(arxiv_id, paper_id):
     def run():
         try:
             with _import_slots:  # quelques imports à la fois (import de notes : des centaines d'articles d'un coup)
-                import_paper(arxiv_id, add_to_library=False)  # garde la place dans la bibliothèque telle qu'elle est alors
+                if task:
+                    task()
+                else:
+                    import_paper(arxiv_id, add_to_library=False)  # garde la place dans la bibliothèque telle qu'elle est alors
         except Exception as error:
             log.warning("import de %s en arrière-plan impossible : %s", arxiv_id, error)
         finally:
@@ -257,12 +307,276 @@ def ensure_ready(paper_id, timeout=180):
     with _imports_guard:
         running = paper_id in _imports
     if not running:  # import de fond échoué (réseau) ou interrompu (application quittée) : relancé
-        _start_import(paper["arxiv_id"], paper_id)
+        if paper.get("archived_of"):
+            _start_version(paper["archived_of"], paper)
+        else:
+            _start_import(paper["arxiv_id"], paper_id)
     with _imports_guard:
         done = _imports.get(paper_id)
     if done:
         done.wait(timeout)  # borné : la page redemande tant que l'import n'est pas fini
     return db.get_paper(paper_id)
+
+
+# ---------- Versions d'un article arXiv : une version archivée est un article à part entière (fiche, dossier, notes,
+# échanges) d'identifiant « <article>v<k> », hors bibliothèque (in_library = 0, archived_of = l'article principal, qui
+# porte la dernière version installée). ----------
+
+ABSORBED = ".absorbed"  # dans le dossier d'une archive qui redevient l'article principal
+LATEST_KEEP = 3600  # dernière version connue, gardée une heure
+LATEST_WAIT = 20    # arXiv lent : réponse sans attendre davantage (la requête continue et sert à la demande suivante)
+_latest = {}        # identifiant arXiv → (instant, dernière version)
+
+
+def archive_key(paper_id, version):
+    return f"{paper_id}v{version}"
+
+
+def main_of(paper):
+    return db.get_paper(paper["archived_of"]) if paper.get("archived_of") else paper
+
+
+def latest_version(arxiv_id):
+    """Dernière version de l'article sur arXiv (une requête, gardée une heure) ; None hors ligne ou si arXiv tarde."""
+    def fresh():
+        known = _latest.get(arxiv_id)
+        return known[1] if known and time.monotonic() - known[0] < LATEST_KEEP else None
+
+    def ask():
+        try:
+            _latest[arxiv_id] = (time.monotonic(), fetch_metadata(arxiv_id).version)
+        except Exception as error:
+            log.info("dernière version de %s inconnue : %s", arxiv_id, error)
+    if fresh() is None:
+        thread = threading.Thread(target=ask, daemon=True)
+        thread.start()
+        thread.join(LATEST_WAIT)
+    return fresh()
+
+
+NEW_VERSIONS_DAYS = 45
+NEW_VERSIONS_KEEP = 6 * 3600  # arXiv interrogé au plus toutes les six heures ; le bouton de mise à jour du feed force la requête
+_new_versions_guard = threading.Lock()
+
+
+def new_versions(force=False):
+    """Section du feed : versions parues depuis NEW_VERSIONS_DAYS jours, plus récentes que celle installée, des articles
+    arXiv de la bibliothèque. Réponse d'arXiv gardée en base : affichée aussitôt, et hors ligne. Une version installée
+    depuis, ou un article retiré, sort de la liste sans nouvelle requête."""
+    def since():
+        return (datetime.now(timezone.utc) - timedelta(days=NEW_VERSIONS_DAYS)).strftime("%Y-%m-%d")
+
+    papers = [p for p in db.list_papers() if p["arxiv_id"] and p["version"]]
+    with _new_versions_guard:
+        kept = db.get_settings().get("feed.newVersions") or {}
+        if papers and (force or time.time() - kept.get("checked", 0) > NEW_VERSIONS_KEEP):
+            try:
+                found = fetch_latest([p["arxiv_id"] for p in papers])
+            except Exception as error:
+                log.info("nouvelles versions inconnues : %s", error)
+            else:
+                kept = {"checked": time.time(), "latest": {
+                    key: {"version": m.version, "updated": m.updated[:10], "title": m.title, "authors": m.authors,
+                          "categories": m.categories, "primary_category": m.primary_category, "comment": m.comment}
+                    for key, m in found.items() if m.updated[:10] >= since()}}
+                db.save_settings({"feed.newVersions": kept})
+    latest = kept.get("latest") or {}
+    items = [{**latest[p["arxiv_id"]], "id": p["id"], "arxiv_id": p["arxiv_id"], "installed": p["version"], "abstract": ""} for p in papers
+             if p["arxiv_id"] in latest and latest[p["arxiv_id"]]["version"] > p["version"] and latest[p["arxiv_id"]]["updated"] >= since()]
+    return sorted(items, key=lambda item: item["updated"], reverse=True)
+
+
+def _move_notes(connection, source, target):
+    """Annotations et échanges de `source` passent à `target`. Si elle en a déjà (rare) : fiche de lecture, note d'un
+    énoncé et emplacement de preuve étant uniques par article, une seule ligne reste, avec les deux textes."""
+    def unique(owner):
+        return {(row["kind"], row["place"]): row for row in connection.execute(
+            "SELECT id, kind, json_extract(target, '$.id') AS place, note, state FROM annotations "
+            "WHERE paper_id = ? AND kind IN ('general', 'block', 'proof')", (owner,))}
+    kept = unique(target)
+    for key, row in unique(source).items():
+        if key in kept:
+            note = "\n\n".join(dict.fromkeys(filter(None, (kept[key]["note"], row["note"])))) or None
+            connection.execute("UPDATE annotations SET note = ?, state = COALESCE(state, ?), updated_at = datetime('now') WHERE id = ?",
+                               (note, row["state"], kept[key]["id"]))
+            connection.execute("DELETE FROM annotations WHERE id = ?", (row["id"],))
+    connection.execute("UPDATE annotations SET paper_id = ? WHERE paper_id = ?", (target, source))
+    connection.execute("UPDATE ai_exchanges SET paper_id = ? WHERE paper_id = ?", (target, source))
+
+
+def _absorb(connection, archive_id, paper_id):
+    """Version archivée qui redevient l'article principal : ses notes et ses échanges le rejoignent, sa fiche disparaît."""
+    _move_notes(connection, archive_id, paper_id)
+    connection.execute("DELETE FROM papers WHERE id = ?", (archive_id,))
+
+
+def _replace_version(previous, staging, row, returning=None):
+    """Nouvelle version d'un article déjà importé : l'ancienne devient une version archivée (dossier, fiche, notes,
+    échanges), la nouvelle commence sans notes, sauf `returning` : sa fiche archivée. Tout est validé en une transaction,
+    une fois le nouveau dossier en place ; le moindre échec remet l'ancien dossier et ne valide rien."""
+    paper_id, folder = previous["id"], paper_dir(previous["id"])
+    archive_id = archive_key(paper_id, previous["version"])
+    archive_folder = paper_dir(archive_id)
+    with paper_lock(archive_id):
+        existing = db.get_paper(archive_id)
+        # déjà archivée (rare) : son dossier et sa fiche restent, celui de l'article est écarté, les notes sont réunies
+        merging = existing and existing["source"] != PENDING
+        parked = folder.with_name(f".{archive_id}.old") if merging else archive_folder
+        moved = False
+        try:
+            if folder.exists():
+                shutil.rmtree(parked, ignore_errors=True)  # reste inutile (au démarrage, recover_interrupted a remis l'utile)
+                if merging:
+                    _keep_images(folder, archive_folder)
+                _rename(folder, parked)
+                moved = True
+            with db.connect() as connection:
+                if not merging:
+                    db.write_paper(connection, {**previous, "id": archive_id, "in_library": 0, "archived_of": paper_id})
+                _move_notes(connection, paper_id, archive_id)
+                if returning:
+                    _absorb(connection, returning["id"], paper_id)
+                _rename(staging, folder)
+                db.write_paper(connection, row)
+        except BaseException:
+            shutil.rmtree(staging, ignore_errors=True)
+            if moved:
+                shutil.rmtree(folder, ignore_errors=True)  # le nouveau dossier, si le renommage a eu lieu
+                _rename(parked, folder)
+            raise
+    if merging:
+        shutil.rmtree(parked, ignore_errors=True)
+    if previous["source"] == PENDING and not merging:  # notes importées pour cette version, encore à télécharger
+        _start_version(paper_id, db.get_paper(archive_id))
+
+
+def recover_interrupted():
+    """Au démarrage : les renommages d'une mise à jour sont hors de la transaction SQLite. Après un arrêt brutal entre
+    les deux, la fiche fait foi : tant qu'elle porte encore l'ancienne version, l'ancien dossier reprend sa place (aucun
+    autre import ne tourne encore). Les dossiers de préparation restés sont effacés."""
+    def restore(parked, folder):
+        try:
+            shutil.rmtree(folder, ignore_errors=True)
+            _rename(parked, folder)
+        except OSError as error:
+            log.warning("mise à jour interrompue de %s : dossier non remis en place : %s", folder.name, error)
+
+    if not PAPERS.exists():
+        return
+    for paper in db.list_all_papers():
+        if paper["version"] and paper["source"] != PENDING:
+            parked = paper_dir(archive_key(paper["id"], paper["version"]))
+            if parked.exists() and not db.get_paper(parked.name):
+                if (parked / ABSORBED).exists():  # archive redevenue l'article principal, c'est validé : reste à l'effacer
+                    _discard(parked)
+                else:
+                    restore(parked, paper_dir(paper["id"]))
+    for hidden in PAPERS.glob(".*"):
+        if not hidden.is_dir():
+            continue
+        owner = db.get_paper(hidden.name[1:].removesuffix(".old")) if hidden.name.endswith(".old") else None
+        main = main_of(owner) if owner else None
+        # .<article>.old (_install) : remis s'il n'y a plus de dossier ; .<archive>.old (fusion dans _replace_version) :
+        # remis si l'article a encore cette version, donc si la fusion n'a pas été validée
+        if main and (not paper_dir(main["id"]).exists() or (owner.get("archived_of") and owner["version"] == main["version"])):
+            restore(hidden, paper_dir(main["id"]))
+        else:
+            shutil.rmtree(hidden, ignore_errors=True)
+
+
+def _with_notes():
+    from .ai import papers_with_exchanges
+    return annotations.annotated_papers() | papers_with_exchanges()
+
+
+def ensure_version(main, version):
+    """Version archivée de l'article `main` : fiche inscrite tout de suite (en attente), téléchargée en arrière-plan si
+    elle n'est pas déjà là ; renvoie son identifiant."""
+    archive_id = archive_key(main["id"], version)
+    if not db.get_paper(archive_id):
+        db.save_paper({**{k: v for k, v in main.items() if k not in ("added_at", "opened_at", "position")},
+                       "id": archive_id, "version": version, "source": PENDING, "in_library": 0, "archived_of": main["id"]})
+    archive = db.get_paper(archive_id)
+    if archive["source"] == PENDING:
+        _start_version(main["id"], archive)
+    return archive_id
+
+
+def _start_version(paper_id, archive):
+    _start_import(archive["arxiv_id"], archive["id"], lambda: import_version(paper_id, archive["version"]))
+
+
+def import_version(paper_id, version):
+    """Téléchargement d'une version archivée, sans toucher à l'article principal. Cette version seulement :
+    arxiv.org/html/<id>v<k> (ar5iv en sert une autre), sinon sa source TeX et son PDF."""
+    archive_id = archive_key(paper_id, version)
+    arxiv_id = db.get_paper(archive_id)["arxiv_id"]
+    staging = None
+    try:
+        with ThreadPoolExecutor(1) as background:
+            pending_source = background.submit(_source, arxiv_id, version)
+            meta = fetch_metadata(f"{arxiv_id}v{version}")
+            if meta.version != version:
+                raise ArxivError(f"Version {version} de {arxiv_id} introuvable sur arXiv")
+            staging, source = _staged(archive_id, arxiv_id, meta, pending_source, {}, ar5iv=False)
+        with paper_lock(archive_id):
+            waiting = db.get_paper(archive_id)
+            if waiting and waiting["source"] == PENDING:  # sinon : article retiré, ou version archivée par une mise à jour
+                shutil.rmtree(paper_dir(archive_id), ignore_errors=True)
+                _rename(staging, paper_dir(archive_id))
+                db.save_paper({"id": archive_id, **_fields(arxiv_id, meta, source)})
+    except Exception:
+        # téléchargement impossible : plus de fiche en attente, sauf si des notes importées y sont déjà (réessai à l'ouverture)
+        archive = db.get_paper(archive_id)
+        if archive and archive["source"] == PENDING and archive_id not in _with_notes():
+            db.delete_paper(archive_id)
+        raise
+    finally:
+        if staging:
+            shutil.rmtree(staging, ignore_errors=True)
+
+
+def versions_of(paper):
+    """Versions d'un article arXiv, de 1 à la dernière (hors ligne : celles de cet ordinateur seulement), avec leurs
+    notes ; `paper` : l'article principal ou une version archivée."""
+    from . import ai
+    main = main_of(paper)
+    local = {row["version"]: row for row in db.archives_of(main["id"])}
+    if main["version"]:
+        local[main["version"]] = main
+    latest = latest_version(main["arxiv_id"])
+    if latest:
+        latest = max(latest, *local)
+    notes, answers = annotations.counts(), ai.counts()
+
+    def entry(number):
+        row = local.get(number)
+        key = row["id"] if row else archive_key(main["id"], number)
+        return {"version": number, "id": key if row and row["source"] != PENDING else None,
+                "notes": notes.get(key, 0), "answers": answers.get(key, 0),
+                "current": key == paper["id"], "main": key == main["id"], "running": importing(key)}
+    return {"main": main["id"], "latest": latest, "offline": latest is None,
+            "versions": [entry(number) for number in (range(1, latest + 1) if latest else sorted(local))]}
+
+
+def open_version(paper, version):
+    """Version demandée dans le menu : {"id", "running"} ; `running` : téléchargement ou mise à jour en arrière-plan, à
+    suivre par importing(id). ValueError : pas de telle version ; ArxivError : arXiv injoignable."""
+    main = main_of(paper)
+    if main["version"] == version:
+        return {"id": main["id"], "running": importing(main["id"])}
+    archive = db.get_paper(archive_key(main["id"], version))
+    if archive and archive["source"] != PENDING:
+        return {"id": archive["id"], "running": False}
+    latest = latest_version(main["arxiv_id"])
+    if latest is None:
+        raise ArxivError("arXiv unreachable")
+    if version > max(latest, main["version"] or 0):
+        raise ValueError("No such version")
+    if version == latest and version > (main["version"] or 0):
+        update_in_background(main["id"])
+        return {"id": main["id"], "running": True}
+    return {"id": ensure_version(main, version), "running": True}
 
 
 def _fetch_assets(folder, assets):
@@ -303,9 +617,21 @@ def repairing(paper_id):
         return paper_id in _repairing
 
 
+def _reimport_installed(paper):
+    """Nouvel import de la version installée, même si arXiv en a une plus récente : rien n'est archivé ni déplacé."""
+    arxiv_id, version = paper["arxiv_id"], paper["version"]
+    with ThreadPoolExecutor(1) as background:
+        pending_source = background.submit(_source, arxiv_id, version)
+        meta = fetch_metadata(f"{arxiv_id}v{version}")
+        with paper_lock(paper["id"]):
+            current = db.get_paper(paper["id"])
+            if current and current["version"] == meta.version:  # sinon : mis à jour entre-temps
+                _import(paper["id"], arxiv_id, meta, False, pending_source)
+
+
 def repair_assets(paper_id):
     """Images manquantes redemandées (une fois à la fois par article) : d'après leurs adresses d'origine si l'import
-    les a gardées, sinon par un nouvel import de l'article (notes, place dans la bibliothèque et dossiers gardés)."""
+    les a gardées, sinon par un nouvel import de la version installée (notes, place dans la bibliothèque et dossiers gardés)."""
     with _repairing_guard:
         if paper_id in _repairing:
             return
@@ -320,8 +646,9 @@ def repair_assets(paper_id):
             remote = None
         if remote is None:  # importé avant que les adresses soient gardées : nouvel import
             paper = db.get_paper(paper_id)
-            if paper:
-                import_paper(paper["arxiv_id"], add_to_library=False)
+            # ar5iv sert sa propre version de l'article : à ne pas réimporter sous le numéro d'une autre
+            if paper and not paper.get("archived_of") and (paper["source"] != "ar5iv" or latest_version(paper["arxiv_id"]) == paper["version"]):
+                _reimport_installed(paper)
             return
         with paper_lock(paper_id):
             (paper_dir(paper_id) / "assets").mkdir(exist_ok=True)
@@ -385,7 +712,8 @@ def ensure_pdf(paper):
         if not path.exists():
             if not paper.get("arxiv_id"):  # PDF importé dont le fichier a disparu : rien à télécharger
                 return None
-            data = fetch_pdf(paper["arxiv_id"], paper["version"])
+            # version relue : une mise à jour a pu s'achever pendant l'attente du verrou
+            data = fetch_pdf(paper["arxiv_id"], db.get_paper(paper["id"])["version"])
             if not data:
                 return None
             write_atomic_bytes(path, data)
@@ -419,6 +747,9 @@ def pdf_pages(paper):
 
 
 def set_in_library(paper_id, value):
+    paper = db.get_paper(paper_id)
+    if paper and paper.get("archived_of"):  # une version archivée n'entre jamais dans la bibliothèque
+        return paper
     db.update_paper(paper_id, in_library=1 if value else 0)
     return db.get_paper(paper_id)
 
@@ -429,9 +760,9 @@ def clean_cache(days=30):
         rows = connection.execute(
             "SELECT id FROM papers WHERE in_library = 0 AND COALESCE(opened_at, added_at) < datetime('now', ?)",
             (f"-{days} days",)).fetchall()
-    from .ai import papers_with_exchanges
-    from .annotations import annotated_papers
-    keep = annotated_papers() | papers_with_exchanges()  # article annoté ou discuté avec Claude : gardé
+        archives = connection.execute("SELECT id, archived_of FROM papers WHERE archived_of IS NOT NULL").fetchall()
+    keep = _with_notes()  # article annoté ou discuté avec Claude : gardé
+    keep |= {row["archived_of"] for row in archives if row["id"] in keep}  # ainsi que l'article d'une version archivée annotée
     removed = [row["id"] for row in rows if row["id"] not in keep]
     for paper_id in removed:
         remove_paper(paper_id)
@@ -440,6 +771,8 @@ def clean_cache(days=30):
 
 def remove_paper(paper_id):
     from . import ai, annotations, bookjob, folders
+    for archive in db.archives_of(paper_id):
+        remove_paper(archive["id"])
     bookjob.forget(paper_id)  # livre : relecture ou résumé des chapitres en cours arrêtés
     shutil.rmtree(paper_dir(paper_id), ignore_errors=True)
     db.delete_paper(paper_id)

@@ -19,13 +19,13 @@ from urllib.parse import unquote
 from datetime import date
 
 import httpx
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import (ai, alerts, annotations, bookjob, notesync, citations, crossrefs, db, export, feed, folders, journals, latexml, library, localpdf, onboarding, profile, providers, related, texfile,
+from . import (ai, alerts, annotations, bookjob, notesync, citations, crossrefs, db, export, feed, folders, fulltext, journals, latexml, library, localpdf, onboarding, profile, providers, related, texfile,
                relevance, search, updates, zotero)
 from .arxiv import ArxivError, fetch_metadata, parse_arxiv_id
 from .config import HOST, PORT, STATIC, TOKEN, TOKEN_FILE
@@ -71,6 +71,7 @@ def select_default_assistant():
 @asynccontextmanager
 async def lifespan(_app):
     db.init()
+    library.recover_interrupted()
     select_default_assistant()
     _write_token()
     providers.forget_gemini_cli()
@@ -376,6 +377,13 @@ async def papers_relevance():
     """Pertinence de chaque article de la bibliothèque pour le profil (tri des dossiers)."""
     return await run_in_threadpool(relevance.library_relevance, _s2_key())
 
+
+@app.get("/api/library/search")
+async def library_search(q: str = ""):
+    """Recherche dans le texte et les notes des articles de la bibliothèque."""
+    return await run_in_threadpool(fulltext.search, q[:300])
+
+
 async def _import(body):
     """Article inscrit tout de suite, importé en arrière-plan (jamais une longue requête : WebKit pourrait
     l'abandonner) ; le lecteur attend la fin de l'import par demandes successives."""
@@ -433,11 +441,15 @@ def paper(paper_id: str):
         paper = library.ensure_ready(paper_id, timeout=45)  # ajouté d'un clic, import pas fini : attendu (45 s au plus par demande)
     except Exception as error:
         raise HTTPException(502, f"Import impossible : {error}")
+    if paper is None:  # version archivée dont le téléchargement a échoué
+        raise HTTPException(404, "Unknown paper")
     db.update_paper(paper_id, opened_at=feed.now())
     if library.missing_assets(paper_id):  # figures manquantes : redemandées en arrière-plan
         threading.Thread(target=library.repair_assets, args=(paper_id,), daemon=True).start()
     # sans texte pour l'assistant (PDF scanné) : la page joint les pages autour de la question
     paper = {**paper, "noText": ai.without_text(paper)}
+    if paper.get("archived_of"):  # version archivée : le lecteur indique la dernière version installée
+        paper["mainVersion"] = library.main_of(paper)["version"]
     if paper.get("source") in latexml.SOURCES:  # version HTML expérimentale (LaTeXML), si elle est faite et à jour
         paper["html"] = latexml.state(paper)
         if paper["html"] == "ready" and (structure := latexml.structure(paper_id)):
@@ -604,7 +616,18 @@ def list_annotations(paper_id: str):
     return annotations.list_for(paper_id)
 
 
-@app.post("/api/papers/{paper_id}/annotations")
+def _same_version(paper_id: str, version: int | None = Header(None, alias="X-ArXivReader-Version")):
+    """Écriture d'un lecteur resté ouvert sur une version remplacée depuis (mise à jour dans un autre onglet) : refusée,
+    elle irait sur le nouveau texte. (Une note modifiée par son identifiant a suivi son texte : pas de vérification.)"""
+    paper = db.get_paper(paper_id)
+    if version is not None and paper and paper["version"] != version:
+        raise HTTPException(409, "stale_version")
+
+
+READER_WRITE = [Depends(_same_version)]
+
+
+@app.post("/api/papers/{paper_id}/annotations", dependencies=READER_WRITE)
 def add_annotation(paper_id: str, body: AnnotationRequest):
     checked_paper(paper_id)
     try:
@@ -643,7 +666,7 @@ def remove_annotation(annotation_id: int):
     return {"ok": True}
 
 
-@app.put("/api/papers/{paper_id}/proofs/{node_id}")
+@app.put("/api/papers/{paper_id}/proofs/{node_id}", dependencies=READER_WRITE)
 def set_proof_location(paper_id: str, node_id: str, body: ProofChoice):
     """Emplacement de la preuve d'un énoncé, indiqué à la main ; renvoie la structure mise à jour."""
     structure = _checked_node(paper_id, node_id)
@@ -657,7 +680,7 @@ def set_proof_location(paper_id: str, node_id: str, body: ProofChoice):
     return _reanalyze(paper_id, structure)
 
 
-@app.delete("/api/papers/{paper_id}/proofs/{node_id}")
+@app.delete("/api/papers/{paper_id}/proofs/{node_id}", dependencies=READER_WRITE)
 def clear_proof_location(paper_id: str, node_id: str):
     structure = _checked_node(paper_id, node_id)
     annotations.clear_proof(paper_id, node_id)
@@ -749,7 +772,7 @@ async def book_jobs(paper_id: str):
     return {task: bookjob.state(paper_id, task) for task in ("summary", "review")}
 
 
-@app.post("/api/papers/{paper_id}/ai/book")
+@app.post("/api/papers/{paper_id}/ai/book", dependencies=READER_WRITE)
 async def start_book_job(paper_id: str, body: BookRequest):
     """Livre ou article : relecture ou résumé de tous les chapitres (sections) en parallèle, puis synthèse ; tâche de
     fond (bookjob)."""
@@ -779,7 +802,7 @@ async def stop_book_job(paper_id: str, body: BookStopRequest):
     return await bookjob.stop(paper_id, body.task)
 
 
-@app.post("/api/papers/{paper_id}/ai")
+@app.post("/api/papers/{paper_id}/ai", dependencies=READER_WRITE)
 async def ask_ai(paper_id: str, body: AIRequest):
     """Réponse de Claude en direct : une ligne JSON par morceau de texte, puis l'échange enregistré."""
     paper = checked_paper(paper_id)
@@ -885,7 +908,7 @@ def remove_ai(exchange_id: int):
     return {"ok": True}
 
 
-@app.put("/api/papers/{paper_id}/position")
+@app.put("/api/papers/{paper_id}/position", dependencies=READER_WRITE)
 def save_position(paper_id: str, body: PositionRequest):
     checked_paper(paper_id)
     db.update_paper(paper_id, position=body.anchor[:200])
@@ -1060,10 +1083,40 @@ def paper_meta(paper_id: str, body: PaperMeta):
 @app.post("/api/papers/{paper_id}/refresh")
 def refresh(paper_id: str):
     """Mise à jour (dernière version d'arXiv) en arrière-plan ; la page suit GET …/importing jusqu'à la fin."""
-    if not checked_paper(paper_id).get("arxiv_id"):
+    paper = checked_paper(paper_id)
+    if not paper.get("arxiv_id"):
         raise HTTPException(400, "Imported PDF or TeX file: nothing to update from arXiv")
+    if paper.get("archived_of"):
+        raise HTTPException(400, "Archived version: nothing to update")
     library.update_in_background(paper_id)  # un article seulement lu le reste (place gardée)
     return {"started": True}
+
+
+def _arxiv_paper(paper_id):
+    paper = checked_paper(paper_id)
+    if not paper.get("arxiv_id"):
+        raise HTTPException(400, "Imported PDF or TeX file: no arXiv versions")
+    return paper
+
+
+@app.get("/api/papers/{paper_id}/versions")
+def paper_versions(paper_id: str):
+    """Versions de l'article (dernière version sur arXiv : une requête, gardée une heure) ; hors ligne, celles d'ici."""
+    return library.versions_of(_arxiv_paper(paper_id))
+
+
+@app.post("/api/papers/{paper_id}/versions/{version}")
+def open_paper_version(paper_id: str, version: int):
+    """Version à lire : tout de suite si elle est ici, sinon mise à jour ou téléchargement en arrière-plan."""
+    paper = _arxiv_paper(paper_id)
+    if version < 1:
+        raise HTTPException(400, "Bad version")
+    try:
+        return library.open_version(paper, version)
+    except ValueError as error:
+        raise HTTPException(400, str(error))
+    except ArxivError as error:
+        return JSONResponse({"code": "offline", "error": str(error)}, status_code=502)
 
 
 @app.get("/api/papers/{paper_id}/importing")
@@ -1122,6 +1175,11 @@ async def feed_items(view: str = "arxiv", day: str | None = None):
         "seeds": settings.get("feed.s2Seeds"),
         "categories": settings.get("feedCategories") or feed.FEED_CATEGORIES,
     }
+
+
+@app.get("/api/feed/new-versions")
+def feed_new_versions(force: bool = False):
+    return {"items": library.new_versions(force)}
 
 
 @app.post("/api/feed/refresh")
@@ -1506,7 +1564,7 @@ def update_settings(values: dict):
                "aiProvider", "aiLocalUrl", "aiLocalModel", "checkUpdates", "aiFontSize", "notifyCitations", "readerView",
                "citingCollapsed", "followedCollapsed", "geminiApiKey", "aiGeminiModel", "profileOpen",
                "aiClaudeEffort", "aiCodexModel", "aiCodexEffort", "aiGeminiEffort", "zoteroApiKey", "zoteroAutoSync", "onboarded", "aiProfile",
-               "aiReviewMode", "aiSecond", "aiDefault"}
+               "aiReviewMode", "aiSecond", "aiDefault", "feedNewVersions", "newVersionsCollapsed"}
     values = {k: v for k, v in values.items() if k in allowed}
     if not all(_valid_setting(k, v) for k, v in values.items()):
         raise HTTPException(400, "Bad setting")
@@ -1527,7 +1585,7 @@ SETTING_CHOICES = {
     "aiDefault": {"", *providers.PROVIDERS},  # assistant sélectionné au lancement (vide : le dernier choisi)
 }
 BOOLEAN_SETTINGS = {"proofsCollapsed", "tocOpen", "panelOpen", "marginMarks", "notifyFollowed", "checkUpdates", "notifyCitations",
-                    "citingCollapsed", "followedCollapsed", "zoteroAutoSync", "onboarded"}
+                    "citingCollapsed", "followedCollapsed", "zoteroAutoSync", "onboarded", "feedNewVersions", "newVersionsCollapsed"}
 
 
 def _valid_setting(key, value):

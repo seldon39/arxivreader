@@ -93,7 +93,7 @@ def author_categories(item_id, paper_key=None):
         rows = [dict(r) for r in connection.execute(
             "SELECT f.key, f.arxiv_id, f.authors, f.categories, f.in_arxiv, s.status FROM feed_items f "
             "LEFT JOIN feed_status s ON s.key = f.key")]
-        rows += [dict(r, in_arxiv=1) for r in connection.execute("SELECT id AS key, arxiv_id, authors, categories FROM papers")]
+        rows += [dict(r, in_arxiv=1) for r in connection.execute("SELECT id AS key, arxiv_id, authors, categories FROM papers WHERE archived_of IS NULL")]
     seen = set()
     for row in rows:
         key = row["arxiv_id"] or row["key"]

@@ -302,6 +302,7 @@ export function openSettingsDialog({ section = null } = {}) {
     ["feed", t("settings.feed"), [
       ...check("notifyFollowed", t("settings.notifyFollowed"), settings.notifyFollowed !== false, t("settings.notifyFollowedHint")),
       ...check("notifyCitations", t("settings.notifyCitations"), settings.notifyCitations !== false, t("settings.notifyCitationsHint")),
+      ...check("feedNewVersions", t("settings.feedNewVersions"), settings.feedNewVersions !== false, t("settings.feedNewVersionsHint")),
       h("label", { class: "row" }, h("span", {}, t("settings.feedCategories")),
         h("input", { class: "text-input", type: "text", name: "feedCategories", value: (settings.feedCategories || FEED_DEFAULT).join(", "), spellcheck: "false" })),
       h("label", { class: "row" }, h("span", {}, t("settings.s2Key")),
@@ -394,6 +395,7 @@ export function openSettingsDialog({ section = null } = {}) {
     const parsed = type === "checkbox" ? checked : name === "fontSize" ? Number(value) : value;
     if (name === "fontSize") form.querySelector("#setting-fontSize").textContent = t("settings.fontSize", { n: value });
     saveSettings({ [name]: parsed });
+    if (name === "feedNewVersions") dispatchEvent(new Event("arxivreader:feed-sections"));
     if (name === "language") {
       openSettingsDialog(); // re-dessine la fenêtre dans la nouvelle langue
       dialog.querySelector('input[name="language"]:checked')?.focus();

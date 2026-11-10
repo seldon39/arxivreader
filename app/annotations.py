@@ -221,6 +221,13 @@ def proof_overrides(paper_id):
     return {t["id"]: t for t in (json.loads(r["target"]) for r in rows)}
 
 
+def counts():
+    """Par article : nombre d'annotations (un emplacement de preuve indiqué à la main n'en est pas une)."""
+    with db.connect() as connection:
+        return {r["paper_id"]: r["n"] for r in connection.execute(
+            "SELECT paper_id, COUNT(*) AS n FROM annotations WHERE kind != 'proof' GROUP BY paper_id")}
+
+
 def stats():
     """Par article : passages surlignés, notes écrites, énoncés compris ou vérifiés (cartes de la bibliothèque)."""
     with db.connect() as connection:

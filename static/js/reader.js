@@ -1,6 +1,6 @@
 // Lecteur d'article : texte, sommaire, aperçus des renvois, preuves repliables, panneau des énoncés.
 
-import { api } from "./api.js";
+import { api, setReadingVersion } from "./api.js";
 import { closure, renderGraph } from "./graph.js";
 import { Annotator, findAll, noteEditor } from "./annotations.js";
 import { Assistant } from "./ai.js";
@@ -16,7 +16,7 @@ import { htmlToPdf, htmlWords, pdfToHtml, wordTop } from "./pdfsync.js";
 import { defineMacros, statementElement, statementsContainer } from "./texview.js";
 import { typesetFragment, typesetMath, typesetTex } from "./math.js";
 
-import { t } from "./i18n.js";
+import { t, tn } from "./i18n.js";
 import { DEFAULT_FONT_SIZE, READING_WIDTHS, onSettingsChange, saveSettings, settings } from "./settings.js";
 import { debounce, escapeRegExp, formatDate, h, icons, metaDialog, nativeBridge, navigation, openRoute, plainTitle, titleTex, toast, toastError, toggleIcon, wantsNewTab, withMath } from "./util.js";
 import { chooseBibFor, texChecks } from "./texfile.js";
@@ -30,7 +30,8 @@ const PICKABLE = [".ltx_para", ".ltx_theorem", ".ltx_proof", ".ltx_equation", ".
 const MEDIUM = 900;
 const AI_PANEL_W = 420; // largeur par défaut du panneau dans l'onglet IA (réponses plus lisibles), sans largeur choisie
 
-// `at` : énoncé à afficher à l'ouverture (« #/paper/<id>/<énoncé> », renvoi depuis un autre article)
+// `at` : énoncé ou paragraphe à afficher à l'ouverture (« #/paper/<id>/<identifiant> », renvoi depuis un autre article,
+// résultat d'une recherche dans le texte)
 export async function renderReader(view, paperId, at, isCurrent = () => true) {
   if (typeof at === "function") [at, isCurrent] = [undefined, at];
   view.replaceChildren(h("div", { class: "library" }, h("div", { class: "busy" }, h("span", { class: "spinner" }))));
@@ -41,10 +42,11 @@ export async function renderReader(view, paperId, at, isCurrent = () => true) {
     view.replaceChildren(h("div", { class: "library" }, h("div", { class: "busy" }, h("span", { class: "spinner" }), t("reader.preparing"))));
     ({ paper, structure } = await api.paper(paperId));
   }
+  setReadingVersion(paper.id, paper.version);
   // lu dans le PDF faute de HTML, sauf version HTML faite par LaTeXML (paper.html « ready »)
   const html = ["none", "tex", "local-pdf", "local-tex"].includes(paper.source) && paper.html !== "ready" ? "" : await api.content(paperId);
   if (!isCurrent()) return () => {}; // page déjà quittée pendant le chargement : rien n'est affiché
-  document.title = plainTitle(paper.title); // titre de l'onglet
+  document.title = plainTitle(paper.title) + (paper.archived_of ? ` (v${paper.version})` : ""); // titre de l'onglet
   const reader = new Reader(view, paper, structure || { toc: [], nodes: [], bibliography: [], hiddenText: 0 }, html, at);
   return () => reader.destroy();
 }
@@ -188,6 +190,8 @@ class Reader {
     } else if (this.startAt && this.find(this.startAt)) {
       this.reveal(this.find(this.startAt));
       requestAnimationFrame(() => this.navigate(this.startAt));
+    } else if (this.startAt === "top") {
+      scrollTo({ top: 0, behavior: "instant" }); // résultat d'une recherche dans le résumé (qui n'a pas d'identifiant)
     } else {
       this.restorePosition();
     }
@@ -442,7 +446,7 @@ class Reader {
       paper.source === "local-pdf" && h("span", { class: "no-html-badge", title: t("reader.localPdf") }, "PDF"),
       this.texFile && (this.recompileButton = button(icons.refresh, "tex.recompile", () => this.recompile())),
       h("span", { class: "sep wide-only" }),
-      this.libraryToggle(),
+      !paper.archived_of && this.libraryToggle(), // une version archivée n'entre pas dans la bibliothèque
       paper.arxiv_id && link(icons.external, "arXiv", `https://arxiv.org/abs/${paper.arxiv_id}v${paper.version}`),
 
       this.panelButton,
@@ -460,7 +464,7 @@ class Reader {
     const meta = h("div", { class: "paper-meta" },
       paper.primary_category && h("span", { class: "chip category" }, paper.primary_category),
       ...paper.categories.filter((c) => c !== paper.primary_category).map((c) => h("span", { class: "chip" }, c)),
-      paper.arxiv_id && h("span", { class: "chip" }, `arXiv:${paper.arxiv_id} · ${t("reader.version", { v: paper.version })}`),
+      paper.arxiv_id && this.versionChip(),
       (paper.updated || paper.published) && h("span", { class: "chip" }, formatDate(paper.updated || paper.published)),
       paper.source === "local-pdf" && paper.comment && h("span", { class: "chip", title: t("reader.localPdf") }, paper.comment),
       (paper.source === "local-pdf" || this.texFile) && h("button", { class: "chip chip-button", type: "button", onclick: () => this.editMeta() }, t("reader.editMeta")),
@@ -468,6 +472,10 @@ class Reader {
       paper.doi && h("a", { class: "chip", href: `https://doi.org/${paper.doi}`, target: "_blank", rel: "noopener noreferrer" }, `DOI ${paper.doi}`),
     );
     this.article.append(meta);
+    if (paper.archived_of) {
+      this.article.append(h("p", { class: "version-notice" }, t(paper.version > paper.mainVersion ? "reader.archivedNewer" : "reader.archived", { k: paper.version }), " ",
+        h("a", { href: `#/paper/${encodeURIComponent(paper.archived_of)}` }, t("reader.version", { v: paper.mainVersion }))));
+    }
 
     if (this.structure.hiddenText > 0) {
       // « Afficher » : le texte invisible apparaît, encadré, et on y va (il peut être loin : bloc des adresses, fin de
@@ -639,6 +647,70 @@ class Reader {
     });
     handle.addEventListener("dblclick", () => commit(null));
     return handle;
+  }
+
+  // « arXiv:ID · version n » : menu des versions de l'article (chacune a ses notes) ; la pastille tourne pendant
+  // un téléchargement ou une mise à jour, faits en arrière-plan
+  versionChip() {
+    const paper = this.paper;
+    const spinner = h("span", { class: "spinner" });
+    const chip = h("button", { class: "chip chip-button version-chip", type: "button", "aria-haspopup": "menu", title: t("reader.versions.title"),
+      onclick: () => menu() }, `arXiv:${paper.arxiv_id} · ${t("reader.version", { v: paper.version })}`);
+    const busy = (on) => {
+      chip.disabled = on;
+      chip.setAttribute("aria-busy", String(on));
+      if (on) chip.append(spinner); else spinner.remove();
+    };
+    const line = (entry, latest) => [
+      t("reader.versions.number", { v: entry.version }),
+      entry.current && t("reader.versions.reading"),
+      entry.notes && tn("reader.versions.notes", entry.notes),
+      entry.answers && tn("reader.versions.answers", entry.answers),
+      entry.version === latest && t("reader.versions.latest"),
+      !entry.id && t(entry.running ? "reader.versions.downloading" : "reader.versions.toDownload"),
+    ].filter(Boolean).join(" · ");
+    const choose = async (entry) => {
+      if (entry.current) return;
+      const from = location.hash;
+      busy(true);
+      try {
+        let { id, running } = await api.openVersion(paper.id, entry.version);
+        if (running) {
+          for (let i = 0; i < 200 && running; i++) {
+            await new Promise((r) => setTimeout(r, 1500));
+            ({ running } = await api.importing(id).catch(() => ({ running: false }))); // échec : fiche retirée, 404
+          }
+          id = (await api.versions(paper.id)).versions.find((v) => v.version === entry.version)?.id;
+          if (!id) throw new Error(t("reader.versions.failed"));
+        }
+        if (location.hash !== from) return; // page quittée entre-temps
+        if (id === paper.id) dispatchEvent(new HashChangeEvent("hashchange")); // mise à jour de l'article affiché
+        else location.hash = `#/paper/${encodeURIComponent(id)}`;
+      } catch (error) {
+        toastError(error);
+      } finally {
+        busy(false);
+      }
+    };
+    const menu = async () => {
+      busy(true);
+      let info;
+      try {
+        info = await api.versions(paper.id);
+      } catch (error) {
+        toastError(error);
+        return;
+      } finally {
+        busy(false);
+      }
+      if (!chip.isConnected) return; // page quittée pendant l'attente (arXiv lent)
+      const box = chip.getBoundingClientRect();
+      contextMenuAt({ left: box.left, top: box.bottom + 6 }, [
+        ...[...info.versions].reverse().map((entry) => [line(entry, info.latest), () => choose(entry)]),
+        ...(info.offline ? [[t("reader.versions.offline"), () => {}]] : []),
+      ]);
+    };
+    return chip;
   }
 
   // Signet : l'article lu depuis le feed n'est dans la bibliothèque que si on l'y ajoute
@@ -1121,7 +1193,7 @@ class Reader {
   navigate(id, options) {
     if (this.pdfMode) { this.showInPdf(id); return; }
     const target = this.find(id);
-    if (target) this.navigateElement(target.closest(".ltx_theorem, .ltx_para, .ltx_bibitem, .ltx_equation, .eq-scroll, section") || target, options);
+    if (target) this.navigateElement(target.closest(".ltx_theorem, .ltx_para, .ltx_bibitem, .ltx_equation, .eq-scroll, .ltx_figure, .ltx_table, .ltx_proof, section") || target, options);
   }
 
   // Élément dans une preuve repliée : la preuve est dépliée (sinon il n'a pas de position)

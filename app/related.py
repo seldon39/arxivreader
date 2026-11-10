@@ -504,7 +504,7 @@ def cancel(arxiv_id):
 def annotate(data):
     """Articles déjà dans la bibliothèque (ou seulement lus) : marqués, avec leur identifiant."""
     with db.connect() as connection:
-        papers = connection.execute("SELECT id, arxiv_id, in_library FROM papers").fetchall()
+        papers = connection.execute("SELECT id, arxiv_id, in_library FROM papers WHERE archived_of IS NULL").fetchall()
     library = {r["arxiv_id"]: r["id"] for r in papers if r["in_library"]}
     read = {r["arxiv_id"]: r["id"] for r in papers}
     for paper in [data["origin"], *data["nodes"], *data.get("prior", []), *data.get("derivative", [])]:

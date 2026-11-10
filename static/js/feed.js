@@ -4,6 +4,7 @@ import { api } from "./api.js";
 import { getLanguage, t, tn } from "./i18n.js";
 import { typesetTex } from "./math.js";
 import { contextMenuAt } from "./bookmarks.js";
+import { updatePaper } from "./library.js";
 import { renderProfile } from "./profile.js";
 import { saveSettings, settings } from "./settings.js";
 import { dragEnded, dragGroup, selectButton, useSelectionBar } from "./selection.js";
@@ -15,7 +16,8 @@ const TYPES = ["new", "cross", "replace", "replace-cross"];
 const STALE_ARXIV_HOURS = 3;
 const STALE_S2_HOURS = 24;
 // Ce qu'on retrouve en revenant d'un article : jour affiché, recherche, catégories, articles écartés visibles
-const memory = { day: null, search: "", categories: new Set(), showHidden: false, publication: "any" };
+const memory = { day: null, search: "", categories: new Set(), showHidden: false, publication: "any", newVersions: [] };
+const updating = new Set(); // articles en cours de mise à jour depuis la section « nouvelles versions »
 
 export async function renderFeed(view, tab) {
   const body = h("div", { class: "feed-body" });
@@ -181,7 +183,7 @@ async function renderList(body, tab) {
       showStatus();
     }
   };
-  refresh.addEventListener("click", () => { notice.replaceChildren(); doRefresh(); });
+  refresh.addEventListener("click", () => { notice.replaceChildren(); doRefresh(); loadNewVersions(true); });
 
   const showStatus = () => {
     const stamp = data.refreshed?.[tab];
@@ -189,6 +191,20 @@ async function renderList(body, tab) {
     if (tab === "recommended" && data.seeds) text += ` · ${t("feed.seeds", { pos: data.seeds[0], neg: data.seeds[1] })}`;
     refresh.title = `${t("feed.refresh")} · ${text}`; // date de la dernière mise à jour : au survol du bouton
   };
+
+  // Nouvelles versions des articles de la bibliothèque : à part (arXiv peut tarder), sans faire sauter la page à l'arrivée
+  async function loadNewVersions(force = false) {
+    if (tab !== "arxiv" || settings.feedNewVersions === false) return;
+    let items;
+    try { ({ items } = await api.feedNewVersions(force)); } catch { return; }
+    if (!document.body.contains(list) || JSON.stringify(items) === JSON.stringify(memory.newVersions)) return;
+    memory.newVersions = items;
+    const height = list.offsetHeight;
+    draw();
+    if (scrollY > 0) window.scrollBy({ top: list.offsetHeight - height, behavior: "instant" });
+  }
+  const sectionToggled = () => { draw(); loadNewVersions(); };
+  addEventListener("arxivreader:feed-sections", sectionToggled);
 
   const draw = () => {
     abstractObserver.disconnect(); // cartes précédentes : plus observées (elles vont être remplacées)
@@ -221,6 +237,8 @@ async function renderList(body, tab) {
       const followed = data.items.filter((i) => i.followed && !i.citing?.length && !inDayList(i) && matches(i))
         .sort((a, b) => (b.announced || "").localeCompare(a.announced || ""));
       if (followed.length) sections.push(foldableSection("followedCollapsed", t("feed.followedTitle"), followed.map(card)));
+      const newer = settings.feedNewVersions === false ? [] : memory.newVersions.filter(matches);
+      if (newer.length) sections.push(foldableSection("newVersionsCollapsed", t("feed.newVersionsTitle"), newer.map((item) => newVersionCard(item, loadNewVersions))));
       shown = data.items.filter((i) => inDayList(i) && matches(i));
     } else {
       shown = data.items.filter((i) => inCategories(i) && matches(i));
@@ -253,6 +271,7 @@ async function renderList(body, tab) {
   draw();
   const stale = hoursSince(data.refreshed?.[tab]) > (tab === "recommended" ? STALE_S2_HOURS : STALE_ARXIV_HOURS);
   if (stale) doRefresh(true);
+  loadNewVersions();
   // plusieurs articles sélectionnés : barre « Ranger dans… » (dossiers de la bibliothèque), ou glissés ensemble
   const stopSelection = useSelectionBar({ papers: () => null });
   return () => {
@@ -260,6 +279,7 @@ async function renderList(body, tab) {
     clearTimeout(retry);
     removeEventListener("keydown", onKey);
     removeEventListener("arxivreader:section-opened", markSeenShown);
+    removeEventListener("arxivreader:feed-sections", sectionToggled);
     abstractObserver.disconnect();
     tools.close({ focus: false });
   };
@@ -595,6 +615,45 @@ export function feedCard(item, onChange = () => {}, { compact = false, fresh = f
   }
   // glissé sur un dossier de la bibliothèque (même fenêtre ou une autre) : rangé dedans
   return draggablePaper(card, { arxivId: item.arxiv_id, paperId: item.libraryId || null, version: item.version, title: item.title }, dragGroup, dragEnded);
+}
+
+// Carte d'un article de la bibliothèque dont arXiv a une version plus récente
+function newVersionCard(item, reload) {
+  const route = `#/paper/${encodeURIComponent(item.id)}`;
+  const title = h("a", { class: "feed-title-link", href: route, title: t("feed.read") }, tidyTitle(item.title));
+  const open = (event) => {
+    if (event.type === "auxclick" && event.button !== 1) return;
+    event.preventDefault();
+    openRoute(route, wantsNewTab(event), event.shiftKey);
+  };
+  title.addEventListener("click", open);
+  title.addEventListener("auxclick", open);
+  const busy = updating.has(item.id);
+  const update = h("button", { class: "button small-button new-version-update", type: "button", disabled: busy,
+    title: t("feed.newVersionUpdateHint", { old: item.installed, v: item.version }) },
+    busy && h("span", { class: "spinner" }), busy && " ", t("feed.newVersionUpdate", { v: item.version }));
+  update.addEventListener("click", async () => {
+    updating.add(item.id);
+    update.disabled = true;
+    update.prepend(h("span", { class: "spinner" }), " ");
+    try { await updatePaper({ id: item.id, version: item.installed }, { expectNew: true }); }
+    catch (error) { toastError(error); }
+    finally { updating.delete(item.id); update.disabled = false; update.querySelector(".spinner")?.remove(); reload(); }
+  });
+  const authors = item.authors.length > 8 ? [...item.authors.slice(0, 8), t("feed.etAl")] : item.authors;
+  return h("article", { class: "feed-card" },
+    h("div", { class: "feed-title-row" }, h("h3", { class: "feed-title" }, title)),
+    h("div", { class: "feed-authors" }, authors.join(", ")),
+    h("div", { class: "card-meta" },
+      item.primary_category && h("span", { class: "chip category" }, item.primary_category),
+      h("span", { class: "chip" }, `arXiv:${item.arxiv_id}`),
+      h("span", { class: "chip version-chip" }, `v${item.installed} → v${item.version}`),
+      h("span", { class: "chip" }, item.updated)),
+    item.comment && h("p", { class: "muted small" }, item.comment),
+    h("div", { class: "feed-actions" }, update,
+      h("span", { class: "spacer" }),
+      h("a", { class: "icon-button", href: `https://arxiv.org/abs/${item.arxiv_id}v${item.version}`, target: "_blank", rel: "noopener noreferrer", title: "arXiv", html: icons.external }),
+      h("a", { class: "icon-button", href: `https://arxiv.org/pdf/${item.arxiv_id}v${item.version}`, target: "_blank", rel: "noopener noreferrer", title: "PDF", html: icons.pdf })));
 }
 
 // Section repliable (« Citent vos articles », « Nouveaux articles de vos auteurs suivis ») : l'intertitre
