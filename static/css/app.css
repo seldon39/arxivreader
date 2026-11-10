@@ -884,6 +884,9 @@ mark.hl.hl-display > mjx-container[display="true"] { margin: .2em 0 !important; 
 .notes-progress { margin: 0 4px; }
 .legend .dot.state-understood, .legend .dot.state-review, .legend .dot.state-verified { background: var(--state); }
 .notes-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+/* onglet Notes : sections « Dans le HTML » et « Dans le PDF » */
+.notes-subtitle { margin: 14px 10px 6px; font: 600 12px var(--font-ui); color: var(--muted); }
+.panel-section h3 + .notes-subtitle { margin-top: 2px; }
 .note-card {
   display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
   cursor: pointer; text-align: left;
@@ -1485,9 +1488,11 @@ body.has-selection-bar #toast { bottom: 96px; }
 .related-drop-hint { flex-basis: 100%; margin: 0 0 0 28px; } /* sous le champ, aligné sur lui (après la loupe) */
 .related-status { margin: 12px 0 0; }
 .ltx_bibitem a[data-loading] { cursor: progress; opacity: .55; }
-.bib-links { display: flex; flex-wrap: wrap; gap: 0 14px; margin-top: 2px; font: 12.5px var(--font-ui); user-select: none; -webkit-user-select: none; }
+.bib-links { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 14px; margin-top: 2px; font: 12.5px var(--font-ui); user-select: none; -webkit-user-select: none; }
 .bib-links a { color: var(--muted); text-decoration: none; }
 .bib-links a:hover { color: var(--link); text-decoration: underline; }
+.bib-links .cross-badge { margin-left: 0; color: var(--link); }  /* « Ouvrir l'article » en tête de la ligne */
+.bib-links .cross-badge:hover { text-decoration: none; }
 .related-building { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; }
 .related-building .related-step:empty { display: none; }
 /* article examiné : encadré rouge aux coins arrondis, fond à peine teinté, comme l'annonce du jour du feed */

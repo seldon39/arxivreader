@@ -1459,10 +1459,12 @@ def _download(content, name, media_type):
                     headers={"Content-Disposition": f"attachment; filename=\"notes.{name.rsplit('.', 1)[-1]}\"; filename*=UTF-8''{quote(name)}"})
 
 
-@app.get("/api/papers/{paper_id}/notes.md")
+@app.get("/api/papers/{paper_id}/notes")
+@app.get("/api/papers/{paper_id}/notes.md")  # ancienne adresse
 def paper_notes(paper_id: str, lang: str = "fr"):
-    paper = checked_paper(paper_id)
-    return _download(export.paper_markdown(paper_id, lang), export.filename(paper), "text/markdown; charset=utf-8")
+    """Notes de l'article : Markdown, ou archive .zip quand des zones du PDF ont leur image (export.paper_export)."""
+    checked_paper(paper_id)
+    return _download(*export.paper_export(paper_id, lang))
 
 
 @app.get("/api/notes")

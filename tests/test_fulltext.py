@@ -129,15 +129,17 @@ class FullText(unittest.TestCase):
     def test_annotations(self):
         self.paper("a", structure={"toc": [], "nodes": [{"id": "S1.Thm1", "label": "Theorem 1.1"}]})
         annotations.create("a", "block", {"id": "S1.Thm1"}, note="Idée de K\\\"ahler : needle")
-        annotations.create("a", "highlight", {"start": {"id": "S1.Thm1.p1", "offset": 0}, "end": {"id": "S1.Thm1.p1", "offset": 3}},
-                           "yellow", "highlighted needle")
+        html = annotations.create("a", "highlight", {"start": {"id": "S1.Thm1.p1", "offset": 0}, "end": {"id": "S1.Thm1.p1", "offset": 3}},
+                                  "yellow", "highlighted needle")
         annotations.create("a", "general", note="general needle")
-        annotations.create("a", "highlight", {"pdf": {"page": 1, "rect": [0, 0, .5, .5]}}, "yellow", "needle in the pdf")
+        zone = annotations.create("a", "highlight", {"pdf": {"page": 3, "rect": [0, 0, .5, .5]}}, "yellow", "needle in the pdf")
+        pin = annotations.create("a", "note", {"pdf": {"page": 2, "top": 100, "left": 20}}, note="pinned needle")
         hits = self.found("needle")
-        self.assertEqual([r["kind"] for r in hits], ["note", "note", "highlight", "highlight"])
+        self.assertEqual([r["kind"] for r in hits], ["note", "note", "note", "highlight", "highlight"])
+        # passage et note du PDF : l'annotation elle-même (ouverte à son endroit), avec sa page ; note d'énoncé : l'énoncé
         self.assertEqual({(r["target"], r["label"]) for r in hits},
-                         {("S1.Thm1", "Theorem 1.1"), ("S1.Thm1.p1", "Theorem 1.1"), (None, "")})
-        self.assertIsNone(next(r for r in hits if "pdf" in r["snippet"])["target"])
+                         {("S1.Thm1", "Theorem 1.1"), (f"annotation-{html['id']}", "Theorem 1.1"), (None, ""),
+                          (f"annotation-{zone['id']}", "PDF, p. 3"), (f"annotation-{pin['id']}", "PDF, p. 2")})
 
     def test_note_and_quote_give_one_line(self):
         self.paper("a")

@@ -93,6 +93,48 @@ class Export(unittest.TestCase):
         self.assertEqual(names, [export.LIBRARY_FILE, "0806.2370 Toeplitz operators on.md"])
         self.assertEqual(export.annotated_count(), 1)
 
+    def test_zone_images_exported_in_an_archive(self):
+        """Zone du PDF avec son image : l'article s'exporte en .zip (Markdown + images/), lien relatif vers l'image ;
+        sans image, ou sans zone, le .md seul comme avant ; l'archive de la bibliothèque les joint aussi."""
+        from fastapi.testclient import TestClient
+        from app import main
+        pid = "0806.2370"
+        annotations.create(pid, "general", note="Fiche.")
+        content, name, media = export.paper_export(pid, "fr")
+        self.assertEqual((name, media), ("0806.2370 Toeplitz operators on.md", "text/markdown; charset=utf-8"))
+        zone = annotations.create(pid, "highlight", target={"pdf": {"page": 2, "rect": [0.1, 0.2, 0.5, 0.4]}}, note="Le diagramme.")
+        lost = annotations.create(pid, "highlight", target={"pdf": {"page": 3, "rect": [0.1, 0.2, 0.5, 0.4]}})
+        content, name, media = export.paper_export(pid, "fr")  # image absente : mention seulement, toujours en .md
+        self.assertEqual(media, "text/markdown; charset=utf-8")
+        self.assertEqual(content.count("*Zone de la page (image)*"), 2)
+        image = annotations.image_path(zone)
+        image.parent.mkdir(parents=True, exist_ok=True)
+        image.write_bytes(b"\x89PNG\r\n\x1a\nzone")
+        content, name, media = export.paper_export(pid, "fr")
+        self.assertEqual((name, media), ("0806.2370 Toeplitz operators on.zip", "application/zip"))
+        archive = zipfile.ZipFile(io.BytesIO(content))
+        inside = f"images/0806.2370-zone-{zone['id']}.png"
+        self.assertEqual(archive.namelist(), ["0806.2370 Toeplitz operators on.md", inside])
+        self.assertEqual(archive.read(inside), b"\x89PNG\r\n\x1a\nzone")
+        markdown = archive.read("0806.2370 Toeplitz operators on.md").decode()
+        self.assertIn(f"![Zone de la page (image)]({inside})", markdown)
+        self.assertIn("*Zone de la page (image)*", markdown)  # l'autre zone, sans image
+        self.assertIn("Le diagramme.", markdown)
+        self.assertNotIn(str(lost["id"]) + ".png", markdown)
+        # route : nouvelle adresse et ancienne, nom de fichier en .zip
+        client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
+        for url in (f"/api/papers/{pid}/notes", f"/api/papers/{pid}/notes.md"):
+            response = client.get(url)
+            self.assertEqual(response.headers["content-type"], "application/zip")
+            self.assertIn("Toeplitz%20operators%20on.zip", response.headers["content-disposition"])
+        with mock.patch.object(annotations, "annotated_papers", return_value={pid}):
+            names = zipfile.ZipFile(io.BytesIO(export.library_zip())).namelist()
+        self.assertIn(inside, names)
+        # l'import relit l'archive d'un article (seulement ses fichiers .md)
+        from app import notesync
+        report = notesync.import_files([{"name": name, "data": content}])
+        self.assertFalse(report["rejected"])
+
 
 if __name__ == "__main__":
     unittest.main()

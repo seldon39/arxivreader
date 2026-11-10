@@ -862,30 +862,57 @@ export class Annotator {
           this.items = this.items.filter((a) => a.kind !== "general").concat(annotation);
         } })));
 
-    // annotations, dans l'ordre de l'article
+    // annotations
     const located = this.items.filter((a) => !["general", "bookmark"].includes(a.kind) && (a.kind === "highlight" || a.note || a.state)).map((a) => {
       const element = a.kind === "highlight"
         ? this.content.querySelector(`mark.hl[data-annotation="${a.id}"]`)
         : this.content.querySelector(`[id="${CSS.escape(a.target?.id || "")}"]`);
       return { a, element };
     });
-    // ordre de l'article ; passages du PDF ensuite, par page et position
-    // passage du PDF : page puis position dans son texte ; zone : page puis hauteur (≈ position du texte voisin)
-    const pdfSpot = (a) => (a.target?.pdf ? a.target.pdf.page * 1e7 + (a.target.pdf.start ?? (a.target.pdf.rect
-      ? Math.round(a.target.pdf.rect[1] * 4000) : Math.round(4000 - 4 * (a.target.pdf.top || 0)))) : null);  // note libre : hauteur
-    located.sort((x, y) => {
-      const [px, py] = [pdfSpot(x.a), pdfSpot(y.a)];
-      if (px !== null || py !== null) return px === null ? -1 : py === null ? 1 : px - py;
-      return !x.element ? 1 : !y.element ? -1 : x.element.compareDocumentPosition(y.element) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
-    });
-    const list = h("div", { class: "notes-list" }, located.length ? located.map(({ a, element }) => this.noteCard(a, element))
-      : h("p", { class: "hint" }, t("notes.none")));
-    body.append(h("div", { class: "panel-section" }, h("h3", {}, t("notes.annotations", { n: located.length })), list,
+    // Deux sections, chacune dans l'ordre de lecture : HTML (passages, notes libres, notes d'énoncé et états, dans
+    // l'ordre de l'article) puis PDF (par page, puis de haut en bas : passages, zones et notes épinglées ensemble).
+    // Article lu dans une seule vue (fichier TeX, PDF importé) : une seule liste, sans intertitre
+    const htmlOrder = (x, y) => (!x.element ? 1 : !y.element ? -1
+      : x.element.compareDocumentPosition(y.element) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
+    const inHtml = located.filter(({ a }) => !a.target?.pdf).sort(htmlOrder);
+    const inPdf = located.filter(({ a }) => a.target?.pdf);
+    const cards = new Map(located.map(({ a, element }) => [a.id, this.noteCard(a, element)]));
+    const pdfList = h("div", { class: "notes-list" });
+    // hauteurs dans la page (fraction depuis le haut) mesurées dans le PDF (PdfNotes.readingHeights) ; tant qu'elles
+    // manquent : zone et note épinglée par leur position enregistrée, passages dans l'ordre du texte, avant elles
+    const placePdf = (heights) => {
+      const height = (a) => {
+        const pdf = a.target.pdf;
+        if (heights.has(a.id)) return heights.get(a.id);
+        if (pdf.rect) return pdf.rect[1];
+        if (pdf.start == null && pdf.top != null) return 1 - pdf.top / 792;  // hauteur de page inconnue : format lettre
+        return null;
+      };
+      inPdf.sort((x, y) => {
+        const [px, py] = [x.a.target.pdf, y.a.target.pdf];
+        if (px.page !== py.page) return px.page - py.page;
+        const [hx, hy] = [height(x.a), height(y.a)];
+        if (hx === null && hy === null) return (px.start ?? 0) - (py.start ?? 0) || x.a.id - y.a.id;
+        if (hx === null || hy === null) return hx === null ? -1 : 1;
+        return hx - hy || x.a.id - y.a.id;
+      });
+      // cartes déplacées, pas recréées ; une seule vue : à la suite des autres
+      if (this.singleView) pdfList.replaceChildren(...inHtml.map(({ a }) => cards.get(a.id)), ...inPdf.map(({ a }) => cards.get(a.id)));
+      else pdfList.replaceChildren(...inPdf.map(({ a }) => cards.get(a.id)));
+    };
+    placePdf(this.pdf?.readingHeights?.(inPdf.map(({ a }) => a), (heights) => { if (pdfList.isConnected) placePdf(heights); }) || new Map());
+    const htmlList = h("div", { class: "notes-list" }, this.singleView ? [] : inHtml.map(({ a }) => cards.get(a.id)));
+    const sections = this.singleView
+      ? [pdfList]
+      : [...(inHtml.length ? [h("h4", { class: "notes-subtitle" }, t("notes.inHtml", { n: inHtml.length })), htmlList] : []),
+        ...(inPdf.length ? [h("h4", { class: "notes-subtitle" }, t("notes.inPdf", { n: inPdf.length })), pdfList] : [])];
+    body.append(h("div", { class: "panel-section" }, h("h3", {}, t("notes.annotations", { n: located.length })),
+      located.length ? sections : h("div", { class: "notes-list" }, h("p", { class: "hint" }, t("notes.none"))),
       h("p", { class: "hint" }, t("notes.howTo"))));
-    // export : fiche, énoncés et preuves, passages, en Markdown (dossier Téléchargements)
+    // export : fiche, énoncés et preuves, passages, en Markdown (dossier Téléchargements) ; .zip avec les images des zones
     if (located.length || (this.general?.note || "").trim() || this.items.some((a) => a.kind === "bookmark")) {
       body.append(h("div", { class: "panel-section" }, h("a", { class: "button small-button", download: "",
-        href: `/api/papers/${encodeURIComponent(this.paperId)}/notes.md?lang=${document.documentElement.lang || "fr"}` }, t("notes.export")),
+        href: `/api/papers/${encodeURIComponent(this.paperId)}/notes?lang=${document.documentElement.lang || "fr"}` }, t("notes.export")),
         h("p", { class: "hint" }, t("notes.exportHint"))));
     }
     typesetTex([body]);

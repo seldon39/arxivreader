@@ -255,6 +255,84 @@ export class PdfNotes {
     ]);
   }
 
+  // Hauteur dans sa page (fraction depuis le haut) de chaque annotation du PDF, pour l'ordre de lecture de l'onglet
+  // Notes : celles déjà mesurées tout de suite ({id: hauteur}) ; les autres mesurées ensuite, si le PDF est chargé, puis
+  // `onReady(toutes)` (passage : haut de la ligne où il commence ; zone : son bord haut ; note épinglée : son point)
+  readingHeights(annotations, onReady) {
+    this.heights ??= new Map();
+    const known = new Map();
+    const missing = [];
+    for (const annotation of annotations) {
+      const key = JSON.stringify(annotation.target.pdf);
+      const hit = this.heights.get(annotation.id);
+      if (hit?.key === key) known.set(annotation.id, hit.y);
+      else missing.push(annotation);
+    }
+    if (missing.length && this.view.loaded) {
+      this.measure(missing).then((count) => {
+        if (count) onReady?.(new Map(annotations.filter((a) => this.heights.has(a.id)).map((a) => [a.id, this.heights.get(a.id).y])));
+      }).catch(() => {});
+    }
+    return known;
+  }
+
+  async measure(annotations) {
+    const app = await this.view.ready();
+    if (!app) return 0;
+    let count = 0;
+    for (const annotation of annotations) {
+      const pdf = annotation.target.pdf;
+      const page = await this.geometry(app, pdf.page);
+      if (!page) continue;
+      let y = null;
+      if (pdf.rect) y = pdf.rect[1];
+      else if (pdf.start != null) y = page.heightAt(pdf.start);
+      else if (pdf.top != null) y = page.viewport.convertToViewportPoint(pdf.left || 0, pdf.top)[1] / page.viewport.height;
+      if (y == null || !Number.isFinite(y)) continue;
+      this.heights.set(annotation.id, { key: JSON.stringify(pdf), y });
+      count++;
+    }
+    return count;
+  }
+
+  // page du PDF : sa taille, et la hauteur du début de chaque morceau de texte (positions de la couche de texte : mêmes
+  // réglages que pdf.js) ; lue une fois par page
+  geometry(app, number) {
+    this.pages ??= new Map();
+    if (!this.pages.has(number)) {
+      this.pages.set(number, (async () => {
+        const page = await app.pdfDocument.getPage(number);
+        const viewport = page.getViewport({ scale: 1 });
+        const content = await page.getTextContent({ includeMarkedContent: true, disableNormalization: true });
+        const starts = [];
+        const tops = [];
+        let at = 0;
+        for (const item of content.items) {
+          const length = (item.str || "").length;
+          if (length && item.transform) {
+            const [, y] = viewport.convertToViewportPoint(item.transform[4], item.transform[5]);
+            starts.push(at);
+            tops.push((y - Math.hypot(item.transform[2], item.transform[3])) / viewport.height);  // haut de la ligne
+          }
+          at += length;
+        }
+        const heightAt = (offset) => {
+          let low = 0;
+          let high = starts.length - 1;
+          if (high < 0) return null;
+          while (low < high) {  // dernier morceau qui commence avant la position
+            const mid = (low + high + 1) >> 1;
+            if (starts[mid] <= offset) low = mid;
+            else high = mid - 1;
+          }
+          return tops[low];
+        };
+        return { viewport, heightAt };
+      })().catch(() => null));
+    }
+    return this.pages.get(number);
+  }
+
   // boîte de la page sans sa bordure (celle de la couche de texte), en coordonnées du cadre
   boxOf(pageDiv) {
     const outer = pageDiv.getBoundingClientRect();

@@ -2,7 +2,8 @@
 
 Fiche de lecture, puis énoncés et preuves annotés (état de lecture, note), dans l'ordre du texte, puis passages
 surlignés regroupés par section, avec leur note. Les formules restent en LaTeX ($…$), comme dans l'application.
-Toute la bibliothèque : une archive .zip, un fichier par article annoté.
+Toute la bibliothèque : une archive .zip, un fichier par article annoté. Zones du PDF (encadrés) : leur image est
+jointe, dans un dossier images/ de l'archive (un article qui en a s'exporte alors en .zip, sinon en .md seul).
 """
 
 import io
@@ -73,7 +74,27 @@ def _section_of(element_id, toc):
     return best
 
 
-def paper_markdown(paper_id, language="fr"):
+IMAGES = "images"
+
+
+def zone_images(paper_id, notes):
+    """Images des zones du PDF de l'article : {id d'annotation : (chemin dans l'archive, fichier)} ; une zone sans
+    image enregistrée (export d'un autre ordinateur) n'en a pas."""
+    stem = re.sub(r"[^\w.-]+", "-", paper_id)  # « math/0601001 » : pas de sous-dossier
+    found = {}
+    for note in notes:
+        pdf = (note.get("target") or {}).get("pdf") or {}
+        if note["kind"] == "highlight" and "rect" in pdf:
+            path = annotations.image_path(note)
+            if path.is_file():
+                found[note["id"]] = (f"{IMAGES}/{stem}-zone-{note['id']}.png", path)
+    return found
+
+
+def paper_markdown(paper_id, language="fr", images=None):
+    """Notes de l'article en Markdown. `images` (zone_images) : les zones montrent leur image, par un lien relatif
+    vers l'archive ; sinon seulement leur mention."""
+    images = images or {}
     words, states = WORDS.get(language, WORDS["en"]), STATES.get(language, STATES["en"])
     paper = db.get_paper(paper_id)
     notes = annotations.list_for(paper_id)
@@ -141,9 +162,13 @@ def paper_markdown(paper_id, language="fr"):
             if current is None or key != current:
                 lines += [f"### {heading}", ""]
                 current = key
-            # zone du PDF (formule, figure) : pas de texte sûr, seulement sa mention
+            # zone du PDF (formule, figure) : pas de texte sûr, son image (export en archive), sinon sa mention
             if note["kind"] != "note":  # note libre : pas de passage cité, seulement la note
-                lines += [f"*{words['zone']}*" if "rect" in (pdf_of(note) or {}) else _quote(note.get("quote")), ""]
+                if "rect" in (pdf_of(note) or {}):
+                    zone = f"![{words['zone']}]({images[note['id']][0]})" if note["id"] in images else f"*{words['zone']}*"
+                else:
+                    zone = _quote(note.get("quote"))
+                lines += [zone, ""]
             if (note.get("note") or "").strip():
                 lines += [note["note"].strip() + _who(note, words), ""]
     # données de toutes les annotations, signées : l'import les recrée à l'identique (notesync.py)
@@ -157,6 +182,22 @@ def filename(paper):
     title = re.sub(r"[^\w\s\-]", "", title, flags=re.UNICODE)
     title = " ".join(title.split()[:6])
     return f"{paper['id']} {title}".strip() + ".md"  # version archivée : « 0806.2370v1 … », un fichier par version
+
+
+def paper_export(paper_id, language="fr"):
+    """Téléchargement des notes d'un article : (contenu, nom de fichier, type) — Markdown seul, ou archive .zip
+    (Markdown et images/) si des zones du PDF ont leur image."""
+    paper = db.get_paper(paper_id)
+    images = zone_images(paper_id, annotations.list_for(paper_id))
+    name = filename(paper)
+    if not images:
+        return paper_markdown(paper_id, language), name, "text/markdown; charset=utf-8"
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(name, paper_markdown(paper_id, language, images))
+        for inside, path in images.values():
+            archive.write(path, inside)
+    return buffer.getvalue(), name[:-3] + ".zip", "application/zip"
 
 
 def _with_notes():
@@ -204,5 +245,8 @@ def library_zip(language="fr"):
         for paper_id in sorted(annotations.annotated_papers()):
             paper, notes = db.get_paper(paper_id), annotations.list_for(paper_id)
             if paper and (has_notes(notes) or any(n["kind"] == "proof" for n in notes)):
-                archive.writestr(filename(paper), paper_markdown(paper_id, language))
+                images = zone_images(paper_id, notes)
+                archive.writestr(filename(paper), paper_markdown(paper_id, language, images))
+                for inside, path in images.values():
+                    archive.write(path, inside)
     return buffer.getvalue()

@@ -171,9 +171,22 @@ def _annotation_text(value):
     return text.replace("$", PLAIN_DOLLAR) if text.count("$") % 2 else text
 
 
+ANNOTATION = "annotation-"  # cible d'un résultat : l'annotation elle-même, montrée là où elle a été posée (reader.js)
+
+
 def _annotation_target(target):
     target = target or {}
     return target.get("id") or (target.get("start") or {}).get("id")
+
+
+def _annotation_place(row, target):
+    """(cible, élément de l'article) d'un résultat. Passage surligné, note libre, ou tout ce qui est posé dans le PDF :
+    l'annotation (« annotation-12 » : ouverte dans sa vue, HTML ou PDF, à son endroit) ; note d'énoncé, marque-page du
+    HTML : l'élément."""
+    element = _annotation_target(target)
+    if (target or {}).get("pdf") or row["kind"] in ("highlight", "note"):
+        return f"{ANNOTATION}{row['annotation_id']}", element
+    return element, element
 
 
 def _annotation_hits(rows, pattern):
@@ -186,8 +199,11 @@ def _annotation_hits(rows, pattern):
             text = _annotation_text(row[field] or "")
             match = pattern.search(fold(text))
             if match:
-                target = _annotation_target(json.loads(row["target"] or "null"))
-                hits.append(_hit(row, kind, _enclosing(target, _labels(row["id"])), text, match, target))
+                parsed = json.loads(row["target"] or "null")
+                target, element = _annotation_place(row, parsed)
+                pdf = (parsed or {}).get("pdf")
+                label = f"PDF, p. {pdf['page']}" if pdf and pdf.get("page") else _enclosing(element, _labels(row["id"]))
+                hits.append(_hit(row, kind, label, text, match, target))
                 break
     hits.sort(key=lambda hit: hit["kind"] != "note")
     return hits
@@ -269,7 +285,7 @@ def search(query):
     with db.connect() as connection:
         papers = connection.execute(f"SELECT p.id, p.title, p.version, p.archived_of FROM papers p WHERE p.in_library = 1 ORDER BY {recent}").fetchall()
         annotations = connection.execute(
-            "SELECT p.id, p.title, p.version, p.archived_of, a.kind, a.target, a.quote, a.note FROM annotations a JOIN papers p ON p.id = a.paper_id "
+            "SELECT p.id, p.title, p.version, p.archived_of, a.id AS annotation_id, a.kind, a.target, a.quote, a.note FROM annotations a JOIN papers p ON p.id = a.paper_id "
             f"WHERE ({ANNOTATED_PAPERS}) AND a.kind != 'proof' ORDER BY {recent}, a.id").fetchall()
     results = _annotation_hits(annotations, pattern)
     for paper in papers:

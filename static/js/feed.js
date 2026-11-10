@@ -249,8 +249,7 @@ async function renderList(body, tab) {
       // Articles qui citent les vôtres (Semantic Scholar), trouvés ces dernières semaines
       const citing = data.items.filter((i) => i.citing?.length && !inDayList(i) && matches(i))
         .sort((a, b) => (b.cited_found || "").localeCompare(a.cited_found || "") || (b.announced || "").localeCompare(a.announced || ""));
-      // repliée par défaut : un clic sur l'intertitre l'ouvre
-      if (citing.length) sections.push(foldableSection("citingCollapsed", t("feed.citingTitle"), citing.map(card), { extraClass: "citing-section", collapsedByDefault: true }));
+      if (citing.length) sections.push(foldableSection("citingCollapsed", t("feed.citingTitle"), citing.map(card), { extraClass: "citing-section" }));
       const followed = data.items.filter((i) => i.followed && !i.citing?.length && !inDayList(i) && matches(i))
         .sort((a, b) => (b.announced || "").localeCompare(a.announced || ""));
       if (followed.length) sections.push(foldableSection("followedCollapsed", t("feed.followedTitle"), followed.map(card)));
@@ -680,7 +679,9 @@ function newVersionCard(item) {
 const abstractObserver = new ResizeObserver((entries) => entries.forEach((entry) => entry.target.updateMore?.()));
 export const resetAbstractObserver = () => abstractObserver.disconnect();
 
-function foldableSection(settingKey, title, cards, { extraClass = "", collapsedByDefault = false } = {}) {
+// Section repliable (articles qui vous citent, auteurs suivis, nouvelles versions) : repliée par défaut, un clic sur
+// l'intertitre l'ouvre ; le choix du lecteur est gardé (réglage `settingKey`)
+function foldableSection(settingKey, title, cards, { extraClass = "", collapsedByDefault = true } = {}) {
   const section = h("section", { class: `feed-day followed-section foldable ${extraClass}`.trim() });
   const toggle = h("button", { class: "section-toggle", type: "button",
     onclick: () => { const collapsed = !section.classList.contains("collapsed"); setCollapsed(collapsed); saveSettings({ [settingKey]: collapsed }); } },

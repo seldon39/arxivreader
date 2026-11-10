@@ -77,7 +77,10 @@ function citedStatement(link, nodes) {
 class Reader {
   constructor(view, paper, structure, html, at = null) {
     this.paper = paper;
-    this.startAt = at;
+    // « annotation-12 » (résultat de recherche sur une note) : cette annotation, montrée dans sa vue après le chargement
+    const pinned = /^annotation-(\d+)$/.exec(at || "");
+    this.startAnnotation = pinned ? Number(pinned[1]) : null;
+    this.startAt = pinned ? null : at;
     // version HTML expérimentale possible (LaTeXML, à la demande) : fichier TeX importé, article d'arXiv lu depuis sa source
     this.experimental = ["tex", "local-tex"].includes(paper.source);
     // pas de version HTML : toujours dans le PDF
@@ -125,6 +128,7 @@ class Reader {
     if (this.texFile) this.loadTexReport();
     // onglet Notes : passage surligné dans le PDF, lu en HTML → vue PDF d'abord
     this.annotator.version = paper.version;  // notes libres : version de l'article où elles sont posées
+    this.annotator.singleView = this.texOnly;  // onglet Notes : une seule liste (pas de sections HTML et PDF)
     // clic droit dans l'article : marque-page sur le paragraphe cliqué
     this.annotator.onBookmarkAt = (element, rect) => this.addBookmark({ element, rect });
     // onglet Notes : marque-pages en tête
@@ -179,17 +183,21 @@ class Reader {
     this.pdfNotes?.repaintAll(); // passages surlignés dans le PDF, connus seulement maintenant
     this.renderPanel(); // avec les états de lecture, chargés seulement maintenant
     this.anchors = null;
+    const pinned = this.startAnnotation != null && this.annotator.items.find((a) => a.id === this.startAnnotation);
     if (!this.texOnly) this.lazyPaint = new LazyPaint(this.content); // sections loin de l'écran : pas dessinées
     if (this.texOnly) {
       await defineMacros(this.structure.macros);
       await typesetTex([this.content]);
       if (this.destroyed) return;
-      if (this.startAt) this.showInPdf(this.startAt);
+      if (pinned) this.showAnnotation(pinned);
+      else if (this.startAt) this.showInPdf(this.startAt);
       this.loadCrossLinks();
       this.notesToCheckToast();
       return;
     }
-    if (this.pdfMode) {
+    if (pinned) {
+      requestAnimationFrame(() => this.showAnnotation(pinned));
+    } else if (this.pdfMode) {
       if (this.startAt) this.showInPdf(this.startAt);
     } else if (this.startAt && this.find(this.startAt)) {
       this.reveal(this.find(this.startAt));
@@ -262,7 +270,8 @@ class Reader {
     }
   }
 
-  async setView(view, { save = true } = {}) {
+  // `restore` : retour au HTML sans endroit connu → dernière position de lecture (sauf si un endroit précis suit)
+  async setView(view, { save = true, restore = true } = {}) {
     if (this.texOnly || (view === "pdf") === this.pdfMode) return;
     // jeton : une bascule plus récente (ou un énoncé choisi entre-temps) l'emporte sur les suites de celle-ci
     const token = ++this.viewToken;
@@ -329,7 +338,7 @@ class Reader {
         this.reveal(estimate);
         this.scrollToElement(estimate, false);
       } else if (this.htmlScroll !== undefined) scrollTo({ top: this.htmlScroll, behavior: "instant" });
-      else this.restorePosition();
+      else if (restore) this.restorePosition();
     }
   }
 
@@ -397,8 +406,12 @@ class Reader {
     for (const [bibId, entry] of Object.entries(this.crosslinks)) {
       const item = this.find(bibId);
       if (!item || item.querySelector(".cross-badge")) continue;
-      item.append(h("a", { class: "cross-badge cross-open", href: `#/paper/${encodeURIComponent(entry.paper)}`,
-        title: `${entry.title}\n${t("reader.crossOpenTab")}` }, t("reader.crossOpen")));
+      // en tête de la ligne de liens de l'entrée (DOI, MathSciNet, zbMATH : addFindLinks), sur la même ligne
+      const badge = h("a", { class: "cross-badge cross-open", href: `#/paper/${encodeURIComponent(entry.paper)}`,
+        title: `${entry.title}\n${t("reader.crossOpenTab")}` }, t("reader.crossOpen"));
+      const row = item.querySelector(".bib-links");
+      if (row) row.prepend(badge);
+      else item.append(h("div", { class: "bib-links" }, badge));
     }
   }
 
@@ -1220,10 +1233,25 @@ class Reader {
     scrollTo({ top: Math.round(scrollY + offset), behavior: smooth && near ? "smooth" : "instant" });
   }
 
+  // Annotation ouverte depuis un résultat de recherche : dans sa vue (PDF ou HTML), à son endroit
+  showAnnotation(annotation) {
+    // déjà dans le PDF : la mise en place de l'ouverture (dernière position, encore en cours) ne l'emporte plus
+    if (this.pdfMode && (annotation.target?.pdf || bookmarkInPdf(annotation))) this.viewToken++;
+    if (annotation.kind === "bookmark") { this.goToBookmark(annotation); return; }
+    if (annotation.target?.pdf) { this.annotator.revealPdf(annotation); return; }
+    const mark = annotation.kind === "highlight" && this.content.querySelector(`mark.hl[data-annotation="${annotation.id}"]`);
+    const id = annotation.target?.id || annotation.target?.start?.id;
+    if (mark) this.showElement(mark);
+    else if (id && this.find(id)) {
+      if (this.pdfMode) this.setView("html", { save: false, restore: false }).then(() => !this.destroyed && !this.pdfMode && this.navigate(id));
+      else this.navigate(id);
+    } else this.restorePosition();
+  }
+
   // élément de l'article HTML (passage surligné choisi dans l'onglet Notes) : lu dans le PDF, retour au HTML d'abord
   // (caché, l'élément n'a pas de position) ; un marque-page fait de même (goToBookmark)
   async showElement(element) {
-    if (this.pdfMode && !this.texOnly) await this.setView("html", { save: false });
+    if (this.pdfMode && !this.texOnly) await this.setView("html", { save: false, restore: false });
     if (!this.destroyed && !this.pdfMode && this.content.contains(element)) this.navigateElement(element);
   }
 
@@ -1409,9 +1437,11 @@ class Reader {
   addFindLinks() {
     for (const item of this.content.querySelectorAll(".ltx_bibitem[id]")) {
       const entry = this.bib.get(item.id);
-      if (!entry || item.querySelector(".bib-links")) continue;
+      if (!entry || item.querySelector(".bib-links > :not(.cross-badge)")) continue;
       const links = this.findLinks(entry, { doi: !item.querySelector('a[href*="doi.org/"]') });
-      if (links.length) item.append(h("div", { class: "bib-links" }, links));
+      const row = item.querySelector(".bib-links");  // déjà là avec « Ouvrir l'article » (loadCrossLinks) : à sa suite
+      if (row) row.append(...links);
+      else if (links.length) item.append(h("div", { class: "bib-links" }, links));
     }
   }
 
