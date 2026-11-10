@@ -792,11 +792,12 @@ def reads_images(model):
 # du lecteur (« adapte mes notes », « carry over my annotations »), ou tout autre verbe (« déplace », « apply »…) dans une
 # phrase qui parle aussi d'une version (« reprends mes notes de la v1 »). Sans version, « Convert my notes to LaTeX » ou
 # « how does Lemma 2 apply to my notes? » sont des questions ordinaires. ADAPT_PROMPT prévoit le cas d'une méprise.
-_ADAPT_CLEAR = (r"(?:\b(?:adapt(?!ed\b|ée?s?\b)|(?<!the )transpos(?:e[rsz]?|ition)\b|transf[eéè]r|carry|carri|migr|port\b|actualis|updat)\w*"
+_ADAPT_CLEAR = (r"(?:\b(?:adapt(?!ed\b|ée?s?\b)|(?<!the )transpos(?:e[rsz]?|ition)\b|transf[eéè]r|carry|carri|migr|port\b|actualis|updat(?!ed\s+version))\w*"
                 r"|\b[aà]\s+jour\b)")
 _ADAPT = (r"(?:\b(?:adapt(?!ed\b|ée?s?\b)|(?<!the )transpos(?:e[rsz]?|ition)\b|transf[eéè]r|report(?:e[rz]?|é|ée|ées|és)\b|repren|repris"
-          r"|r[eé]cup[eéè]r|import(?!an)|(?:re)?copi|copy|actualis|updat|carry|carri|bring|migr|port\b|d[eé]plac|move\b"
-          r"|appli(?:qu|es?\b)|apply|convert)|\b[aà]\s+jour\b)")
+          r"|r[eé]cup[eéè]r|import(?!an)|(?:re)?copi|copy|actualis|updat(?!ed\s+version)|carry|carri|bring|migr|port\b|d[eé]plac|move\b"
+          r"|appli(?:qu|es?\b)|apply|convert|met(?:s|tre|tez)\b|remet|r[eé]utilis|reus(?:e|ing)\b|restor|restaur|synchron|sync\b|re-?appl|r[eé]appli)"
+          r"|\b[aà]\s+jour\b)")
 _NOTE_WORD = r"(?:notes?|highlights?|reviews?|comments?|relectures?|commentaires?|remarques?)"
 _NOTES = (r"\b(?:annotations?\b|surlignages?\b|surlign[eé]s\b"
           rf"|(?:my|our|mes|ma|mon|nos|notre)\s+(?:(?!lecture\b)\w+\s+)?{_NOTE_WORD}\b(?!\s+de\s+cours)"
@@ -805,21 +806,27 @@ _NOTES = (r"\b(?:annotations?\b|surlignages?\b|surlign[eé]s\b"
           r"|notes?\s+(?:that\s+)?i\s+(?:took|made|wrote)\b|notes?\s+que\s+j'ai\b|highlights?\s+from\b)")
 _MENTIONS_VERSION = re.compile(r"\bversions?\b|(?<![a-z])v\.?\s?\d|\b(?:previous|earlier|older|old|former|prior|anciennes?|pr[eé]c[eé]dentes?)\s+(?:versions?|notes?|annotations?)\b"
                                r"|\b(?:notes?|annotations?)\s+(?:pr[eé]c[eé]dentes?|anciennes?)\b", re.I)
-_ADAPT_DIRECTLY = re.compile(rf"{_ADAPT_CLEAR}(?:\s+over|\s+across)?\s+(?:(?!to\b|à\b|au\b|aux\b)[\w']+\s+)?{_NOTES}", re.I)
+# sans version citée : au pluriel (« ma note sur le lemme 2 » est à modifier, pas à adapter) et sans autre destination
+_NOTES_ALL = (r"\b(?:annotations\b|surlignages\b|surlign[eé]s\b"
+              r"|(?:my|our|mes|nos)\s+(?:(?!lecture\b)\w+\s+)?(?:notes|highlights|reviews|comments|relectures|commentaires|remarques)\b(?!\s+de\s+cours)"
+              r"|(?:the|les|ces|these)\s+(?:(?!lecture\b)\w+\s+)?notes\b(?!\s+de\s+cours|\s*\[)"
+              r"|notes\s+(?:that\s+)?i\s+(?:took|made|wrote)\b|notes\s+que\s+j'ai\b)(?!\s+(?:with|avec|on|sur|for|pour|au|aux)\b)")
+_ADAPT_DIRECTLY = re.compile(rf"{_ADAPT_CLEAR}(?:\s+over|\s+across)?\s+(?:(?!to\b|à\b|au\b|aux\b)[\w']+\s+)?{_NOTES_ALL}", re.I)
 _ADAPT_NEAR = re.compile(rf"{_ADAPT}.{{0,100}}?{_NOTES}|{_NOTES}.{{0,100}}?{_ADAPT}", re.I | re.S)
 
 
 def asks_adaptation(question):
     return any(_ADAPT_DIRECTLY.search(sentence) or (_MENTIONS_VERSION.search(sentence) and _ADAPT_NEAR.search(sentence))
-               for sentence in re.split(r"[.?!;](?=\s|$)", question))
+               for sentence in re.split(r"[.?!;](?=\s*$|\s+[A-ZÀ-Ý])", question))  # pas après « Thm. 3 », « v. 1 » ni « cf. la v1 »
 
 
 # relance d'une adaptation, dans son fil : les blocs sont joints à nouveau (l'historique n'a plus les notes d'origine)
-REDO_ADAPTING = re.compile(r"\b(?:refai|recommenc|r[eé]essa[iy]|redo\b|retry\b|try\s+again\b)", re.I)
-ORDINAL_VERSION = {"first": 1, "initial": 1, "original": 1, "première": 1, "premiere": 1, "initiale": 1, "originale": 1,
+REDO_ADAPTING = re.compile(r"\b(?:refai|recommenc|r[eé]essa[iy]|retente|redo\b|retry\b|try\s+again\b|do\s+it\s+again\b|once\s+more\b|encore\s+une\s+fois\b"
+                           r"|essa[iy]e\s+encore\b|de\s+nouveau\b)(?!.*\b(?:preuve|calcul|lemme|th[eé]or[eè]me|[eé]quation|proof|computation|estimate|lemma|theorem|equation)s?\b)", re.I | re.S)
+ORDINAL_VERSION = {"1ère": 1, "1ere": 1, "1re": 1, "1st": 1, "2e": 2, "2ème": 2, "2eme": 2, "2nd": 2, "3e": 3, "3ème": 3, "3eme": 3, "3rd": 3, "first": 1, "initial": 1, "original": 1, "première": 1, "premiere": 1, "initiale": 1, "originale": 1,
                    "second": 2, "seconde": 2, "deuxième": 2, "deuxieme": 2, "third": 3, "troisième": 3, "troisieme": 3}
 VERSION_NAMED = re.compile(r"(?:(?<![a-z])v\.?\s?|\bversions?\s+(?:n[°ºo]\.?\s*)?)(\d+)\b"
-                           rf"|\b({'|'.join(ORDINAL_VERSION)})\s+version\b|\bversion\s+(initiale|originale)\b", re.I)
+                           rf"|\b({'|'.join(ORDINAL_VERSION)})\s+version\b|\bversion\s+(initiale|originale|d'origine|de\s+d[eé]part)\b", re.I)
 # balises des deux blocs : neutralisées dans ce qu'ils citent, le reste du texte restant tel quel (notes recopiées mot à mot)
 PREVIOUS_TAGS = re.compile(r"</?(?=(?:previous_version|previous_annotations|annotation|quote|note)\b)", re.I)
 # note complétée par l'IA : son nom, y compris l'IA locale dans les deux langues (proposition acceptée, applyProposals

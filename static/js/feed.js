@@ -192,27 +192,44 @@ async function renderList(body, tab) {
     refresh.title = `${t("feed.refresh")} · ${text}`; // date de la dernière mise à jour : au survol du bouton
   };
 
+  const matches = (item) => {
+    const needle = state.search.trim().toLowerCase();
+    return (item.status !== "disliked" || state.showHidden)
+      && (!needle || `${item.title} ${item.authors.join(" ")} ${item.abstract}`.toLowerCase().includes(needle))
+      && (state.publication === "any" || (state.publication === "journal") === Boolean(item.publishedIn));
+  };
+  let versionsAsked = 0; // une réponse plus ancienne n'écrase pas la dernière
+
   // Nouvelles versions des articles de la bibliothèque : à part (arXiv peut tarder), sans faire sauter la page à l'arrivée
   async function loadNewVersions(force = false) {
     if (tab !== "arxiv" || settings.feedNewVersions === false) return;
+    const asked = ++versionsAsked;
     let items;
     try { ({ items } = await api.feedNewVersions(force)); } catch { return; }
-    if (!document.body.contains(list) || JSON.stringify(items) === JSON.stringify(memory.newVersions)) return;
+    if (asked !== versionsAsked || !document.body.contains(list) || JSON.stringify(items) === JSON.stringify(memory.newVersions)) return;
     memory.newVersions = items;
-    const height = list.offsetHeight;
-    draw();
-    if (scrollY > 0) window.scrollBy({ top: list.offsetHeight - height, behavior: "instant" });
+    showNewVersions();
   }
-  const sectionToggled = () => { draw(); loadNewVersions(); };
+  // seule cette section est refaite (résumés ouverts conservés) ; si on lit plus bas, ce qu'on lit reste à sa place à l'écran
+  function showNewVersions() {
+    const day = list.querySelector(".day-nav")?.parentElement;
+    if (tab !== "arxiv" || !day) return;
+    const top = day.getBoundingClientRect().top;
+    list.querySelector(".new-versions-section")?.remove();
+    const section = newVersionsSection();
+    if (section) { day.before(section); typesetTex([section]).catch(() => {}); }
+    if (top < 0) window.scrollBy({ top: day.getBoundingClientRect().top - top, behavior: "instant" });
+  }
+  const newVersionsSection = () => {
+    const newer = settings.feedNewVersions === false ? [] : memory.newVersions.filter(matches);
+    return newer.length ? foldableSection("newVersionsCollapsed", t("feed.newVersionsTitle"), newer.map(newVersionCard), { extraClass: "new-versions-section" }) : null;
+  };
+  const sectionToggled = () => { showNewVersions(); loadNewVersions(); };
   addEventListener("arxivreader:feed-sections", sectionToggled);
 
   const draw = () => {
     abstractObserver.disconnect(); // cartes précédentes : plus observées (elles vont être remplacées)
     tools.update();
-    const needle = state.search.trim().toLowerCase();
-    const matches = (item) => (item.status !== "disliked" || state.showHidden)
-      && (!needle || `${item.title} ${item.authors.join(" ")} ${item.abstract}`.toLowerCase().includes(needle))
-      && (state.publication === "any" || (state.publication === "journal") === Boolean(item.publishedIn));
     const inCategories = (item) => !state.categories.size || item.categories.some((c) => state.categories.has(c));
     // rien du tout (premier lancement) ; un jour sans annonce garde ses flèches
     if (!data.items.length && (tab !== "arxiv" || !data.day)) {
@@ -237,8 +254,8 @@ async function renderList(body, tab) {
       const followed = data.items.filter((i) => i.followed && !i.citing?.length && !inDayList(i) && matches(i))
         .sort((a, b) => (b.announced || "").localeCompare(a.announced || ""));
       if (followed.length) sections.push(foldableSection("followedCollapsed", t("feed.followedTitle"), followed.map(card)));
-      const newer = settings.feedNewVersions === false ? [] : memory.newVersions.filter(matches);
-      if (newer.length) sections.push(foldableSection("newVersionsCollapsed", t("feed.newVersionsTitle"), newer.map((item) => newVersionCard(item, loadNewVersions))));
+      const newer = newVersionsSection();
+      if (newer) sections.push(newer);
       shown = data.items.filter((i) => inDayList(i) && matches(i));
     } else {
       shown = data.items.filter((i) => inCategories(i) && matches(i));
@@ -618,7 +635,7 @@ export function feedCard(item, onChange = () => {}, { compact = false, fresh = f
 }
 
 // Carte d'un article de la bibliothèque dont arXiv a une version plus récente
-function newVersionCard(item, reload) {
+function newVersionCard(item) {
   const route = `#/paper/${encodeURIComponent(item.id)}`;
   const title = h("a", { class: "feed-title-link", href: route, title: t("feed.read") }, tidyTitle(item.title));
   const open = (event) => {
@@ -638,7 +655,7 @@ function newVersionCard(item, reload) {
     update.prepend(h("span", { class: "spinner" }), " ");
     try { await updatePaper({ id: item.id, version: item.installed }, { expectNew: true }); }
     catch (error) { toastError(error); }
-    finally { updating.delete(item.id); update.disabled = false; update.querySelector(".spinner")?.remove(); reload(); }
+    finally { updating.delete(item.id); dispatchEvent(new Event("arxivreader:feed-sections")); } // la vue affichée, qui n'est plus forcément celle du clic
   });
   const authors = item.authors.length > 8 ? [...item.authors.slice(0, 8), t("feed.etAl")] : item.authors;
   return h("article", { class: "feed-card" },

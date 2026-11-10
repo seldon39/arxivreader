@@ -93,7 +93,7 @@ const modelOf = (provider) => modelFor({ ...settings, aiProvider: provider });
 
 // Livre : relecture, résumé de tous les chapitres en parallèle (tâche du serveur, bookjob) ; cible de la synthèse
 // question qui parle de notes, ou relance : seule une telle demande peut rendre au lecteur une note (author = "reader")
-const ABOUT_NOTES = /\b(?:notes?|annotations?|surlignages?|highlights?|remarques?|relectures?|reviews?|comments?|commentaires?|refai|recommenc|r[eé]essa|redo|retry|try\s+again)/i;
+const ABOUT_NOTES = /\b(?:notes?|annotations?|surlign|highlights?|remarques?|relectures?|reviews?|comments?|commentaires?|refai|recommenc|r[eé]essa|retente|redo|retry|try\s+again|do\s+it\s+again|once\s+more|encore\s+une\s+fois|essa[iy]e\s+encore|de\s+nouveau)/i;
 const BOOK = "@book";
 const SECTIONS = "@sections";  // article, menu Portée : toutes les sections en parallèle, puis synthèse
 const BOOK_TASKS = ["summary", "review"];

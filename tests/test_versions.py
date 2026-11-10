@@ -43,6 +43,7 @@ class Base(unittest.TestCase):
         db.DB_PATH, db.LIBRARY, library.PAPERS = self.tmp / "test.db", self.tmp, self.tmp / "papers"
         db.init()
         library._latest.clear()
+        library._repair_refused.clear()
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
 
     def tearDown(self):
@@ -820,6 +821,43 @@ class NewVersions(Base):
             self.assertEqual(library.new_versions(), [])
             self.assertEqual(ask.call_count, 1)
 
+    def test_empty_answer_erases_nothing_and_is_asked_again(self):
+        self.add(ID, 1)
+        with mock.patch.object(library, "fetch_latest", return_value={ID: self.meta(2, 3)}):
+            library.new_versions()
+        with mock.patch.object(library, "fetch_latest", return_value={}):
+            self.assertEqual(len(library.new_versions(force=True)), 1)
+        kept = db.get_settings()["feed.newVersions"]
+        db.save_settings({"feed.newVersions": {**kept, "checked": 0}})
+        with mock.patch.object(library, "fetch_latest", return_value={}) as ask:
+            library.new_versions()
+            library.new_versions()
+        self.assertEqual(ask.call_count, 2)
+
+    def test_paper_missing_from_a_batch_stays_listed(self):
+        self.add(ID, 1)
+        self.add("2401.00001", 1)
+        with mock.patch.object(library, "fetch_latest", return_value={ID: self.meta(2, 3), "2401.00001": self.meta(2, 4, "2401.00001")}):
+            library.new_versions()
+        with mock.patch.object(library, "fetch_latest", return_value={ID: self.meta(3, 1)}):
+            items = library.new_versions(force=True)
+        self.assertEqual([(i["arxiv_id"], i["version"]) for i in items], [(ID, 3), ("2401.00001", 2)])
+
+    def test_old_entries_and_removed_papers_are_purged(self):
+        self.add(ID, 1)
+        other = self.add("2401.00001", 1)
+        with mock.patch.object(library, "fetch_latest", return_value={ID: self.meta(2, 3), "2401.00001": self.meta(2, 4, "2401.00001")}):
+            library.new_versions()
+        db.save_paper({**other, "in_library": 0})
+        with mock.patch.object(library, "fetch_latest", return_value={ID: self.meta(2, 3)}):
+            library.new_versions(force=True)
+        self.assertEqual(list(db.get_settings()["feed.newVersions"]["latest"]), [ID])
+
+    def test_old_identifier_with_a_subject_class(self):
+        self.add("math.DG/0601001", 1)
+        with mock.patch.object(library, "fetch_latest", return_value={"math/0601001": self.meta(2, 3, "math/0601001")}):
+            self.assertEqual([i["arxiv_id"] for i in library.new_versions()], ["math.DG/0601001"])
+
     def test_batches_of_one_hundred(self):
         answer = """<feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
         <entry><id>http://arxiv.org/abs/2404.15983v3</id><title>A</title><updated>2026-11-01T00:00:00Z</updated><published>2024-01-01T00:00:00Z</published><summary>s</summary></entry>
@@ -854,13 +892,44 @@ class AbsorbedArchive(Base):
         self.assertEqual((folder / "content.html").read_text(), "new")
         self.assertFalse(leftover.exists())
 
-    def test_repair_does_not_reimport_ar5iv_text_of_another_version(self):
+    def repaired(self, source, latest):
         paper = {"id": ID, "arxiv_id": ID, "version": 1, "title": "T", "authors": [], "abstract": "", "categories": [], "primary_category": "",
-                 "published": "", "updated": "", "source": "ar5iv", "in_library": 1}
+                 "published": "", "updated": "", "source": source, "in_library": 1}
         db.save_paper(paper)
         library.paper_dir(ID).mkdir(parents=True)
-        with mock.patch.object(library, "missing_assets", return_value=["x.png"]), mock.patch.object(library, "latest_version", return_value=2), \
-                mock.patch.object(library, "_reimport_installed") as again:
+        (library.paper_dir(ID) / "content.html").write_text("installed")
+        asked = []
+
+        def nothing(arxiv_id, version, ar5iv=True):
+            asked.append(ar5iv)
+
+        with mock.patch.object(library, "fetch_metadata", return_value=metadata(1)), mock.patch.object(library, "latest_version", return_value=latest), \
+                mock.patch.object(library, "fetch_html", side_effect=nothing), mock.patch.object(library, "fetch_source", return_value=None), \
+                mock.patch.object(library, "fetch_pdf", return_value=None):
+            library._reimport_installed(paper)
+        return asked, (library.paper_dir(ID) / "content.html").read_text(), db.get_paper(ID)["source"], self.leftovers()
+
+    def test_repair_never_uses_ar5iv_under_an_older_number(self):
+        self.assertEqual(self.repaired("ar5iv", 2), ([], "installed", "ar5iv", []))
+
+    def test_repair_keeps_a_readable_text_when_arxiv_gives_nothing(self):
+        self.assertEqual(self.repaired("arxiv-html", 1), ([False], "installed", "arxiv-html", []))
+
+    def test_refused_repair_is_not_retried_at_each_opening(self):
+        self.repaired("arxiv-html", 1)
+        self.assertIn(ID, library._repair_refused)
+        with mock.patch.object(library, "missing_assets", return_value=["x.png"]), mock.patch.object(library, "_reimport_installed") as again:
             library.repair_assets(ID)
         again.assert_not_called()
 
+    def test_repair_keeps_the_images_it_could_not_download_again(self):
+        paper = {"id": ID, "arxiv_id": ID, "version": 1, "title": "T", "authors": [], "abstract": "", "categories": [], "primary_category": "",
+                 "published": "", "updated": "", "source": "arxiv-html", "in_library": 1}
+        db.save_paper(paper)
+        assets = library.paper_dir(ID) / "assets"
+        assets.mkdir(parents=True)
+        (assets / "kept.png").write_bytes(PNG)
+        with mock.patch.object(library, "fetch_metadata", return_value=metadata(1)), mock.patch.object(library, "latest_version", return_value=1), \
+                mock.patch.object(library, "fetch_html", side_effect=html), mock.patch.object(library, "fetch_source", return_value=None):
+            library._reimport_installed(paper)
+        self.assertEqual((assets / "kept.png").read_bytes(), PNG)

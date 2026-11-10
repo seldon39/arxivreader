@@ -76,12 +76,24 @@ def import_paper(query, add_to_library=True):
             return _import(paper_id, arxiv_id, meta, add_to_library, pending_source)
 
 
-def _import(paper_id, arxiv_id, meta, add_to_library, pending_source):
+def _import(paper_id, arxiv_id, meta, add_to_library, pending_source, ar5iv=True, same_source=None):
+    """`same_source` (réparation) : rien n'est remplacé si le texte obtenu ne vient pas de là."""
     from . import bookjob
     installed = db.get_paper(paper_id)
     # les emplacements de preuve indiqués à la main ne valent que pour le même texte
     overrides = annotations.proof_overrides(paper_id) if installed and installed["version"] == meta.version else {}
-    staging, source = _staged(paper_id, arxiv_id, meta, pending_source, overrides)  # arxiv-html, ar5iv ou none
+    staging, source = _staged(paper_id, arxiv_id, meta, pending_source, overrides, ar5iv)  # arxiv-html, ar5iv ou none
+    if same_source and source != same_source:
+        log.info("réparation de %s refusée : texte obtenu de %s au lieu de %s", paper_id, source, same_source)
+        _repair_refused.add(paper_id)
+        shutil.rmtree(staging, ignore_errors=True)
+        return installed
+    if same_source:  # figures qu'une réparation n'a pas pu retélécharger : celles qu'on avait restent
+        old = paper_dir(paper_id) / "assets"
+        for image in old.iterdir() if old.is_dir() else ():
+            if image.is_file() and not (staging / "assets" / image.name).exists():
+                (staging / "assets").mkdir(exist_ok=True)
+                shutil.copy2(image, staging / "assets" / image.name)
     # relue après le téléchargement : place dans la bibliothèque, et version d'une fiche en attente, écrite entre-temps
     # par un import de notes (notesync._version_of_notes)
     previous = db.get_paper(paper_id)
@@ -322,6 +334,7 @@ def ensure_ready(paper_id, timeout=180):
 # échanges) d'identifiant « <article>v<k> », hors bibliothèque (in_library = 0, archived_of = l'article principal, qui
 # porte la dernière version installée). ----------
 
+_repair_refused = set()  # articles dont le nouvel import de réparation n'a rien donné de sûr : pas retenté à chaque ouverture
 ABSORBED = ".absorbed"  # dans le dossier d'une archive qui redevient l'article principal
 LATEST_KEEP = 3600  # dernière version connue, gardée une heure
 LATEST_WAIT = 20    # arXiv lent : réponse sans attendre davantage (la requête continue et sert à la demande suivante)
@@ -366,6 +379,9 @@ def new_versions(force=False):
     def since():
         return (datetime.now(timezone.utc) - timedelta(days=NEW_VERSIONS_DAYS)).strftime("%Y-%m-%d")
 
+    def bare(arxiv_id):  # arXiv répond math/0601001 pour math.DG/0601001
+        return re.sub(r"^([a-z-]+)\.[A-Z]{2}/", r"\1/", arxiv_id)
+
     papers = [p for p in db.list_papers() if p["arxiv_id"] and p["version"]]
     with _new_versions_guard:
         kept = db.get_settings().get("feed.newVersions") or {}
@@ -375,14 +391,18 @@ def new_versions(force=False):
             except Exception as error:
                 log.info("nouvelles versions inconnues : %s", error)
             else:
-                kept = {"checked": time.time(), "latest": {
-                    key: {"version": m.version, "updated": m.updated[:10], "title": m.title, "authors": m.authors,
-                          "categories": m.categories, "primary_category": m.primary_category, "comment": m.comment}
-                    for key, m in found.items() if m.updated[:10] >= since()}}
-                db.save_settings({"feed.newVersions": kept})
+                if found:  # réponse vide (arXiv en donne parfois) : rien n'est effacé, redemandé à la prochaine visite
+                    asked = {bare(p["arxiv_id"]) for p in papers}
+                    latest = {key: entry for key, entry in (kept.get("latest") or {}).items()  # article absent d'un lot : gardé
+                              if key not in found and key in asked and entry["updated"] >= since()}
+                    latest.update({key: {"version": m.version, "updated": m.updated[:10], "title": m.title, "authors": m.authors,
+                                         "categories": m.categories, "primary_category": m.primary_category, "comment": m.comment}
+                                   for key, m in found.items() if m.updated[:10] >= since()})
+                    kept = {"checked": time.time(), "latest": latest}
+                    db.save_settings({"feed.newVersions": kept})
     latest = kept.get("latest") or {}
-    items = [{**latest[p["arxiv_id"]], "id": p["id"], "arxiv_id": p["arxiv_id"], "installed": p["version"], "abstract": ""} for p in papers
-             if p["arxiv_id"] in latest and latest[p["arxiv_id"]]["version"] > p["version"] and latest[p["arxiv_id"]]["updated"] >= since()]
+    items = [{**latest[bare(p["arxiv_id"])], "id": p["id"], "arxiv_id": p["arxiv_id"], "installed": p["version"], "abstract": ""} for p in papers
+             if bare(p["arxiv_id"]) in latest and latest[bare(p["arxiv_id"])]["version"] > p["version"] and latest[bare(p["arxiv_id"])]["updated"] >= since()]
     return sorted(items, key=lambda item: item["updated"], reverse=True)
 
 
@@ -425,7 +445,7 @@ def _replace_version(previous, staging, row, returning=None):
         moved = False
         try:
             if folder.exists():
-                shutil.rmtree(parked, ignore_errors=True)  # reste inutile (au démarrage, recover_interrupted a remis l'utile)
+                _discard(parked)  # reste inutile (au démarrage, recover_interrupted a remis l'utile)
                 if merging:
                     _keep_images(folder, archive_folder)
                 _rename(folder, parked)
@@ -620,13 +640,16 @@ def repairing(paper_id):
 def _reimport_installed(paper):
     """Nouvel import de la version installée, même si arXiv en a une plus récente : rien n'est archivé ni déplacé."""
     arxiv_id, version = paper["arxiv_id"], paper["version"]
+    ar5iv = paper["source"] == "ar5iv"
+    if ar5iv and latest_version(arxiv_id) != version:  # ar5iv sert sa propre version de l'article : pas sous le numéro d'une plus ancienne
+        return
     with ThreadPoolExecutor(1) as background:
         pending_source = background.submit(_source, arxiv_id, version)
         meta = fetch_metadata(f"{arxiv_id}v{version}")
         with paper_lock(paper["id"]):
             current = db.get_paper(paper["id"])
             if current and current["version"] == meta.version:  # sinon : mis à jour entre-temps
-                _import(paper["id"], arxiv_id, meta, False, pending_source)
+                _import(paper["id"], arxiv_id, meta, False, pending_source, ar5iv, paper["source"])
 
 
 def repair_assets(paper_id):
@@ -646,8 +669,7 @@ def repair_assets(paper_id):
             remote = None
         if remote is None:  # importé avant que les adresses soient gardées : nouvel import
             paper = db.get_paper(paper_id)
-            # ar5iv sert sa propre version de l'article : à ne pas réimporter sous le numéro d'une autre
-            if paper and not paper.get("archived_of") and (paper["source"] != "ar5iv" or latest_version(paper["arxiv_id"]) == paper["version"]):
+            if paper and not paper.get("archived_of") and paper_id not in _repair_refused:
                 _reimport_installed(paper)
             return
         with paper_lock(paper_id):

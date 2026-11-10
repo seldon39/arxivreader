@@ -1050,7 +1050,9 @@ class PreviousVersion(unittest.TestCase):
                          "carry over my annotations from v1", "Update my highlights", "port my notes to this version",
                          "Import the reviews from version 2", "Please update the notes that I took",
                          "carry over highlights from version 1", "Adapte les notes prises sur l'ancienne version",
-                         "Transfère les notes précédentes", "Récupère mes remarques de la version 1", "Dans la v1, reprends mes notes"):
+                         "Transfère les notes précédentes", "Récupère mes remarques de la version 1", "Dans la v1, reprends mes notes", "Reprends mes notes de la v. 1", "Mets mes notes de la v1 sur cette version",
+                         "Reuse my notes from the previous version", "Restore my highlights from v1", "Reapply my notes from v1",
+                         "Apply my notes on Thm. 3 from v1 to this version", "Reprends mes notes, cf. la v1"):
             self.assertTrue(ai.asks_adaptation(question), question)
         for question in ("Pourquoi ce lemme ?", "Comment adapter la preuve au cas non compact ?", "Quelles notes sont importantes ?",
                          "Note that the update rule is local: why?", "Does the update highlights the role of z?",
@@ -1066,7 +1068,11 @@ class PreviousVersion(unittest.TestCase):
                          "Which of my annotations apply to Section 3?", "Convert my notes to LaTeX please.", "Do my highlights still apply?",
                          "Can you apply Theorem 3 to the example in my notes on Morse theory?", "Peux-tu copier mes notes dans ta réponse ?",
                          "Comment déplacer le terme de droite, comme dans mes notes ?", "Reprends ma relecture en insistant sur la section 4",
-                         "Does importing this result change my notes?", "comment adapter cette preuve à mes notes ?"):
+                         "Does importing this result change my notes?", "comment adapter cette preuve à mes notes ?",
+                         "Update my note on Lemma 2 to add the counterexample", "Update my notes with a summary of this section.",
+                         "Mets à jour ma note sur le lemme 2 avec ce contre-exemple.", "How should I adapt my notes for the exam?",
+                         "Comment adapter mes notes au cas non compact ?", "Is the updated version of Theorem 3 consistent with my notes?",
+                         "Soit la fonction v. Reprends mes notes"):
             self.assertFalse(ai.asks_adaptation(question), question)
 
     def test_version_chosen(self):
@@ -1082,7 +1088,7 @@ class PreviousVersion(unittest.TestCase):
     def test_version_named_in_words(self):
         self.archive(1)
         self.archive(2)
-        for question in ("adapte les notes de la première version", "adapt my notes from the first version", "adapte mes notes de la version initiale",
+        for question in ("adapte les notes de la première version", "adapt my notes from the first version", "adapte mes notes de la version initiale", "Reprends mes notes de la 1ère version", "adapt my notes from the 1st version", "adapte mes notes de la version d'origine",
                          "adapte mes notes de la version n° 1", "adapt my notes from v.1", "adapte mes notes de la version originale"):
             self.assertEqual(self.adapted_version(question), 1, question)
         self.assertEqual(self.adapted_version("adapte mes notes de la deuxième version"), 2)
