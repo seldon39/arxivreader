@@ -780,6 +780,7 @@ class Reader {
     markItalicStatements(this.content);
     amsBibliography(this.content);
     this.linkArxivReferences();
+    this.addFindLinks();
 
     // Ponctuation collée à la formule qui la précède (pas de « , » seule en début de ligne)
     this.content.querySelectorAll("math:not(.math-group math), .math-group").forEach((math) => {
@@ -1361,17 +1362,35 @@ class Reader {
     const copy = element.cloneNode(true);
     copy.removeAttribute("id");
     copy.querySelectorAll("[id]").forEach((el) => el.removeAttribute("id"));
-    copy.querySelectorAll(".proof-toggle, .block-note, .state-pill, .proof-pointer").forEach((el) => el.remove());
+    copy.querySelectorAll(".proof-toggle, .block-note, .state-pill, .proof-pointer, .bib-links").forEach((el) => el.remove());
     copy.classList.remove("selected", "flash");
     return copy;
   }
 
-  // Référence : l'importer depuis arXiv, ou la retrouver (DOI, MathSciNet, zbMATH : dans le navigateur, seulement au clic)
-  bibActions(entry) {
-    if (!entry) return null;
+  // Liens qui retrouvent une référence (DOI, MathSciNet, zbMATH) : dans le navigateur, seulement au clic
+  findLinks(entry, { doi = true } = {}) {
     const plain = (entry.text || "").replace(/\b(?:doi:\s*|https?:\/\/|arXiv:\s*)\S+/gi, "").replace(/\s+/g, " ").trim();
     const citation = encodeURIComponent([...plain].slice(0, 500).join(""));  // par caractères : jamais une moitié de symbole
     const link = (label, href) => h("a", { href, target: "_blank", rel: "noopener noreferrer", title: t("reader.openOutside") }, label);
+    return [doi && entry.doi && link("DOI", `https://doi.org/${entry.doi.split("/").map(encodeURIComponent).join("/")}`),
+      citation && link("MathSciNet", `https://mathscinet.ams.org/mref?ref=${citation}&dataType=mathscinet`),
+      citation && link("zbMATH", `https://zbmath.org/citationmatching/?q=${citation}`)].filter(Boolean);
+  }
+
+  // Ligne de liens sous chaque entrée de la bibliographie, en fin d'entrée : les ancres des surlignages, comptées
+  // depuis le début, ne bougent pas ; hors sélection, et retirée des aperçus (clean)
+  addFindLinks() {
+    for (const item of this.content.querySelectorAll(".ltx_bibitem[id]")) {
+      const entry = this.bib.get(item.id);
+      if (!entry || item.querySelector(".bib-links")) continue;
+      const links = this.findLinks(entry, { doi: !item.querySelector('a[href*="doi.org/"]') });
+      if (links.length) item.append(h("div", { class: "bib-links" }, links));
+    }
+  }
+
+  // Référence : l'importer depuis arXiv, ou la retrouver
+  bibActions(entry) {
+    if (!entry) return null;
     return h("span", { class: "bib-actions" }, (entry.arxiv || []).map((arxivId) => h("button", {
       type: "button",
       onclick: async () => {
@@ -1382,10 +1401,7 @@ class Reader {
           toastError(error);
         }
       },
-    }, `${t("reader.import")} arXiv:${arxivId}`)),
-    entry.doi && link("DOI", `https://doi.org/${entry.doi.split("/").map(encodeURIComponent).join("/")}`),
-    citation && link("MathSciNet", `https://mathscinet.ams.org/mref?ref=${citation}&dataType=mathscinet`),
-    citation && link("zbMATH", `https://zbmath.org/citationmatching/?q=${citation}`));
+    }, `${t("reader.import")} arXiv:${arxivId}`)), ...this.findLinks(entry));
   }
 
   // Identifiants arXiv des références (repérés par l'analyse) : liens qui ouvrent l'article dans l'application

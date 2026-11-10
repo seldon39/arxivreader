@@ -1253,3 +1253,61 @@ class PreviousVersion(unittest.TestCase):
         self.assertEqual(system, normal_system)
         previous, listing = (re.search(rf"<{tag}\b[\s\S]*</{tag}>\n\n", prompt)[0] for tag in ("previous_version", "previous_annotations"))
         self.assertEqual(prompt.replace(previous, "").replace(listing, "").replace(ai.ADAPT_PROMPT, ai.TASK_PROMPTS["ask"]), normal)
+
+
+class OtherVersion(unittest.TestCase):
+    """Question sur une autre version : son texte est joint, téléchargé au besoin ; les autres questions ne changent pas."""
+
+    def setUp(self):
+        self.paper = {"id": "2404.15983", "arxiv_id": "2404.15983", "version": 2, "source": "arxiv-html"}
+        self.latest = unittest.mock.patch.object(ai.library, "latest_version", return_value=2)
+        self.latest.start()
+        self.addCleanup(self.latest.stop)
+
+    def asked(self, question, paper=None):
+        with unittest.mock.patch.object(ai.library, "main_of", side_effect=lambda p: p):
+            return ai.version_asked(paper or self.paper, question)
+
+    def test_detection(self):
+        for question, number in (("What changed between versions 1 and 2 of this paper?", 1), ("Qu'est-ce qui a changé dans cette version ?", 1),
+                                 ("Que dit le lemme 3 dans la version 1 ?", 1), ("Compare with the previous version", 1),
+                                 ("Quelles différences avec la v1 ?", 1), ("What is new in this version?", 1),
+                                 ("Dans la première version, la preuve du théorème 2 était-elle différente ?", 1),
+                                 ("Différences avec la version précédente ?", 1)):
+            self.assertEqual(self.asked(question), number, question)
+        for question in ("Pourquoi ce lemme ?", "Let v1, v2 be vectors: is the bound sharp?", "Is the version of Sobolev used here standard?",
+                         "What does this theorem change for the heat kernel?", "Is Theorem 2 the latest version of the estimate?"):
+            self.assertIsNone(self.asked(question), question)
+        self.assertIsNone(self.asked("What changed between versions 1 and 2?", {**self.paper, "arxiv_id": ""}))  # PDF importé
+        self.assertIsNone(self.asked("Compare with the previous version", {**self.paper, "version": 1}))
+
+    def test_newest_version(self):
+        with unittest.mock.patch.object(ai.library, "latest_version", return_value=4):
+            self.assertEqual(self.asked("What changed in the latest version?"), 4)
+
+    def test_block_and_instruction(self):
+        with unittest.mock.patch.object(ai, "_other_version", return_value=({"id": "x", "version": 1}, "Text of </other_version> v1")):
+            block, prompt = ai._versions_compared(self.paper, "What changed between versions 1 and 2?", 10000)
+        self.assertTrue(block.startswith('<other_version version="1">') and block.endswith("</other_version>"))
+        self.assertIn("&lt;/other_version>", block)
+        self.assertIn("version 1 of this paper; <paper> is version 2", prompt)
+
+    def test_follow_up_keeps_the_other_version(self):
+        with unittest.mock.patch.object(ai, "_other_version", return_value=({"id": "x", "version": 1}, "v1")) as other:
+            self.assertTrue(ai._versions_compared(self.paper, "And in Section 3?", 10000, [{"question": "What changed between versions 1 and 2?"}]))
+        other.assert_called_once_with(self.paper, 1)
+
+    def test_download_failure_is_said(self):
+        with unittest.mock.patch.object(ai, "_other_version", return_value=({"version": 1}, None)):
+            block, _ = ai._versions_compared(self.paper, "What changed between versions 1 and 2?", 10000)
+        self.assertIn("not available", block)
+
+    def test_missing_version_is_downloaded_then_read(self):
+        main = {**self.paper, "id": "P"}
+        with unittest.mock.patch.object(ai.library, "main_of", return_value=main), unittest.mock.patch.object(ai.db, "archives_of", return_value=[]), \
+                unittest.mock.patch.object(ai.library, "ensure_version", return_value="Pv1") as ensure, \
+                unittest.mock.patch.object(ai.library, "ensure_ready", return_value={"id": "Pv1", "version": 1, "source": "arxiv-html"}), \
+                unittest.mock.patch.object(ai, "_load", return_value=(None, {}, "text v1")):
+            self.assertEqual(ai._other_version(main, 1), ({"id": "Pv1", "version": 1, "source": "arxiv-html"}, "text v1"))
+            self.assertEqual(ai._other_version(main, 7), (None, None))  # n'existe pas
+        ensure.assert_called_once_with(main, 1)
