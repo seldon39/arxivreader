@@ -14,7 +14,7 @@ import { LazyPaint } from "./lazypaint.js";
 import { bookmarkBox, bookmarkSection, contextMenuAt, inPdf as bookmarkInPdf, staleVersion } from "./bookmarks.js";
 import { htmlToPdf, htmlWords, pdfToHtml, wordTop } from "./pdfsync.js";
 import { defineMacros, statementElement, statementsContainer } from "./texview.js";
-import { typesetFragment, typesetMath, typesetTex } from "./math.js";
+import { typesetFragment, typesetMath, typesetTex, undefinedFonts } from "./math.js";
 
 import { t, tn } from "./i18n.js";
 import { DEFAULT_FONT_SIZE, READING_WIDTHS, onSettingsChange, saveSettings, settings } from "./settings.js";
@@ -153,6 +153,7 @@ class Reader {
 
   // Formules en MathJax avant d'afficher le texte (moins d'une seconde), puis reprise de la lecture
   async finishLayout() {
+    undefinedFonts(this.content);  // \EuScript… laissées en texte par arXiv : aussi avec le MathML du navigateur
     if (settings.mathRenderer !== "native" && this.content.querySelector("math")) {
       this.article.classList.add("typesetting");
       const note = h("div", { class: "typesetting-note busy" }, h("span", { class: "spinner" }), t("reader.typesetting"));

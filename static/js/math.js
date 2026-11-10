@@ -16,6 +16,8 @@ const MACROS = {
   supp: op("supp"), Hom: op("Hom"), End: op("End"), Aut: op("Aut"), Tr: op("Tr"), tr: op("tr"),
   id: op("id"), Id: op("Id"), rank: op("rank"), diag: op("diag"), dist: op("dist"), vol: op("vol"),
   sgn: op("sgn"), Spec: op("Spec"),
+  // polices de paquets que LaTeXML (arXiv) ne connaît pas : euscript, mathrsfs ancien, eufrak (voir undefinedFonts)
+  EuScript: ["\\mathcal{#1}", 1], scr: ["\\mathscr{#1}", 1], EuFrak: ["\\mathfrak{#1}", 1],
   // lettre barrée par la barre de \not et de ≠ (⧸, U+29F8 : même glyphe que U+0338 mais non combinant), sans largeur,
   // au début de la lettre comme en TeX (slashedLetters) ; \slashed (notation de Feynman) est inconnue de MathJax
   arxivslash: ["\\rlap{\\mathrm{\u29F8}}#1", 1], slashed: ["\\arxivslash{#1}", 1],
@@ -82,6 +84,130 @@ function restoreCalligraphic(math) {
   });
 }
 
+// Commande de police inconnue de LaTeXML (\EuScript du paquet euscript, \scr…) : arXiv la laisse en texte brut
+// (<mtext class="undefined">\EuScript</mtext>), suivie parfois d'un séparateur invisible, puis de la lettre, seule ou
+// base d'un indice ou d'un exposant (\EuScript F_i). On retire la commande et on écrit la lettre comme arXiv écrit
+// celles de \mathcal, \mathscr, \mathfrak et \mathbb (caractère Unicode, classe de police) : le reste suit, avec
+// MathJax (restoreCalligraphic) comme avec le MathML du navigateur. Euler Script (\EuScript) : calligraphique.
+const FONT_MACROS = {
+  "\\EuScript": "cal", "\\EuScr": "cal", "\\scr": "scr", "\\rsfs": "scr",
+  "\\EuFrak": "frak", "\\frak": "frak", "\\goth": "frak", "\\mathgoth": "frak",
+  "\\Bbb": "bb", "\\mathbbm": "bb", "\\mathds": "bb", "\\bbold": "bb",
+};
+// premier caractère des majuscules et minuscules de chaque alphabet, et lettres déjà codées ailleurs dans Unicode
+const ALPHABETS = {
+  script: [0x1d49c, 0x1d4b6, { B: "ℬ", E: "ℰ", F: "ℱ", H: "ℋ", I: "ℐ", L: "ℒ", M: "ℳ", R: "ℛ", e: "ℯ", g: "ℊ", o: "ℴ" }],
+  frak: [0x1d504, 0x1d51e, { C: "ℭ", H: "ℌ", I: "ℑ", R: "ℜ", Z: "ℨ" }],
+  bb: [0x1d538, 0x1d552, { C: "ℂ", H: "ℍ", N: "ℕ", P: "ℙ", Q: "ℚ", R: "ℝ", Z: "ℤ" }],
+};
+const FONT_CLASS = { cal: "ltx_font_mathcaligraphic", scr: "ltx_font_mathscript" };
+
+function styledLetter(letter, font) {
+  const [upper, lower, exceptions] = ALPHABETS[font === "cal" || font === "scr" ? "script" : font];
+  if (exceptions[letter]) return exceptions[letter];
+  if (/^[A-Z]$/.test(letter)) return String.fromCodePoint(upper + letter.charCodeAt(0) - 65);
+  if (/^[a-z]$/.test(letter)) return String.fromCodePoint(lower + letter.charCodeAt(0) - 97);
+  if (font === "bb" && /^[0-9]$/.test(letter)) return String.fromCodePoint(0x1d7d8 + Number(letter));
+  return null;
+}
+
+const INVISIBLE = /^[\s\u200b\u2061-\u2064]*$/;  // espace nulle, application, × et séparateur invisibles
+
+export function undefinedFonts(root) {
+  root.querySelectorAll("math mtext.undefined").forEach((mtext) => {
+    const font = FONT_MACROS[mtext.textContent.trim()];
+    if (!font) return;
+    const after = mtext.nextElementSibling;
+    const gap = after?.localName === "mo" && INVISIBLE.test(after.textContent) ? after : null;
+    const next = (gap || mtext).nextElementSibling;
+    const letter = /^(msub|msup|msubsup|munder|mover|munderover)$/.test(next?.localName || "") ? next.firstElementChild : next;
+    const styled = letter?.localName === "mi" && styledLetter(letter.textContent.trim(), font);
+    if (!styled) return;  // pas une lettre seule : la commande reste visible, comme sur arXiv
+    letter.textContent = styled;
+    if (FONT_CLASS[font]) letter.classList.add(FONT_CLASS[font]);
+    letter.removeAttribute("mathvariant");  // une lettre seule est en italique par défaut : pas de variante à garder
+    mtext.remove();
+    gap?.remove();
+  });
+}
+
+// Liens dans le texte d'une formule (\text{\eqref{…}}, \text{\cite{…}}) : arXiv y met du HTML (<a><span>…</span></a>,
+// <em>…</em>), que MathJax refuse (toute la formule restait alors en MathML du navigateur). Pour MathJax seulement (copie,
+// après un premier refus), chaque <mtext> devient une suite de morceaux de texte :
+// - un lien, d'un seul tenant, porté par l'attribut href (MathJax en fait un vrai <a>) ;
+// - le reste, avec les classes de police d'arXiv de ses éléments (ltx_font_italic de \emph…), que MathJax garde ;
+// - les traits de \rule (ltx_rule, souvent des appuis de hauteur invisibles) en <mspace> de mêmes dimensions.
+// Un dessin (svg, img) : rien n'est touché, MathML du navigateur.
+const KEEP_SPACE = (text) => text.replace(/^\s+|\s+$/g, "\u00a0");  // MathJax retire les espaces en bord de <mtext>
+const fontClasses = (element) => [...element.classList].filter((name) => name.startsWith("ltx_font_"));
+
+// \rule[décalage]{largeur}{hauteur} : style « width:…; height:…; vertical-align:… » (pt), fond de la couleur du trait
+function ruleSpace(rule, ns) {
+  const length = (name) => parseFloat(rule.style.getPropertyValue(name)) || 0;
+  const [width, height, raise] = [length("width"), length("height"), length("vertical-align")];
+  const space = document.createElementNS(ns, "mspace");
+  space.setAttribute("width", `${Math.max(0, width)}pt`);
+  space.setAttribute("height", `${Math.max(0, raise + height)}pt`);
+  space.setAttribute("depth", `${Math.max(0, -raise)}pt`);
+  if (width > 0) space.setAttribute("mathbackground", rule.style.getPropertyValue("--ltx-bg-color").trim() || "currentColor");
+  return space;
+}
+
+function linksInText(math) {
+  for (const mtext of math.querySelectorAll("mtext")) {
+    if (!mtext.firstElementChild) continue;
+    if (mtext.querySelector("svg, img, math")) return false;
+    const ns = mtext.namespaceURI;
+    const pieces = [];
+    const push = (text, link, fonts) => {
+      if (!text) return;
+      const last = pieces[pieces.length - 1];
+      // un lien reste d'un seul tenant (une seule zone de survol) ; hors lien, même police : même morceau
+      if (last && !last.rule && last.link === link && (link || last.fonts === fonts)) last.text += text;
+      else pieces.push({ text, link, fonts });
+    };
+    const walk = (node, link, fonts) => {
+      for (const child of node.childNodes) {
+        if (child.nodeType === Node.TEXT_NODE) push(child.data, link, fonts);
+        else if (child.nodeType !== Node.ELEMENT_NODE) continue;
+        else if (child.classList.contains("ltx_rule")) pieces.push({ rule: child });
+        else if (child.localName === "a" && child.getAttribute("href") && !link) walk(child, child, fonts);
+        else walk(child, link, [...new Set([...fonts.split(" "), ...fontClasses(child)])].filter(Boolean).join(" "));
+      }
+    };
+    walk(mtext, null, "");
+    const row = document.createElementNS(ns, "mrow");
+    for (const { text, link, fonts, rule } of pieces) {
+      if (rule) { row.append(ruleSpace(rule, ns)); continue; }
+      const piece = document.createElementNS(ns, "mtext");
+      for (const { name, value } of mtext.attributes) if (name !== "id") piece.setAttribute(name, value);
+      piece.textContent = KEEP_SPACE(text);
+      if (fonts) piece.classList.add(...fonts.split(" "));
+      if (link) {
+        piece.setAttribute("href", link.getAttribute("href"));
+        // classes du lien d'arXiv (ltx_ref…) : MathJax les pose sur le texte, restoreLinks les remet sur le lien
+        piece.classList.add(...[...link.classList].filter((name) => name.startsWith("ltx_")), "math-link");
+      }
+      row.append(piece);
+    }
+    mtext.replaceWith(row);
+  }
+  return true;
+}
+
+// Après MathJax : le lien reprend les classes du lien d'arXiv (couleur, aperçus des renvois et des citations) ; un lien
+// vers l'extérieur s'ouvre dans le navigateur, comme les autres (sanitize.py)
+function restoreLinks(node) {
+  for (const link of node.querySelectorAll("a[href]")) {
+    const inner = link.querySelector(".math-link");
+    if (!inner) continue;
+    const classes = [...inner.classList].filter((name) => name.startsWith("ltx_") && !name.startsWith("ltx_font_"));
+    inner.classList.remove(...classes, "math-link");
+    link.classList.add(...classes);
+    if (!link.getAttribute("href").startsWith("#")) Object.assign(link, { target: "_blank", rel: "noopener noreferrer" });
+  }
+}
+
 // Lettre suivie de la barre combinante U+0338 (\not{D}, \not{\mathcal{D}}) : ce caractère combinant est placé
 // différemment selon le moteur (Chrome le dessine sur la lettre, WebKit après elle, sur l'indice). On le remplace par
 // la même barre non combinante de la police (⧸, U+29F8 : celle de \not et de ≠, hauteur 0,716 em, profondeur 0,215 em),
@@ -125,11 +251,21 @@ function relationSpacing(math) {
 }
 
 function convert(MathJax, math) {
+  undefinedFonts(math);
   restoreCalligraphic(math);
   slashedLetters(math);
   relationSpacing(math);
   const display = math.getAttribute("display") === "block";
-  const node = MathJax.mathml2chtml(math.outerHTML, { display });
+  let node;
+  try {
+    node = MathJax.mathml2chtml(math.outerHTML, { display });
+  } catch (error) {
+    // refusée à cause du HTML dans son texte (liens) : nouvel essai sur une copie sans HTML ; sinon l'original reste
+    const copy = math.querySelector("mtext *") && math.cloneNode(true);
+    if (!copy || !linksInText(copy)) throw error;
+    node = MathJax.mathml2chtml(copy.outerHTML, { display });
+    restoreLinks(node);
+  }
   node.dataset.tex = math.getAttribute("alttext") || "";
   math.replaceWith(node);
 }
@@ -158,6 +294,7 @@ export async function typesetMath(root, { isCancelled = () => false, chunk = 500
 
 // Formules restées en MathML natif dans un fragment copié (aperçus) : conversion immédiate.
 export function typesetFragment(root) {
+  undefinedFonts(root);  // aussi avec le MathML du navigateur
   if (!window.MathJax?.mathml2chtml) return;
   for (const math of topLevelMath(root)) {
     try { convert(window.MathJax, math); } catch { /* MathML natif conservé */ }
