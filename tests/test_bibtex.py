@@ -157,6 +157,17 @@ class Routes(unittest.TestCase):
         self.assertEqual(self.client.get("/api/bibtex", params={"ids": "0000.00000"}).status_code, 404)
         self.assertEqual(self.client.get("/api/bibtex", params={"ids": "../x"}).status_code, 404)
 
+    def test_whole_library(self):
+        data = self.client.get("/api/library/bibtex").json()
+        self.assertEqual(data["count"], 2)
+        self.assertIn("eprint = {math/0404494}", data["bibtex"])
+        file = self.client.get("/api/library.bib")
+        self.assertIn("attachment", file.headers["content-disposition"])
+        self.assertEqual(file.text.count("@misc{"), 2)
+        with db.connect() as conn:  # articles seulement ouverts : pas dans l'export
+            conn.execute("UPDATE papers SET in_library = 0")
+        self.assertEqual(self.client.get("/api/library/bibtex").status_code, 404)
+
     def test_folder(self):
         folder = self.client.post("/api/folders", json={"name": "Noyaux / Bergman", "papers": ["2601.00001", "math_0404494"]}).json()
         data = self.client.get(f"/api/folders/{folder['id']}/bibtex").json()

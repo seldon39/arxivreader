@@ -455,8 +455,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(item)
         }
     }
+    // Menus : grisés hors du lecteur (ou quand ils ne s'appliquent pas), libellés selon l'état de la page (commands.js)
     @objc func validateMenuItem(_ item: NSMenuItem) -> Bool {
-        item.action == #selector(reopenClosedTab) ? !recentlyClosed.isEmpty : true
+        if item.action == #selector(reopenClosedTab) { return !recentlyClosed.isEmpty }
+        let state = keyTab?.menuState ?? [:]
+        let reader = state["reader"] as? Bool ?? false
+        let pdf = reader && (state["pdf"] as? Bool ?? false)
+        switch item.action {
+        case #selector(zoomIn): item.title = pdf ? tr("Zoom avant", "Zoom In") : tr("Agrandir le texte", "Increase Text Size"); return true
+        case #selector(zoomOut): item.title = pdf ? tr("Zoom arrière", "Zoom Out") : tr("Réduire le texte", "Decrease Text Size"); return true
+        case #selector(zoomReset): item.title = pdf ? tr("Zoom par défaut", "Default Zoom") : tr("Taille du texte par défaut", "Default Text Size"); return true
+        case #selector(findOpen): item.title = reader ? tr("Rechercher dans l'article…", "Find in Paper…") : tr("Rechercher…", "Find…"); return true
+        case #selector(openArxiv): return reader && arxivURL(state) != nil
+        case #selector(pageCommand(_:)): break
+        default: return true
+        }
+        guard let name = item.representedObject as? String else { return true }
+        switch name {
+        case "reader.library": return reader && (state["canAdd"] as? Bool ?? false)
+        case "view.mode":
+            item.title = pdf ? tr("Afficher le HTML", "Show HTML") : tr("Afficher le PDF", "Show PDF")
+            return reader && (state["canSwitch"] as? Bool ?? false)
+        case "view.toc":
+            item.title = reader && (state["toc"] as? Bool ?? false) ? tr("Masquer le sommaire", "Hide Contents") : tr("Afficher le sommaire", "Show Contents")
+            return reader
+        case "view.panel":
+            item.title = reader && (state["panel"] as? Bool ?? false) ? tr("Masquer le panneau", "Hide Panel") : tr("Afficher le panneau", "Show Panel")
+            return reader
+        case "view.fold":
+            item.title = state["proofs"] as? String == "closed" ? tr("Déplier toutes les preuves", "Unfold All Proofs") : tr("Replier toutes les preuves", "Fold All Proofs")
+            return reader && !pdf && state["proofs"] is String
+        case "view.wider", "view.narrower": return reader && !pdf
+        default:
+            return name.hasPrefix("reader.") || name.hasPrefix("view.") || ["go.back", "go.forward", "go.next", "go.prev", "go.proof"].contains(name)
+                ? reader : true
+        }
+    }
+    // page de l'article sur arXiv, d'après l'état du lecteur (seulement une adresse d'arXiv)
+    func arxivURL(_ state: [String: Any]) -> URL? {
+        guard let text = state["arxiv"] as? String, text.hasPrefix("https://arxiv.org/abs/") else { return nil }
+        return URL(string: text)
     }
 
     func startPage() -> String {
@@ -515,6 +553,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func goBack() { keyTab?.webView.goBack() }
     @objc func goForward() { keyTab?.webView.goForward() }
     @objc func showLibraryFolder() { NSWorkspace.shared.activateFileViewerSelecting([support]) }
+    // commande d'un menu faite par la page (commands.js) ; nom fixé ici, jamais venu de la page
+    @objc func pageCommand(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String, name.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "." }) else { return }
+        keyTab?.webView.evaluateJavaScript("document.dispatchEvent(new CustomEvent('app:command', { detail: '\(name)' }))")
+    }
+    @objc func openArxiv() {
+        if let url = arxivURL(keyTab?.menuState ?? [:]) { NSWorkspace.shared.open(url) }
+    }
+    // version d'essai : sa note (BETA.md, copiée dans l'application par build-beta.sh)
+    @objc func showBetaNotes() {
+        if let url = Bundle.main.url(forResource: "BETA", withExtension: "md") { NSWorkspace.shared.open(url) }
+    }
 
     func buildMenu() {
         let main = NSMenu()
@@ -537,11 +587,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         recentItem.submenu = recent
         recentMenu = recent
         rebuildRecentMenu()
+        // commande faite par la page (commands.js)
+        func command(_ title: String, _ name: String, _ key: String = "", _ modifiers: NSEvent.ModifierFlags = .command) -> NSMenuItem {
+            let item = entry(title, #selector(pageCommand(_:)), key, modifiers, target: self)
+            item.representedObject = name
+            return item
+        }
         submenu("arXivReader", [
             entry(tr("À propos d'arXivReader", "About arXivReader"), #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
             .separator(),
             entry(tr("Réglages…", "Settings…"), #selector(openSettings), ",", target: self),
-            entry(tr("Afficher la bibliothèque dans le Finder", "Show the library in Finder"), #selector(showLibraryFolder), target: self),
             .separator(),
             entry(tr("Masquer arXivReader", "Hide arXivReader"), #selector(NSApplication.hide(_:)), "h"),
             entry(tr("Masquer les autres", "Hide Others"), #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
@@ -552,14 +607,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         submenu(tr("Fichier", "File"), [
             entry(tr("Nouvel onglet", "New Tab"), #selector(newTab), "t", target: self),
             entry(tr("Nouvelle fenêtre", "New Window"), #selector(newWindow), "n", target: self),
+            command(tr("Importer un article arXiv…", "Import an arXiv Paper…"), "import.arxiv", "o"),
+            command(tr("Importer un PDF ou un fichier TeX…", "Import a PDF or TeX File…"), "import.file", "o", [.command, .shift]),
             .separator(),
             entry(tr("Fermer l'onglet", "Close Tab"), #selector(NSWindow.performClose(_:)), "w"),
             entry(tr("Fermer la fenêtre", "Close Window"), #selector(closeWindow), "w", [.command, .shift], target: self),
             entry(tr("Rouvrir l'onglet fermé", "Reopen Closed Tab"), #selector(reopenClosedTab), "t", [.command, .shift], target: self),
             recentItem,
             .separator(),
-            entry(tr("Afficher tous les onglets", "Show All Tabs"), #selector(NSWindow.toggleTabOverview(_:)), "|"),
+            command(tr("Ajouter à la bibliothèque…", "Add to Library…"), "reader.library"),
+            command(tr("Copier le BibTeX", "Copy BibTeX"), "reader.bibtex"),
+            entry(tr("Ouvrir sur arXiv", "Open on arXiv"), #selector(openArxiv), target: self),
+            command(tr("Exporter la bibliothèque en .bib…", "Export the Library as .bib…"), "export.bib"),
             .separator(),
+            entry(tr("Afficher la bibliothèque dans le Finder", "Show the Library in Finder"), #selector(showLibraryFolder), target: self),
             entry(tr("Recopier une bibliothèque…", "Copy a Library…"), #selector(copyLibrary), "", target: self),
         ])
         submenu(tr("Édition", "Edit"), [
@@ -574,21 +635,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             entry(tr("Rechercher…", "Find…"), #selector(findOpen), "f", target: self),
             entry(tr("Rechercher le suivant", "Find Next"), #selector(findNext), "g", target: self),
             entry(tr("Rechercher le précédent", "Find Previous"), #selector(findPrevious), "g", [.command, .shift], target: self),
-        ])
-        submenu(tr("Présentation", "View"), [
-            entry(tr("Recharger", "Reload"), #selector(reloadPage), "r", target: self),
+            command(tr("Rechercher dans la bibliothèque…", "Search the Library…"), "edit.searchLibrary", "f", [.command, .option]),
             .separator(),
-            // taille du texte du lecteur (celle des Réglages) ; ⌘= est aussi pris en charge par TabWindow
+            command(tr("Ajouter un marque-page", "Add Bookmark"), "reader.bookmark", "d"),
+        ])
+        let tabNames = [tr("Énoncés", "Statements"), tr("Dépendances", "Dependencies"), tr("Graphe", "Graph"), tr("Notes", "Notes"), tr("IA", "AI")]
+        submenu(tr("Présentation", "View"), [
+            command(tr("Afficher le PDF", "Show PDF"), "view.mode", "p", [.command, .option]),
+            command(tr("Afficher le sommaire", "Show Contents"), "view.toc", "s", [.command, .control]),
+        ] + tabNames.enumerated().map { command(tr("Panneau : ", "Panel: ") + $1, "view.tab.\($0 + 1)", String($0 + 1), [.command, .option]) } + [
+            command(tr("Masquer le panneau", "Hide Panel"), "view.panel", "0", [.command, .option]),
+            command(tr("Replier toutes les preuves", "Fold All Proofs"), "view.fold"),
+            .separator(),
+            // taille du texte du lecteur (celle des Réglages), zoom dans le PDF ; ⌘= est aussi pris en charge par TabWindow
             entry(tr("Agrandir le texte", "Increase Text Size"), #selector(zoomIn), "+", target: self),
             entry(tr("Réduire le texte", "Decrease Text Size"), #selector(zoomOut), "-", target: self),
             entry(tr("Taille du texte par défaut", "Default Text Size"), #selector(zoomReset), "0", target: self),
+            command(tr("Texte plus large", "Wider Text"), "view.wider"),
+            command(tr("Texte moins large", "Narrower Text"), "view.narrower"),
             .separator(),
+            entry(tr("Afficher tous les onglets", "Show All Tabs"), #selector(NSWindow.toggleTabOverview(_:)), "|"),
+            entry(tr("Recharger", "Reload"), #selector(reloadPage), "r", target: self),
             entry(tr("Plein écran", "Enter Full Screen"), #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
         ])
+        // ⌥← / ⌥→, j, k, p : seulement indiqués (un raccourci de menu les prendrait aussi dans un champ de texte)
         submenu(tr("Aller", "Go"), [
-            entry(tr("Précédent", "Back"), #selector(goBack), "[", target: self),
-            entry(tr("Suivant", "Forward"), #selector(goForward), "]", target: self),
+            command(tr("Bibliothèque", "Library"), "go.library", "1", [.command, .control]),
+            command(tr("Feed", "Feed"), "go.feed", "2", [.command, .control]),
+            command(tr("Recherche", "Search"), "go.search", "3", [.command, .control]),
+            command(tr("Papiers liés", "Related Papers"), "go.related", "4", [.command, .control]),
+            .separator(),
+            entry(tr("Page précédente", "Back"), #selector(goBack), "[", target: self),
+            entry(tr("Page suivante", "Forward"), #selector(goForward), "]", target: self),
+            .separator(),
+            command(tr("Revenir à l'endroit quitté   ⌥←", "Back to Where You Were   ⌥←"), "go.back"),
+            command(tr("Avancer   ⌥→", "Forward Again   ⌥→"), "go.forward"),
+            .separator(),
+            command(tr("Énoncé suivant   j", "Next Statement   j"), "go.next"),
+            command(tr("Énoncé précédent   k", "Previous Statement   k"), "go.prev"),
+            command(tr("Preuve de l'énoncé lu   p", "Proof of This Statement   p"), "go.proof"),
         ])
+        // ⌘1 à ⌘9 : actifs, sans être affichés (comme Safari)
+        let numbered: [NSMenuItem] = (1...9).map {
+            let item = entry($0 == 9 ? tr("Dernier onglet", "Last Tab") : tr("Onglet \($0)", "Tab \($0)"), #selector(selectTabNumber(_:)), String($0), target: self)
+            item.isHidden = true
+            item.allowsKeyEquivalentWhenHidden = true
+            return item
+        }
         let windowMenu: [NSMenuItem] = [
             entry(tr("Placer dans le Dock", "Minimize"), #selector(NSWindow.performMiniaturize(_:)), "m"),
             entry(tr("Réduire/agrandir", "Zoom"), #selector(NSWindow.performZoom(_:))),
@@ -597,12 +690,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             entry(tr("Afficher l'onglet suivant", "Show Next Tab"), #selector(NSWindow.selectNextTab(_:)), "}"),
             entry(tr("Placer l'onglet dans une nouvelle fenêtre", "Move Tab to New Window"), #selector(NSWindow.moveTabToNewWindow(_:))),
             entry(tr("Fusionner toutes les fenêtres", "Merge All Windows"), #selector(NSWindow.mergeAllWindows(_:))),
-            .separator(),
-        ] + (1...9).map { entry($0 == 9 ? tr("Dernier onglet", "Last Tab") : tr("Onglet \($0)", "Tab \($0)"), #selector(selectTabNumber(_:)), String($0), target: self) }
-          + [.separator(), entry(tr("Tout ramener au premier plan", "Bring All to Front"), #selector(NSApplication.arrangeInFront(_:)))]
+        ] + numbered + [.separator(), entry(tr("Tout ramener au premier plan", "Bring All to Front"), #selector(NSApplication.arrangeInFront(_:)))]
         submenu(tr("Fenêtre", "Window"), windowMenu)
+        let windowsMenu = main.items.last?.submenu
+        submenu(tr("Aide", "Help"), [
+            command(tr("Raccourcis clavier", "Keyboard Shortcuts"), "help.keys"),
+        ] + (isBeta ? [entry(tr("Notes de la bêta", "Beta Notes"), #selector(showBetaNotes), target: self)] : []))
+        NSApp.helpMenu = main.items.last?.submenu
         NSApp.mainMenu = main
-        NSApp.windowsMenu = main.items.last?.submenu
+        NSApp.windowsMenu = windowsMenu
     }
 }
 
@@ -735,6 +831,7 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
     var lastDownload: URL?                        // dernier fichier enregistré (bouton « Afficher dans le Finder »)
     var pendingDialogs: [UUID: () -> Void] = [:]  // fenêtres de la page ouvertes → réponse « annulé » si l'onglet se ferme avant
     var crashes: [Date] = []
+    var menuState: [String: Any] = [:]            // état de la page pour les menus (commands.js) : lecteur, PDF…
 
     init(app: AppDelegate) {
         self.app = app
@@ -797,6 +894,17 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
     }
 
     func received(_ message: WKScriptMessage) {
+        if let body = message.body as? [String: Any], body["action"] as? String == "menuState" {
+            menuState = body  // lu à l'ouverture des menus (validateMenuItem)
+            return
+        }
+        if let body = message.body as? [String: Any], body["action"] as? String == "copyText", let text = body["text"] as? String,
+           text.utf8.count <= 2_000_000 {
+            // commande du menu (BibTeX) : WebKit refuse l'écriture du presse-papiers sans clic dans la page
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            return
+        }
         if (message.body as? [String: Any])?["action"] as? String == "chooseFolder" { chooseFolder(); return }
         if (message.body as? [String: Any])?["action"] as? String == "droppedFiles" {
             // chemins du dernier glisser-déposer, rendus une seule fois (évènement arxivreader:dropped)
@@ -883,11 +991,22 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
     }
 
     func windowShot(_ path: String) {
+        // relevé détaillé : chaque article après validation (grisé « off », masqué « hidden »), avec son raccourci
+        let items = (NSApp.mainMenu?.items.compactMap(\.submenu) ?? []).flatMap { menu -> [String] in
+            menu.update()
+            return menu.items.filter { !$0.isSeparatorItem }.map { item in
+                let mods = item.keyEquivalentModifierMask
+                let key = item.keyEquivalent.isEmpty ? "" : " [" + (mods.contains(.control) ? "⌃" : "") + (mods.contains(.option) ? "⌥" : "")
+                    + (mods.contains(.shift) ? "⇧" : "") + (mods.contains(.command) ? "⌘" : "") + item.keyEquivalent + "]"
+                return "\(menu.title) > \(item.title)\(key)\(item.isEnabled ? "" : " off")\(item.isHidden ? " hidden" : "")"
+            }
+        }.joined(separator: "\n")
         let lines = [
             "tabs=\(window.tabGroup?.windows.count ?? 0)",
             "tabBarVisible=\(window.tabGroup?.isTabBarVisible ?? false)",
             "titles=\(window.tabGroup?.windows.map(\.title) ?? [])",
             "menus=\(NSApp.mainMenu?.items.map { "\($0.title): " + ($0.submenu?.items.map { $0.isSeparatorItem ? "—" : $0.title } ?? []).joined(separator: " | ") } ?? [])",
+            "items=\(items)",
         ]
         try? lines.joined(separator: "\n").write(toFile: path + ".txt", atomically: true, encoding: .utf8)
         guard let frame = window.contentView?.superview, let rep = frame.bitmapImageRepForCachingDisplay(in: frame.bounds) else { return }
@@ -969,6 +1088,17 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
         tested = true
         if let script = env["ARXIVREADER_EVAL"] {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { webView.evaluateJavaScript(script) }
+        }
+        // ARXIVREADER_MENU=« view.tab.3,go.feed » : commandes de menu choisies une à une (une par seconde, dès 3 s)
+        for (index, name) in (env["ARXIVREADER_MENU"] ?? "").split(separator: ",").map(String.init).enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3 + Double(index)) {
+                for menu in NSApp.mainMenu?.items.compactMap(\.submenu) ?? [] {
+                    menu.update()
+                    if let at = menu.items.firstIndex(where: { $0.representedObject as? String == name }), menu.items[at].isEnabled {
+                        menu.performActionForItem(at: at)
+                    }
+                }
+            }
         }
         let delay = Double(env["ARXIVREADER_SNAPSHOT_DELAY"] ?? "") ?? 4
         if let path = env["ARXIVREADER_WINDOWSHOT"] {

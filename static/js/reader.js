@@ -6,6 +6,7 @@ import { Annotator, findAll, noteEditor } from "./annotations.js";
 import { Assistant } from "./ai.js";
 import { addButton, allButton, askDestination, destinationFolder } from "./biblibrary.js";
 import { copyBibtex } from "./bibtex.js";
+import { copyPaperBibtex, releaseMenuReader, reportMenu, setMenuReader, showKeys as showKeyList } from "./commands.js";
 import { alignNumberColumns, amsBibliography, dropMacroDebris, fixMathML, texQuotes, splitLongInlineMath, markItalicStatements, moveTitleNotes, normalizeFontScale, placeEquationNumbers, relabelLists } from "./amsfix.js";
 import { currentModel } from "./aiproviders.js";
 import { emptyPictures, layoutFigures, openFigure, prepareFigures, sizeToText } from "./figures.js";
@@ -52,6 +53,8 @@ export async function renderReader(view, paperId, at, isCurrent = () => true) {
   if (!isCurrent()) return () => {}; // page déjà quittée pendant le chargement : rien n'est affiché
   document.title = plainTitle(paper.title) + (paper.archived_of ? ` (v${paper.version})` : ""); // titre de l'onglet
   const reader = new Reader(view, paper, structure || { toc: [], nodes: [], bibliography: [], hiddenText: 0 }, html, at);
+  setMenuReader(reader);  // menus de l'application Mac (commands.js)
+  reader.reportMenuState();
   return () => reader.destroy();
 }
 
@@ -309,6 +312,7 @@ class Reader {
       const from = this.wordAt(this.htmlText, anchor, save);
       this.pdfMode = true;
       this.root.dataset.view = "pdf";
+      this.reportMenuState();
       this.proofBar.hidden = true;
       this.notesFollowView();
       if (!this.pdf) this.createPdf();
@@ -329,6 +333,7 @@ class Reader {
       const estimate = this.htmlSpot(location);
       this.pdfMode = false;
       delete this.root.dataset.view;
+      this.reportMenuState();
       this.notesFollowView();
       this.anchors = null;
       // le HTML a pu être mis en page caché (article ouvert dans le PDF, fenêtre redimensionnée) :
@@ -801,7 +806,7 @@ class Reader {
   libraryToggle() {
     const paper = this.paper;
     const label = () => t(paper.in_library ? "feed.removeFromLibrary" : "feed.addToLibrary");
-    const button = toggleIcon(icons.bookmarkOff, icons.bookmarkOn, { pressed: Boolean(paper.in_library), label: label(), className: "bookmark" });
+    const button = this.libraryButton = toggleIcon(icons.bookmarkOff, icons.bookmarkOn, { pressed: Boolean(paper.in_library), label: label(), className: "bookmark" });
     let busy = false;
     button.addEventListener("click", async () => {
       if (busy) return;
@@ -818,6 +823,7 @@ class Reader {
         button.title = label();
         button.setAttribute("aria-label", label());
         toast(folder && paper.in_library ? t("feed.addedTo", { name: folder.name }) : t(paper.in_library ? "feed.added" : "feed.removed"));
+        this.reportMenuState();
       } catch (error) {
         toastError(error);
       } finally {
@@ -1207,6 +1213,7 @@ class Reader {
     this.foldButton.title = label;
     this.foldButton.setAttribute("aria-label", label);
     this.foldButton.hidden = proofs.length === 0;
+    this.reportMenuState();
   }
 
   // Zoom du texte par rapport à la taille par défaut ; un clic y revient
@@ -1253,6 +1260,7 @@ class Reader {
     const change = () => {
       this.root.dataset[which] = open ? "open" : "closed";
       (which === "toc" ? this.tocButton : this.panelButton).setAttribute("aria-pressed", String(open));
+      this.reportMenuState();
     };
     if (column) this.keepReadingPosition(change); else { change(); this.anchors = null; }
     if (column) saveSettings({ [which === "toc" ? "tocOpen" : "panelOpen"]: open });
@@ -2481,21 +2489,53 @@ class Reader {
   }
 
   showKeys() {
-    const opener = document.activeElement;
-    const close = h("button", { class: "button", type: "button" }, t("graph.close"));
-    const row = (keys, text) => h("tr", {}, h("th", { scope: "row" }, h("kbd", {}, keys)), h("td", {}, t(text)));
-    const dialog = h("dialog", { class: "keys-dialog", "aria-label": t("reader.keys") },
-      h("h3", {}, t("reader.keys")),
-      h("table", {}, h("tbody", {},
-        row("⌥←", "reader.keyBack"), row("⌥→", "reader.keyForward"),
-        row("j  ·  ]", "reader.keyNext"), row("k  ·  [", "reader.keyPrev"), row("p", "reader.keyProof"), row("?", "reader.keyHelp"))),
-      close);
-    close.addEventListener("click", () => dialog.close());
-    dialog.addEventListener("close", () => { dialog.remove(); opener?.focus?.({ preventScroll: true }); });
-    this.keysDialog = dialog;  // retiré par destroy() (changement de vue pendant que la liste est ouverte)
-    document.body.append(dialog);
-    dialog.showModal();
-    close.focus();
+    this.keysDialog = showKeyList();  // retirée par destroy() (changement de vue pendant que la liste est ouverte)
+  }
+
+  // ---------- Menus de l'application Mac (commands.js) ----------
+
+  // État envoyé au menu : ce qui s'applique ici et les libellés qui en dépendent
+  reportMenuState() {
+    if (this.destroyed || !this.content) return;
+    const proofs = this.pdfMode ? [] : [...this.content.querySelectorAll(".ltx_proof")];
+    const paper = this.paper;
+    reportMenu({
+      reader: true, pdf: Boolean(this.pdfMode), canSwitch: Boolean(this.viewSwitch),
+      inLibrary: Boolean(paper.in_library), canAdd: !paper.archived_of && !paper.in_library,
+      arxiv: paper.arxiv_id ? `https://arxiv.org/abs/${paper.arxiv_id}${paper.version ? `v${paper.version}` : ""}` : null,
+      toc: this.root.dataset.toc === "open", panel: this.root.dataset.panel === "open",
+      proofs: proofs.length ? (proofs.some((p) => !p.classList.contains("collapsed")) ? "open" : "closed") : null,
+    });
+  }
+
+  // Onglet du panneau, panneau ouvert s'il le faut
+  showPanelTab(key) {
+    if (this.root.dataset.panel !== "open") this.toggle("panel");
+    this.tab = key;
+    this.renderPanel();
+  }
+
+  menuCommand(name) {
+    if (this.destroyed || document.querySelector("dialog[open]")) return;
+    const tabs = { "view.tab.1": "statements", "view.tab.2": "dependencies", "view.tab.3": "graph", "view.tab.4": "notes", "view.tab.5": "ai" };
+    if (tabs[name]) { this.showPanelTab(tabs[name]); return; }
+    switch (name) {
+      case "reader.library": if (!this.paper.in_library && !this.paper.archived_of) this.libraryButton?.click(); break;
+      case "reader.bibtex": copyPaperBibtex(this.paper.id); break;
+      case "reader.bookmark": this.addBookmark(); break;
+      case "view.mode": this.viewSwitch?.querySelector('button[aria-pressed="false"]')?.click(); break;
+      case "view.toc": this.toggle("toc"); break;
+      case "view.panel": this.toggle("panel"); break;
+      case "view.fold": if (!this.pdfMode) this.foldAll(); break;
+      case "view.wider": if (!this.pdfMode) this.changeWidth(1); break;
+      case "view.narrower": if (!this.pdfMode) this.changeWidth(-1); break;
+      case "go.back": if (this.trail.canBack) this.stepTrail(-1); break;
+      case "go.forward": if (this.trail.canForward) this.stepTrail(1); break;
+      case "go.next": this.keyStatement(1); break;
+      case "go.prev": this.keyStatement(-1); break;
+      case "go.proof": this.keyProof(); break;
+      default: break;
+    }
   }
 
   // surlignages et zones du PDF ; une zone peut partir vers l'assistant s'il lit les images (Claude, Gemini)
@@ -2861,6 +2901,7 @@ class Reader {
 
   destroy() {
     this.destroyed = true;
+    releaseMenuReader(this);  // menus : plus de lecteur (la page suivante enverra son état)
     this.positionSaver?.flush();
     document.body.classList.remove("reading");
     this.annotator?.destroy();

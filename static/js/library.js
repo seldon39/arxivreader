@@ -137,7 +137,7 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
   // dans la fenêtre de l'application (le chemin d'un fichier TeX est gardé pour le recompiler) ; dans un navigateur,
   // sélecteur de la page, et chemin du fichier TeX tapé
   const pdfInput = h("input", { type: "file", accept: "application/pdf,.pdf,.tex,.ltx", multiple: true, hidden: true });
-  const pdfButton = h("button", { class: "button", type: "button", title: t("library.importPdfHint"), onclick: async () => {
+  const pdfButton = h("button", { class: "button import-file", type: "button", title: t("library.importPdfHint"), onclick: async () => {
     const paths = await chooseFiles("import");
     if (paths === null) pdfInput.click();
     else if (paths.length) importChosen(paths.map((path) => ({ path, name: path.split(/[\\/]/).pop() })));

@@ -55,6 +55,13 @@ documents du dépôt (README, MAINTENANCE…) seront mis à jour seulement si la
 - Confirmation avant de quitter si une réponse de l'assistant est en cours ; onglets de la dernière session rouverts
   au lancement (seul l'onglet affiché se charge) ; « Rouvrir l'onglet fermé » ⌘⇧T ; ⌘+ ⌘− ⌘0 (taille du texte, ou zoom
   du PDF) ; ⌘1…⌘9 ; téléchargements sans passage au Finder ; message et bouton après un plantage répété de la page.
+- Menus refaits d'après les fonctions de l'app : **Fichier** (importer arXiv ⌘O / PDF-TeX ⇧⌘O, ajouter l'article lu à
+  la bibliothèque, copier son BibTeX, l'ouvrir sur arXiv, exporter toute la bibliothèque en .bib) ; **Édition**
+  (rechercher dans l'article ⌘F, dans la bibliothèque ⌥⌘F, marque-page ⌘D) ; **Présentation** (HTML/PDF ⌥⌘P,
+  sommaire ⌃⌘S, onglets du panneau ⌥⌘1…⌥⌘5, panneau ⌥⌘0, replier les preuves, zoom, largeur du texte) ; **Aller**
+  (Bibliothèque, Feed, Recherche, Papiers liés ⌃⌘1…⌃⌘4, page précédente/suivante, énoncés j / k / p rappelés) ;
+  **Aide** (raccourcis clavier, notes de la bêta). Ce qui ne s'applique pas est grisé, les libellés suivent l'état
+  (« Afficher le HTML », « Masquer le sommaire », « Zoom avant » dans le PDF…).
 
 ### Défauts corrigés (extraits)
 Identifiants arXiv anciens (`math.DG/0211159`) normalisés ; alertes de citation au-delà de 100 citations ; index des
@@ -63,10 +70,12 @@ renvois entre articles mis en cache (plus de relecture de toute la bibliothèque
 d'un réglage signalé.
 
 ## Vérifié
-- 582 tests automatiques ; migration d'une copie de la vraie base 1.12 sans perte (54 notes identiques).
+- 583 tests automatiques ; migration d'une copie de la vraie base 1.12 sans perte (54 notes identiques).
 - Dans WebKit (copie de l'application, bibliothèque d'essai) : touches j / k / ?, retour ⌥←, bandeau de preuve,
   position restaurée, BibTeX, recherche à deux mots, copie quotidienne, rendu d'une relecture et d'un script simulés
   (rubrique des résultats cités, bandeaux « coupée » et « lu à 62 % »), bouton « Vérifier les points graves » et relecture vérifiée simulée, session de quatre onglets rouverte dans l'ordre.
+- Menus (FR et EN) : relevé de chaque article (raccourci, grisé) dans le lecteur et la bibliothèque ; commandes
+  passées par le menu (onglet Graphe, sommaire, PDF, recherche dans la bibliothèque, Feed, import, raccourcis).
 - Relecture contradictoire de tout le diff : 35 remarques, corrigées (deux graves sur les données, refaites à la main).
 
 ## À vérifier à la main (non testé avec un vrai clic ou une vraie IA)
@@ -74,6 +83,7 @@ d'un réglage signalé.
 - Une vraie relecture : la rubrique des résultats cités, les extraits de ligne, la ligne de coût ; puis « Vérifier les points graves ».
 - « Vérifier par le calcul » sur un énoncé, puis le script dans Sage.
 - ⌘Q pendant une réponse en cours ; ⌘⇧T ; ⌘+ / ⌘− dans le PDF ; téléchargement d'un export.
+- Menus : « Copier le BibTeX » (presse-papiers), « Exporter la bibliothèque en .bib… », raccourcis au clavier réel.
 - « + Bibliothèque » et l'ajout groupé de références (requêtes réelles à arXiv).
 
 ## Limites connues

@@ -487,6 +487,7 @@ a.button.primary { text-decoration: none; }
 .keys-dialog th { text-align: left; padding: 3px 14px 3px 0; white-space: nowrap; font-weight: normal; }
 .keys-dialog kbd { font: 13px var(--font-ui); padding: 1px 6px; border: 1px solid var(--border); border-radius: 4px; }
 .keys-dialog .button { margin-top: 12px; }
+.keys-dialog th.keys-group { padding: 12px 0 4px; font-weight: 600; color: var(--muted); }
 
 /* ---------- Aperçus au survol ---------- */
 .preview {

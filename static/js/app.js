@@ -14,6 +14,7 @@ import { droppedPapers, h, icons, mayBePaper, nativeBridge, navigation, openRout
 import { addToLibrary, selectionDropped } from "./selection.js";
 import { watchZotero } from "./zotero.js";
 import { maybeOnboard } from "./onboarding.js";
+import "./commands.js";  // menus de l'application Mac
 
 const view = document.getElementById("view");
 let cleanup = null;

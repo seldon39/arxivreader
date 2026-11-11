@@ -1646,6 +1646,19 @@ def selection_bibtex(request: Request, ids: str = ""):
     return {"bibtex": text, "count": len(papers), "missing": missing}
 
 
+@app.get("/api/library/bibtex")
+@app.get("/api/library.bib")
+def library_bibtex(request: Request):
+    """BibTeX de toute la bibliothèque (menu Fichier de l'application Mac) : JSON pour le nombre, fichier à l'adresse .bib."""
+    papers = db.list_papers()
+    if not papers:
+        raise HTTPException(404, "Empty library")
+    text = _bibtex_of(papers)
+    if request.url.path.endswith(".bib"):
+        return _bibtex_file(text, "arXivReader library")
+    return {"bibtex": text, "count": len(papers), "missing": 0}
+
+
 @app.get("/api/folders/{folder_id}/bibtex")
 @app.get("/api/folders/{folder_id}.bib")
 def folder_bibtex(folder_id: int, request: Request):
