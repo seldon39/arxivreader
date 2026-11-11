@@ -138,4 +138,4 @@ export ARXIVREADER_TOKEN ARXIVREADER_KEYCHAIN=1
 ) &
 
 echo "arXivReader : $URL  (Ctrl+C pour arrêter)"
-exec .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT" --log-level warning
+exec .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT" --log-level warning --timeout-graceful-shutdown 3

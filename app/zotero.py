@@ -442,7 +442,7 @@ def _sync(client, importer, careful):
     for key, arxiv_id in remote_arxiv.items():
         if key in by_item or not arxiv_id:
             continue
-        pid = paper_key(arxiv_id)
+        pid = library.stored_key(arxiv_id)
         if pid in items:
             report["duplicates"] += 1  # autre élément du même article dans Zotero : laissé
             continue

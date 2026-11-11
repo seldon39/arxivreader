@@ -262,7 +262,7 @@ def _ensure_paper(paper, report):
     authors = paper.get("authors") if isinstance(paper.get("authors"), list) else []
     known = {"title": str(paper.get("title") or "")[:1000], "authors": [str(a)[:200] for a in authors[:500]]}
     try:
-        present = db.get_paper(paper_key(parse_arxiv_id(str(paper["arxiv_id"]))[0]))  # version archivée : l'article est peut-être là
+        present = db.get_paper(library.stored_key(parse_arxiv_id(str(paper["arxiv_id"]))[0]))  # version archivée : l'article est peut-être là
         added = library.quick_add(str(paper["arxiv_id"]), known, wanted)
     except (ArxivError, ValueError):  # identifiant arXiv invalide
         report["missing"].append(known["title"] or paper_id)

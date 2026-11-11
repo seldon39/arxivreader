@@ -81,6 +81,10 @@ export const api = {
   setInFolder: (id, paper, member) => request(member ? "PUT" : "DELETE", `/api/folders/${id}/papers/${encodeURIComponent(paper)}`, member ? {} : undefined),
   // `known` : ce que la page sait de l'article (titre, auteurs…) : inscrit tout de suite, importé en arrière-plan
   importPaper: (query, library = true, known = {}) => request("POST", "/api/papers", { query, library, ...known }),
+  // BibTeX construit par le serveur, hors ligne ; ids : identifiants arXiv ou d'articles de la bibliothèque
+  paperBibtex: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/bibtex`),
+  selectionBibtex: (ids) => request("GET", `/api/bibtex?ids=${ids.map(encodeURIComponent).join(",")}`),
+  folderBibtex: (id) => request("GET", `/api/folders/${encodeURIComponent(id)}/bibtex`),
   referenceZbmath: (entry) => request("POST", "/api/references/zbmath", { text: entry.text || "", title: entry.title || "" }),
   referenceArxiv: (entry) => request("POST", "/api/references/arxiv", { text: entry.text || "", title: entry.title || "", doi: entry.doi || "" }),
   // ajout immédiat à la bibliothèque (import en arrière-plan), d'après ce que la page sait déjà de l'article

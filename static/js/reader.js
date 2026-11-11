@@ -4,6 +4,8 @@ import { api, setReadingVersion } from "./api.js";
 import { closure, renderGraph } from "./graph.js";
 import { Annotator, findAll, noteEditor } from "./annotations.js";
 import { Assistant } from "./ai.js";
+import { addButton, allButton } from "./biblibrary.js";
+import { copyBibtex } from "./bibtex.js";
 import { alignNumberColumns, amsBibliography, dropMacroDebris, fixMathML, texQuotes, splitLongInlineMath, markItalicStatements, moveTitleNotes, normalizeFontScale, placeEquationNumbers, relabelLists } from "./amsfix.js";
 import { currentModel } from "./aiproviders.js";
 import { emptyPictures, layoutFigures, openFigure, prepareFigures, sizeToText } from "./figures.js";
@@ -433,10 +435,15 @@ class Reader {
       // en tête de la ligne de liens de l'entrée (DOI, MathSciNet, zbMATH : addFindLinks), sur la même ligne
       const badge = h("a", { class: "cross-badge cross-open", href: `#/paper/${encodeURIComponent(entry.paper)}`,
         title: `${entry.title}\n${t("reader.crossOpenTab")}` }, t("reader.crossOpen"));
+      // BibTeX seulement d'un article connu d'arXivReader (métadonnées enregistrées) ; jamais d'une référence en texte libre.
+      // Classe cross-badge aussi : la ligne reste « sans liens de recherche » pour addFindLinks, qui s'y ajoute
+      const bibtex = h("button", { class: "cross-badge cross-bibtex", type: "button", title: t("bibtex.copyTitle"),
+        onclick: () => copyBibtex(() => api.paperBibtex(entry.paper)) }, "BibTeX");
       const row = item.querySelector(".bib-links");
       row?.querySelector(".bib-arxiv")?.remove();  // déjà lu ici : rien à chercher sur arXiv
-      if (row) row.prepend(badge);
-      else item.append(h("div", { class: "bib-links" }, badge));
+      row?.querySelector(".bib-add")?.remove();  // déjà dans la bibliothèque : rien à ajouter
+      if (row) row.prepend(badge, bibtex);
+      else item.append(h("div", { class: "bib-links" }, badge, bibtex));
     }
   }
 
@@ -1508,7 +1515,9 @@ class Reader {
     const citation = paper.title && [(paper.authors || []).join(", "), paper.title, journal, paper.doi && `doi:${paper.doi}`]
       .filter(Boolean).join(", ").replace(/\s+/g, " ").trim();
     return [citation && chip("MathSciNet", `https://mathscinet.ams.org/mref?ref=${encodeURIComponent([...citation].slice(0, 500).join(""))}&dataType=mathscinet`),
-      zbQuery && chip("zbMATH", `https://zbmath.org/?q=${encodeURIComponent(zbQuery)}`)]
+      zbQuery && chip("zbMATH", `https://zbmath.org/?q=${encodeURIComponent(zbQuery)}`),
+      // BibTeX construit par le serveur d'après les métadonnées enregistrées (hors ligne)
+      h("button", { class: "chip chip-button", type: "button", title: t("bibtex.copyTitle"), onclick: () => copyBibtex(() => api.paperBibtex(paper.id)) }, "BibTeX")]
       .filter(Boolean);
   }
 
@@ -1519,10 +1528,16 @@ class Reader {
       const entry = this.bib.get(item.id);
       if (!entry || item.querySelector(".bib-links > :not(.cross-badge)")) continue;
       const links = this.findLinks(entry, { doi: !item.querySelector('a[href*="doi.org/"]') });
+      // « + Bibliothèque » (un seul identifiant arXiv) ; loadCrossLinks le retire si l'article est déjà connu
+      if (entry.arxiv?.length === 1 && !item.querySelector(".cross-open")) links.unshift(addButton(entry.arxiv[0]));
       const row = item.querySelector(".bib-links");  // déjà là avec « Ouvrir l'article » (loadCrossLinks) : à sa suite
       if (row) row.append(...links);
       else if (links.length) item.append(h("div", { class: "bib-links" }, links));
     }
+    // En fin de titre de la bibliographie : tout ajouter à un dossier
+    const ids = [...new Set([...this.bib.values()].flatMap((entry) => entry.arxiv || []))];
+    const heading = this.content.querySelector(".ltx_bibliography > .ltx_title");
+    if (ids.length > 1 && heading && !heading.querySelector(".bib-all")) heading.append(allButton(ids, () => !this.destroyed));
   }
 
   // Référence : l'importer depuis arXiv, ou la retrouver

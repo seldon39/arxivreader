@@ -2,6 +2,7 @@
 // dossier (aussi d'une fenêtre à l'autre), ou on les range avec « Ranger dans… » de la barre de sélection.
 
 import { api } from "./api.js";
+import { copyBibtex, saveBibtex, selectionFile, selectionIds } from "./bibtex.js";
 import { t, tn } from "./i18n.js";
 import { h, icons, toast, toastError } from "./util.js";
 
@@ -164,10 +165,16 @@ function drawBar() {
   const file = h("button", { class: "button small-button", type: "button", "aria-haspopup": "menu", disabled: filing },
     h("span", { class: "button-icon", html: icons.folder }), t("select.file"));
   file.addEventListener("click", () => openFolders(file));
+  // BibTeX de la sélection : ceux qui sont dans la bibliothèque (le serveur dit combien ne le sont pas)
+  const ids = selectionIds([...selected.values()]);
+  const loadBibtex = () => api.selectionBibtex(ids);
   bar.replaceChildren(
     h("span", { class: "selection-count" }, tn("select.count", selected.size)),
     h("span", { class: "muted small selection-hint" }, tn("select.hint", selected.size)),
     h("span", { class: "spacer" }),
+    h("button", { class: "button small-button", type: "button", disabled: filing, title: t("bibtex.copySelectionTitle"), onclick: () => copyBibtex(loadBibtex) }, t("bibtex.copy")),
+    h("button", { class: "button small-button", type: "button", disabled: filing, title: t("bibtex.exportSelectionTitle"),
+      onclick: () => saveBibtex(loadBibtex, selectionFile(ids)) }, t("bibtex.export")),
     file,
     h("button", { class: "button small-button", type: "button", disabled: filing, onclick: clearSelection }, t("select.clear")));
 }

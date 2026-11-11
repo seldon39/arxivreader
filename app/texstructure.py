@@ -39,11 +39,11 @@ def _group(text, pos, opening):
         return None
     closing = "}" if opening == "{" else "]"
     depth = 0
-    for index in range(pos, min(len(text), pos + 20000)):
+    index, stop = pos, min(len(text), pos + 20000)
+    while index < stop:
         char = text[index]
         if char == "\\":
-            continue
-        if index and text[index - 1] == "\\":
+            index += 2  # paire « \x » sautée d'un bloc : « \{ » est protégée, mais dans « \\} » seule la barre doublée l'est
             continue
         if char == opening:
             depth += 1
@@ -51,6 +51,7 @@ def _group(text, pos, opening):
             depth -= 1
             if depth == 0:
                 return text[pos + 1:index], index + 1
+        index += 1
     return None
 
 

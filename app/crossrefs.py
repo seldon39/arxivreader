@@ -5,11 +5,13 @@ même DOI, ou titre retrouvé dans la référence), l'énoncé « Theorem 4.3 »
 au survol et s'ouvrir d'un clic.
 """
 
+import json
 import re
 import unicodedata
 
 from . import db, library
 
+SEQUEL = {"ii", "iii", "iv", "v", "vi", "vii", "viii", "part"}  # mot qui suit un titre : c'est une suite
 MIN_TITLE_WORDS = 4  # titre trop court (« Bergman kernels ») : pas de rapprochement par le titre
 
 
@@ -24,19 +26,39 @@ def _arxiv(identifier):
     return re.sub(r"v\d+$", "", (identifier or "").strip().lower())
 
 
+_nodes_cache = {}  # id d'article → ((date, taille) de structure.json, énoncés) : relu seulement si le fichier change
+
+
+def nodes_of(paper_id):
+    """Énoncés d'un autre article, lus tels qu'enregistrés : jamais d'analyse refaite d'ici (ce serait réécrire, à
+    l'ouverture d'un article, la structure de tous les autres) ; une structure d'une analyse plus ancienne suffit
+    pour ce renvoi, elle est remise à jour quand cet article est ouvert."""
+    path = library.paper_dir(paper_id) / "structure.json"
+    try:
+        info = path.stat()
+        stamp = (info.st_mtime_ns, info.st_size)
+        if _nodes_cache.get(paper_id, (None,))[0] != stamp:
+            structure = json.loads(path.read_text(encoding="utf-8"))
+            nodes = [{"id": n["id"], "label": n["label"], "kind": n["kind"]} for n in structure.get("nodes", [])]
+            _nodes_cache[paper_id] = (stamp, nodes)
+        return _nodes_cache[paper_id][1]
+    except (OSError, ValueError, KeyError, TypeError):
+        _nodes_cache.pop(paper_id, None)
+        return None
+
+
 def library_index(exclude=None):
     """Articles lus ici (bibliothèque ou simplement ouverts) dont la structure est connue."""
     index = []
     for paper in db.list_all_papers():
         if paper["id"] == exclude:
             continue
-        structure = library.load_structure(paper["id"])
-        if not structure:
+        nodes = nodes_of(paper["id"])
+        if nodes is None:
             continue
         index.append({
             "id": paper["id"], "title": paper["title"], "arxiv": _arxiv(paper["arxiv_id"]),
-            "doi": (paper.get("doi") or "").lower(), "words": " ".join(_words(paper["title"])),
-            "nodes": [{"id": n["id"], "label": n["label"], "kind": n["kind"]} for n in structure.get("nodes", [])],
+            "doi": (paper.get("doi") or "").lower(), "words": " ".join(_words(paper["title"])), "nodes": nodes,
         })
     return index
 
@@ -50,10 +72,20 @@ def match(entry, index):
             return paper
         if doi and paper["doi"] and doi == paper["doi"]:
             return paper
+    best = None
     for paper in index:
-        if len(paper["words"].split()) >= MIN_TITLE_WORDS and f" {paper['words']} " in text:
-            return paper
-    return None
+        words = paper["words"]
+        if len(words.split()) < MIN_TITLE_WORDS:
+            continue
+        at = text.find(f" {words} ")
+        if at < 0:
+            continue
+        after = text[at + len(words) + 2:].split(" ", 1)[0]
+        if after in SEQUEL:  # « …manifolds, II » : la suite d'un article, pas lui
+            continue
+        if best is None or len(words) > len(best["words"]):  # le titre le plus long (« …, I » avant son abrégé)
+            best = paper
+    return best
 
 
 def links(paper_id):

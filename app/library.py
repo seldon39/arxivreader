@@ -63,21 +63,36 @@ def write_atomic(path, text):
     write_atomic_bytes(path, text.encode("utf-8"))
 
 
-def import_paper(query, add_to_library=True):
+def stored_key(arxiv_id):
+    """Clé de l'article : celle de l'identifiant normalisé, ou celle d'une fiche gardée sous l'ancienne forme à classe
+    (math.DG/0211159), enregistrée avant que la classe soit retirée à l'entrée."""
+    key = paper_key(arxiv_id)
+    if "/" in arxiv_id and not db.get_paper(key):
+        subject, number = arxiv_id.split("/", 1)
+        with db.connect() as connection:
+            row = connection.execute("SELECT id FROM papers WHERE arxiv_id GLOB ? AND archived_of IS NULL",
+                                     (f"{subject}.[A-Z][A-Z]/{number}",)).fetchone()
+        if row:
+            return row["id"]
+    return key
+
+
+def import_paper(query, add_to_library=True, must_exist=False):
     arxiv_id, _ = parse_arxiv_id(query)
     # source TeX (souvent plusieurs Mo, l'étape la plus longue) demandée tout de suite, sans attendre la fiche
     # d'arXiv ni la page et ses figures, qui se font pendant ce temps : le résultat est le même, en moins de temps
     with ThreadPoolExecutor(1) as background:
         pending_source = background.submit(_source, arxiv_id, None)
         meta = fetch_metadata(arxiv_id)
-        paper_id = paper_key(arxiv_id)
+        paper_id = stored_key(arxiv_id)
         _latest[arxiv_id] = (time.monotonic(), meta.version)
         with paper_lock(paper_id):
-            return _import(paper_id, arxiv_id, meta, add_to_library, pending_source)
+            return _import(paper_id, arxiv_id, meta, add_to_library, pending_source, must_exist=must_exist)
 
 
-def _import(paper_id, arxiv_id, meta, add_to_library, pending_source, ar5iv=True, same_source=None):
-    """`same_source` (réparation) : rien n'est remplacé si le texte obtenu ne vient pas de là."""
+def _import(paper_id, arxiv_id, meta, add_to_library, pending_source, ar5iv=True, same_source=None, must_exist=False):
+    """`same_source` (réparation) : rien n'est remplacé si le texte obtenu ne vient pas de là. `must_exist` (import de
+    fond d'une fiche déjà inscrite) : article retiré pendant le téléchargement, rien n'est recréé."""
     from . import bookjob
     installed = db.get_paper(paper_id)
     # les emplacements de preuve indiqués à la main ne valent que pour le même texte
@@ -97,6 +112,9 @@ def _import(paper_id, arxiv_id, meta, add_to_library, pending_source, ar5iv=True
     # relue après le téléchargement : place dans la bibliothèque, et version d'une fiche en attente, écrite entre-temps
     # par un import de notes (notesync._version_of_notes)
     previous = db.get_paper(paper_id)
+    if must_exist and previous is None:
+        shutil.rmtree(staging, ignore_errors=True)
+        return None
     # autre version que celle installée : l'ancienne est archivée avec ses notes
     new_version = previous and previous["version"] not in (None, meta.version)
     row = {
@@ -256,7 +274,7 @@ def quick_add(arxiv_id, known=None, in_library=True):
     """Article ajouté sans attendre son import (à la bibliothèque, ou seulement pour être lu : `in_library` faux) ;
     renvoie sa fiche. Déjà connu : rien n'est retéléchargé."""
     arxiv_id, _ = parse_arxiv_id(arxiv_id)
-    paper_id = paper_key(arxiv_id)
+    paper_id = stored_key(arxiv_id)
     if db.get_paper(paper_id):
         return set_in_library(paper_id, True) if in_library else db.get_paper(paper_id)
     known = known or {}
@@ -289,7 +307,7 @@ def _start_import(arxiv_id, paper_id, task=None):
                 if task:
                     task()
                 else:
-                    import_paper(arxiv_id, add_to_library=False)  # garde la place dans la bibliothèque telle qu'elle est alors
+                    import_paper(arxiv_id, add_to_library=False, must_exist=True)  # garde la place dans la bibliothèque telle qu'elle est alors
         except Exception as error:
             log.warning("import de %s en arrière-plan impossible : %s", arxiv_id, error)
         finally:
@@ -566,7 +584,7 @@ def versions_of(paper):
         local[main["version"]] = main
     latest = latest_version(main["arxiv_id"])
     if latest:
-        latest = max(latest, *local)
+        latest = max([latest, *local])  # `local` peut être vide (import raté, hors ligne)
     notes, answers = annotations.counts(), ai.counts()
 
     def entry(number):

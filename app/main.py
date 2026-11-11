@@ -5,6 +5,7 @@ import base64
 import contextlib
 import hmac
 import json
+import logging
 import mimetypes
 import os
 import re
@@ -26,9 +27,9 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Red
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import (ai, alerts, annotations, bookjob, notesync, safety, citations, crossrefs, db, export, feed, folders, fulltext, journals, latexml, library, localpdf, onboarding, profile, providers, related, texfile,
+from . import (ai, alerts, annotations, bibtex, bookjob, notesync, safety, citations, crossrefs, db, export, feed, feedprune, folders, fulltext, journals, latexml, library, localpdf, onboarding, profile, providers, related, texfile,
                relevance, search, updates, zotero)
-from .arxiv import ArxivError, fetch_metadata, parse_arxiv_id
+from .arxiv import ArxivError, fetch_metadata, paper_key, parse_arxiv_id
 from .config import HOST, PORT, STATIC, TOKEN, TOKEN_FILE
 
 # Types des fichiers servis fixés ici : sous Windows, le registre en donne parfois d'autres (.js en
@@ -80,6 +81,10 @@ async def lifespan(_app):
     library.clean_cache()
     if not os.environ.get("ARXIVREADER_NO_ALERTS"):  # copie du jour : hors de la boucle d'événements, jamais pendant les essais
         threading.Thread(target=_daily_snapshot, daemon=True).start()
+    try:
+        feedprune.prune()  # feed et vecteurs anciens (hors ceux gardés) : la base ne grossit plus sans fin
+    except Exception:
+        logging.getLogger(__name__).warning("élagage du feed impossible", exc_info=True)
     threading.Thread(target=localpdf.redetect_all, daemon=True).start()  # PDF importés : titre et auteurs relus
     # vérification périodique des auteurs suivis (ARXIVREADER_NO_ALERTS=1 pour la couper, par ex. en test)
     alerts.stop.clear()
@@ -597,7 +602,11 @@ def set_library(paper_id: str, body: LibraryRequest):
 @app.get("/api/papers/{paper_id}/pdf")
 def paper_pdf(paper_id: str):
     """PDF de l'article (affiché dans le lecteur) ; téléchargé depuis arXiv la première fois."""
-    path = library.ensure_pdf(checked_paper(paper_id))
+    paper = checked_paper(paper_id)
+    try:
+        path = library.ensure_pdf(paper)
+    except (httpx.HTTPError, ArxivError) as error:  # hors ligne, arXiv en panne : pas un 500 muet
+        return _failed(error)
     if path is None:
         raise HTTPException(404, "No PDF")
     return FileResponse(path, media_type="application/pdf")
@@ -606,7 +615,11 @@ def paper_pdf(paper_id: str):
 @app.get("/api/papers/{paper_id}/pages")
 def paper_pages(paper_id: str):
     """Endroit du PDF de chaque énoncé et section : {"pages": {id: page}, "tops": {id: hauteur}}."""
-    pages = library.pdf_pages(checked_paper(paper_id))
+    paper = checked_paper(paper_id)
+    try:
+        pages = library.pdf_pages(paper)
+    except (httpx.HTTPError, ArxivError) as error:
+        return _failed(error)
     if pages is None:
         raise HTTPException(404, "No PDF")
     return pages
@@ -1509,6 +1522,75 @@ def paper_notes(paper_id: str, lang: str = "fr"):
     """Notes de l'article : Markdown, ou archive .zip quand des zones du PDF ont leur image (export.paper_export)."""
     checked_paper(paper_id)
     return _download(*export.paper_export(paper_id, lang))
+
+
+# ---------- BibTeX (construit hors ligne, d'après ce qui est enregistré ; voir bibtex.py) ----------
+
+def _bibtex_s2(paper):
+    """Revue et DOI que Semantic Scholar a déjà donnés pour cet article (aucune requête ici)."""
+    if not paper.get("arxiv_id"):
+        return None
+    return journals.known([relevance.s2_key(paper["arxiv_id"])]).get(relevance.s2_key(paper["arxiv_id"]))
+
+
+def _bibtex_of(papers):
+    # une seule lecture de la table des revues pour tout l'export
+    keys = {p["id"]: relevance.s2_key(p["arxiv_id"]) for p in papers if p.get("arxiv_id")}
+    found = journals.known(list(keys.values())) if keys else {}
+    return bibtex.export(papers, lambda p: found.get(keys.get(p["id"])))
+
+
+def _bibtex_papers(ids):
+    """Articles enregistrés d'une liste d'identifiants (arXiv ou de la bibliothèque) ; (articles, nombre d'inconnus)."""
+    papers, missing = [], 0
+    for item in ids[:500]:
+        item = item.strip()
+        paper = db.get_paper(paper_key(item)) if PAPER_ID.fullmatch(paper_key(item)) else None
+        if paper is None:
+            missing += 1
+        else:
+            papers.append(paper)
+    return papers, missing
+
+
+def _bibtex_file(text, name):
+    from urllib.parse import quote
+    name = re.sub(r"[\\/:*?\"<>|\x00-\x1f]", " ", name)
+    name = " ".join(name.split())[:80] or "references"
+    return Response(text, media_type="application/x-bibtex; charset=utf-8",
+                    headers={"Content-Disposition": f"attachment; filename=\"references.bib\"; filename*=UTF-8''{quote(name)}.bib"})
+
+
+@app.get("/api/papers/{paper_id}/bibtex")
+def paper_bibtex(paper_id: str):
+    paper = checked_paper(paper_id)
+    return {"bibtex": bibtex.entry(paper, _bibtex_s2(paper))}
+
+
+@app.get("/api/bibtex")
+@app.get("/api/bibtex.bib")
+def selection_bibtex(request: Request, ids: str = ""):
+    """BibTeX de plusieurs articles (ids séparés par des virgules) : JSON pour copier, fichier .bib à l'adresse .bib."""
+    papers, missing = _bibtex_papers([i for i in ids.split(",") if i.strip()])
+    if not papers:
+        raise HTTPException(404, "Unknown paper")
+    text = _bibtex_of(papers)
+    if request.url.path.endswith(".bib"):
+        return _bibtex_file(text, "arXivReader")
+    return {"bibtex": text, "count": len(papers), "missing": missing}
+
+
+@app.get("/api/folders/{folder_id}/bibtex")
+@app.get("/api/folders/{folder_id}.bib")
+def folder_bibtex(folder_id: int, request: Request):
+    folder = checked_folder(folder_id)
+    papers = [p for p in (db.get_paper(i) for i in folder["papers"]) if p]
+    if not papers:
+        raise HTTPException(404, "Empty folder")
+    text = _bibtex_of(papers)
+    if request.url.path.endswith(".bib"):
+        return _bibtex_file(text, folder["name"])
+    return {"bibtex": text, "count": len(papers), "missing": len(folder["papers"]) - len(papers)}
 
 
 @app.get("/api/notes")

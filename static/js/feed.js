@@ -40,6 +40,9 @@ function typing(event) {
 
 // ---------- Listes (arXiv, recommandations) ----------
 
+// Sans accents ni majuscules (« Kähler » et « kahler » se valent)
+const foldText = (text) => String(text || "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+
 function ago(stamp) {
   return stamp ? timeAgo(stamp) : t("feed.never");
 }
@@ -193,9 +196,10 @@ async function renderList(body, tab) {
   };
 
   const matches = (item) => {
-    const needle = state.search.trim().toLowerCase();
+    const words = foldText(state.search).split(/\s+/).filter(Boolean); // comme la bibliothèque : sans accents, tous les mots, dans n'importe quel ordre
+    const haystack = words.length ? foldText(`${item.title} ${item.authors.join(" ")} ${item.abstract}`) : "";
     return (item.status !== "disliked" || state.showHidden)
-      && (!needle || `${item.title} ${item.authors.join(" ")} ${item.abstract}`.toLowerCase().includes(needle))
+      && words.every((word) => haystack.includes(word))
       && (state.publication === "any" || (state.publication === "journal") === Boolean(item.publishedIn));
   };
   let versionsAsked = 0; // une réponse plus ancienne n'écrase pas la dernière
