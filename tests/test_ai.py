@@ -129,7 +129,7 @@ class AI(unittest.TestCase):
         self.assertEqual(client.get("/api/papers/unknown/text").status_code, 404)
 
     def test_stream_endpoint(self):
-        async def fake(system, prompt, model, image=None, pages=()):
+        async def fake(system, prompt, model, image=None, pages=(), flags=None):
             yield "Le lemme "
             yield "est $1=1$."
         ai.stream_answer = fake
@@ -145,20 +145,20 @@ class AI(unittest.TestCase):
         self.assertEqual(client.get("/api/papers/p1/ai").json(), [])
 
     def test_stream_error(self):
-        async def failing(system, prompt, model, image=None, pages=()):
+        async def failing(system, prompt, model, image=None, pages=(), flags=None):
             raise ai.AIError("Not logged in · Please run /login", "login")
             yield ""
         ai.stream_answer = failing
         client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
         events = [json.loads(line) for line in client.post("/api/papers/p1/ai", json={"task": "summary"}).text.splitlines()]
-        self.assertEqual(events[1]["code"], "login")
+        self.assertEqual(next(e for e in events if "error" in e)["code"], "login")
         self.assertEqual(events[-1]["exchange"]["status"], "error")
         self.assertEqual(ai._code("Claude Code returned an error result: Not logged in"), "login")
 
     def test_cross_review(self):
         prompts = []
 
-        async def fake(system, prompt, model, image=None, pages=()):
+        async def fake(system, prompt, model, image=None, pages=(), flags=None):
             prompts.append((model, prompt))
             if '<review id="comparison"' in prompt:
                 yield "### Points to check\n1. [[both]] Lemma 1.1"
@@ -196,7 +196,7 @@ class AI(unittest.TestCase):
         self.assertEqual(client.put("/api/settings", json={"aiSecond": "other"}).status_code, 400)
 
     def test_cross_review_error(self):
-        async def fake(system, prompt, model, image=None, pages=()):
+        async def fake(system, prompt, model, image=None, pages=(), flags=None):
             if model == "gemini":
                 raise ai.AIError("Bad key", "login")
             yield "review"
@@ -331,7 +331,7 @@ class Zones(unittest.TestCase):
     def test_zone_question(self):
         seen = {}
 
-        async def fake(system, prompt, model, image=None, pages=()):
+        async def fake(system, prompt, model, image=None, pages=(), flags=None):
             seen.update(prompt=prompt, image=image)
             yield "$$x$$"
         ai.stream_answer = fake
@@ -597,7 +597,7 @@ class Sections(unittest.TestCase):
         self.assertIn("Only the third section argues", on_page.split("</paper>")[0])  # la page affichée (PDF) ne l'emporte pas
 
     def test_section_request(self):
-        async def fake(system, prompt, model, image=None, pages=()):
+        async def fake(system, prompt, model, image=None, pages=(), flags=None):
             yield "ok"
         ai.stream_answer = fake
         client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
@@ -616,7 +616,7 @@ class Sections(unittest.TestCase):
         self.addCleanup(bookjob.jobs.clear)
         prompts = []
 
-        async def fake(system, prompt, model, image=None, pages=()):
+        async def fake(system, prompt, model, image=None, pages=(), flags=None):
             prompts.append(prompt)
             yield f"Review {len(prompts)}\n\n### Section record\nNotation."
         ai.stream_answer = fake
@@ -645,7 +645,7 @@ class Sections(unittest.TestCase):
         import asyncio
         prompts = []
 
-        async def fake(system, prompt, model, image=None, pages=()):
+        async def fake(system, prompt, model, image=None, pages=(), flags=None):
             prompts.append(prompt)
             yield "ok"
         ai.stream_answer = fake
@@ -773,7 +773,7 @@ class Chapters(unittest.TestCase):
             ai.build_prompt(self.paper, self.structure, "ask", question="?", chapter="Ch2")  # seulement résumé, relecture
 
     def test_chapter_request(self):
-        async def fake(system, prompt, model, image=None, pages=()):
+        async def fake(system, prompt, model, image=None, pages=(), flags=None):
             yield "ok"
         ai.stream_answer = fake
         client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
@@ -788,7 +788,7 @@ class Chapters(unittest.TestCase):
         from app import bookjob
         prompts = []
 
-        async def fake(system, prompt, model, image=None, pages=()):
+        async def fake(system, prompt, model, image=None, pages=(), flags=None):
             prompts.append(prompt)
             if "<chapter_review" in prompt:
                 yield "### Verdict\nbook verdict"
@@ -830,7 +830,7 @@ class Chapters(unittest.TestCase):
         from app import bookjob
         self.addCleanup(bookjob.jobs.clear)
 
-        async def slow(system, prompt, model, image=None, pages=()):
+        async def slow(system, prompt, model, image=None, pages=(), flags=None):
             if 'part="Chapter 3 Uses"' in prompt:
                 await asyncio.sleep(30)
             yield "summary"
@@ -846,7 +846,7 @@ class Chapters(unittest.TestCase):
         self.assertEqual((job.phase, [c["state"] for c in job.chapters]), ("stopped", ["done", "done", "wait"]))
         self.assertEqual(sorted(e["target"] for e in ai.list_for("b1")), ["Ch1", "Ch2"])
 
-        async def failing(system, prompt, model, image=None, pages=()):
+        async def failing(system, prompt, model, image=None, pages=(), flags=None):
             raise ai.AIError("Not logged in", "login")
             yield ""
         ai.stream_answer = failing
@@ -866,7 +866,7 @@ class Chapters(unittest.TestCase):
         from app import bookjob
         self.addCleanup(bookjob.jobs.clear)
 
-        async def fake(system, prompt, model, image=None, pages=()):
+        async def fake(system, prompt, model, image=None, pages=(), flags=None):
             if "<chapter_review" in prompt:
                 yield "book"
             elif '<review id="comparison"' in prompt:
@@ -909,7 +909,7 @@ class Chapters(unittest.TestCase):
         from app import bookjob
         self.addCleanup(bookjob.jobs.clear)
 
-        async def fake(system, prompt, model, image=None, pages=()):
+        async def fake(system, prompt, model, image=None, pages=(), flags=None):
             yield "ok"
         ai.stream_answer = fake
 
@@ -922,7 +922,7 @@ class Chapters(unittest.TestCase):
             self.assertNotIn(("b1", "summary"), bookjob.jobs)
             slow_started = asyncio.Event()
 
-            async def slow(system, prompt, model, image=None, pages=()):
+            async def slow(system, prompt, model, image=None, pages=(), flags=None):
                 slow_started.set()
                 await asyncio.sleep(30)
                 yield ""

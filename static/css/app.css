@@ -944,6 +944,7 @@ mark.hl.hl-display > mjx-container[display="true"] { margin: .2em 0 !important; 
 .ai-action .ai-icon { color: var(--accent); }
 .note-popover .ai-actions { border-top: 1px solid var(--border); padding-top: 10px; }
 .ai-action.compact { height: 30px; font-size: 13px; padding: 0 10px; }
+.ai-pending-actions { margin-top: 0; }
 .ai-ask { display: flex; flex-direction: column; gap: 8px; }
 .ai-question { min-height: 64px; }
 /* « Envoyer à… » : un lien (il s'ouvre à côté), présenté comme les boutons voisins */
@@ -964,6 +965,8 @@ mark.hl.hl-display > mjx-container[display="true"] { margin: .2em 0 !important; 
 .ai-text-size .zoom-reset { min-width: 48px; height: 28px; font-size: 12px; }
 .ai-answer .ai-block + .ai-block, .ai-answer .ai-block + .ai-tail:not(:empty) { margin-top: .55em; }
 .ai-answer .ai-continued { padding-left: 1.4em; }  /* suite d'un élément de liste (même retrait que .markdown ol) */
+.ai-answer .ai-code-bar { display: flex; justify-content: flex-end; margin-top: .5em; }
+.ai-answer .ai-code-bar + pre { margin-top: 3px; font-size: .86em; }
 .ai-answer h4, .ai-answer h5, .ai-answer h6 { font-family: var(--font-ui); font-size: .87em; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: .9em 0 .3em; }
 .ai-answer :is(h4, h5, h6) mjx-container { text-transform: none; letter-spacing: normal; } /* formules d'un titre : telles quelles */
 .ai-answer .ai-block:first-child h4:first-child, .ai-answer .ai-block:first-child h5:first-child, .ai-answer .ai-block:first-child h6:first-child { margin-top: 0; }
@@ -1110,7 +1113,9 @@ button.ai-book-name:disabled { cursor: default; color: inherit; }
 .ai-tag { display: inline-block; font: 600 0.72em/1.6 var(--font-ui); padding: 0 0.55em; margin-right: 0.4em; border-radius: 999px; vertical-align: 0.1em;
   background: var(--surface-soft); color: var(--muted); border: 1px solid var(--border); }
 .ai-tag.both { background: var(--accent-soft); color: var(--accent-strong); border-color: transparent; }
-.ai-tag.dispute { background: var(--warning-bg); color: var(--warning-text); border-color: transparent; }
+.ai-tag.dispute, .ai-tag.uncertain { background: var(--warning-bg); color: var(--warning-text); border-color: transparent; }
+.ai-tag.confirmed { background: var(--accent-soft); color: var(--accent-strong); border-color: transparent; }
+.ai-cost { margin: 4px 0 0; }
 .ai-steps { margin: 2px 0 8px; font-size: 13px; color: var(--muted); }
 .ai-steps summary { cursor: pointer; }
 .ai-step { margin: 6px 0 0 16px; }

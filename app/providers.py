@@ -37,7 +37,9 @@ WINDOWS = sys.platform == "win32"
 NAMES = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini"}
 LOCAL_URL = "http://127.0.0.1:11434/v1"  # Ollama ; LM Studio : http://127.0.0.1:1234/v1
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
-LOCAL_LIMIT = 120_000  # caractères d'article (~33 000 jetons) : contexte des modèles locaux plus court
+# caractères d'article : le contexte qu'on conseille pour Ollama est de 32 768 jetons (~115 000 caractères), où il faut
+# aussi loger la consigne, le profil, les blocs joints et la réponse
+LOCAL_LIMIT = 70_000
 
 
 # Niveaux de réflexion (« effort ») ; "" : celui de l'assistant par défaut
@@ -52,6 +54,14 @@ def valid_model_name(name):
 
 def valid_effort(effort):
     return effort == "" or effort in EFFORTS
+
+
+class Cut:
+    """Fin d'une réponse arrêtée par l'assistant (longueur maximale atteinte) : produite après le dernier morceau de
+    texte, que ai.stream_answer transmet comme un indicateur (le texte reçu est gardé)."""
+
+
+CUT = Cut()
 
 
 class ProviderError(Exception):
@@ -584,7 +594,7 @@ async def stream_gemini(system, prompt, model, key, effort="", images=()):
 
 
 async def _gemini_request(model, key, body):
-    produced, blocked = False, None
+    produced, blocked, cut = False, None, False
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(900, connect=10)) as client:
             async with client.stream("POST", f"{GEMINI_API}/models/{model}:streamGenerateContent", params={"alt": "sse"},
@@ -611,6 +621,8 @@ async def _gemini_request(model, key, body):
                             continue
                         if candidate.get("finishReason") in ("SAFETY", "RECITATION", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII"):
                             blocked = str(candidate["finishReason"])
+                        if candidate.get("finishReason") == "MAX_TOKENS":
+                            cut = True
                         content = candidate.get("content")
                         parts = content.get("parts") if isinstance(content, dict) else None
                         for part in (parts if isinstance(parts, list) else []):
@@ -619,6 +631,8 @@ async def _gemini_request(model, key, body):
                                 yield part["text"]
                 if not produced:
                     raise ProviderError(f"Gemini did not answer ({blocked})" if blocked else "Gemini gave an empty answer")
+                if blocked or cut:  # longueur maximale ou filtre en cours de route : le texte reçu n'est pas toute la réponse
+                    yield CUT
     except httpx.ConnectError:
         raise ProviderError("Google's Gemini API cannot be reached (network?)", "offline")
     except (httpx.HTTPError, httpx.InvalidURL) as error:
@@ -635,6 +649,7 @@ async def stream_local(system, prompt, model, url):
     body = {"model": model, "stream": True,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}]}
     thinking = None  # modèles « à raisonnement » : le bloc <think>…</think> du début n'est pas affiché
+    produced, cut = False, False
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(900, connect=5), trust_env=False) as client:
             async with client.stream("POST", f"{url.rstrip('/')}/chat/completions", json=body) as response:
@@ -655,7 +670,10 @@ async def stream_local(system, prompt, model, url):
                         continue
                     if chunk.get("error"):
                         raise ProviderError(str(chunk["error"].get("message") if isinstance(chunk["error"], dict) else chunk["error"]))
-                    text = ((chunk.get("choices") or [{}])[0].get("delta") or {}).get("content") or ""
+                    choice = (chunk.get("choices") or [{}])[0]
+                    if choice.get("finish_reason") == "length":
+                        cut = True
+                    text = (choice.get("delta") or {}).get("content") or ""
                     if thinking is None and text.strip():
                         thinking = "" if text.lstrip().startswith("<think>") else False
                     if thinking is not False and thinking is not None:
@@ -664,7 +682,15 @@ async def stream_local(system, prompt, model, url):
                             continue
                         text, thinking = thinking.split("</think>", 1)[1].lstrip(), False
                     if text:
+                        produced = True
                         yield text
+                if thinking:  # <think> jamais refermé : tout ce qui a été reçu est du raisonnement, pas une réponse
+                    raise ProviderError("The local model stopped before the end of its reasoning (no answer): "
+                                        "give it a larger context or a smaller paper")
+                if not produced:
+                    raise ProviderError("The local model gave an empty answer")
+                if cut:
+                    yield CUT
     except httpx.ConnectError:
         raise ProviderError(f"No local server at {url}", "offline")
     except (httpx.HTTPError, httpx.InvalidURL) as error:

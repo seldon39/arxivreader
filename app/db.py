@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS ai_exchanges (
     parent_id INTEGER,               -- échange auquel celui-ci fait suite
     answer TEXT,
     model TEXT,
-    status TEXT,                     -- done, stopped, error
+    status TEXT,                     -- running, done, stopped, error
     created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS ai_exchanges_paper ON ai_exchanges (paper_id);
@@ -168,6 +168,10 @@ def init():
             db.execute("ALTER TABLE ai_exchanges ADD COLUMN steps TEXT")
         if "card" not in columns:  # relecture d'un chapitre terminée par sa fiche (reprise par la relecture du livre)
             db.execute("ALTER TABLE ai_exchanges ADD COLUMN card INTEGER DEFAULT 0")
+        if "coverage" not in columns:  # ce que l'assistant a lu du texte (JSON : total, sent, partial, pages)
+            db.execute("ALTER TABLE ai_exchanges ADD COLUMN coverage TEXT")
+        if "cut" not in columns:  # réponse arrêtée par l'assistant lui-même (longueur maximale, filtre)
+            db.execute("ALTER TABLE ai_exchanges ADD COLUMN cut INTEGER DEFAULT 0")
         db.execute(f"PRAGMA user_version = {safety.DB_VERSION}")
     _move_secrets()
 

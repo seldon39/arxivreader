@@ -107,7 +107,7 @@ const duration = (seconds) => (seconds < 60 ? `${Math.round(seconds)} s` : `${Ma
 const minutes = (seconds) => `${Math.floor(seconds / 60)}:${String(Math.round(seconds) % 60).padStart(2, "0")}`;
 
 // Marqueurs de la synthèse, remplacés par `tag(sorte, mot)` (« Les deux », « Gemini »…)
-const MARKER = /\[\[\s*(both|a|b|dispute|withdrawn)\s*\]\]/gi;
+const MARKER = /\[\[\s*(both|a|b|dispute|withdrawn|confirmed|uncertain)\s*\]\]/gi;
 function withTags(text, names, tag) {
   return names ? text.replace(MARKER, (_, kind) => tag(kind.toLowerCase(), names[kind.toLowerCase()] || t(`ai.tag.${kind.toLowerCase()}`))) : text;
 }
@@ -254,6 +254,17 @@ export class Assistant {
     return this.partners.find((p) => p.provider === settings.aiSecond) || this.partners[0];
   }
 
+  // relecture vérifiée, si elle est choisie (sans autre assistant : le même assistant se relit, sauf si la croisée est possible et choisie)
+  verifying() { return settings.aiReviewMode === "verify"; }
+
+  // modèle du vérificateur : le choix enregistré, sinon Sonnet, plus léger, s'il est proposé (comme ai.verifier) ; autres assistants : le même
+  verifierModel() {
+    const current = currentModel();
+    if (providerOf(current) !== "claude") return current;
+    const names = (this.status?.choices || []).map((c) => c.value);
+    return names.includes(settings.aiVerifyModel) ? settings.aiVerifyModel : names.includes("sonnet") ? "sonnet" : current;
+  }
+
   // ---------- Renvois cliquables dans les réponses ----------
 
   buildRefs() {
@@ -380,7 +391,7 @@ export class Assistant {
 
   // ---------- Demandes ----------
 
-  // Actions sur un énoncé : expliquer ; et sur sa preuve, s'il en a une : détailler, auditer
+  // Actions sur un énoncé : expliquer, vérifier par le calcul ; et sur sa preuve, s'il en a une : détailler, auditer
   actionsFor(nodeId, { compact = false } = {}) {
     const node = this.byId.get(nodeId);
     if (!node) return null;
@@ -391,6 +402,7 @@ export class Assistant {
       action("explain", t("ai.task.explain")),
       hasText || node.manual === "immediate" ? action("detail", t("ai.task.detail")) : null,
       hasText ? action("audit", t("ai.task.audit")) : null,
+      action("compute", t("ai.task.compute")),
       action("annotate", t("ai.task.annotate")));
   }
 
@@ -428,15 +440,17 @@ export class Assistant {
   }
 
   // `second` : relecture croisée avec cet assistant (claude, codex, gemini, local)
-  async ask({ task, target = null, quote = null, question = null, parent = null, zone = null, second = null, chapter = null }) {
+  // `verify` : relecture vérifiée (le même assistant, modèle du vérificateur d'après les réglages)
+  async ask({ task, target = null, quote = null, question = null, parent = null, zone = null, second = null, chapter = null, verify = false }) {
     if (!this.canAsk()) return;
     const controller = new AbortController();
     if (zone) quote = zone.quote || null;
     const local = { id: `local-${Date.now()}`, startedAt: Date.now(), task, target: chapter || target, quote, question, parent_id: parent?.id ?? null, answer: "", status: "running",
-      imageUrl: zone?.image || null, second: second && modelOf(second), steps: second ? [] : null, phase: null,
+      imageUrl: zone?.image || null, second: verify ? this.verifierModel() : second && modelOf(second), steps: second || verify ? [] : null, phase: null,
       model: this.status?.model || currentModel(), created_at: new Date().toISOString().slice(0, 19).replace("T", " ") };
     this.exchanges.push(local);
     let finish;
+    let ended = false;  // l'événement final {done} est arrivé : sans lui, le flux s'est interrompu
     this.running = { exchange: local, controller, finished: new Promise((resolve) => { finish = resolve; }) };
     this.view = this.viewOf(local);
     if (this.byChapter(this.view)) this.chapterOf[this.view] = this.chapterOfExchange(local);
@@ -453,14 +467,17 @@ export class Assistant {
       // PDF sans texte (scan) : l'assistant voit les pages autour de la zone (sinon de la page affichée)
       const pages = this.paper.noText && task !== "transcribe" && this.readsImages() && this.contextPages
         ? await this.contextPages(zone?.page ?? null, controller.signal).catch(() => []) : [];
-      await streamAI(this.paper.id, { task, target, quote, question, parent_id: parent?.id ?? null, ...image, pages, ...(second ? { second } : {}), ...(chapter ? { chapter } : {}) }, (event) => {
+      await streamAI(this.paper.id, { task, target, quote, question, parent_id: parent?.id ?? null, ...image, pages, ...(second ? { second } : {}), ...(verify ? { verify } : {}), ...(chapter ? { chapter } : {}) }, (event) => {
         if (event.exchange) Object.assign(local, event.exchange, { answer: local.answer, steps: local.steps });
         if (event.delta) { local.answer += event.delta; redraw(); }
         if (event.phase) local.phase = event.phase;  // ligne d'attente : mise à jour chaque seconde
         if (event.step) { local.steps.push(event.step); this.onChange(); }
+        if (event.coverage) local.coverage = event.coverage;
+        if (event.cut) local.cut = true;
         if (event.error) { local.error = event.error; local.errorCode = event.code; }
-        if (event.done) Object.assign(local, event.exchange, { answer: event.exchange.answer || local.answer });
+        if (event.done) { ended = true; Object.assign(local, event.exchange, { answer: event.exchange.answer || local.answer }); }
       }, controller.signal);
+      if (!ended && !local.error) local.status = "stopped";  // connexion coupée en cours de réponse : pas une réponse terminée
     } catch (error) {
       if (error.name === "AbortError") local.status = "stopped";
       else { local.status = "error"; local.error = error.message; }
@@ -575,6 +592,7 @@ export class Assistant {
     if (chapter) return t(`ai.title.${exchange.task}Chapter`, { label: this.chapterTitle(chapter) });
     const node = this.byId.get(exchange.target);
     const label = node?.label || "";
+    if (exchange.task === "compute" && !node) return t("ai.title.computePassage");  // passage ou zone : pas d'énoncé nommé
     return t(`ai.title.${exchange.task}`, { label });
   }
 
@@ -707,7 +725,7 @@ export class Assistant {
     return found;
   }
 
-  async startBook(task, second = null) {
+  async startBook(task, second = null, verify = false) {
     if (this.status && !this.status.loggedIn) {
       this.onChange({ show: true });
       toast(t("ai.loginFirst"), { error: true });
@@ -715,7 +733,7 @@ export class Assistant {
     }
     try {
       this.jobsStamp = (this.jobsStamp || 0) + 1;  // un relevé parti avant le lancement ne l'efface pas (pollJobs)
-      this.jobs[task] = await api.startAIBook(this.paper.id, { task, fresh: Boolean(this.fresh[task]), ...(second ? { second } : {}) });
+      this.jobs[task] = await api.startAIBook(this.paper.id, { task, fresh: Boolean(this.fresh[task]), ...(second ? { second } : {}), ...(verify ? { verify } : {}) });
     } catch (error) {
       toastError(error);
       return;
@@ -801,8 +819,10 @@ export class Assistant {
   bookIntro(view) {
     const task = view === "summary" ? "summary" : "review";
     const cross = view === "review" && this.crossPartner();
+    const verify = view === "review" && !cross && this.verifying();
     const reused = this.fresh[task] ? new Map() : this.reusable(task);
-    const intro = cross ? this.tb("ai.book.intro.cross", { a: modelLabel(currentModel()), b: modelLabel(modelOf(cross.provider)) }) : this.tb(`ai.book.intro.${task}`);
+    const intro = cross ? this.tb("ai.book.intro.cross", { a: modelLabel(currentModel()), b: modelLabel(modelOf(cross.provider)) })
+      : verify ? this.tb("ai.book.intro.verify", { a: modelLabel(currentModel()), b: modelLabel(this.verifierModel()) }) : this.tb(`ai.book.intro.${task}`);
     return h("div", { class: "ai-empty ai-empty-doc ai-book" }, h("div", { class: "ai-empty-title" }, this.tb(`ai.book.title.${task}`)), h("p", {}, intro),
       h("ul", { class: "ai-book-list" }, this.chapters.map((c) => this.bookItem(view, c, reused.has(c.id)
         ? ["done", "✓", this.tb(`ai.book.state.reused.${task}`)] : ["wait", "·", this.tb(`ai.book.state.todo.${task}`)])),
@@ -890,10 +910,13 @@ export class Assistant {
       else if (whole && !jobRunning(job)) content.append(this.bookIntro(view));
       else if (!whole) {
         const cross = view === "review" && this.crossPartner();
+        const verify = view === "review" && !cross && this.verifying();
+        const kind = cross ? "cross" : verify ? "verify" : null;
         const label = chapter && this.chapterTitle(chapter);
         const section = chapter && this.isArticle;
-        const title = chapter ? t(cross ? "ai.title.crossChapter" : `ai.title.${view}Chapter`, { label }) : t(cross ? "ai.title.cross" : `ai.title.${view}`);
-        const intro = cross ? t(section ? "ai.sections.introCross" : "ai.intro.cross", { a: modelLabel(currentModel()), b: modelLabel(modelOf(cross.provider)) })
+        const title = chapter ? t(kind ? `ai.title.${kind}Chapter` : `ai.title.${view}Chapter`, { label }) : t(kind ? `ai.title.${kind}` : `ai.title.${view}`);
+        const names = { a: modelLabel(currentModel()), b: modelLabel(cross ? modelOf(cross.provider) : this.verifierModel()) };
+        const intro = kind ? t(section ? `ai.sections.intro${cross ? "Cross" : "Verify"}` : `ai.intro.${kind}`, names)
           : t(section ? "ai.sections.intro" : chapter ? "ai.intro.chapter" : `ai.intro.${view}`);
         content.append(h("div", { class: "ai-empty ai-empty-doc" }, h("div", { class: "ai-empty-title" }, title), h("p", {}, intro),
           chapter ? this.chapterLinksBox(chapter) : null));
@@ -1006,35 +1029,65 @@ export class Assistant {
     if (view !== "questions" && (!this.lastDocument(view, exchanges) || relaunch) && !exchanges.some((e) => e.status === "running")) {
       const chapter = this.byChapter(view) ? this.chapterOf[view] : null;
       const cross = view === "review" && this.crossPartner();
+      const verify = view === "review" && !cross && this.verifying();
+      const kind = cross ? "cross" : verify ? "verify" : null;
       // livre, tous les chapitres : nombre de chapitres à faire (ceux déjà faits sont repris, sauf si l'on coche)
       const reused = whole ? this.reusable(task).size : 0;
       const todo = whole && this.chapters.length - (this.fresh[task] ? 0 : reused);
-      const label = whole ? (todo ? this.tnb(`ai.book.launch.${cross ? "cross" : task}`, todo) : this.tb(`ai.book.launch.${task}Only`))
-        : t(cross ? "ai.launch.cross" : chapter ? (this.isArticle ? `ai.sections.launch.${task}` : `ai.launch.${task}Chapter`) : `ai.launch.${task}`);
+      const label = whole ? (todo ? this.tnb(`ai.book.launch.${kind || task}`, todo) : this.tb(`ai.book.launch.${task}Only`))
+        : t(kind ? `ai.launch.${kind}` : chapter ? (this.isArticle ? `ai.sections.launch.${task}` : `ai.launch.${task}Chapter`) : `ai.launch.${task}`);
       const launch = running && !whole
         ? h("button", { class: "button ai-launch", type: "button", onclick: () => this.stop() }, t("ai.stop"))
         : h("button", { class: "button primary ai-launch", type: "button", onclick: () => {
           this.relaunch = false;
-          if (whole) this.startBook(task, cross?.provider);
-          else this.ask({ task, second: cross?.provider, chapter });
+          if (whole) this.startBook(task, cross?.provider, verify);
+          else this.ask({ task, second: cross?.provider, chapter, verify });
         } }, label);
       const fresh = whole && reused > 0 && h("label", { class: "ai-book-fresh small" }, h("input", { type: "checkbox", checked: Boolean(this.fresh[task]),
         onchange: (event) => { this.fresh[task] = event.target.checked; this.onChange(); } }), ` ${this.tnb(`ai.book.fresh.${task}`, reused)}`);
       // « Refaire » une relecture : retour au champ des questions sans rien lancer
       const cancel = relaunch && h("button", { class: "button", type: "button", onclick: () => { this.relaunch = false; this.onChange(); } }, t("ai.cancelRedo"));
       const picker = this.modelPicker(cross?.provider) || h("span", { class: "muted small" }, modelLabel(currentModel()));
-      return h("div", { class: "ai-bottom" }, view === "review" && this.partners?.length ? this.reviewMode(cross) : null,
-        cancel ? h("div", { class: "ai-launch-row" }, launch, cancel) : launch, fresh,
-        cross ? this.reviewers(picker, cross) : h("div", { class: "ai-foot" }, picker), footer);
+      // coût : nombre de demandes de la taille de l'article (ou du chapitre d'un livre), sur une ligne sous le bouton
+      const calls = kind === "cross" ? 4 : kind === "verify" ? 3 : 1;
+      const requests = whole ? (todo ? todo * calls + 1 : 1) : calls;
+      const unit = this.isArticle || !(whole || chapter) ? "paper" : "chapter";
+      const cost = !running && requests > 1 ? h("p", { class: "muted small ai-cost" }, t(`ai.cost.${unit}`, { n: requests })) : null;
+      return h("div", { class: "ai-bottom" }, view === "review" ? this.reviewMode(kind) : null,
+        cancel ? h("div", { class: "ai-launch-row" }, launch, cancel) : launch, cost, fresh,
+        cross ? this.reviewers(picker, cross) : verify ? this.verifiers(picker) : h("div", { class: "ai-foot" }, picker), footer);
     }
     return h("div", { class: "ai-bottom" }, this.askBox(view, exchanges, focus), footer);
   }
 
-  // Relecture simple ou croisée (proposée s'il y a un autre assistant prêt) ; le choix est retenu
-  reviewMode(cross) {
-    const button = (mode) => h("button", { type: "button", class: "ai-view", "aria-pressed": (mode === "cross") === Boolean(cross),
+  // Relecture simple, vérifiée ou croisée (la croisée est proposée s'il y a un autre assistant prêt) ; le choix est retenu
+  reviewMode(kind) {
+    const modes = ["single", "verify", ...(this.partners?.length ? ["cross"] : [])];
+    const button = (mode) => h("button", { type: "button", class: "ai-view", "aria-pressed": mode === (kind || "single"),
       onclick: () => saveSettings({ aiReviewMode: mode }).then(() => this.onChange()) }, t(`ai.mode.${mode}`));
-    return h("div", { class: "ai-mode" }, h("div", { class: "ai-views", role: "group", "aria-label": t("ai.mode") }, button("single"), button("cross")));
+    return h("div", { class: "ai-mode" }, h("div", { class: "ai-views", role: "group", "aria-label": t("ai.mode") }, modes.map(button)));
+  }
+
+  // Relecture vérifiée : le premier relecteur (l'assistant choisi, qui relit puis conclut), puis le vérificateur, du même
+  // assistant : son modèle et son niveau de réflexion se choisissent à part (Claude ; les autres assistants se vérifient eux-mêmes)
+  verifiers(picker) {
+    const model = this.verifierModel();
+    const choices = this.status?.provider === "claude" && this.status.loggedIn ? this.status.choices || [] : [];
+    let controls = [h("span", { class: "muted small" }, modelLabel(model))];
+    if (choices.length) {
+      const levels = choices.find((c) => c.value === model)?.levels || [];
+      const choose = h("select", { class: "ai-model", name: "aiVerifyModel", "aria-label": t("ai.verifier.model"), title: t("ai.verifier.model"),
+        onchange: (event) => saveSettings({ aiVerifyModel: event.target.value, aiVerifyEffort: "" }).then(() => this.onChange()) },
+      choices.map((c) => h("option", { value: c.value, selected: c.value === model }, c.label)));
+      const effort = levels.length ? h("select", { class: "ai-model ai-effort", name: "aiVerifyEffort", "aria-label": t("ai.effort"), title: t("ai.verifier.effortHint"),
+        onchange: (event) => saveSettings({ aiVerifyEffort: event.target.value }).then(() => this.onChange()) },
+      ["", ...levels].map((level) => h("option", { value: level, selected: level === (levels.includes(settings.aiVerifyEffort) ? settings.aiVerifyEffort : "") },
+        level ? t(`ai.effort.${level}`) : t("ai.verifier.effortSame")))) : null;
+      controls = [choose, effort];
+    }
+    return h("div", { class: "ai-reviewers" },
+      h("span", { class: "ai-reviewer" }, t("ai.reviewer1")), h("div", {}, picker),
+      h("span", { class: "ai-reviewer" }, t("ai.verifier")), h("div", {}, ...controls));
   }
 
   // Relecture croisée : le premier relecteur (l'assistant choisi, qui écrit la synthèse), puis le second, chacun
@@ -1087,6 +1140,14 @@ export class Assistant {
     };
     // question modifiée : l'ancien échange supprimé d'abord (rien n'est envoyé si la suppression échoue)
     const afterDiscard = (replaces, go) => (replaces ? this.discard(replaces).then((ok) => ok && go()) : go());
+    // « Vérifier par le calcul » sur le passage ou la zone choisis (la question écrite, s'il y en a une, précise quoi tester)
+    const compute = () => {
+      if (!this.canAsk()) return;
+      const question = area.value.trim();
+      const { quote, zone, parent, replaces } = pending;
+      Object.assign(pending, { quote: null, parent: null, question: "", zone: null, replaces: null });
+      afterDiscard(replaces, () => this.ask({ task: "compute", quote, zone, question: question || null, parent }));
+    };
     // Entrée envoie ; Maj + Entrée va à la ligne (et rien pendant la composition d'un caractère : accents, IME)
     area.addEventListener("keydown", (event) => {
       // keyCode 229 : Entrée qui valide un caractère composé (WebKit ne met pas toujours isComposing)
@@ -1125,7 +1186,10 @@ export class Assistant {
       : h("button", { class: "ai-send", type: "button", title: t("ai.send"), "aria-label": t("ai.send"), html: ARROW_UP, onclick: send });
     if (!running) area.addEventListener("input", () => sendButton.classList.toggle("ready", Boolean(area.value.trim() || pending.quote || pending.zone)));
     sendButton.classList.toggle("ready", ready);
+    const checkable = view === "questions" && !running && (pending.quote || pending.zone);
     const box = h("div", { class: "ai-ask" }, ...chips,
+      checkable && h("div", { class: "ai-actions ai-pending-actions" },
+        h("button", { class: "button small-button ai-action compact", type: "button", title: t("ai.task.computeHint"), onclick: compute }, t("ai.task.compute"))),
       h("div", { class: "ai-field" }, area, sendButton),
       h("div", { class: "ai-foot" }, this.modelPicker() || h("span", { class: "muted small" }, modelLabel(currentModel())),
         h("span", { class: "spacer" }), h("span", { class: "muted small ai-enter" }, t("ai.enterToSend"))));
@@ -1201,7 +1265,7 @@ export class Assistant {
       bubble.append(h("div", { class: "ai-reply-to" }, h("div", { class: "ai-reply-who" }, `${modelLabel(parent.model)} · ${timeOf(parent)}`),
         h("div", { class: "ai-reply-text" }, excerpt(parent.answer))));
     }
-    const zone = ["zone", "transcribe"].includes(exchange.task);
+    const zone = ["zone", "transcribe"].includes(exchange.task) || exchange.task === "compute" && Boolean(exchange.imageUrl || exchange.image);
     if (zone && (exchange.imageUrl || exchange.image)) {  // zone du PDF : son image (le texte de la couche, souvent faux, n'est pas montré)
       bubble.append(h("blockquote", { class: "note-quote ai-quote zone-quote" }, h("img", { src: exchange.imageUrl || `/api/ai/${exchange.id}/image`, alt: "" })));
     } else if (exchange.quote && !zone) bubble.append(h("blockquote", { class: "note-quote ai-quote" }, exchange.quote));
@@ -1218,7 +1282,7 @@ export class Assistant {
   // sinon refaite telle quelle (relecture croisée : même second assistant), ses étapes repliées au-dessus de la synthèse
   renderDocument(thread, exchange, latest) {
     const second = secondOf(exchange);
-    const choose = exchange.task === "review" && this.partners?.length;
+    const choose = exchange.task === "review";  // relecture simple, vérifiée ou croisée : on choisit avant de refaire
     const view = this.viewOf(exchange);
     const whole = this.bookPlace(view);  // synthèse du livre : refaite par la tâche (chapitres faits repris)
     const again = () => {
@@ -1280,6 +1344,13 @@ export class Assistant {
       parts.push(runningLine(exchange));
     } else {
       if (exchange.status === "stopped") parts.push(h("span", { class: "badge warn" }, t("ai.stopped")));
+      if (exchange.cut) parts.push(h("span", { class: "badge warn" }, t("ai.cut")));
+      const covered = exchange.coverage;
+      if (covered?.partial && covered.total) {
+        const percent = Math.min(99, Math.round(100 * covered.sent / covered.total));
+        const pages = (covered.pages || []).join(", ");
+        parts.push(h("span", { class: "badge warn" }, t(pages ? "ai.coveragePages" : "ai.coverage", { percent, pages })));
+      }
       if (exchange.status === "error" || exchange.error) {
         parts.push(h("div", { class: "notice small" }, t(ERROR_KEYS[exchange.errorCode] || "ai.error.other", { message: exchange.error || "" })));
       }
@@ -1796,13 +1867,24 @@ class LiveAnswer {
       added.push(block);
     }
     this.tail.innerHTML = final ? "" : this.html(blocks[complete] || "");
-    if (added.length) typesetTex(added);
+    if (added.length) { for (const block of added) addCopyButtons(block); typesetTex(added); }
   }
 
   html(text) {
     if (!this.names) return markdownToHtml(text, { refs: this.refs });
     const marked = markdownToHtml(withTags(text, this.names, (kind) => `\u0001${kind}\u0001`), { refs: this.refs });
     return marked.replace(/\u0001(\w+)\u0001/g, (_, kind) => `<span class="ai-tag ${kind}">${escapeHtml(this.names[kind] || t(`ai.tag.${kind}`))}</span>`);
+  }
+}
+
+// Bouton « Copier » au-dessus de chaque bloc de code d'une réponse terminée (script à coller dans Sage) ; le code n'est
+// jamais exécuté par l'application. Le presse-papiers s'écrit pendant le clic (Safari).
+function addCopyButtons(root) {
+  for (const pre of root.querySelectorAll("pre")) {
+    if (pre.previousElementSibling?.classList.contains("ai-code-bar")) continue;
+    const copy = () => navigator.clipboard.writeText(pre.querySelector("code")?.textContent ?? pre.textContent)
+      .then(() => toast(t("ai.codeCopied")), () => toast(t("ai.copyFailed")));
+    pre.before(h("div", { class: "ai-code-bar" }, h("button", { class: "ai-act", type: "button", title: t("ai.copyCodeHint"), onclick: copy }, t("ai.copyCode"))));
   }
 }
 

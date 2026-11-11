@@ -295,12 +295,14 @@ class AIRequest(BaseModel):
     pages: list[dict] = []  # PDF sans texte : [{"page", "image" (JPEG en base64)}] autour de la question
     second: str | None = None  # relecture croisée : l'autre assistant (claude, codex, gemini, local)
     chapter: str | None = None  # résumé ou relecture d'un seul chapitre (livre) ou d'une seule section (article)
+    verify: bool = False  # relecture vérifiée : le même assistant tente ensuite de réfuter chaque point grave (ai.verifier)
 
 
 class BookRequest(BaseModel):
     task: str  # summary, review
     second: str | None = None  # relecture croisée de chaque chapitre, avec cet assistant
     fresh: bool = False  # refaire aussi les chapitres déjà faits
+    verify: bool = False  # relecture vérifiée de chaque chapitre
 
 
 class BookStopRequest(BaseModel):
@@ -656,6 +658,8 @@ def _same_version(paper_id: str, version: int | None = Header(None, alias="X-ArX
 
 
 READER_WRITE = [Depends(_same_version)]
+log = logging.getLogger(__name__)
+PARTIAL_EVERY = 3.0  # secondes entre deux écritures de la réponse reçue (échange en cours)
 
 
 @app.post("/api/papers/{paper_id}/annotations", dependencies=READER_WRITE)
@@ -815,13 +819,18 @@ async def start_book_job(paper_id: str, body: BookRequest):
         return JSONResponse({"error": "Unknown task"}, status_code=400)
     if len(ai.parts_of(structure)) < 2:
         return JSONResponse({"error": "Nothing to split"}, status_code=400)
-    second = None
-    if body.second is not None:
-        if body.task != "review" or body.second not in providers.PROVIDERS or body.second == providers.provider_of(model):
+    second, effort = None, None
+    if body.second is not None or body.verify:
+        if (body.task != "review" or (body.second is not None and body.verify)
+                or (body.second is not None and (body.second not in providers.PROVIDERS or body.second == providers.provider_of(model)))):
             return JSONResponse({"error": "Bad cross-review"}, status_code=400)
-        second = ai.model_of(body.second, settings)
+        if body.verify:
+            second, effort = await run_in_threadpool(ai.verifier, model, settings)
+        else:
+            second = ai.model_of(body.second, settings)
     try:
-        job = bookjob.start(paper, structure, body.task, model, second, settings.get("language", "fr"), body.fresh)
+        job = bookjob.start(paper, structure, body.task, model, second, settings.get("language", "fr"), body.fresh,
+                            verify=body.verify, effort=effort)
     except ai.AIError as error:
         return JSONResponse({"error": str(error)}, status_code=409)
     return job.state()
@@ -856,37 +865,49 @@ async def ask_ai(paper_id: str, body: AIRequest):
         return JSONResponse({"error": "Bad page image"}, status_code=400)
     try:
         model = ai.current_model(settings)
-        cross = body.second is not None
+        cross = body.second is not None or body.verify
         chapter = body.chapter or None
         if chapter and (body.task not in ("summary", "review") or chapter not in {c["id"] for c in ai.parts_of(structure)}):
             raise ai.AIError("Unknown chapter")
         if chapter:
             target = chapter  # gardé avec l'échange : le document de ce chapitre
-        if cross and (body.task != "review" or body.second not in providers.PROVIDERS
-                      or body.second == providers.provider_of(model)):
+        if cross and (body.task != "review" or (body.second is not None and body.verify)
+                      or (body.second is not None and (body.second not in providers.PROVIDERS
+                                                       or body.second == providers.provider_of(model)))):
             raise ai.AIError("Bad cross-review")
         if image and not ai.reads_images(model):
             raise ai.AIError("This assistant cannot read images")
         if not ai.reads_images(model) and not cross:
             pages = []  # sans images : la question part sans les pages (comme avant)
-        if cross:  # quatre demandes, préparées au fil de la relecture (ai.cross_review)
-            events = ai.cross_review(paper, structure, model, ai.model_of(body.second, settings), settings.get("language", "fr"), pages,
-                                     chapter)
+        if cross:  # quatre demandes (trois si vérifiée), préparées au fil de la relecture (ai.cross_review)
+            second, effort = await run_in_threadpool(ai.verifier, model, settings) if body.verify else (ai.model_of(body.second, settings), None)
+            events = ai.cross_review(paper, structure, model, second, settings.get("language", "fr"), pages,
+                                     chapter, verify=body.verify, effort=effort)
         else:
             # mémoire de la conversation : les échanges précédents du fil (Questions, ou ce résumé, cette relecture)
             history = await run_in_threadpool(ai.thread_history, paper_id, parent, body.task)
+            seen, flags = {}, {}
             system, prompt = await run_in_threadpool(ai.build_prompt, paper, structure, body.task, target, quote, question,
                                                      parent, settings.get("language", "fr"), ai.paper_limit(model), zone,
                                                      [number for number, _ in pages], max(1, body.page) if body.page else None,
-                                                     chapter=chapter, history=history)
-            events = ({"delta": text} async for text in ai.stream_answer(system, prompt, model, image, [data for _, data in pages]))
+                                                     chapter=chapter, history=history, coverage=seen)
+
+            async def single():
+                if seen:
+                    yield {"coverage": seen}
+                async for text in ai.stream_answer(system, prompt, model, image, [data for _, data in pages], flags):
+                    yield {"delta": text}
+                if flags.get("cut"):
+                    yield {"cut": True}
+            events = single()
     except ai.AIError as error:
         return JSONResponse({"error": str(error)}, status_code=400)
     exchange = ai.create(paper_id, body.task, target, quote, question, parent["id"] if parent else None, model, image)
 
     async def lines():
-        answer, steps = [], []
+        answer, steps, coverage, cut = [], [], None, False
         status = "stopped"  # si la page interrompt la réponse
+        saved = time.monotonic()
         try:
             yield json.dumps({"exchange": exchange}) + "\n"
             async with contextlib.aclosing(events) as stream:
@@ -895,13 +916,23 @@ async def ask_ai(paper_id: str, body: AIRequest):
                         answer.append(event["delta"])
                     if "step" in event:
                         steps.append(event["step"])
+                    coverage = event.get("coverage") or coverage
+                    cut = cut or bool(event.get("cut"))
+                    if time.monotonic() - saved >= PARTIAL_EVERY:  # un plantage ou une fenêtre fermée garde ce qui est reçu
+                        saved = time.monotonic()
+                        ai.save_partial(exchange["id"], "".join(answer), steps, coverage)
                     yield json.dumps(event) + "\n"
             status = "done"
         except ai.AIError as error:
             status = "error"
             yield json.dumps({"error": str(error), "code": error.code}) + "\n"
+        except Exception as error:  # noqa: BLE001 — sinon l'échec serait enregistré comme un arrêt demandé par la page
+            log.exception("ai exchange")
+            status = "error"
+            yield json.dumps({"error": str(error) or type(error).__name__, "code": "other"}) + "\n"
         finally:
-            final = ai.finish(exchange["id"], "".join(answer), status, steps, card=bool(chapter) and body.task == "review")
+            final = ai.finish(exchange["id"], "".join(answer), status, steps, card=bool(chapter) and body.task == "review",
+                              coverage=coverage, cut=cut)
         yield json.dumps({"done": True, "exchange": final}) + "\n"
 
     return StreamingResponse(lines(), media_type="application/x-ndjson", headers={"Cache-Control": "no-store"})
@@ -1694,7 +1725,7 @@ def update_settings(values: dict):
                "aiProvider", "aiLocalUrl", "aiLocalModel", "checkUpdates", "aiFontSize", "notifyCitations", "readerView",
                "citingCollapsed", "followedCollapsed", "geminiApiKey", "aiGeminiModel", "profileOpen",
                "aiClaudeEffort", "aiCodexModel", "aiCodexEffort", "aiGeminiEffort", "zoteroApiKey", "zoteroAutoSync", "onboarded", "aiProfile",
-               "aiReviewMode", "aiSecond", "aiDefault", "feedNewVersions", "newVersionsCollapsed"}
+               "aiReviewMode", "aiSecond", "aiVerifyModel", "aiVerifyEffort", "aiDefault", "feedNewVersions", "newVersionsCollapsed"}
     values = {k: v for k, v in values.items() if k in allowed}
     if not all(_valid_setting(k, v) for k, v in values.items()):
         raise HTTPException(400, "Bad setting")
@@ -1711,7 +1742,7 @@ SETTING_CHOICES = {
     "paperFont": {"auto", "charter", "lm"}, "mathRenderer": {"mathjax", "native"},
     "aiProvider": set(providers.PROVIDERS), "readerView": {"html", "pdf"},
     "feedSort": {"relevance", "arxiv"}, "feedSortS2": {"relevance", "s2"},
-    "aiReviewMode": {"single", "cross"}, "aiSecond": set(providers.PROVIDERS),  # relecture : simple ou croisée, et avec qui
+    "aiReviewMode": {"single", "verify", "cross"}, "aiSecond": set(providers.PROVIDERS),  # relecture : simple ou croisée, et avec qui
     "aiDefault": {"", *providers.PROVIDERS},  # assistant sélectionné au lancement (vide : le dernier choisi)
 }
 BOOLEAN_SETTINGS = {"proofsCollapsed", "tocOpen", "panelOpen", "marginMarks", "notifyFollowed", "checkUpdates", "notifyCitations",
@@ -1739,9 +1770,9 @@ def _valid_setting(key, value):
         return value == "" or providers.valid_gemini_key(value)
     if key == "zoteroApiKey":
         return isinstance(value, str) and (value == "" or re.fullmatch(r"[A-Za-z0-9]{16,64}", value) is not None)
-    if key in ("aiGeminiModel", "aiCodexModel", "aiModel"):
+    if key in ("aiGeminiModel", "aiCodexModel", "aiModel", "aiVerifyModel"):
         return providers.valid_model_name(value) and value not in ("codex", "gemini")
-    if key in ("aiClaudeEffort", "aiCodexEffort", "aiGeminiEffort"):
+    if key in ("aiClaudeEffort", "aiCodexEffort", "aiGeminiEffort", "aiVerifyEffort"):
         return isinstance(value, str) and providers.valid_effort(value)
     if key == "s2ApiKey":
         return isinstance(value, str) and len(value) <= 200 and value.isascii() and value.isprintable()
