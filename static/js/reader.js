@@ -4,6 +4,7 @@ import { api, setReadingVersion } from "./api.js";
 import { closure, renderGraph } from "./graph.js";
 import { Annotator, findAll, noteEditor } from "./annotations.js";
 import { Assistant } from "./ai.js";
+import { copyBibtex } from "./bibtex.js";
 import { alignNumberColumns, amsBibliography, dropMacroDebris, fixMathML, texQuotes, splitLongInlineMath, markItalicStatements, moveTitleNotes, normalizeFontScale, placeEquationNumbers, relabelLists } from "./amsfix.js";
 import { currentModel } from "./aiproviders.js";
 import { emptyPictures, layoutFigures, openFigure, prepareFigures, sizeToText } from "./figures.js";
@@ -433,10 +434,14 @@ class Reader {
       // en tête de la ligne de liens de l'entrée (DOI, MathSciNet, zbMATH : addFindLinks), sur la même ligne
       const badge = h("a", { class: "cross-badge cross-open", href: `#/paper/${encodeURIComponent(entry.paper)}`,
         title: `${entry.title}\n${t("reader.crossOpenTab")}` }, t("reader.crossOpen"));
+      // BibTeX seulement d'un article connu d'arXivReader (métadonnées enregistrées) ; jamais d'une référence en texte libre.
+      // Classe cross-badge aussi : la ligne reste « sans liens de recherche » pour addFindLinks, qui s'y ajoute
+      const bibtex = h("button", { class: "cross-badge cross-bibtex", type: "button", title: t("bibtex.copyTitle"),
+        onclick: () => copyBibtex(() => api.paperBibtex(entry.paper)) }, "BibTeX");
       const row = item.querySelector(".bib-links");
       row?.querySelector(".bib-arxiv")?.remove();  // déjà lu ici : rien à chercher sur arXiv
-      if (row) row.prepend(badge);
-      else item.append(h("div", { class: "bib-links" }, badge));
+      if (row) row.prepend(badge, bibtex);
+      else item.append(h("div", { class: "bib-links" }, badge, bibtex));
     }
   }
 
@@ -1508,7 +1513,9 @@ class Reader {
     const citation = paper.title && [(paper.authors || []).join(", "), paper.title, journal, paper.doi && `doi:${paper.doi}`]
       .filter(Boolean).join(", ").replace(/\s+/g, " ").trim();
     return [citation && chip("MathSciNet", `https://mathscinet.ams.org/mref?ref=${encodeURIComponent([...citation].slice(0, 500).join(""))}&dataType=mathscinet`),
-      zbQuery && chip("zbMATH", `https://zbmath.org/?q=${encodeURIComponent(zbQuery)}`)]
+      zbQuery && chip("zbMATH", `https://zbmath.org/?q=${encodeURIComponent(zbQuery)}`),
+      // BibTeX construit par le serveur d'après les métadonnées enregistrées (hors ligne)
+      h("button", { class: "chip chip-button", type: "button", title: t("bibtex.copyTitle"), onclick: () => copyBibtex(() => api.paperBibtex(paper.id)) }, "BibTeX")]
       .filter(Boolean);
   }
 

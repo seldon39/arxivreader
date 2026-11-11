@@ -1135,6 +1135,7 @@ button.ai-book-name:disabled { cursor: default; color: inherit; }
 .proof-pointer:hover { text-decoration: underline; }
 .proof-info { margin-top: 6px; color: var(--muted); }
 .link-button { border: 0; background: none; padding: 0; font: inherit; color: var(--link); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.link-button:disabled { opacity: .5; cursor: default; text-decoration: none; }
 .proof-editor { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
 .proof-editor-title { margin: 0; font-weight: 600; }
 .proof-editor-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
@@ -1527,6 +1528,7 @@ body.has-selection-bar #toast { bottom: 96px; }
 .bib-links a:hover { color: var(--link); text-decoration: underline; }
 .bib-links .cross-badge { margin-left: 0; color: var(--link); }  /* « Ouvrir l'article » en tête de la ligne */
 .bib-links .cross-badge:hover { text-decoration: none; }
+.bib-links button.cross-badge { margin-left: 0; background: none; cursor: pointer; }  /* « BibTeX » : même pastille que « Ouvrir l'article » */
 .related-building { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; }
 .related-building .related-step:empty { display: none; }
 /* article examiné : encadré rouge aux coins arrondis, fond à peine teinté, comme l'annonce du jour du feed */

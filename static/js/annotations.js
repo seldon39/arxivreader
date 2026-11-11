@@ -11,7 +11,7 @@ import { api } from "./api.js";
 import { t } from "./i18n.js";
 import { markdownToHtml } from "./markdown.js";
 import { typesetTex } from "./math.js";
-import { debounce, h, icons, toast, toastError } from "./util.js";
+import { copyText, debounce, h, icons, toast, toastError } from "./util.js";
 
 // image d'une zone du PDF, en data URL (gardée avant sa suppression, pour « Annuler »)
 async function imageData(id) {
@@ -334,18 +334,6 @@ function rangeTex(range) {
     }
   }
   return out.replace(/[ \t]+\n/g, "\n").replace(/\n[ \t]+/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
-}
-
-async function copyText(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch { // presse-papiers refusé (hors geste de l'utilisateur…) : ancienne méthode
-    const area = h("textarea", { style: "position: fixed; opacity: 0" }, text);
-    document.body.append(area);
-    area.select();
-    document.execCommand("copy");
-    area.remove();
-  }
 }
 
 const hasMath = (range) => Boolean(range.cloneContents().querySelector(MATH)

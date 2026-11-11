@@ -2,6 +2,7 @@
 
 import { setFindHandler } from "./find.js";
 import { api } from "./api.js";
+import { copyBibtex, saveBibtex } from "./bibtex.js";
 import { t, tn } from "./i18n.js";
 import { chooseFiles, debounce, draggablePaper, droppedFilePaths, droppedPapers, formatDate, h, icons, journalChip, localDrag, mayBePaper, metaDialog, tidyTitle, timeAgo, toast, toastError, withMath } from "./util.js";
 import { importTexFile, unquote } from "./texfile.js";
@@ -806,6 +807,10 @@ export async function renderLibrary(root, { restoreTo = 0 } = {}) {
         h("span", { class: "folder-icon", html: icons.folder }), title,
         count,
         !renaming && h("button", { class: "link-button", type: "button", onclick: () => { renaming = true; drawPanel(); } }, t("library.folder.rename")),
+        // BibTeX des articles du dossier : copié, ou fichier .bib à glisser à côté du TeX
+        h("button", { class: "link-button", type: "button", disabled: !folder.papers.length, onclick: () => copyBibtex(() => api.folderBibtex(folder.id)) }, t("bibtex.copy")),
+        h("button", { class: "link-button", type: "button", disabled: !folder.papers.length,
+          onclick: () => saveBibtex(() => api.folderBibtex(folder.id), `/api/folders/${encodeURIComponent(folder.id)}.bib`) }, t("bibtex.export")),
         h("button", { class: "link-button", type: "button", onclick: () => removeFolder(folder) }, t("library.folder.delete")),
         h("button", { class: "link-button", type: "button", onclick: () => { toggleFolder(folder.id); focusFolder(folder.id); } }, t("library.folder.close"))),
       sort || "",
@@ -988,6 +993,7 @@ function card(paper, refreshList, context = null) {
     h("div", { class: "card-actions" },
       selectButton({ arxivId: paper.arxiv_id, paperId: paper.id, title: paper.title }),
       context && action(icons.folder, t("library.folder.file"), (button) => context.openFileMenu(paper, button), "folder-action"),
+      action(icons.bibtex, t("bibtex.copyTitle"), () => copyBibtex(() => api.paperBibtex(paper.id)), "bibtex-action"),
       paper.arxiv_id && h("a", { class: "icon-button", href: `#/related/${encodeURIComponent(paper.arxiv_id)}`, title: t("related.fromCard"),
         "aria-label": t("related.fromCard"), html: icons.graph }),
       paper.arxiv_id && h("a", { class: "icon-button", href: `https://arxiv.org/abs/${paper.arxiv_id}`, target: "_blank", rel: "noopener noreferrer",
