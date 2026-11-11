@@ -9,7 +9,7 @@ import json
 import re
 import unicodedata
 
-from . import db, library
+from . import arxiv, db, library
 
 SEQUEL = {"ii", "iii", "iv", "v", "vi", "vii", "viii", "part"}  # mot qui suit un titre : c'est une suite
 MIN_TITLE_WORDS = 4  # titre trop court (« Bergman kernels ») : pas de rapprochement par le titre
@@ -23,7 +23,9 @@ def _words(text):
 
 
 def _arxiv(identifier):
-    return re.sub(r"v\d+$", "", (identifier or "").strip().lower())
+    # sans version ni classe (math.DG/0211159 → math/0211159) : comme les identifiants de la bibliographie ; la classe
+    # s'enlève avant de passer en minuscules (elle s'écrit en capitales)
+    return arxiv.strip_subject_class(re.sub(r"v\d+$", "", (identifier or "").strip())).lower()
 
 
 _nodes_cache = {}  # id d'article → ((date, taille) de structure.json, énoncés) : relu seulement si le fichier change
@@ -64,14 +66,20 @@ def library_index(exclude=None):
 
 
 def match(entry, index):
+    return match_by(entry, index)[0]
+
+
+def match_by(entry, index):
+    """(article, comment) : « id » ou « doi » (certain), « title » (titre retrouvé dans la référence : approximatif),
+    (None, None) sans correspondance."""
     arxiv_ids = {_arxiv(a) for a in entry.get("arxiv") or []}
     doi = (entry.get("doi") or "").lower()
     text = " " + " ".join(_words(f"{entry.get('title') or ''} {entry.get('text') or ''}")) + " "
     for paper in index:
         if paper["arxiv"] and paper["arxiv"] in arxiv_ids:
-            return paper
+            return paper, "id"
         if doi and paper["doi"] and doi == paper["doi"]:
-            return paper
+            return paper, "doi"
     best = None
     for paper in index:
         words = paper["words"]
@@ -85,7 +93,7 @@ def match(entry, index):
             continue
         if best is None or len(words) > len(best["words"]):  # le titre le plus long (« …, I » avant son abrégé)
             best = paper
-    return best
+    return best, ("title" if best else None)
 
 
 def links(paper_id):
@@ -94,9 +102,10 @@ def links(paper_id):
     index = library_index(exclude=paper_id)
     found = {}
     for entry in structure.get("bibliography", []):
-        paper = match(entry, index)
+        paper, by = match_by(entry, index)
         if paper:
-            found[entry["id"]] = {"paper": paper["id"], "title": paper["title"], "nodes": paper["nodes"]}
+            # `by` : le bouton BibTeX n'est montré que pour une correspondance sûre (jamais par ressemblance de titre)
+            found[entry["id"]] = {"paper": paper["id"], "title": paper["title"], "nodes": paper["nodes"], "by": by}
     return found
 
 

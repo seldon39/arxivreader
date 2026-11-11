@@ -26,7 +26,8 @@ def reusable(paper_id, task, chapter_ids):
     found = {}
     for exchange in ai.list_for(paper_id):  # dans l'ordre : le dernier l'emporte
         if (exchange["task"] == task and exchange["parent_id"] is None and exchange["status"] == "done"
-                and exchange["target"] in chapter_ids and exchange["answer"] and (task != "review" or exchange.get("card"))):
+                and exchange["target"] in chapter_ids and exchange["answer"] and not exchange.get("cut")  # une réponse coupée n'est pas reprise
+                and (task != "review" or exchange.get("card"))):
             found[exchange["target"]] = exchange
     return found
 
@@ -119,7 +120,7 @@ class Job:
                 entry["state"] = "wait"
                 raise
             text = "".join(answer)
-            ai.finish(exchange["id"], text, "done", steps or None, card=self.task == "review", coverage=seen or None,
+            ai.finish(exchange["id"], text, "done", steps or None, card=self.task == "review" and not flags.get("cut"), coverage=seen or None,
                       cut=bool(flags.get("cut")))
             self.open.discard(exchange["id"])
             self.answers[entry["id"]] = text

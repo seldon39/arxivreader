@@ -70,8 +70,11 @@ def stored_key(arxiv_id):
     if "/" in arxiv_id and not db.get_paper(key):
         subject, number = arxiv_id.split("/", 1)
         with db.connect() as connection:
-            row = connection.execute("SELECT id FROM papers WHERE arxiv_id GLOB ? AND archived_of IS NULL",
-                                     (f"{subject}.[A-Z][A-Z]/{number}",)).fetchone()
+            # d'abord la fiche dont l'identifiant a déjà été normalisé (une réimportation le réécrit « math/0211159 » en
+            # gardant la clé d'origine), puis celle qui l'a encore avec sa classe
+            row = connection.execute("SELECT id FROM papers WHERE arxiv_id = ? AND archived_of IS NULL", (arxiv_id,)).fetchone() \
+                or connection.execute("SELECT id FROM papers WHERE arxiv_id GLOB ? AND archived_of IS NULL",
+                                      (f"{subject}.[A-Z][A-Z]/{number}",)).fetchone()
         if row:
             return row["id"]
     return key

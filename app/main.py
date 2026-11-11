@@ -29,7 +29,7 @@ from pydantic import BaseModel
 
 from . import (ai, alerts, annotations, bibtex, bookjob, notesync, safety, citations, crossrefs, db, export, feed, feedprune, folders, fulltext, journals, latexml, library, localpdf, onboarding, profile, providers, related, texfile,
                relevance, search, updates, zotero)
-from .arxiv import ArxivError, fetch_metadata, paper_key, parse_arxiv_id
+from .arxiv import ArxivError, fetch_metadata, paper_key, parse_arxiv_id, strip_subject_class
 from .config import HOST, PORT, STATIC, TOKEN, TOKEN_FILE
 
 # Types des fichiers servis fixés ici : sous Windows, le registre en donne parfois d'autres (.js en
@@ -81,12 +81,9 @@ async def lifespan(_app):
     library.clean_cache()
     # copie du jour, hors de la boucle d'événements (ARXIVREADER_NO_SNAPSHOT=1 pour la couper ; la version d'essai,
     # lancée avec ARXIVREADER_NO_ALERTS, garde la sienne : sa bibliothèque est à part)
-    if not os.environ.get("ARXIVREADER_NO_SNAPSHOT"):
-        threading.Thread(target=_daily_snapshot, daemon=True).start()
-    try:
-        feedprune.prune()  # feed et vecteurs anciens (hors ceux gardés) : la base ne grossit plus sans fin
-    except Exception:
-        logging.getLogger(__name__).warning("élagage du feed impossible", exc_info=True)
+    # puis l'élagage du feed, dans le même fil et après la copie : les deux sur la base en même temps se disputeraient
+    # son verrou (la copie le garde pendant toute la lecture), et jamais sur la boucle d'événements
+    threading.Thread(target=_startup_maintenance, daemon=True).start()
     threading.Thread(target=localpdf.redetect_all, daemon=True).start()  # PDF importés : titre et auteurs relus
     # vérification périodique des auteurs suivis (ARXIVREADER_NO_ALERTS=1 pour la couper, par ex. en test)
     alerts.stop.clear()
@@ -113,6 +110,16 @@ async def lifespan(_app):
             pass
     if TOKEN:
         TOKEN_FILE.unlink(missing_ok=True)
+
+
+def _startup_maintenance():
+    """Copie du jour (sauf ARXIVREADER_NO_SNAPSHOT), puis élagage du feed : l'élagage se fait même sans copie."""
+    if not os.environ.get("ARXIVREADER_NO_SNAPSHOT"):
+        _daily_snapshot()
+    try:
+        feedprune.prune()  # feed et vecteurs anciens (hors ceux gardés) : la base ne grossit plus sans fin
+    except Exception:
+        logging.getLogger(__name__).warning("élagage du feed impossible", exc_info=True)
 
 
 def _daily_snapshot():
@@ -938,7 +945,10 @@ async def ask_ai(paper_id: str, body: AIRequest):
                     cut = cut or bool(event.get("cut"))
                     if time.monotonic() - saved >= PARTIAL_EVERY:  # un plantage ou une fenêtre fermée garde ce qui est reçu
                         saved = time.monotonic()
-                        ai.save_partial(exchange["id"], "".join(answer), steps, coverage)
+                        try:  # simple point de reprise : un verrou SQLite ne doit pas faire perdre la réponse
+                            await run_in_threadpool(ai.save_partial, exchange["id"], "".join(answer), steps, coverage)
+                        except Exception:  # noqa: BLE001
+                            log.warning("ai partial save failed", exc_info=True)
                     yield json.dumps(event) + "\n"
             status = "done"
         except ai.AIError as error:
@@ -949,7 +959,7 @@ async def ask_ai(paper_id: str, body: AIRequest):
             status = "error"
             yield json.dumps({"error": str(error) or type(error).__name__, "code": "other"}) + "\n"
         finally:
-            final = ai.finish(exchange["id"], "".join(answer), status, steps, card=bool(chapter) and body.task == "review",
+            final = ai.finish(exchange["id"], "".join(answer), status, steps, card=bool(chapter) and body.task == "review" and not cut,
                               coverage=coverage, cut=cut)
         yield json.dumps({"done": True, "exchange": final}) + "\n"
 
@@ -1579,12 +1589,13 @@ def _bibtex_s2(paper):
     """Revue et DOI que Semantic Scholar a déjà donnés pour cet article (aucune requête ici)."""
     if not paper.get("arxiv_id"):
         return None
-    return journals.known([relevance.s2_key(paper["arxiv_id"])]).get(relevance.s2_key(paper["arxiv_id"]))
+    key = relevance.s2_key(strip_subject_class(paper["arxiv_id"]))  # la clé de Semantic Scholar n'a pas la classe (math/0211159)
+    return journals.known([key]).get(key)
 
 
 def _bibtex_of(papers):
     # une seule lecture de la table des revues pour tout l'export
-    keys = {p["id"]: relevance.s2_key(p["arxiv_id"]) for p in papers if p.get("arxiv_id")}
+    keys = {p["id"]: relevance.s2_key(strip_subject_class(p["arxiv_id"])) for p in papers if p.get("arxiv_id")}
     found = journals.known(list(keys.values())) if keys else {}
     return bibtex.export(papers, lambda p: found.get(keys.get(p["id"])))
 

@@ -56,7 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Travaux en cours côté serveur (réponses de l'assistant, relectures du livre, liens) : quitter les perdrait.
     // Serveur muet ou réponse illisible : comme zéro, jamais de blocage.
     func askIfRunning(_ proceed: @escaping (Bool) -> Void) {
-        if asking { return proceed(false) }  // une question est déjà en route
+        if asking { return }  // une question est déjà en route : sa réponse décidera (répondre « non » ici annulerait l'arrêt en attente)
         guard serverReady, !confirmedLeaving, let url = URL(string: "\(origin)/api/ai/running") else { return proceed(true) }
         asking = true
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 2)
@@ -938,8 +938,7 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
                  for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         guard let url = action.request.url else { return nil }
         if isAppURL(url) { app.openTab(url.fragment.map { "#\($0)" } ?? "#/", beside: window) }
-        else if ["http", "https"].contains(url.scheme?.lowercased() ?? "") { NSWorkspace.shared.open(url) } // window.open : WebKit n'appelle ceci que sur un geste de l'utilisateur
-        else { openOutside(url, action) }
+        else { openOutside(url, action) } // même règle que partout : http(s) seulement sur un geste (un window.open sans clic est ignoré)
         return nil
     }
 

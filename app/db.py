@@ -178,19 +178,33 @@ def init():
 
 def _one_row_per_statement(db):
     """Une seule ligne par énoncé, preuve et fiche de lecture et par article (deux requêtes simultanées pouvaient en
-    créer deux) : doublons existants fusionnés une fois (on garde celle qui a une note ou un état, puis la plus
-    récente), puis index unique partiel."""
+    créer deux) : doublons existants fusionnés une fois, sans rien perdre — on garde la ligne la plus récente parmi
+    celles qui ont une note ou un état, on y ajoute les notes différentes des autres (à la suite, séparées d'une
+    ligne vide), le premier état connu, la date de création la plus ancienne — puis index unique partiel."""
     if db.execute("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'annotations_single'").fetchone():
         return
     groups = {}
-    for row in db.execute("SELECT id, paper_id, kind, json_extract(target, '$.id') AS node, updated_at, "
-                          "(COALESCE(TRIM(note), '') != '' OR state IS NOT NULL) AS filled "
+    for row in db.execute("SELECT id, paper_id, kind, json_extract(target, '$.id') AS node, note, state, created_at, "
+                          "updated_at, (COALESCE(TRIM(note), '') != '' OR state IS NOT NULL) AS filled "
                           "FROM annotations WHERE kind IN ('block', 'proof', 'general')"):
         if row["kind"] == "general" or row["node"] is not None:
             groups.setdefault((row["paper_id"], row["kind"], row["node"]), []).append(row)
     for rows in groups.values():
+        if len(rows) < 2:
+            continue
         rows.sort(key=lambda r: (r["filled"], r["updated_at"] or "", r["id"]), reverse=True)
-        for extra in rows[1:]:
+        kept, extras = rows[0], rows[1:]
+        notes = [(kept["note"] or "").strip()]
+        for extra in sorted(extras, key=lambda r: (r["updated_at"] or "", r["id"])):
+            text = (extra["note"] or "").strip()
+            if text and text not in notes:
+                notes.append(text)
+        note = "\n\n".join(n for n in notes if n) or kept["note"]
+        state = kept["state"] or next((r["state"] for r in extras if r["state"]), None)
+        created = min((r["created_at"] for r in rows if r["created_at"]), default=kept["created_at"])
+        db.execute("UPDATE annotations SET note = ?, state = ?, created_at = ? WHERE id = ?",
+                   (note, state, created, kept["id"]))
+        for extra in extras:
             db.execute("DELETE FROM annotations WHERE id = ?", (extra["id"],))
     db.execute("CREATE UNIQUE INDEX annotations_single ON annotations (paper_id, kind, json_extract(target, '$.id')) "
                "WHERE kind IN ('block', 'proof')")

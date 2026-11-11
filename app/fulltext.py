@@ -15,7 +15,8 @@ MIN_QUERY = 3
 MAX_RESULTS = 200
 MAX_PER_PAPER = 3      # occurrences dans le texte d'un même article
 SNIPPET_SIDE = 100     # caractères de part et d'autre de l'occurrence
-CACHED_CHARS = 60_000_000  # taille du cache en caractères (texte + texte replié) : un article en compte ~300 000
+CACHED_CHARS = 120_000_000  # taille du cache en caractères (texte replié seul) : un article en compte ~300 000 ; il doit contenir
+# toute la bibliothèque, sinon chaque recherche (qui parcourt tous les articles dans le même ordre) relit tous les fichiers
 
 # Annotations prises en compte : celles de la bibliothèque, y compris sur les versions archivées de ses articles
 ANNOTATED_PAPERS = "p.in_library = 1 OR p.archived_of IN (SELECT id FROM papers WHERE in_library = 1)"
@@ -100,27 +101,29 @@ def _stamp(path):
         return None
 
 
-_cache = OrderedDict()  # (chemin, date) -> (texte, texte replié) ; borné en caractères, le plus ancien sort d'abord
+_cache = OrderedDict()  # (chemin, date) -> texte replié ; borné en caractères, le plus ancien sort d'abord
 _cached_chars = 0
 _cache_lock = threading.Lock()  # la recherche tourne dans le pool de threads : deux requêtes peuvent se croiser
 
 
 def _extracted(path, stamp):
-    """(texte, texte replié) d'un content.html, d'un text.json ou d'un source.tex ; `stamp` : un fichier modifié est relu."""
+    """Texte replié d'un content.html, d'un text.json ou d'un source.tex ; `stamp` : un fichier modifié est relu. Seul le
+    texte replié est gardé (même longueur que le texte : positions valables pour les deux) ; le texte d'origine, utile
+    aux seuls extraits des quelques articles trouvés, est relu par `_text_of`."""
     global _cached_chars
     key = (path, stamp)
     with _cache_lock:
         if key in _cache:
             _cache.move_to_end(key)
             return _cache[key]
-    value = _read_text(path)  # hors du verrou : la lecture est longue
+    value = _read_text(path)[1]  # hors du verrou : la lecture est longue
     with _cache_lock:
         if key not in _cache:
             _cache[key] = value
-            _cached_chars += 2 * len(value[0])
+            _cached_chars += len(value)
             while _cached_chars > CACHED_CHARS and len(_cache) > 1:
-                _, (old, _) = _cache.popitem(last=False)
-                _cached_chars -= 2 * len(old)
+                _, old = _cache.popitem(last=False)
+                _cached_chars -= len(old)
     return value
 
 
@@ -133,6 +136,11 @@ def _read_text(path):
     else:  # le texte d'un PDF a ses ligatures (ﬁ) et ses lettres mathématiques : NFKC ; \f sépare les pages
         text = "\f".join(unicodedata.normalize("NFKC", page).replace("$", PLAIN_DOLLAR) for page in json.loads(raw)["pages"])
     return text, fold(text)
+
+
+def _text_of(path):
+    """Texte d'origine (pour l'extrait), relu du fichier : seuls les articles trouvés en ont besoin."""
+    return _read_text(path)[0]
 
 
 @lru_cache(maxsize=1000)
@@ -302,9 +310,10 @@ def _locate(page, matches):
 
 
 def _html_hits(paper, path, stamp, pattern):
-    text, folded = _extracted(path, stamp)
+    folded = _extracted(path, stamp)
     if not pattern.search(folded):
         return []
+    text = _text_of(path)
     labels = _labels(paper["id"])
     hits = []
     for match, anchor, statement in _locate(path.read_text(encoding="utf-8"), pattern.finditer(folded)):
@@ -316,12 +325,13 @@ def _html_hits(paper, path, stamp, pattern):
 
 
 def _pdf_hits(paper, path, stamp, pattern):
-    text, folded = _extracted(path, stamp)
-    hits, page, counted, last = [], 1, 0, None
+    folded = _extracted(path, stamp)
+    hits, page, counted, last, text = [], 1, 0, None, None
     for match in pattern.finditer(folded):
-        page += text.count("\f", counted, match.start())
+        page += folded.count("\f", counted, match.start())
         counted = match.start()
         if page != last:
+            text = _text_of(path) if text is None else text
             hits.append(_hit(paper, "text", f"p. {page}", text, match, None))
             last = page
             if len(hits) == MAX_PER_PAPER:
@@ -331,13 +341,14 @@ def _pdf_hits(paper, path, stamp, pattern):
 
 def _source_hits(paper, path, stamp, pattern):
     """Source TeX : une occurrence par paragraphe (ligne vide) ; l'article s'ouvre en haut, le TeX n'ayant pas de page."""
-    text, folded = _extracted(path, stamp)
+    folded = _extracted(path, stamp)
     if not pattern.search(folded):
         return []
-    hits, last = [], None
+    hits, last, text = [], None, None
     for match in pattern.finditer(folded):
-        block = text.count("\n\n", 0, match.start())
+        block = folded.count("\n\n", 0, match.start())
         if block != last:
+            text = _text_of(path) if text is None else text
             hits.append(_hit(paper, "text", "TeX", text, match, None))
             last = block
             if len(hits) == MAX_PER_PAPER:

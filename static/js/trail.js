@@ -1,4 +1,4 @@
-// Un seul historique de sauts pour le HTML et le PDF (« Retour », ⌥← / ⌥→, ⌘[ / ⌘]) et les touches de lecture.
+// Un seul historique de sauts pour le HTML et le PDF (« Retour », ⌥← / ⌥→) et les touches de lecture.
 // Fonctions pures (testées hors navigateur : tests/test_trail.py) ; reader.js fait le défilement.
 //
 // Un endroit est une ancre, jamais un nombre de pixels (la mise en page change avec la taille de la police) :
@@ -46,14 +46,11 @@ export class Trail {
   }
 }
 
-// Touche d'historique : -1 (⌥←, ⌘[), +1 (⌥→, ⌘]), 0 sinon. Les touches avec un autre modificateur ne comptent pas.
+// Touche d'historique : -1 (⌥←), +1 (⌥→), 0 sinon. Les touches avec un autre modificateur ne comptent pas.
+// ⌘[ et ⌘] restent au menu « Aller » de l'application Mac (historique des pages) : on ne les prend pas.
 export function trailKey(event) {
   if (event.shiftKey || event.isComposing) return 0;
   if (event.altKey && !event.metaKey && !event.ctrlKey) return event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0;
-  if (event.metaKey && !event.altKey && !event.ctrlKey) {
-    if (event.code === "BracketLeft" || event.key === "[") return -1;
-    if (event.code === "BracketRight" || event.key === "]") return 1;
-  }
   return 0;
 }
 
@@ -62,7 +59,9 @@ export function trailKey(event) {
 // j / k : mêmes gestes sur tout clavier (« ] » et « [ » demandent ⌥⇧ sur un clavier AZERTY)
 export const READING_KEYS = { j: "next", k: "prev", "]": "next", "[": "prev", p: "proof", "?": "help" };
 export function readingKey(event) {
-  if (event.altKey || event.metaKey || event.ctrlKey || event.isComposing) return null;
+  if (event.metaKey || event.ctrlKey || event.isComposing) return null;
+  // clavier AZERTY : « [ » et « ] » demandent ⌥ (et ⇧) ; pour les autres touches, ⌥ change le caractère : refusé
+  if (event.altKey && event.key !== "[" && event.key !== "]") return null;
   return READING_KEYS[event.key] || null;
 }
 

@@ -158,10 +158,21 @@ class Reliability(unittest.TestCase):
                                    (PID, json.dumps({"id": "S1.Thm1"}), note, uid, when))
             connection.execute("INSERT INTO annotations (paper_id, kind, note, uid) VALUES (?, 'general', 'fiche', 'g1')", (PID,))
             connection.execute("INSERT INTO annotations (paper_id, kind, note, uid) VALUES (?, 'general', NULL, 'g2')", (PID,))
+            # deux lignes remplies pour un même énoncé : aucune des deux notes ni l'état ne doit disparaître
+            connection.execute("INSERT INTO annotations (paper_id, kind, target, note, state, uid, created_at, updated_at) "
+                               "VALUES (?, 'block', ?, 'note A', 'understood', 'e1', '2026-01-01 00:00:00', '2026-01-02 00:00:00')",
+                               (PID, json.dumps({"id": "S1.Thm2"})))
+            connection.execute("INSERT INTO annotations (paper_id, kind, target, note, uid, created_at, updated_at) "
+                               "VALUES (?, 'block', ?, 'note B', 'e2', '2026-02-01 00:00:00', '2026-02-02 00:00:00')",
+                               (PID, json.dumps({"id": "S1.Thm2"})))
         db.init()
-        self.assertEqual(sorted(a["uid"] for a in annotations.list_for(PID)), ["d2", "g1"])
+        left = {a["uid"]: a for a in annotations.list_for(PID)}
+        self.assertEqual(sorted(left), ["d2", "e2", "g1"])
+        self.assertEqual(left["e2"]["note"], "note B\n\nnote A")  # la plus récente gardée, l'autre note à la suite
+        self.assertEqual(left["e2"]["state"], "understood")
+        self.assertEqual(left["e2"]["created_at"], "2026-01-01 00:00:00")
         db.init()  # deuxième démarrage : rien à refaire
-        self.assertEqual(len(annotations.list_for(PID)), 2)
+        self.assertEqual(len(annotations.list_for(PID)), 3)
 
     def test_markdown_does_not_get_fake_headings(self):
         note = "Intro\n# Titre\n  ## Autre\nsous-titre\n===\n```\n# code\n```\nFin"

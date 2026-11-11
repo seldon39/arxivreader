@@ -104,14 +104,14 @@ class FullText(unittest.TestCase):
     def test_cache_is_bounded_by_characters(self):
         folders = [self.paper(name, "<p>" + "needle " * 20 + "</p>") for name in "abcd"]
         saved = fulltext.CACHED_CHARS
-        fulltext.CACHED_CHARS = 700
+        fulltext.CACHED_CHARS = 350
         fulltext._cache.clear()
         fulltext._cached_chars = 0
         try:
             self.found("needle")
             self.assertLess(len(fulltext._cache), 4)
-            self.assertLessEqual(fulltext._cached_chars, 700)
-            self.assertEqual(fulltext._cached_chars, sum(2 * len(v[0]) for v in fulltext._cache.values()))
+            self.assertLessEqual(fulltext._cached_chars, 350)
+            self.assertEqual(fulltext._cached_chars, sum(len(v) for v in fulltext._cache.values()))
         finally:
             fulltext.CACHED_CHARS = saved
         self.assertEqual(len(folders), 4)

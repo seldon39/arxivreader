@@ -87,6 +87,15 @@ export async function saveSettings(values) {
 
 // Mac : ⌘+, ⌘− et ⌘0 (menu Présentation) changent la taille du texte, comme le curseur des réglages
 document.addEventListener("app:zoom", (event) => {
+  // vue PDF affichée : le raccourci agit sur le zoom de pdf.js (la taille du texte ne touche pas le PDF)
+  const pdf = document.querySelector(".pdf-view iframe.pdf-frame");
+  const viewer = pdf?.offsetParent ? pdf.contentWindow?.PDFViewerApplication : null;
+  if (viewer?.pdfViewer) {
+    if (event.detail === "in") viewer.zoomIn?.();
+    else if (event.detail === "out") viewer.zoomOut?.();
+    else viewer.pdfViewer.currentScaleValue = "auto";
+    return;
+  }
   const next = event.detail === "reset" ? DEFAULT_FONT_SIZE
     : Math.min(24, Math.max(14, (Number(settings.fontSize) || DEFAULT_FONT_SIZE) + (event.detail === "in" ? 1 : -1)));
   if (next === settings.fontSize) return;

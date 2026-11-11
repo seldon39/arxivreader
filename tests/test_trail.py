@@ -49,13 +49,18 @@ class TrailHelpers(unittest.TestCase):
     def test_keys(self):
         self.assertEqual(self.run_js('T.trailKey({altKey:true, key:"ArrowLeft"})'), -1)
         self.assertEqual(self.run_js('T.trailKey({altKey:true, key:"ArrowRight"})'), 1)
-        self.assertEqual(self.run_js('T.trailKey({metaKey:true, key:"[", code:"BracketLeft"})'), -1)
-        self.assertEqual(self.run_js('T.trailKey({metaKey:true, code:"BracketRight"})'), 1)
+        # ⌘[ et ⌘] restent au menu de l'application Mac
+        self.assertEqual(self.run_js('T.trailKey({metaKey:true, key:"[", code:"BracketLeft"})'), 0)
+        self.assertEqual(self.run_js('T.trailKey({metaKey:true, code:"BracketRight"})'), 0)
         self.assertEqual(self.run_js('T.trailKey({altKey:true, shiftKey:true, key:"ArrowLeft"})'), 0)
         self.assertEqual(self.run_js('T.trailKey({ctrlKey:true, key:"ArrowLeft"})'), 0)
         self.assertEqual(self.run_js('T.trailKey({key:"["})'), 0)
         self.assertEqual(self.run_js('T.readingKey({key:"]"})'), "next")
         self.assertEqual(self.run_js('T.readingKey({key:"p"})'), "proof")
+        self.assertEqual(self.run_js('T.readingKey({key:"j"})'), "next")
+        self.assertEqual(self.run_js('T.readingKey({key:"[", altKey:true, shiftKey:true})'), "prev")  # AZERTY
+        self.assertIsNone(self.run_js('T.readingKey({key:"p", altKey:true})'))
+        self.assertIsNone(self.run_js('T.readingKey({key:"[", metaKey:true})'))
         self.assertIsNone(self.run_js('T.readingKey({key:"p", metaKey:true})'))
         self.assertIsNone(self.run_js('T.readingKey({key:"a"})'))
         self.assertIsNone(self.run_js('T.readingKey({key:"]", isComposing:true})'))

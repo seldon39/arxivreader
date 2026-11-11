@@ -30,6 +30,7 @@ MARK = "arxivreader-data"
 DATA = re.compile(r"<!-- " + MARK + r"\s*(\{.*?\})\s*-->", re.S)
 MAX_FILES = 5000
 MAX_TEXT = 20_000_000
+MAX_IMAGES = 200_000_000  # images des zones du PDF, comptées à part du texte des notes
 FIELDS = ("uid", "kind", "target", "color", "quote", "note", "state", "author", "created_at", "updated_at")
 _key_lock = threading.Lock()
 
@@ -177,8 +178,8 @@ def _images(files):
                 if info.is_dir() or not name or info.file_size > annotations.MAX_IMAGE:
                     continue
                 total += info.file_size
-                if total > MAX_TEXT:
-                    raise ImportError_("too large")
+                if total > MAX_IMAGES:  # au-delà : notes importées quand même, sans ces images
+                    return found
                 found[name.group(1).lower()] = archive.read(info)
     return found
 

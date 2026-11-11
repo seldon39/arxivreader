@@ -166,6 +166,29 @@ class Exchange(unittest.TestCase):
         self.assertEqual(final["coverage"]["sent"], final["coverage"]["total"])
         self.assertTrue(ai.get(final["id"])["cut"])
 
+    def test_cut_review_is_not_a_card_and_not_reusable(self):
+        exchange = ai.create("p1", "review", "c1", None, None, None, "opus")
+        ai.finish(exchange["id"], "coupé", "done", card=True, cut=True)
+        from app import bookjob
+        self.assertEqual(bookjob.reusable("p1", "review", {"c1"}), {})
+
+    def test_compute_exchange_keeps_its_image_flag(self):
+        exchange = ai.create("p1", "compute", None, "x", None, None, "opus", b"\x89PNG")
+        self.assertTrue(ai.get(exchange["id"])["image"])
+
+    def test_cross_review_cut_step_does_not_mark_the_synthesis(self):
+        calls = []
+
+        async def fake(system, prompt, model, image=None, pages=(), flags=None):
+            calls.append(model)
+            yield "texte"
+            if model == "codex" and len(calls) <= 2:  # la relecture de B seulement
+                flags["cut"] = True
+        ai.stream_answer = fake
+        events = asyncio.run(collect(ai.cross_review(self.paper, STRUCTURE, "opus", "codex")))
+        self.assertFalse(any(e.get("cut") for e in events))
+        self.assertTrue(next(e["step"] for e in events if e.get("step", {}).get("kind") == "blind")["cut"])
+
     def test_unexpected_failure_is_an_error_not_a_stop(self):
         async def broken(system, prompt, model, image=None, pages=(), flags=None):
             yield "début"

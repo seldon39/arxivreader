@@ -38,17 +38,27 @@ def _snapshots(db_path):
     return sorted((p for p in folder.glob(f"{PREFIX}????-??-??{SUFFIX}") if p.is_file()), reverse=True)
 
 
+BUSY_TIMEOUT = 30  # secondes d'attente d'une base occupée par un autre processus
+CORRUPT = ("malformed", "not a database", "corrupt")  # messages de SQLite pour une base réellement abîmée
+
+
 def _check(path):
-    """(version du schéma, base saine ?) ; une base illisible compte comme malsaine."""
+    """(version du schéma, base saine ?). Ouverture ordinaire, en écriture : un journal resté après un arrêt brutal
+    est alors rejoué par SQLite (en lecture seule il resterait là, et une base saine semblerait abîmée). Une base
+    occupée, verrouillée ou illisible pour une autre raison (droits, disque) lève l'erreur : seule une corruption
+    avérée justifie de mettre le fichier de côté."""
+    conn = sqlite3.connect(path, timeout=BUSY_TIMEOUT)
     try:
-        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-        try:
-            version = conn.execute("PRAGMA user_version").fetchone()[0]
-            ok = conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
-        finally:
-            conn.close()
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        ok = conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+    except sqlite3.OperationalError as error:
+        if not any(word in str(error).lower() for word in CORRUPT):
+            raise
+        return 0, False
     except sqlite3.DatabaseError:
         return 0, False
+    finally:
+        conn.close()
     return version, ok
 
 
@@ -76,13 +86,16 @@ def prepare(db_path):
     stamp = time.strftime("%Y%m%d-%H%M%S")
     aside = folder / f"corrupt-{stamp}{SUFFIX}"
     shutil.move(db_path, aside)  # jamais effacée : l'utilisateur peut encore tenter de la réparer
-    for extra in ("-wal", "-shm"):
+    for extra in ("-wal", "-shm", "-journal"):  # jamais un journal de l'ancienne base à côté de la copie remise
         side = Path(str(db_path) + extra)
         if side.exists():
             shutil.move(side, folder / f"corrupt-{stamp}{SUFFIX}{extra}")
     restored = None
     for snapshot in _snapshots(db_path):
-        version, ok = _check(snapshot)
+        try:
+            version, ok = _check(snapshot)
+        except sqlite3.Error:
+            continue  # copie illisible : la suivante
         if ok and version <= DB_VERSION:
             temp = db_path.with_name(db_path.name + ".restoring")
             shutil.copyfile(snapshot, temp)

@@ -63,11 +63,14 @@ export class PdfView {
     return Boolean(this.frame.getAttribute("src"));
   }
 
-  // pdf.js prêt (document ouvert, pages en place) ; l'attente ne s'arrête pas (un gros PDF, ou un téléchargement depuis
-  // arXiv, peut être long) : seulement quand le cadre quitte la page, ou n'y est jamais entré (null)
+  // pdf.js prêt (document ouvert, pages en place) ; l'attente est longue (un gros PDF, ou un téléchargement depuis
+  // arXiv, peut l'être) mais pas infinie : null quand le cadre quitte la page, n'y est jamais entré, ou après 10 minutes
+  // (un PDF qui ne s'ouvre jamais ne laisse pas ses appelants attendre sans fin : leurs chemins « null » existent)
   async ready() {
     let idle = 0;
+    const start = Date.now();
     for (let tick = 0; ; tick++) {
+      if (Date.now() - start > 10 * 60 * 1000) return null;
       if (this.frame.isConnected) this.attached = true;
       else if (this.attached || ++idle > 300) return null;
       if (this.loaded) {

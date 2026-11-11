@@ -24,12 +24,16 @@ class Names(unittest.TestCase):
         self.assertEqual(bibtex.author_tex("Émile Picard"), "Picard, {\\'E}mile")
         self.assertEqual(bibtex.author_tex("Wojciech Żelazko"), "{\\.Z}elazko, Wojciech")
         self.assertEqual(bibtex.author_tex("Martin Luther King Jr."), "King, Jr., Martin Luther")
+        self.assertEqual(bibtex.author_tex("Camillo De Lellis"), "De Lellis, Camillo")  # BibTeX lirait « Lellis » sinon
+        self.assertEqual(bibtex.author_tex("Jan van Den Bergh"), "van Den Bergh, Jan")
+        self.assertEqual(bibtex.author_tex("G. 't Hooft"), "'t Hooft, G.")
 
     def test_kept_as_written(self):
         self.assertEqual(bibtex.author_tex("Plato"), "{Plato}")                       # un seul mot
         self.assertEqual(bibtex.author_tex("ATLAS Collaboration"), "{ATLAS Collaboration}")
-        self.assertEqual(bibtex.author_tex("Camillo De Lellis"), "Camillo De Lellis")  # « De » ambigu
-        self.assertEqual(bibtex.author_tex("Tom Jr."), "Tom Jr.")
+        self.assertEqual(bibtex.author_tex("Tom Jr."), "{Tom Jr.}")                    # coupure pas sûre : nom entier entre accolades
+        self.assertEqual(bibtex.author_tex("Michael Atiyah FRS"), "{Michael Atiyah FRS}")
+        self.assertEqual(bibtex.author_tex("Le Thanh"), "{Le Thanh}")                  # « Le » : prénom ou nom ?
         self.assertEqual(bibtex.author_tex("Smith, John"), "Smith, John")              # déjà « Nom, Prénom »
 
 
@@ -68,13 +72,23 @@ class Entries(unittest.TestCase):
         for line in ("journal = {J. Differential Geom.}", "volume = {78}", "year = {2008}", "pages = {1--45}", "doi = {10.4310/jdg/1}"):
             self.assertIn(line, full)
         self.assertNotIn("url =", full)
-        # référence illisible mais avec numéros : chaîne entière dans « journal », rien d'inventé
-        odd = bibtex.entry(paper(journal_ref="Comm. Math. Phys. 301, 1-30 (2011)"))
-        self.assertIn("journal = {Comm. Math. Phys. 301, 1-30 (2011)}", odd)
-        self.assertNotIn("volume", odd)
-        self.assertIn("year = {2011}", odd)
-        # pas de volume ni de pages : pas de « year » inventé (celui d'arXiv n'est pas l'année de parution)
-        self.assertNotIn("year =", bibtex.entry(paper(journal_ref="Duke Math. J. 2012")))
+        alt = bibtex.entry(paper(journal_ref="Comm. Math. Phys. 301, 1-30 (2011)"))
+        for line in ("journal = {Comm. Math. Phys.}", "volume = {301}", "year = {2011}", "pages = {1--30}"):
+            self.assertIn(line, alt)
+        # référence illisible (année prise pour des pages, thèse, ordre inhabituel) : @misc, chaîne dite telle quelle dans
+        # « note », ni pages ni revue inventées
+        for ref in ("Annals of Math 180, 2014", "Ann. Inst. Fourier 2012, 62, 1111-1150", "Invent. Math. 100(2), 1990, 20-30",
+                    "PhD thesis, University of X, 2010", "Duke Math. J. 2012"):
+            odd = bibtex.entry(paper(journal_ref=ref))
+            self.assertTrue(odd.startswith("@misc{"), ref)
+            self.assertIn(f"note = {{{ref}}}", odd)
+            self.assertNotIn("journal =", odd)
+            self.assertNotIn("pages =", odd)
+
+    def test_legacy_id_is_normalised(self):
+        text = bibtex.entry(paper(arxiv_id="math.DG/0211159v2"))
+        self.assertIn("eprint = {math/0211159}", text)
+        self.assertIn("url = {https://arxiv.org/abs/math/0211159}", text)
 
     def test_not_published_stays_misc(self):
         for ref in ("to appear in Ann. of Math.", "Submitted to Invent. Math.", "Annals of Mathematics"):

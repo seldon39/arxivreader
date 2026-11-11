@@ -719,7 +719,7 @@ export class Assistant {
   reusable(task) {
     const found = new Map();
     for (const e of this.exchanges) {
-      if (e.task === task && !e.parent_id && e.status === "done" && typeof e.id === "number" && e.answer
+      if (e.task === task && !e.parent_id && e.status === "done" && typeof e.id === "number" && e.answer && !e.cut
         && this.chapters.some((c) => c.id === e.target) && (task !== "review" || e.card)) found.set(e.target, e);
     }
     return found;

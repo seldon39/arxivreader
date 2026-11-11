@@ -45,9 +45,10 @@ def prune(days=KEEP_DAYS):
             papers = connection.execute("SELECT arxiv_id FROM papers WHERE arxiv_id IS NOT NULL").fetchall()
             connection.execute(
                 """DELETE FROM feed_items WHERE fetched_at < ? AND s2_rank IS NULL AND citing IS NULL
+                   AND COALESCE(announced, '') < ?
                    AND key NOT IN (SELECT key FROM feed_status)
                    AND (arxiv_id IS NULL OR arxiv_id NOT IN (SELECT arxiv_id FROM papers WHERE arxiv_id IS NOT NULL))""",
-                (cutoff,))
+                (cutoff, cutoff))  # aussi `announced` : `fetched_at` ne change pas quand un article est ré-annoncé (nouvelle version)
             removed_items = connection.total_changes
             left = {r["announced"] for r in connection.execute("SELECT DISTINCT announced FROM feed_items WHERE in_arxiv = 1")}
             remaining = connection.execute("SELECT key, arxiv_id FROM feed_items").fetchall()

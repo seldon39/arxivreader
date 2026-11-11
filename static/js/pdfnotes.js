@@ -66,9 +66,15 @@ export class PdfNotes {
     // la barre et la note ouverte sont dans la page de l'application : fermées par un clic ou Échap dans le PDF
     // (l'annotateur n'écoute que sa page), et la barre au défilement du PDF ou à un clic ailleurs dans l'application
     this.doc.addEventListener("mousedown", () => { this.hideToolbar(); this.annotator.closePopover(); closeBookmarkUi(); });
+    // Touches de lecture : phase de capture et propagation coupée, sinon pdf.js (j, k, p = changer de page) tourne aussi la page
     this.doc.addEventListener("keydown", (event) => {
       // retour, énoncé suivant… : comme dans l'article (pas pendant une saisie : champ de recherche de pdf.js)
-      if (this.onKey && !event.target.closest?.("input, textarea, select, [contenteditable]") && this.onKey(event)) return;
+      if (this.onKey && !event.target.closest?.("input, textarea, select, [contenteditable]") && this.onKey(event)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    }, true);
+    this.doc.addEventListener("keydown", (event) => {
       if (event.key === "Escape") { this.hideToolbar(); this.annotator.closePopover(); this.setZoneMode(false); closeBookmarkUi(); }
       // ⌘D (Ctrl+D) : marque-page, comme dans le reste du lecteur
       if (event.key.toLowerCase() === "d" && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && this.onAddBookmark) {

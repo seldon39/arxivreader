@@ -163,7 +163,7 @@ Format: Markdown, with short headings (###) when the answer is long. Write in pa
 several items that are truly parallel (numbered points, steps), and keep each item to a few sentences of prose. At \
 most one level of nesting, and never an item that holds only a bold label with sub-items under it: write the label \
 followed by its text in the same item or paragraph. Mathematics in LaTeX: $…$ inline and $$…$$ \
-for displays (never \\[…\\] or code blocks for math; code blocks are for scripts only). Refer to statements and equations by their labels in the \
+for displays (never \\[…\\] or code blocks for math; apart from the annotations block below, code blocks are for scripts only). Refer to statements and equations by their labels in the \
 paper, e.g. "Lemma 2.3", "(2.11)"; to sections as "Section 3.2" (or "Appendix A"); to the paper's references by their \
 citation label as printed in the paper, e.g. "[12]" or "Smith and Jones (2007)": the reader's application turns these \
 into links.
@@ -211,7 +211,7 @@ plainly any main result that is not (e.g. "Theorem 1.2 is not proved as written:
 stands regardless (the results that do not depend on the problems found). A wrong proof is not a false result: never \
 call a result or the text false unless you have a counterexample to the statement itself. If <paper> says that parts \
 of the text are omitted or cut, the Verdict begins by saying which parts you did not read (with their pages when \
-given); do not review what you did not read."""
+given); do not review what you did not read. When only one section is reviewed, omissions outside it do not count."""
 REVIEW_POINTS = """### Points to check, by seriousness
 Under **Critical** (a main result unproved or false), **Serious** (a gap or error that needs real work to fix) and \
 **Minor** (local slips, missing details), numbered continuously. """ + REVIEW_STYLE + """ Minor points take one or \
@@ -1445,9 +1445,12 @@ def build_prompt(paper, structure, task, target=None, quote=None, question=None,
     else:
         total = len(text)
     context = _chapter_context(index, structure, chapter, max(20000, limit // 4)) if entry is not None else ""
+    section_total = None
     if by_section:
         room = max(limit // 2, limit - len(context))  # le contexte compte aussi (modèle local)
         if len(text) > room:
+            span = _section_span(text, soup, index, structure, chapter)
+            section_total = span[1] - span[0] if span else None
             text = _reduced_to_section(text, soup, index, structure, chapter, room)
     elif entry is not None:
         text = _chapter_text(soup, index, structure, text, chapter)
@@ -1481,7 +1484,12 @@ def build_prompt(paper, structure, task, target=None, quote=None, question=None,
         raise AIError("Nothing to check")
 
     if coverage is not None and task != "transcribe":
-        coverage.update(coverage_of(total, text))
+        if section_total is not None:  # section lue en entier : l'article omis autour d'elle n'est pas une lecture partielle
+            cut = "the rest of the section is cut" in text
+            coverage.update({"total": section_total, "sent": section_total} if not cut else
+                            {"total": section_total, "sent": max(0, room - 1), "partial": True, "pages": []})
+        else:
+            coverage.update(coverage_of(total, text))
     origin = (f' arxiv="{paper["arxiv_id"]}v{paper["version"]}"' if paper.get("arxiv_id")
               else ' source="TeX source of an unpublished document by the user"' if paper.get("source") == "local-tex"
               else ' source="PDF imported by the user"')
@@ -2160,14 +2168,19 @@ async def cross_review(paper, structure, first, second, language="fr", pages=(),
         return build_prompt(paper, structure, "review", language=language, limit=paper_limit(model),
                             pages=numbers if reads_images(model) else (), profile=profile, chapter=chapter, **options)
 
-    flags = {}  # {"cut": True} : une des réponses a été coupée par son assistant
+    cuts = set()  # étapes dont la réponse a été coupée (« review », « blind », « verify », « compare »)
+    flags = {}  # {"cut": True} : la synthèse seule (celle qu'on affiche) a été coupée ; les étapes ont les leurs
 
-    async def step(model, built, second_role=False):
+    async def step(model, built, second_role=False, kind=None):
         """Réponse entière ; une erreur de l'assistant B porte son nom et garde son code (limit, offline…), qui vise B ;
         celui de la connexion, « login » ou « missing », ne vise pas A : l'erreur redevient « other »."""
         try:
             more = {"effort": effort} if effort and second_role else {}  # absent : celui des réglages (les doublures de test l'ignorent)
-            return "".join([text async for text in stream_answer(*built, model, None, images(model), flags, **more)])
+            mine = {}  # coupure propre à cette étape : une relecture intermédiaire coupée ne marque pas la synthèse
+            answer = "".join([text async for text in stream_answer(*built, model, None, images(model), mine, **more)])
+            if mine.get("cut"):
+                cuts.add(kind)
+            return answer
         except AIError as error:
             if not second_role:
                 raise
@@ -2179,12 +2192,13 @@ async def cross_review(paper, structure, first, second, language="fr", pages=(),
              "context. “Main result” means a main result of this section, and a problem elsewhere counts only if it affects "
              "this section.") if title else ""
     yield {"phase": "review" if verify else "reviews"}
-    seen = {}
     models = (first,) if verify else (first, second)  # relecture vérifiée : le second ne relit pas, il vérifie
-    built = [await asyncio.to_thread(prompt, model, coverage=seen if model == first else None) for model in models]
+    covers = [{} for _ in models]  # ce que chaque assistant lit : on annonce la pire lecture
+    built = [await asyncio.to_thread(prompt, model, coverage=cover) for model, cover in zip(models, covers)]
+    seen = max((c for c in covers if c), key=lambda c: (bool(c.get("partial")), 1 - c["sent"] / max(1, c["total"])), default={})
     if seen:
         yield {"coverage": seen}
-    tasks = [asyncio.ensure_future(step(model, b, second_role=i > 0)) for i, (model, b) in enumerate(zip(models, built))]
+    tasks = [asyncio.ensure_future(step(model, b, second_role=i > 0, kind="review" if i == 0 else "blind")) for i, (model, b) in enumerate(zip(models, built))]
     try:
         review_a, *others = await asyncio.gather(*tasks)
     except BaseException:
@@ -2192,10 +2206,10 @@ async def cross_review(paper, structure, first, second, language="fr", pages=(),
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         raise
-    yield {"step": {"kind": "review", "model": first, "answer": review_a}}
+    yield {"step": {"kind": "review", "model": first, "answer": review_a, **({"cut": True} if "review" in cuts else {})}}
     if not verify:
         review_b = others[0]
-        yield {"step": {"kind": "blind", "model": second, "answer": review_b}}
+        yield {"step": {"kind": "blind", "model": second, "answer": review_b, **({"cut": True} if "blind" in cuts else {})}}
 
     yield {"phase": "verify" if verify else "compare"}
     if verify:
@@ -2203,8 +2217,9 @@ async def cross_review(paper, structure, first, second, language="fr", pages=(),
     else:
         extra = (_review_block("A", review_a), _review_block("B", review_b, yours=True))
     built = await asyncio.to_thread(prompt, second, instruction=(VERIFY_PROMPT if verify else COMPARE_PROMPT) + scope, extra=extra)
-    comparison = await step(second, built, second_role=True)
-    yield {"step": {"kind": "verify" if verify else "compare", "model": second, "answer": comparison}}
+    kind = "verify" if verify else "compare"
+    comparison = await step(second, built, second_role=True, kind=kind)
+    yield {"step": {"kind": kind, "model": second, "answer": comparison, **({"cut": True} if kind in cuts else {})}}
 
     yield {"phase": "synthesis"}
     if verify:
@@ -2234,7 +2249,7 @@ def list_for(paper_id):
 
 
 def _decoded(exchange):
-    if exchange["task"] in ("zone", "transcribe"):
+    if exchange["task"] in ("zone", "transcribe", "compute"):
         exchange["image"] = image_path(exchange).exists()
     exchange["steps"] = json.loads(exchange["steps"]) if exchange.get("steps") else None
     exchange["coverage"] = json.loads(exchange["coverage"]) if exchange.get("coverage") else None

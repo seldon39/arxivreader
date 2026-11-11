@@ -69,8 +69,9 @@ export function openOnboarding({ onDone = null } = {}) {
       } catch (error) {
         if (stale()) return;
         // sans code : réponse du serveur local (500…) ou pas de réponse du tout ; ni l'un ni l'autre n'est « arXiv ne répond pas »
-        toast(t(`onboarding.error.${error.code || (error.status ? "local" : "network")}`), { error: true });
+        // d'abord redessiner : frame() vide la fenêtre, et le message (rangé dans la fenêtre par toast) disparaîtrait avec
         stepWho();
+        toast(t(`onboarding.error.${error.code || (error.status ? "local" : "network")}`), { error: true });
       }
     };
     go.addEventListener("click", run);
@@ -167,8 +168,8 @@ export function openOnboarding({ onDone = null } = {}) {
         stepReady();
       } catch (error) {
         if (stale()) return;
+        stepChoices(); // d'abord redessiner (sinon le message est emporté avec l'ancien contenu), puis avertir
         toast(t("onboarding.error.save"), { error: true });
-        stepChoices();
       }
     });
     frame(t("onboarding.choicesTitle"), [

@@ -9,11 +9,18 @@ Aucun réseau ici : la revue connue de Semantic Scholar est donnée par l'appela
 import re
 import unicodedata
 
+from .arxiv import strip_subject_class
+
 ARXIV_DOI = re.compile(r"^10\.(48550|1101|2139|5281|13140|21203|20944|31219|31234|31235)/", re.I)
 # particules de noms que BibTeX lui-même reconnaît (en minuscules) : elles restent avec le nom de famille
 PARTICLES = {"de", "van", "von", "der", "den", "la", "le", "di", "da", "du", "del", "della", "des", "dos", "das", "do",
-             "ter", "ten", "al", "el", "zu", "af", "av"}
+             "ter", "ten", "al", "el", "zu", "af", "av", "'t"}
+# particules qu'on reconnaît aussi écrites avec une capitale (« Camillo De Lellis ») ; « Le », « Do », « La »… peuvent être
+# des prénoms : coupure pas sûre
+CAPITAL_PARTICLES = {"de", "van", "von", "der", "den", "del", "della", "di", "du", "da", "ter", "ten", "dos", "das", "des"}
 SUFFIXES = {"jr", "jr.", "sr", "sr.", "ii", "iii", "iv", "phd", "ph.d."}
+# mentions après le nom (« Michael Atiyah FRS », « Smith et al. ») : BibTeX les prendrait pour le nom de famille ; pas de coupure
+HONORIFICS = {"frs", "frse", "al.", "obe", "cbe", "md"}
 GROUP_WORDS = re.compile(r"\b(?:collaboration|consortium|group|team|committee|project|institute|university|society)\b", re.I)
 STOP_WORDS = {"a", "an", "the", "on", "of", "in", "for", "and", "to", "with", "from", "by", "via", "at", "as", "is",
               "are", "some", "new", "note", "notes", "sur", "de", "la", "le", "les", "des", "du", "un", "une", "et", "pour"}
@@ -26,7 +33,9 @@ ACCENTS = {"̀": "`", "́": "'", "̂": "^", "̈": '"', "̃": "~", "̄": "=", "̇
 PUNCTUATION = {"–": "--", "—": "---", "“": "``", "”": "''", "‘": "`", "’": "'", "\u00a0": " ", "…": "..."}
 MATH = re.compile(r"\$\$.+?\$\$|\$.+?\$|\\\(.+?\\\)|\\\[.+?\\\]", re.S)
 JOURNAL = re.compile(r"^(?P<journal>[^\d]*?[^\d\s,])[\s,]+(?P<volume>\d{1,4})\s*(?:\((?P<year>(?:19|20)\d\d)\))?\s*,?\s*"
-                     r"(?:(?:no\.?|issue|n°)\s*\d+\s*,?\s*)?(?:pp?\.\s*)?(?P<pages>\d+(?:\s*[-–—]+\s*\d+)?)?\.?$", re.I)
+                     r"(?:(?:no\.?|issue|n°)\s*\d+\s*,?\s*)?(?P<pp>pp?\.\s*)?(?P<pages>\d+(?:\s*[-–—]+\s*\d+)?)?"
+                     r"\s*(?:\((?P<year2>(?:19|20)\d\d)\))?\.?$", re.I)
+YEAR_LIKE = re.compile(r"^(?:19|20)\d\d$")
 NOT_PUBLISHED = re.compile(r"submitted|preprint|to appear|accepted|in press|forthcoming|arxiv|soumis|à paraître", re.I)
 
 
@@ -104,20 +113,28 @@ def title_tex(title):
     return text if _balanced(text) else text.replace("{", "").replace("}", "")
 
 
+def _particle(word, capital=False):
+    word = word.replace("’", "'")
+    return word.lower() in PARTICLES and (word in PARTICLES or (capital and word.lower() in CAPITAL_PARTICLES))
+
+
 def _safe_split(name):
     """(nom, prénoms, suffixe ou None) quand la coupure est sûre, sinon None. Sûr : au moins deux mots, un « Prénom Nom » sans
-    virgule, sans suffixe au milieu, sans chiffre ni mot de collectif, et sans particule écrite avec une capitale
-    (« Camillo De Lellis » : on ne sait pas si « De » est un prénom)."""
+    virgule, sans suffixe au milieu, sans chiffre, mot de collectif ni mention (FRS, et al.), et sans particule écrite avec
+    une capitale qui pourrait être un prénom (« Le », « Do »). « Camillo De Lellis » → « De Lellis, Camillo » : sans cela
+    BibTeX lirait « Lellis » comme nom de famille."""
     parts = name.split()
     if len(parts) < 2 or "," in name or any(c.isdigit() or c in "{}$\\" for c in name) or GROUP_WORDS.search(name):
         return None
     if any(p.lower() in SUFFIXES for p in parts[:-1]) or (parts[-1].lower() in SUFFIXES and len(parts) < 3):
         return None
     suffix = parts.pop() if parts[-1].lower() in SUFFIXES else None
+    if parts[-1].lower() in HONORIFICS:
+        return None
     last = len(parts) - 1
-    while last > 1 and parts[last - 1] in PARTICLES:  # particules en minuscules : avec le nom
+    while last > 1 and _particle(parts[last - 1], capital=True):  # particules : avec le nom
         last -= 1
-    if any(p.lower() in PARTICLES and p not in PARTICLES for p in parts[1:-1]):
+    if any(p.replace("’", "'").lower() in PARTICLES and not _particle(p, capital=True) for p in parts[:-1]):
         return None
     return " ".join(parts[last:]), " ".join(parts[:last]), suffix
 
@@ -130,9 +147,10 @@ def author_tex(name):
         return f"{_tex_letters(split[0])}{suffix}, {_tex_letters(split[1])}"
     if not name:
         return ""
-    # tel qu'écrit ; un seul mot ou un collectif entre accolades : BibTeX ne le coupe pas
+    # coupure pas sûre : le nom entier entre accolades, que BibTeX ne coupe pas (jamais « Prénom Nom » écrit tel quel, dont il
+    # prendrait le dernier mot pour le nom de famille) ; seul un nom déjà écrit « Nom, Prénom » reste comme il est
     text = _tex_letters(name)
-    return f"{{{text}}}" if len(name.split()) < 2 or GROUP_WORDS.search(name) else text
+    return text if "," in name and not GROUP_WORDS.search(name) else f"{{{text}}}"
 
 
 def _last_name(name):
@@ -160,22 +178,30 @@ def _arxiv_year(paper):
 
 def _journal(text):
     """(revue, volume, année, pages, brut) d'une référence de revue ; None si ce n'est pas une parution (« to
-    appear », « submitted »…). Sans analyse sûre, la chaîne reste entière dans « journal » (rien d'inventé)."""
+    appear », « submitted »…) ou si elle ne se lit pas sûrement (thèse, « 2012, 62, 1111-1150 »…) : l'appelant en fait alors
+    un @misc avec la chaîne dans « note ». Des pages ne sont reconnues que si c'est un intervalle, précédé de « p. », ou un
+    numéro qui n'est pas une année (« 180, 2014 » : 2014 est l'année, pas une page)."""
     text = " ".join(str(text or "").split())
     if not text or NOT_PUBLISHED.search(text) or not re.search(r"\d", text):
         return None
     found = JOURNAL.match(text)
-    if found and found.group("pages") and re.search(r"[A-Za-z]{2}", found.group("journal")):
-        pages = re.sub(r"\s*[-–—]+\s*", "--", found.group("pages"))
-        return found.group("journal").strip(), found.group("volume"), found.group("year"), pages, text
-    year = set(re.findall(r"\((?:(?:19|20)\d\d)\)", text))
-    return text, None, (year.pop()[1:-1] if len(year) == 1 else None), None, text
+    if not found or not re.search(r"[A-Za-z]{2}", found.group("journal")):
+        return None
+    pages = found.group("pages")
+    if pages and not (found.group("pp") or re.search(r"\D", pages) or not YEAR_LIKE.match(pages)):
+        return None
+    year = found.group("year") or found.group("year2")
+    if not pages and not year:
+        return None
+    pages = re.sub(r"\s*[-–—]+\s*", "--", pages) if pages else None
+    return found.group("journal").strip(), found.group("volume"), year, pages, text
 
 
 def entry(paper, s2=None, key=None):
     """Entrée BibTeX d'un article (ligne de la table `papers`). `s2` : (revue, DOI) connus de Semantic Scholar."""
     s2_journal, s2_doi = s2 or (None, None)
-    arxiv_id = re.sub(r"v\d+$", "", str(paper.get("arxiv_id") or "").strip())  # toujours l'identifiant de base
+    # toujours l'identifiant de base, sans version ni classe (math.DG/0211159 → math/0211159, comme le fait arXiv)
+    arxiv_id = strip_subject_class(re.sub(r"v\d+$", "", str(paper.get("arxiv_id") or "").strip()))
     published = _journal(paper.get("journal_ref")) or _journal(s2_journal)
     doi = next((d.strip() for d in (paper.get("doi"), s2_doi) if d and d.strip() and not ARXIV_DOI.match(d.strip())), None)
     kind = "article" if published else "misc"

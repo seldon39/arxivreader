@@ -103,7 +103,7 @@ class Reader {
     this.showRemarks = false;
     this.kindFilter = new Set();
     this.search = "";
-    this.trail = new Trail();  // sauts faits (HTML et PDF) : « Retour », ⌥← / ⌥→, ⌘[ / ⌘]
+    this.trail = new Trail();  // sauts faits (HTML et PDF) : « Retour », ⌥← / ⌥→
     this.anchors = null;
     this.cleanups = [];
     this.viewToken = 0;
@@ -456,13 +456,17 @@ class Reader {
         title: `${entry.title}\n${t("reader.crossOpenTab")}` }, t("reader.crossOpen"));
       // BibTeX seulement d'un article connu d'arXivReader (métadonnées enregistrées) ; jamais d'une référence en texte libre.
       // Classe cross-badge aussi : la ligne reste « sans liens de recherche » pour addFindLinks, qui s'y ajoute
-      const bibtex = h("button", { class: "cross-badge cross-bibtex", type: "button", title: t("bibtex.copyTitle"),
-        onclick: () => copyBibtex(() => api.paperBibtex(entry.paper)) }, "BibTeX");
+      // et seulement quand la correspondance est sûre (identifiant arXiv ou DOI) : un titre qui ressemble ne suffit pas,
+      // le BibTeX d'un autre article se collerait dans un .bib sans que rien ne le signale
+      const bibtex = entry.by === "id" || entry.by === "doi"
+        ? h("button", { class: "cross-badge cross-bibtex", type: "button", title: t("bibtex.copyTitle"),
+          onclick: () => copyBibtex(() => api.paperBibtex(entry.paper)) }, "BibTeX") : null;
       const row = item.querySelector(".bib-links");
       row?.querySelector(".bib-arxiv")?.remove();  // déjà lu ici : rien à chercher sur arXiv
       row?.querySelector(".bib-add")?.remove();  // déjà dans la bibliothèque : rien à ajouter
-      if (row) row.prepend(badge, bibtex);
-      else item.append(h("div", { class: "bib-links" }, badge, bibtex));
+      const badges = bibtex ? [badge, bibtex] : [badge];
+      if (row) row.prepend(...badges);
+      else item.append(h("div", { class: "bib-links" }, ...badges));
     }
   }
 
@@ -591,6 +595,7 @@ class Reader {
       // Pas de version HTML : lecture dans le PDF ; énoncés (rendus depuis la source TeX, aucun pour un PDF importé).
       // Fichier TeX : PDF de la dernière compilation (adresse changée à chaque fois : jamais l'ancien gardé en cache)
       this.pdf = new PdfView(this.pdfUrl(), paper.title);
+      this.pdf.onJump(() => this.rememberPlace());  // lien interne du PDF : l'endroit quitté est gardé (comme avec une version HTML)
       const spot = this.startAt ? this.pdfSpot(this.startAt) : null;
       const recompiled = this.recompiledPage();  // toujours lue : pas gardée pour une ouverture suivante
       // sinon la dernière page lue (position « pdf:page:hauteur »), pas après une recompilation (sa page l'emporte)
@@ -2398,12 +2403,14 @@ class Reader {
       () => removeEventListener("arxivreader:ai-accounts", onAccounts));
   }
 
-  // Touches de lecture (parent et cadre du PDF) : ⌥← / ⌥→ (⌘[ / ⌘]) dans l'historique des sauts ; ] [ énoncé suivant /
+  // Touches de lecture (parent et cadre du PDF) : ⌥← / ⌥→ dans l'historique des sauts ; ] [ énoncé suivant /
   // précédent, p preuve de l'énoncé lu, ? liste des touches. Rien pendant une fenêtre modale ou une sélection de passage.
   onReadingKey(event) {
     if (this.destroyed || this.picking || document.querySelector("dialog[open]")) return false;
     const step = trailKey(event);
     if (step) {
+      // l'événement n'est pris que si l'historique peut bouger dans ce sens (sinon : au navigateur / au menu)
+      if (!(step < 0 ? this.trail.canBack : this.trail.canForward)) return false;
       event.preventDefault();
       this.stepTrail(step);
       return true;
@@ -2457,7 +2464,8 @@ class Reader {
     const proof = this.find(node.proofs[0]);
     if (proof?.querySelector(":scope > .proof-toggle")) {
       this.setProof(proof, !proof.classList.contains("collapsed"));
-      if (!proof.classList.contains("collapsed")) this.navigateElement(proof, { remember: false });
+      // dépliée : on va à la preuve ; repliée : le texte d'en dessous remonte, on garde l'énoncé en vue
+      this.navigateElement(proof.classList.contains("collapsed") ? (this.find(statement) || proof) : proof, { remember: false });
     } else if (node.proofs[0] || node.proofPassage) this.navigate(node.proofs[0] || node.proofPassage.start);
   }
 
@@ -2468,11 +2476,12 @@ class Reader {
     const dialog = h("dialog", { class: "keys-dialog", "aria-label": t("reader.keys") },
       h("h3", {}, t("reader.keys")),
       h("table", {}, h("tbody", {},
-        row("⌥← / ⌘[", "reader.keyBack"), row("⌥→ / ⌘]", "reader.keyForward"),
+        row("⌥←", "reader.keyBack"), row("⌥→", "reader.keyForward"),
         row("j  ·  ]", "reader.keyNext"), row("k  ·  [", "reader.keyPrev"), row("p", "reader.keyProof"), row("?", "reader.keyHelp"))),
       close);
     close.addEventListener("click", () => dialog.close());
     dialog.addEventListener("close", () => { dialog.remove(); opener?.focus?.({ preventScroll: true }); });
+    this.keysDialog = dialog;  // retiré par destroy() (changement de vue pendant que la liste est ouverte)
     document.body.append(dialog);
     dialog.showModal();
     close.focus();
@@ -2846,6 +2855,8 @@ class Reader {
     this.annotator?.destroy();
     this.pdfNotes?.destroy();
     this.assistant?.destroy();
+    this.keysDialog?.close();
+    this.keysDialog?.remove();
     this.stopPick();
     this.hidePreview();
     this.overlay?.remove();
