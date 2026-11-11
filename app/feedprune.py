@@ -43,16 +43,18 @@ def prune(days=KEEP_DAYS):
     with feed._day_lock:  # pas pendant le chargement d'un jour
         with db.connect() as connection:
             papers = connection.execute("SELECT arxiv_id FROM papers WHERE arxiv_id IS NOT NULL").fetchall()
-            connection.execute(
-                """DELETE FROM feed_items WHERE fetched_at < ? AND s2_rank IS NULL AND citing IS NULL
+            doomed_where = """fetched_at < ? AND s2_rank IS NULL AND citing IS NULL
                    AND COALESCE(announced, '') < ?
                    AND key NOT IN (SELECT key FROM feed_status)
-                   AND (arxiv_id IS NULL OR arxiv_id NOT IN (SELECT arxiv_id FROM papers WHERE arxiv_id IS NOT NULL))""",
-                (cutoff, cutoff))  # aussi `announced` : `fetched_at` ne change pas quand un article est ré-annoncé (nouvelle version)
+                   AND (arxiv_id IS NULL OR arxiv_id NOT IN (SELECT arxiv_id FROM papers WHERE arxiv_id IS NOT NULL))"""
+            thinned = {r["announced"] for r in connection.execute(
+                f"SELECT DISTINCT announced FROM feed_items WHERE in_arxiv = 1 AND {doomed_where}", (cutoff, cutoff))}
+            connection.execute(f"DELETE FROM feed_items WHERE {doomed_where}", (cutoff, cutoff))
+            # aussi `announced` : `fetched_at` ne change pas quand un article est ré-annoncé (nouvelle version)
             removed_items = connection.total_changes
             left = {r["announced"] for r in connection.execute("SELECT DISTINCT announced FROM feed_items WHERE in_arxiv = 1")}
             remaining = connection.execute("SELECT key, arxiv_id FROM feed_items").fetchall()
-        _forget_days(cutoff, left)
+        _forget_days(cutoff, left, thinned & left)
         keep = {relevance.s2_key(r["arxiv_id"]) for r in papers}
         keep |= {relevance.s2_key(r["arxiv_id"], r["key"]) for r in remaining}
         positives, negatives, _, _ = relevance.profile_documents()
@@ -72,14 +74,15 @@ def prune(days=KEEP_DAYS):
     return removed_items, len(doomed)
 
 
-def _forget_days(cutoff, left):
-    """Jours élagués oubliés des réglages (feed.days) : sinon la page les croirait chargés et les montrerait vides."""
+def _forget_days(cutoff, left, thinned=()):
+    """Jours élagués oubliés des réglages (feed.days) : sinon la page les croirait chargés et les montrerait vides.
+    Jours dont il ne reste que les articles gardés (`thinned`) : marqués partiels, la page les redemande."""
     settings = db.get_settings()
     days = settings.get("feed.days") or {}
     gone = [d for d in days if d < cutoff and d not in left]
-    if not gone:
+    partial = settings.get("feed.partialDays") or []
+    if not gone and set(thinned) <= set(partial):
         return
     changes = {"feed.days": {d: n for d, n in days.items() if d not in gone}}
-    partial = settings.get("feed.partialDays") or []
-    changes["feed.partialDays"] = [d for d in partial if d not in gone]
+    changes["feed.partialDays"] = sorted({d for d in partial if d not in gone} | set(thinned))
     db.save_settings(changes)

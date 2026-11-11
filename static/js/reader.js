@@ -818,12 +818,12 @@ class Reader {
         const folder = choice && await destinationFolder(choice);
         const updated = await api.setInLibrary(paper.id, !paper.in_library);
         paper.in_library = updated.in_library;
-        if (folder && paper.in_library) await api.setInFolder(folder.id, paper.id, true);
         button.setAttribute("aria-pressed", String(Boolean(paper.in_library)));
         button.title = label();
         button.setAttribute("aria-label", label());
-        toast(folder && paper.in_library ? t("feed.addedTo", { name: folder.name }) : t(paper.in_library ? "feed.added" : "feed.removed"));
         this.reportMenuState();
+        if (folder && paper.in_library) await api.setInFolder(folder.id, paper.id, true);
+        toast(folder && paper.in_library ? t("feed.addedTo", { name: folder.name }) : t(paper.in_library ? "feed.added" : "feed.removed"));
       } catch (error) {
         toastError(error);
       } finally {

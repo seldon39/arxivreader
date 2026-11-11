@@ -213,7 +213,7 @@ def _one_row_per_statement(db):
 
 @contextmanager
 def connect():
-    db = sqlite3.connect(DB_PATH)
+    db = sqlite3.connect(DB_PATH, timeout=30)  # attendre un autre écrivain (VACUUM du nettoyage du feed) plutôt qu'échouer
     db.row_factory = sqlite3.Row
     try:
         yield db

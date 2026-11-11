@@ -2085,7 +2085,7 @@ const WINDOWS_WORDS = [
   [/Notification macOS/g, "Notification Windows", null], [/macOS notification/g, null, "Windows notification"],
 ];
 
-function forSystem(text) {
+export function forSystem(text) {
   if (MAC) return text;
   const index = language === "fr" ? 1 : 2;
   for (const rule of WINDOWS ? [...OTHER_SYSTEMS, ...WINDOWS_WORDS] : OTHER_SYSTEMS) {

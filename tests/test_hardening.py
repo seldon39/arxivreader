@@ -213,6 +213,13 @@ class Prune(Base):
         self.assertEqual(removed, (2, 3))
         self.assertIn("2020-01-02", db.get_settings()["feed.days"])  # des articles y restent : le jour reste connu
 
+    def test_thinned_day_is_marked_partial(self):
+        self.seed()
+        db.save_settings({"feed.partialDays": []})
+        feedprune.prune(days=60)
+        # il ne reste de ce jour que les articles gardés : la page doit le redemander, pas le croire complet
+        self.assertEqual(db.get_settings()["feed.partialDays"], ["2020-01-02"])
+
     def test_days_without_items_are_forgotten(self):
         self.seed()
         with db.connect() as connection:

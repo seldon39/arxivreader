@@ -83,6 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         saveSession()
         if serverReady && !confirmedLeaving && !quitting {
+            if asking { return .terminateCancel }  // une question est déjà posée (fermeture de fenêtre) : sa réponse décide
             askIfRunning { leave in
                 guard leave else { return NSApp.reply(toApplicationShouldTerminate: false) }
                 if self.shutDown() == .terminateNow { NSApp.reply(toApplicationShouldTerminate: true) }

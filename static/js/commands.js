@@ -5,7 +5,7 @@
 
 import { api } from "./api.js";
 import { saveBibtex } from "./bibtex.js";
-import { t, tn } from "./i18n.js";
+import { forSystem, t, tn } from "./i18n.js";
 import { markdownToHtml } from "./markdown.js";
 import { h, toast, toastError } from "./util.js";
 
@@ -119,7 +119,7 @@ export function showKeys() {
   document.querySelector("dialog.keys-dialog")?.close();
   const opener = document.activeElement;
   const close = h("button", { class: "button", type: "button" }, t("graph.close"));
-  const row = (keys, text) => h("tr", {}, h("th", { scope: "row" }, h("kbd", {}, keys)), h("td", {}, t(text)));
+  const row = (keys, text) => h("tr", {}, h("th", { scope: "row" }, h("kbd", {}, forSystem(keys))), h("td", {}, t(text)));
   const app = mac() ? [
     h("tr", {}, h("th", { colspan: 2, class: "keys-group" }, t("keys.app"))),
     row("⌘F", "keys.find"), row("⌥⌘F", "keys.searchLibrary"), row("⌘D", "keys.bookmark"), row("⌥⌘P", "keys.view"),
