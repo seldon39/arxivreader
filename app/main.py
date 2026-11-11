@@ -79,7 +79,9 @@ async def lifespan(_app):
     providers.forget_gemini_cli()
     ai.stop_running()
     library.clean_cache()
-    if not os.environ.get("ARXIVREADER_NO_ALERTS"):  # copie du jour : hors de la boucle d'événements, jamais pendant les essais
+    # copie du jour, hors de la boucle d'événements (ARXIVREADER_NO_SNAPSHOT=1 pour la couper ; la version d'essai,
+    # lancée avec ARXIVREADER_NO_ALERTS, garde la sienne : sa bibliothèque est à part)
+    if not os.environ.get("ARXIVREADER_NO_SNAPSHOT"):
         threading.Thread(target=_daily_snapshot, daemon=True).start()
     try:
         feedprune.prune()  # feed et vecteurs anciens (hors ceux gardés) : la base ne grossit plus sans fin

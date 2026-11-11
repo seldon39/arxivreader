@@ -59,7 +59,8 @@ export function trailKey(event) {
 
 // Touche de lecture sans modificateur : "next" / "prev" (énoncé suivant, précédent), "proof" (preuve de l'énoncé lu),
 // "help" (liste des touches), sinon null. Une seule constante : facile à retirer.
-export const READING_KEYS = { "]": "next", "[": "prev", p: "proof", "?": "help" };
+// j / k : mêmes gestes sur tout clavier (« ] » et « [ » demandent ⌥⇧ sur un clavier AZERTY)
+export const READING_KEYS = { j: "next", k: "prev", "]": "next", "[": "prev", p: "proof", "?": "help" };
 export function readingKey(event) {
   if (event.altKey || event.metaKey || event.ctrlKey || event.isComposing) return null;
   return READING_KEYS[event.key] || null;

@@ -2469,7 +2469,7 @@ class Reader {
       h("h3", {}, t("reader.keys")),
       h("table", {}, h("tbody", {},
         row("⌥← / ⌘[", "reader.keyBack"), row("⌥→ / ⌘]", "reader.keyForward"),
-        row("]", "reader.keyNext"), row("[", "reader.keyPrev"), row("p", "reader.keyProof"), row("?", "reader.keyHelp"))),
+        row("j  ·  ]", "reader.keyNext"), row("k  ·  [", "reader.keyPrev"), row("p", "reader.keyProof"), row("?", "reader.keyHelp"))),
       close);
     close.addEventListener("click", () => dialog.close());
     dialog.addEventListener("close", () => { dialog.remove(); opener?.focus?.({ preventScroll: true }); });
