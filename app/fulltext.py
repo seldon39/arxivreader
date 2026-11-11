@@ -5,6 +5,8 @@ import html
 import json
 import re
 import unicodedata
+from collections import OrderedDict
+import threading
 from functools import lru_cache
 
 from . import db, library
@@ -13,7 +15,7 @@ MIN_QUERY = 3
 MAX_RESULTS = 200
 MAX_PER_PAPER = 3      # occurrences dans le texte d'un même article
 SNIPPET_SIDE = 100     # caractères de part et d'autre de l'occurrence
-CACHED_FILES = 5000    # parcours séquentiel : un cache plus petit que la bibliothèque ne servirait à rien
+CACHED_CHARS = 60_000_000  # taille du cache en caractères (texte + texte replié) : un article en compte ~300 000
 
 # Annotations prises en compte : celles de la bibliothèque, y compris sur les versions archivées de ses articles
 ANNOTATED_PAPERS = "p.in_library = 1 OR p.archived_of IN (SELECT id FROM papers WHERE in_library = 1)"
@@ -98,18 +100,42 @@ def _stamp(path):
         return None
 
 
-@lru_cache(maxsize=CACHED_FILES)
+_cache = OrderedDict()  # (chemin, date) -> (texte, texte replié) ; borné en caractères, le plus ancien sort d'abord
+_cached_chars = 0
+_cache_lock = threading.Lock()  # la recherche tourne dans le pool de threads : deux requêtes peuvent se croiser
+
+
 def _extracted(path, stamp):
-    """(texte, texte replié) d'un content.html ou d'un text.json ; `stamp` : un fichier modifié est relu."""
-    raw = path.read_text(encoding="utf-8")
-    if path.suffix == ".html":
+    """(texte, texte replié) d'un content.html, d'un text.json ou d'un source.tex ; `stamp` : un fichier modifié est relu."""
+    global _cached_chars
+    key = (path, stamp)
+    with _cache_lock:
+        if key in _cache:
+            _cache.move_to_end(key)
+            return _cache[key]
+    value = _read_text(path)  # hors du verrou : la lecture est longue
+    with _cache_lock:
+        if key not in _cache:
+            _cache[key] = value
+            _cached_chars += 2 * len(value[0])
+            while _cached_chars > CACHED_CHARS and len(_cache) > 1:
+                _, (old, _) = _cache.popitem(last=False)
+                _cached_chars -= 2 * len(old)
+    return value
+
+
+def _read_text(path):
+    raw = path.read_text(encoding="utf-8", errors="replace")
+    if path.suffix == ".tex":
+        text = raw.replace("$", PLAIN_DOLLAR)  # TeX brut montré tel quel : pas de formule à composer dans l'extrait
+    elif path.suffix == ".html":
         text = "".join(piece for piece, _ in _pieces(raw))
     else:  # le texte d'un PDF a ses ligatures (ﬁ) et ses lettres mathématiques : NFKC ; \f sépare les pages
         text = "\f".join(unicodedata.normalize("NFKC", page).replace("$", PLAIN_DOLLAR) for page in json.loads(raw)["pages"])
     return text, fold(text)
 
 
-@lru_cache(maxsize=CACHED_FILES)
+@lru_cache(maxsize=1000)
 def _read_labels(path, stamp):
     structure = json.loads(path.read_text(encoding="utf-8"))
     return {**{entry["id"]: entry["title"] for entry in structure.get("toc", [])},
@@ -132,11 +158,50 @@ def _enclosing(element_id, labels):
     return ""
 
 
+# Ce qui fait d'un mot une formule : on le cherche sans tenir compte des espaces ni des accolades du TeX de l'auteur
+_FORMULA = re.compile(r"[\\^_{}$]")
+
+
+def _word_regex(word):
+    """Mot cherché. Formule : `H^{1}(M)`, `H^1 (M)` et `H^1(M)` se valent (espaces et accolades facultatifs entre
+    les caractères) ; mot ordinaire : tel quel."""
+    if not _FORMULA.search(word):
+        return re.escape(word)
+    chars = [c for c in word if c not in "{}$" and not c.isspace()]
+    return r"[\s{}$]*".join(map(re.escape, chars)) if chars else ""
+
+
+def _tokens(query):
+    """[expression régulière] : un mot ou une « phrase entre guillemets » (mots adjacents) par élément."""
+    out = []
+    for quoted, bare in re.findall(r'"([^"]*)"|([^\s"]+)', fold(unicodedata.normalize("NFC", query))):
+        words = (quoted or bare).split()
+        regex = r"\s+".join(filter(None, map(_word_regex, words)))
+        if regex:
+            out.append((len(" ".join(words)), regex))
+    return out
+
+
+class Query:
+    """Les mots et phrases cherchés, tous présents dans l'article (ou la note). Les occurrences montrées sont celles du
+    plus long (le plus sélectif) : `search` et `finditer` s'utilisent comme ceux d'une expression régulière."""
+
+    def __init__(self, tokens):
+        self.main = re.compile(max(tokens)[1])
+        self.others = [re.compile(regex) for _, regex in tokens if regex != max(tokens)[1]]
+
+    def search(self, folded):
+        return self.main.search(folded) if all(other.search(folded) for other in self.others) else None
+
+    def finditer(self, folded):
+        return self.main.finditer(folded)
+
+
 def _pattern(query):
-    words = fold(unicodedata.normalize("NFC", query)).split()
-    if len(" ".join(words)) < MIN_QUERY:
+    tokens = _tokens(query)
+    if sum(size for size, _ in tokens) < MIN_QUERY:
         return None
-    return re.compile(r"\s+".join(map(re.escape, words)))
+    return Query(tokens)
 
 
 def _snippet(text, start, end):
@@ -264,6 +329,22 @@ def _pdf_hits(paper, path, stamp, pattern):
     return hits
 
 
+def _source_hits(paper, path, stamp, pattern):
+    """Source TeX : une occurrence par paragraphe (ligne vide) ; l'article s'ouvre en haut, le TeX n'ayant pas de page."""
+    text, folded = _extracted(path, stamp)
+    if not pattern.search(folded):
+        return []
+    hits, last = [], None
+    for match in pattern.finditer(folded):
+        block = text.count("\n\n", 0, match.start())
+        if block != last:
+            hits.append(_hit(paper, "text", "TeX", text, match, None))
+            last = block
+            if len(hits) == MAX_PER_PAPER:
+                break
+    return hits
+
+
 def _text_hits(paper, pattern):
     folder = library.paper_dir(paper["id"])  # identifiant lu dans la base
     html_file = folder / "content.html"
@@ -272,7 +353,11 @@ def _text_hits(paper, pattern):
         return _html_hits(paper, html_file, stamp, pattern)
     pdf_text = folder / "text.json"
     stamp = _stamp(pdf_text)
-    return [] if stamp is None else _pdf_hits(paper, pdf_text, stamp, pattern)
+    if stamp is not None:
+        return _pdf_hits(paper, pdf_text, stamp, pattern)
+    source = folder / "source.tex"  # lu dans le PDF avec son source TeX : pas de HTML ni de text.json
+    stamp = _stamp(source)
+    return [] if stamp is None else _source_hits(paper, source, stamp, pattern)
 
 
 def search(query):

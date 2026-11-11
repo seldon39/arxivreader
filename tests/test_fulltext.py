@@ -75,6 +75,51 @@ class FullText(unittest.TestCase):
         self.assertEqual(len(fulltext.fold(text)), len(text))
         self.assertEqual(fulltext.fold("KÄHLER Łoś Ø"), "kahler los o")
 
+    def test_words_need_not_be_adjacent(self):
+        self.paper("a", "<p>A Kähler metric. Later, an Einstein condition.</p>")
+        self.paper("b", "<p>Kähler only</p>")
+        self.assertEqual([r["paperId"] for r in self.found("Kahler metric Einstein")], ["a"])
+
+    def test_quoted_phrase_stays_adjacent(self):
+        self.paper("a", "<p>a Kähler metric, then Einstein</p>")
+        self.paper("b", "<p>metric on a Kähler space</p>")
+        self.assertEqual([r["paperId"] for r in self.found('"kahler metric"')], ["a"])
+        self.assertEqual({r["paperId"] for r in self.found("kahler metric")}, {"a", "b"})
+
+    def test_formula_spacing_and_braces_are_ignored(self):
+        self.paper("a", "<p>the group " + math("H^{1}(M)") + " vanishes</p>")
+        self.paper("b", "<p>the group " + math("H^1 (M)") + " vanishes</p>")
+        self.paper("c", "<p>the group " + math("H^2(M)") + " vanishes</p>")
+        for query in ("H^1(M)", "H^{1}(M)", "H^1 (M)", "$H^1(M)$"):
+            self.assertEqual({r["paperId"] for r in self.found(query)}, {"a", "b"}, query)
+
+    def test_source_tex_papers_are_searched(self):
+        folder = self.paper("a")
+        (folder / "source.tex").write_text("\\section{Intro}\nWe prove the Calabi conjecture $H^1(M)=0$.\n\nSecond para with Yau.", encoding="utf-8")
+        found = self.found("calabi conjecture")
+        self.assertEqual([(r["paperId"], r["label"], r["target"]) for r in found], [("a", "TeX", None)])
+        self.assertEqual([r["paperId"] for r in self.found("H^{1}(M)")], ["a"])
+        self.assertIn("Calabi", found[0]["snippet"])
+
+    def test_cache_is_bounded_by_characters(self):
+        folders = [self.paper(name, "<p>" + "needle " * 20 + "</p>") for name in "abcd"]
+        saved = fulltext.CACHED_CHARS
+        fulltext.CACHED_CHARS = 700
+        fulltext._cache.clear()
+        fulltext._cached_chars = 0
+        try:
+            self.found("needle")
+            self.assertLess(len(fulltext._cache), 4)
+            self.assertLessEqual(fulltext._cached_chars, 700)
+            self.assertEqual(fulltext._cached_chars, sum(2 * len(v[0]) for v in fulltext._cache.values()))
+        finally:
+            fulltext.CACHED_CHARS = saved
+        self.assertEqual(len(folders), 4)
+
+    def test_too_short_query(self):
+        self.assertEqual(self.found("ab"), [])
+        self.assertEqual(self.found('""'), [])
+
     def test_accents_and_case(self):
         self.paper("a", '<p class="ltx_p">On a K&auml;hler manifold</p>')
         self.paper("b", '<p class="ltx_p">On a KAHLER variety</p>')

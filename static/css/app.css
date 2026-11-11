@@ -1529,6 +1529,11 @@ body.has-selection-bar #toast { bottom: 96px; }
 .bib-links .cross-badge { margin-left: 0; color: var(--link); }  /* « Ouvrir l'article » en tête de la ligne */
 .bib-links .cross-badge:hover { text-decoration: none; }
 .bib-links button.cross-badge { margin-left: 0; background: none; cursor: pointer; }  /* « BibTeX » : même pastille que « Ouvrir l'article » */
+.bib-links .bib-add { padding: 0 8px; border: 1px solid var(--border-strong); border-radius: 10px; background: none; font: 12px/20px var(--font-ui); color: var(--link); cursor: pointer; }  /* « + Bibliothèque » */
+.bib-links .bib-add:hover:not(:disabled) { background: var(--surface-hover); }
+.bib-links .bib-add:disabled { opacity: .55; cursor: progress; }
+.bib-links .bib-added { font: 12px/20px var(--font-ui); color: var(--muted); }
+.bib-links.bib-all { display: inline-flex; margin: 0 0 0 14px; vertical-align: middle; font-weight: 400; }  /* en fin du titre de la bibliographie */
 .related-building { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; }
 .related-building .related-step:empty { display: none; }
 /* article examiné : encadré rouge aux coins arrondis, fond à peine teinté, comme l'annonce du jour du feed */
@@ -1641,6 +1646,7 @@ body.related-expanded { overflow: hidden; }
 .meta-dialog::backdrop { background: rgba(0, 0, 0, .3); }
 .meta-dialog form { display: grid; gap: 12px; min-width: min(480px, 80vw); }
 .meta-dialog label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.meta-dialog select { font: inherit; font-size: 15px; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg); color: var(--text); }
 .meta-dialog input { font: inherit; font-size: 15px; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg); color: var(--text); }
 .meta-dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .meta-dialog .meta-heading { margin: 0; font-size: 17px; }
