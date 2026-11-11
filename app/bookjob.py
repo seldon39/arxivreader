@@ -33,10 +33,9 @@ def reusable(paper_id, task, chapter_ids):
 
 
 class Job:
-    def __init__(self, paper, structure, task, model, second, language, fresh, verify=False, effort=None):
+    def __init__(self, paper, structure, task, model, second, language, fresh):
         self.paper, self.structure, self.task = paper, structure, task
         self.model, self.second, self.language = model, second, language
-        self.verify, self.effort = verify, effort  # relecture vérifiée : `second` est le vérificateur, à ce niveau de réflexion
         chapters = ai.parts_of(structure)
         done = {} if fresh else reusable(paper["id"], task, {c["id"] for c in chapters})
         self.chapters = [{"id": c["id"], "state": "reused" if c["id"] in done else "wait",
@@ -56,7 +55,7 @@ class Job:
 
     def state(self):
         now = time.time()
-        return {"task": self.task, "phase": self.phase, "model": self.model, "second": self.second, "verify": self.verify, "parallel": PARALLEL,
+        return {"task": self.task, "phase": self.phase, "model": self.model, "second": self.second, "parallel": PARALLEL,
                 "elapsed": round((self.ended or now) - self.started),
                 "chapters": [{"id": c["id"], "state": c["state"], "exchange": c["exchange"], "seconds": c["seconds"],
                               "elapsed": round(now - c["started"]) if c["state"] == "running" else None}
@@ -100,7 +99,7 @@ class Job:
                 answer, steps, seen, flags = [], [], {}, {}
                 if self.second:  # relecture croisée du chapitre : quatre demandes (ai.cross_review)
                     async for event in ai.cross_review(self.paper, self.structure, self.model, self.second, self.language,
-                                                       chapter=entry["id"], verify=self.verify, effort=self.effort):
+                                                       chapter=entry["id"]):
                         if "delta" in event:
                             answer.append(event["delta"])
                         if "step" in event:
@@ -157,13 +156,13 @@ def _purge():
         del jobs[key]
 
 
-def start(paper, structure, task, model, second=None, language="fr", fresh=False, verify=False, effort=None):
+def start(paper, structure, task, model, second=None, language="fr", fresh=False):
     """Lance la tâche (une seule à la fois par livre et par sorte) ; `second` : modèle du second relecteur."""
     _purge()
     key = (paper["id"], task)
     if key in jobs and jobs[key].running:
         raise ai.AIError("Already running")
-    job = Job(paper, structure, task, model, second, language, fresh, verify, effort)
+    job = Job(paper, structure, task, model, second, language, fresh)
     jobs[key] = job
     job.loop = asyncio.get_running_loop()
     job.handle = asyncio.ensure_future(job.run())

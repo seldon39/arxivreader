@@ -1129,6 +1129,10 @@ button.ai-book-name:disabled { cursor: default; color: inherit; }
 .ai-tag.dispute, .ai-tag.uncertain { background: var(--warning-bg); color: var(--warning-text); border-color: transparent; }
 .ai-tag.confirmed { background: var(--accent-soft); color: var(--accent-strong); border-color: transparent; }
 .ai-cost { margin: 4px 0 0; }
+/* Sous la dernière relecture : la vérifier (vérificateur, son modèle et son niveau, coût) */
+.ai-verify { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.ai-verify-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ai-verify-row .button { height: 32px; }
 .ai-steps { margin: 2px 0 8px; font-size: 13px; color: var(--muted); }
 .ai-steps summary { cursor: pointer; }
 .ai-step { margin: 6px 0 0 16px; }

@@ -17,9 +17,11 @@ documents du dépôt (README, MAINTENANCE…) seront mis à jour seulement si la
 - **Ce que l'assistant a lu** : bandeau « Lu : n % du texte seulement (pages … non envoyées) » quand l'article a été
   coupé, et « Réponse coupée par l'assistant » quand la réponse s'arrête sur une limite. Une relecture coupée n'est
   plus reprise comme complète. La réponse en cours est enregistrée toutes les quelques secondes.
-- **Relecture vérifiée** (onglet IA → Relecture → « Sorte de relecture ») : le même assistant, avec un modèle au choix
-  (plus léger par défaut), tente de réfuter chaque point grave d'après le texte ; les points sortent « Confirmé »,
-  retirés ou « Incertain ». Ligne de coût « ≈ n demandes de la taille de l'article » avant les lancements multiples.
+- **Vérifier les points graves** (sous la dernière relecture, simple ou croisée, d'un article, d'une section ou d'un
+  chapitre) : le même assistant, avec un modèle au choix (plus léger par défaut), tente de réfuter chaque point critique
+  ou sérieux d'après le texte, puis la relecture est réécrite ; les points sortent « Confirmé », « Incertain » ou
+  retirés (avec la raison). 2 demandes de plus, seulement quand on le décide ; la relecture vérifiée reste au-dessus.
+  Ligne de coût « ≈ n demandes de la taille de l'article » avant les lancements multiples.
 
 ### Lecture
 - **Position jamais perdue** : aussi dans les PDF importés et les fichiers TeX, à la ligne près en HTML, enregistrée
@@ -59,15 +61,15 @@ renvois entre articles mis en cache (plus de relecture de toute la bibliothèque
 d'un réglage signalé.
 
 ## Vérifié
-- 579 tests automatiques ; migration d'une copie de la vraie base 1.12 sans perte (54 notes identiques).
+- 582 tests automatiques ; migration d'une copie de la vraie base 1.12 sans perte (54 notes identiques).
 - Dans WebKit (copie de l'application, bibliothèque d'essai) : touches j / k / ?, retour ⌥←, bandeau de preuve,
   position restaurée, BibTeX, recherche à deux mots, copie quotidienne, rendu d'une relecture et d'un script simulés
-  (rubrique des résultats cités, bandeaux « coupée » et « lu à 62 % »), session de quatre onglets rouverte dans l'ordre.
+  (rubrique des résultats cités, bandeaux « coupée » et « lu à 62 % »), bouton « Vérifier les points graves » et relecture vérifiée simulée, session de quatre onglets rouverte dans l'ordre.
 - Relecture contradictoire de tout le diff : 35 remarques, corrigées (deux graves sur les données, refaites à la main).
 
 ## À vérifier à la main (non testé avec un vrai clic ou une vraie IA)
 - « Copier le code » et « Copier le BibTeX » avec un vrai clic (mon clic simulé n'a pas accès au presse-papiers).
-- Une vraie relecture : la rubrique des résultats cités, les extraits de ligne, la relecture vérifiée, la ligne de coût.
+- Une vraie relecture : la rubrique des résultats cités, les extraits de ligne, la ligne de coût ; puis « Vérifier les points graves ».
 - « Vérifier par le calcul » sur un énoncé, puis le script dans Sage.
 - ⌘Q pendant une réponse en cours ; ⌘⇧T ; ⌘+ / ⌘− dans le PDF ; téléchargement d'un export.
 - « + Bibliothèque » et l'ajout groupé de références (requêtes réelles à arXiv).

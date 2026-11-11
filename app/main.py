@@ -304,14 +304,13 @@ class AIRequest(BaseModel):
     pages: list[dict] = []  # PDF sans texte : [{"page", "image" (JPEG en base64)}] autour de la question
     second: str | None = None  # relecture croisée : l'autre assistant (claude, codex, gemini, local)
     chapter: str | None = None  # résumé ou relecture d'un seul chapitre (livre) ou d'une seule section (article)
-    verify: bool = False  # relecture vérifiée : le même assistant tente ensuite de réfuter chaque point grave (ai.verifier)
+    check: int | None = None  # vérifier cette relecture (simple ou croisée) : le même assistant tente de réfuter chaque point grave (ai.verify_review)
 
 
 class BookRequest(BaseModel):
     task: str  # summary, review
     second: str | None = None  # relecture croisée de chaque chapitre, avec cet assistant
     fresh: bool = False  # refaire aussi les chapitres déjà faits
-    verify: bool = False  # relecture vérifiée de chaque chapitre
 
 
 class BookStopRequest(BaseModel):
@@ -844,18 +843,13 @@ async def start_book_job(paper_id: str, body: BookRequest):
         return JSONResponse({"error": "Unknown task"}, status_code=400)
     if len(ai.parts_of(structure)) < 2:
         return JSONResponse({"error": "Nothing to split"}, status_code=400)
-    second, effort = None, None
-    if body.second is not None or body.verify:
-        if (body.task != "review" or (body.second is not None and body.verify)
-                or (body.second is not None and (body.second not in providers.PROVIDERS or body.second == providers.provider_of(model)))):
+    second = None
+    if body.second is not None:
+        if body.task != "review" or body.second not in providers.PROVIDERS or body.second == providers.provider_of(model):
             return JSONResponse({"error": "Bad cross-review"}, status_code=400)
-        if body.verify:
-            second, effort = await run_in_threadpool(ai.verifier, model, settings)
-        else:
-            second = ai.model_of(body.second, settings)
+        second = ai.model_of(body.second, settings)
     try:
-        job = bookjob.start(paper, structure, body.task, model, second, settings.get("language", "fr"), body.fresh,
-                            verify=body.verify, effort=effort)
+        job = bookjob.start(paper, structure, body.task, model, second, settings.get("language", "fr"), body.fresh)
     except ai.AIError as error:
         return JSONResponse({"error": str(error)}, status_code=409)
     return job.state()
@@ -890,24 +884,36 @@ async def ask_ai(paper_id: str, body: AIRequest):
         return JSONResponse({"error": "Bad page image"}, status_code=400)
     try:
         model = ai.current_model(settings)
-        cross = body.second is not None or body.verify
+        cross = body.second is not None
+        checked = None  # relecture à vérifier
+        if body.check is not None:
+            checked = ai.get(body.check)
+            if (body.task != "review" or cross or body.chapter or body.parent_id or not checked or checked["paper_id"] != paper_id
+                    or checked["task"] != "review" or checked["parent_id"] is not None or checked["status"] != "done"
+                    or not (checked["answer"] or "").strip()):
+                raise ai.AIError("Bad review to check")
+            if checked["target"] == ai.BOOK and structure.get("chapters"):  # synthèse d'un livre : faite d'après les chapitres
+                raise ai.AIError("Check the review of each chapter instead")
+            target = checked["target"]  # rangée à la même place que la relecture vérifiée
+            body.chapter = target if target in {c["id"] for c in ai.parts_of(structure)} else None
         chapter = body.chapter or None
         if chapter and (body.task not in ("summary", "review") or chapter not in {c["id"] for c in ai.parts_of(structure)}):
             raise ai.AIError("Unknown chapter")
         if chapter:
             target = chapter  # gardé avec l'échange : le document de ce chapitre
-        if cross and (body.task != "review" or (body.second is not None and body.verify)
-                      or (body.second is not None and (body.second not in providers.PROVIDERS
-                                                       or body.second == providers.provider_of(model)))):
+        if cross and (body.task != "review" or body.second not in providers.PROVIDERS or body.second == providers.provider_of(model)):
             raise ai.AIError("Bad cross-review")
         if image and not ai.reads_images(model):
             raise ai.AIError("This assistant cannot read images")
-        if not ai.reads_images(model) and not cross:
+        if not ai.reads_images(model) and not (cross or checked):
             pages = []  # sans images : la question part sans les pages (comme avant)
-        if cross:  # quatre demandes (trois si vérifiée), préparées au fil de la relecture (ai.cross_review)
-            second, effort = await run_in_threadpool(ai.verifier, model, settings) if body.verify else (ai.model_of(body.second, settings), None)
-            events = ai.cross_review(paper, structure, model, second, settings.get("language", "fr"), pages,
-                                     chapter, verify=body.verify, effort=effort)
+        if checked:  # deux demandes : réfutation des points graves, puis relecture finale (ai.verify_review)
+            checker, effort = await run_in_threadpool(ai.verifier, model, settings)
+            events = ai.verify_review(paper, structure, checked, model, checker, settings.get("language", "fr"), pages,
+                                      chapter, effort=effort)
+        elif cross:  # quatre demandes, préparées au fil de la relecture (ai.cross_review)
+            events = ai.cross_review(paper, structure, model, ai.model_of(body.second, settings), settings.get("language", "fr"),
+                                     pages, chapter)
         else:
             # mémoire de la conversation : les échanges précédents du fil (Questions, ou ce résumé, cette relecture)
             history = await run_in_threadpool(ai.thread_history, paper_id, parent, body.task)
@@ -1771,7 +1777,7 @@ SETTING_CHOICES = {
     "paperFont": {"auto", "charter", "lm"}, "mathRenderer": {"mathjax", "native"},
     "aiProvider": set(providers.PROVIDERS), "readerView": {"html", "pdf"},
     "feedSort": {"relevance", "arxiv"}, "feedSortS2": {"relevance", "s2"},
-    "aiReviewMode": {"single", "verify", "cross"}, "aiSecond": set(providers.PROVIDERS),  # relecture : simple ou croisée, et avec qui
+    "aiReviewMode": {"single", "cross"}, "aiSecond": set(providers.PROVIDERS),  # relecture : simple ou croisée, et avec qui
     "aiDefault": {"", *providers.PROVIDERS},  # assistant sélectionné au lancement (vide : le dernier choisi)
 }
 BOOLEAN_SETTINGS = {"proofsCollapsed", "tocOpen", "panelOpen", "marginMarks", "notifyFollowed", "checkUpdates", "notifyCitations",
