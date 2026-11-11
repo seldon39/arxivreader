@@ -4,7 +4,7 @@ import { api, setReadingVersion } from "./api.js";
 import { closure, renderGraph } from "./graph.js";
 import { Annotator, findAll, noteEditor } from "./annotations.js";
 import { Assistant } from "./ai.js";
-import { addButton, allButton } from "./biblibrary.js";
+import { addButton, allButton, askDestination, destinationFolder } from "./biblibrary.js";
 import { copyBibtex } from "./bibtex.js";
 import { alignNumberColumns, amsBibliography, dropMacroDebris, fixMathML, texQuotes, splitLongInlineMath, markItalicStatements, moveTitleNotes, normalizeFontScale, placeEquationNumbers, relabelLists } from "./amsfix.js";
 import { currentModel } from "./aiproviders.js";
@@ -802,16 +802,26 @@ class Reader {
     const paper = this.paper;
     const label = () => t(paper.in_library ? "feed.removeFromLibrary" : "feed.addToLibrary");
     const button = toggleIcon(icons.bookmarkOff, icons.bookmarkOn, { pressed: Boolean(paper.in_library), label: label(), className: "bookmark" });
+    let busy = false;
     button.addEventListener("click", async () => {
+      if (busy) return;
+      busy = true;
       try {
+        // ajout : bibliothèque seule, ou aussi un dossier (askDestination) ; retrait : tout de suite, comme avant
+        const choice = paper.in_library ? null : await askDestination({ title: t("dest.titleThis") });
+        if (!paper.in_library && !choice) return;
+        const folder = choice && await destinationFolder(choice);
         const updated = await api.setInLibrary(paper.id, !paper.in_library);
         paper.in_library = updated.in_library;
+        if (folder && paper.in_library) await api.setInFolder(folder.id, paper.id, true);
         button.setAttribute("aria-pressed", String(Boolean(paper.in_library)));
         button.title = label();
         button.setAttribute("aria-label", label());
-        toast(t(paper.in_library ? "feed.added" : "feed.removed"));
+        toast(folder && paper.in_library ? t("feed.addedTo", { name: folder.name }) : t(paper.in_library ? "feed.added" : "feed.removed"));
       } catch (error) {
         toastError(error);
+      } finally {
+        busy = false;
       }
     });
     return button;

@@ -37,7 +37,8 @@ documents du dépôt (README, MAINTENANCE…) seront mis à jour seulement si la
   dossier (« Exporter en .bib »), et sur une référence de bibliographie reconnue par son identifiant arXiv ou son DOI.
   Construit hors ligne ; `@article` seulement si la revue est connue ; rien n'est inventé.
 - **Références** : « + Bibliothèque » sur une référence qui a un identifiant arXiv ; « Ajouter les n références arXiv
-  à un dossier » (une par une, avec confirmation, arrêt possible).
+  à la bibliothèque », sous le titre de la bibliographie (une par une, arrêt possible). Ces deux boutons, comme le signet
+  du lecteur, demandent où ranger : la bibliothèque seulement, un dossier existant, ou un nouveau dossier.
 - **Recherche de la bibliothèque** : plusieurs mots (tous présents dans l'article), "expression exacte", formules
   reconnues malgré espaces et accolades, articles lus dans leur PDF avec source TeX inclus.
 
