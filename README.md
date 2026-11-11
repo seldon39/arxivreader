@@ -556,6 +556,11 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   appears before multiple runs.
 - **Check by computation** (statement, selected passage, PDF region): the assistant writes a Sage or SymPy script that
   tests the formula on special cases; "Copy the code" button. The app never runs anything.
+- **Your notes in questions**: your general note on the paper (Notes tab) goes with every question, so the assistant
+  can refer to it; all your notes and highlights on the version you read go too when the question speaks of them ("my
+  notes", "my highlights", "my general note"). Summaries and reviews do not use your notes. Ask "add to my general note
+  the link with my work on …": the assistant proposes **Addition to the general note**, added at the end of the note
+  with its name when you apply it (Undo restores the note).
 - **What the assistant read**: a banner "Read: n % of the text only (pages … not sent)" when the paper was cut, and
   "Answer cut off by the assistant" when the answer stops on a limit; a cut review is no longer reused as complete. The
   answer being written is saved every few seconds.

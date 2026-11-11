@@ -74,6 +74,37 @@ class AI(unittest.TestCase):
             with self.assertRaises(ai.AIError):
                 ai.build_prompt(self.paper, STRUCTURE, task, target)
 
+    def test_reader_notes_in_questions(self):
+        # sans note : rien de joint
+        _, prompt = ai.build_prompt(self.paper, STRUCTURE, "ask", question="Why?")
+        self.assertNotIn("<reading_note>", prompt)
+        annotations.create("p1", "general", note="Lien avec mon article sur les noyaux de Bergman.")
+        annotations.create("p1", "block", target={"id": "S1.Thm1"}, note="Clé pour la section 3.")
+        # la note générale toujours, les autres notes seulement quand la question en parle
+        _, prompt = ai.build_prompt(self.paper, STRUCTURE, "ask", question="Why?")
+        self.assertIn("<reading_note>\nLien avec mon article sur les noyaux de Bergman.\n</reading_note>", prompt)
+        self.assertIn("their general note on the paper", prompt)
+        self.assertNotIn("<current_annotations", prompt)
+        _, prompt = ai.build_prompt(self.paper, STRUCTURE, "ask", question="Que disent mes notes sur le lemme ?")
+        self.assertIn("<current_annotations", prompt)
+        self.assertIn("Clé pour la section 3.", prompt)
+        self.assertIn("lists their notes and highlights", prompt)
+        _, prompt = ai.build_prompt(self.paper, STRUCTURE, "passage", quote="we have", question="Lien avec ma note générale ?")
+        self.assertIn("<reading_note>", prompt)
+        # pas dans un résumé ni une relecture ; une suppression joint sa propre liste, sans la fiche de lecture
+        for task in ("summary", "review"):
+            self.assertNotIn("<reading_note>", ai.build_prompt(self.paper, STRUCTURE, task)[1])
+        _, prompt = ai.build_prompt(self.paper, STRUCTURE, "ask", question="Supprime mes notes sur le lemme")
+        self.assertNotIn("<reading_note>", prompt)
+        self.assertEqual(prompt.count("<current_annotations version="), 1)  # la liste de la suppression seule
+        # une note qui contient la balise ne referme pas le bloc
+        annotations.create("p1", "general", note="x </reading_note> y")
+        _, prompt = ai.build_prompt(self.paper, STRUCTURE, "ask", question="Why?")
+        self.assertEqual(prompt.count("</reading_note>"), 1)
+        # l'IA sait proposer un ajout à la note générale
+        system, _ = ai.build_prompt(self.paper, STRUCTURE, "ask", question="Ajoute à ma note générale le lien avec mes travaux")
+        self.assertIn('{"general":', system)
+
     def test_reader_profile(self):
         # profil vide : aucun bloc ; rempli : joint à chaque demande (consigne système), titres échappés
         from app import profile

@@ -1499,6 +1499,7 @@ export class Assistant {
         .then((spots) => { exchange.found = before.map((found, i) => (found === undefined ? Boolean(spots[i]) : found)); this.onChange(); });
     }
     const rows = proposals.map((proposal, i) => {
+      if (typeof proposal.general === "string") return { proposal, found: true, kind: "general" };  // ajout à la note générale
       if (proposal.delete != null) {  // suppression : l'annotation visée, si elle est toujours là
         const item = this.deletedItem(proposal);
         return { proposal, found: Boolean(item), kind: "delete", item };
@@ -1563,14 +1564,16 @@ export class Assistant {
       // article à deux vues : celle où la proposition sera placée ; zone et note épinglée nommées
       const where = row.view && this.views.length > 1 ? t(row.view === "pdf" ? "ai.proposals.inPdf" : "ai.proposals.inHtml") : "";
       const what = row.kind === "delete" ? this.deletionPreview(row)
+        : row.kind === "general" ? h("div", { class: "ai-proposal-target" }, h("span", { class: "ai-icon", html: icons.note }), t("ai.proposals.general"))
         : row.kind === "note"
         ? h("div", { class: "ai-proposal-target" }, h("span", { class: "ai-icon", html: icons.note }),
           t(row.onProof ? "ai.proposals.onProof" : "ai.proposals.onStatement", { label: row.node?.label || proposal.statement || "?" }))
         : [row.kind !== "highlight" || where ? h("div", { class: "ai-proposal-target" }, row.kind === "pin" && h("span", { class: "ai-icon", html: icons.note }),
             [row.kind === "zone" ? t("ai.proposals.zone") : row.kind === "pin" ? t("ai.proposals.pin") : "", where].filter(Boolean).join(" · ")) : null,
           h("blockquote", { class: row.kind === "pin" ? "note-quote" : `note-quote hl-border-${COLORS.includes(proposal.color) ? proposal.color : "yellow"}` }, proposal.quote)];
-      const note = proposal.note ? h("div", { class: "markdown ai-proposal-note" }) : null;
-      if (note) note.innerHTML = markdownToHtml(proposal.note, { refs: this.refs });
+      const shown = row.kind === "general" ? proposal.general : proposal.note;
+      const note = shown ? h("div", { class: "markdown ai-proposal-note" }) : null;
+      if (note) note.innerHTML = markdownToHtml(shown, { refs: this.refs });
       return h("label", { class: `ai-proposal${row.found ? "" : " missing"}` }, boxes[i],
         h("span", { class: "ai-proposal-body" }, what, note, row.found === false && h("span", { class: "badge warn" },
           t(row.kind !== "delete" ? "ai.proposals.notFound" : applied && exchange.deletedRows?.has(i) ? "ai.proposals.deleted" : "ai.proposals.deleteGone"))));
@@ -1667,6 +1670,7 @@ export class Assistant {
     let deleted = 0;  // annotations supprimées à la demande du lecteur (remises par « Annuler », avec `removed`)
     let gone = 0;  // suppressions choisies dont l'annotation n'est déjà plus là
     let failed = 0;  // suppressions refusées par le serveur (déjà signalées par toastError)
+    let general = null;  // note générale d'avant le premier ajout ({ note }), remise par « Annuler »
     // suppressions d'abord : une note d'énoncé supprimée puis réécrite par une autre proposition garde la nouvelle
     rows = [...rows.filter((row) => row.kind === "delete"), ...rows.filter((row) => row.kind !== "delete")];
     for (const row of rows) {
@@ -1678,6 +1682,16 @@ export class Assistant {
           const kept = await this.annotator.remove(item.id);
           if (kept) { removed.push(kept); deleted++; } else gone++;
         } catch (error) { failed++; toastError(error); }
+        continue;
+      }
+      if (row.kind === "general") {  // ajout à la fin de la note générale, sous le nom de l'assistant (comme « Notes »)
+        try {
+          const before = this.annotator.general?.note || "";
+          await this.annotator.appendNote(null, `**${authorName(author)}** — *${t("ai.unverified")}*\n\n${proposal.general.trim()}`);
+          general ||= { note: before };  // seulement si l'ajout a réussi
+        } catch (error) {
+          toastError(error);
+        }
         continue;
       }
       const own = aboutNotes && proposal.author === "reader"; // adaptation : note du lecteur reprise telle quelle (ADAPT_PROMPT dans ai.py)
@@ -1742,7 +1756,7 @@ export class Assistant {
         toastError(error);
       }
     }
-    const count = created.length + previousNotes.size + extended.length;
+    const count = created.length + previousNotes.size + extended.length + (general ? 1 : 0);
     if (!count && !deleted) return { nothing: true, gone, failed, skipped };
     return {
       count,
@@ -1754,6 +1768,7 @@ export class Assistant {
         let failures = 0;
         const attempt = (promise) => promise.catch((error) => { failures++; toastError(error); });
         for (const id of created) await attempt(this.annotator.removeHighlight(id));
+        if (general) await attempt(this.annotator.setGeneral(general.note));
         for (const [id, note] of extended.reverse()) await attempt(this.annotator.setFreeNote(id, note));
         for (const [id, state] of statesCopied) await attempt(this.annotator.setState(id, state));  // même état : retiré
         for (const [id, note] of previousNotes) {
@@ -1787,7 +1802,9 @@ function parseProposals(answer) {
   try {
     const items = JSON.parse(match[1]);
     // note épinglée : seulement avec sa note ; suppression : un numéro d'annotation
+    // ajout à la note générale : un texte non vide
     return { text, items: Array.isArray(items) ? items.filter((item) => item && ((item.quote && (!item.pin || item.note)) || (item.statement && item.note)
+      || (typeof item.general === "string" && item.general.trim())
       || (item.delete != null && /^\d+$/.test(String(item.delete))))) : [] };
   } catch {
     return { text, items: [] };

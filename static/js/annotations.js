@@ -584,6 +584,14 @@ export class Annotator {
     return annotation;
   }
 
+  // Note générale remise telle qu'elle était (« Annuler » d'un ajout proposé par l'IA)
+  async setGeneral(note) {
+    const annotation = await api.addAnnotation(this.paperId, { kind: "general", note: note || "" });
+    this.items = this.items.filter((a) => a.kind !== "general").concat(annotation);
+    this.onChange();
+    return annotation;
+  }
+
   async setState(id, state) {
     const current = this.block(id);
     if (current && current.state === state) {

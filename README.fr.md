@@ -587,6 +587,11 @@ il suffit de la fermer et d'aller dans le feed.
   (« ≈ n demandes de la taille de l'article ») précède les lancements multiples.
 - **Vérifier par le calcul** (énoncé, passage sélectionné, zone du PDF) : l'assistant écrit un script Sage ou SymPy qui
   teste la formule sur des cas particuliers ; bouton « Copier le code ». L'application n'exécute jamais rien.
+- **Vos notes dans les questions** : votre note générale sur l'article (onglet Notes) accompagne chaque question,
+  l'assistant peut s'y référer ; toutes vos notes et surlignages de la version lue l'accompagnent aussi quand la
+  question en parle (« mes notes », « mes surlignages », « ma note générale »). Les résumés et relectures n'utilisent
+  pas vos notes. Demandez « ajoute à ma note générale le lien avec mon travail sur … » : l'assistant propose un **Ajout
+  à la note générale**, ajouté à la fin de la note sous son nom quand vous l'appliquez (Annuler remet la note).
 - **Ce que l'assistant a lu** : bandeau « Lu : n % du texte seulement (pages … non envoyées) » quand l'article a été
   coupé, et « Réponse coupée par l'assistant » quand la réponse s'arrête sur une limite ; une relecture coupée n'est plus
   reprise comme complète. La réponse en cours est enregistrée toutes les quelques secondes.
