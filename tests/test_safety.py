@@ -79,7 +79,8 @@ class Library(unittest.TestCase):
     def test_corrupt_without_snapshot_starts_fresh(self):
         db.DB_PATH.write_bytes(b"garbage" * 100)
         db.init()
-        self.assertEqual(db.get_settings(), {})
+        with db.connect() as conn:
+            self.assertEqual(conn.execute("SELECT count(*) FROM settings").fetchone()[0], 0)
         self.assertIsNone(safety.status(db.DB_PATH)["recovery"]["restored"])
         self.assertTrue(list((self.tmp / "backups").glob("corrupt-*.db")))
 
