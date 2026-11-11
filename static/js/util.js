@@ -91,9 +91,15 @@ export async function copyText(text) {
 }
 
 let toastTimer;
+let toastEl;
 // Message bref en bas de l'écran ; `action` ajoute un bouton (« Annuler » une suppression…)
 export function toast(message, { error = false, duration = 3500, action = null } = {}) {
-  const el = document.getElementById("toast");
+  toastEl ||= document.getElementById("toast");
+  const el = toastEl;
+  // une fenêtre modale (réglages, assistant de démarrage) passe au-dessus de tout : le message s'y range tant qu'elle
+  // est ouverte, sinon il serait caché derrière (l'élément gardé ici survit à une fenêtre vidée ou fermée)
+  const host = [...document.querySelectorAll("dialog[open]")].pop() || document.body;
+  if (el.parentNode !== host) host.append(el);
   el.replaceChildren(h("span", {}, message));
   if (action) {
     const button = h("button", { class: "toast-action", type: "button" }, h("span", { html: action.icon || icons.undo }), action.label);

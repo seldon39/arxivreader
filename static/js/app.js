@@ -125,6 +125,11 @@ if (WINDOWS && !nativeBridge) {
   document.getElementById("settings-button").before(newTab);
 }
 addEventListener("arxivreader:settings", (event) => openSettingsDialog({ section: event.detail }));
+// Fichier téléchargé (application Mac) : signalé sans ouvrir le Finder ; il ne s'y montre que sur demande
+addEventListener("arxivreader:downloaded", (event) => {
+  toast(t("download.done", { name: event.detail }), { action: { label: t("download.reveal"), icon: icons.folder,
+    onClick: () => nativeBridge?.postMessage({ action: "revealDownload" }) } });
+});
 addEventListener("hashchange", route);
 // Menu du clic droit du navigateur (Précédent, Recharger ; sous Windows aussi Enregistrer, Imprimer…) : sans objet
 // dans l'application. Gardé là où il sert : texte sélectionné (copier), champ de saisie, lien, image.

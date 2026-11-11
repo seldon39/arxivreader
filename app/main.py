@@ -757,6 +757,22 @@ async def ai_status(provider: str | None = None):
     return await run_in_threadpool(ai.status, db.get_settings(), provider)
 
 
+@app.get("/api/ai/running")
+async def ai_running():
+    """Travaux en cours (réponses de l'assistant, relectures du livre, constructions de liens) : la coque Mac
+    prévient avant de quitter. Un travail du livre compte pour un, pas pour chacun de ses chapitres."""
+    in_jobs = set()
+    jobs = 0
+    for job in bookjob.jobs.values():
+        if job.running:
+            jobs += 1
+            in_jobs |= job.open
+    answers = [i for i in await run_in_threadpool(ai.running_ids) if i not in in_jobs]
+    with related._jobs_lock:
+        building = sum(1 for job in related._jobs.values() if job.state == "building")
+    return {"answers": len(answers), "jobs": jobs, "related": building, "count": len(answers) + jobs + building}
+
+
 @app.get("/api/ai/partners")
 async def ai_partners():
     """Autres assistants prêts, pour la relecture croisée (aucun : elle n'est pas proposée)."""

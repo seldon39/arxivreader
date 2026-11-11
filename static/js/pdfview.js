@@ -3,6 +3,7 @@
 // au HTML se fait au même endroit, et la position de lecture est gardée même en lisant le PDF.
 
 import { pdfWords } from "./pdfsync.js";
+import { onSettingsChange } from "./settings.js";
 
 const VIEWER = "/static/vendor/pdfjs/web/viewer.html";
 
@@ -39,6 +40,15 @@ export class PdfView {
       const doc = this.frame.contentDocument;
       if (!doc) return;
       doc.head.append(Object.assign(doc.createElement("link"), { rel: "stylesheet", href: EXTRA_CSS }));
+    });
+    // thème changé (réglages) pendant la lecture : barre et panneau de pdf.js le suivent ; cadre retiré : on se désabonne
+    const stop = onSettingsChange(() => {
+      if (!this.frame.isConnected) return stop();
+      const root = this.frame.contentDocument?.documentElement;
+      const theme = document.documentElement.dataset.theme;
+      if (!root) return;
+      if (theme === "dark" || theme === "light") root.style.setProperty("color-scheme", theme);
+      else root.style.removeProperty("color-scheme");
     });
   }
 

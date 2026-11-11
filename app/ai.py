@@ -2299,6 +2299,12 @@ def stop_running():
         connection.execute("UPDATE ai_exchanges SET status = 'stopped' WHERE status = 'running'")
 
 
+def running_ids():
+    """Identifiants des réponses en cours d'écriture (la coque Mac s'en sert avant de quitter)."""
+    with db.connect() as connection:
+        return [row[0] for row in connection.execute("SELECT id FROM ai_exchanges WHERE status = 'running'")]
+
+
 def delete(exchange_id):
     exchange = get(exchange_id)
     if exchange:
