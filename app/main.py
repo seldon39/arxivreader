@@ -9,6 +9,7 @@ import mimetypes
 import os
 import re
 import signal
+import logging
 import threading
 import time
 import zipfile
@@ -25,7 +26,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Red
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import (ai, alerts, annotations, bookjob, notesync, citations, crossrefs, db, export, feed, folders, fulltext, journals, latexml, library, localpdf, onboarding, profile, providers, related, texfile,
+from . import (ai, alerts, annotations, bookjob, notesync, safety, citations, crossrefs, db, export, feed, folders, fulltext, journals, latexml, library, localpdf, onboarding, profile, providers, related, texfile,
                relevance, search, updates, zotero)
 from .arxiv import ArxivError, fetch_metadata, parse_arxiv_id
 from .config import HOST, PORT, STATIC, TOKEN, TOKEN_FILE
@@ -77,6 +78,8 @@ async def lifespan(_app):
     providers.forget_gemini_cli()
     ai.stop_running()
     library.clean_cache()
+    if not os.environ.get("ARXIVREADER_NO_ALERTS"):  # copie du jour : hors de la boucle d'événements, jamais pendant les essais
+        threading.Thread(target=_daily_snapshot, daemon=True).start()
     threading.Thread(target=localpdf.redetect_all, daemon=True).start()  # PDF importés : titre et auteurs relus
     # vérification périodique des auteurs suivis (ARXIVREADER_NO_ALERTS=1 pour la couper, par ex. en test)
     alerts.stop.clear()
@@ -103,6 +106,13 @@ async def lifespan(_app):
             pass
     if TOKEN:
         TOKEN_FILE.unlink(missing_ok=True)
+
+
+def _daily_snapshot():
+    try:
+        safety.snapshot(db.DB_PATH)
+    except Exception as error:  # la copie ne doit jamais gêner l'application
+        logging.getLogger("arxivreader").warning("copie quotidienne impossible : %s", error)
 
 
 def _write_token():
@@ -378,6 +388,12 @@ def papers():
 async def papers_relevance():
     """Pertinence de chaque article de la bibliothèque pour le profil (tri des dossiers)."""
     return await run_in_threadpool(relevance.library_relevance, _s2_key())
+
+
+@app.get("/api/library/backups")
+def library_backups():
+    """Dernière copie quotidienne de la base, dossier des copies, récupération éventuelle au démarrage."""
+    return safety.status(db.DB_PATH)
 
 
 @app.get("/api/library/search")

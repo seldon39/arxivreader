@@ -4,7 +4,7 @@ import json
 import sqlite3
 from contextlib import contextmanager
 
-from . import keystore
+from . import keystore, safety
 from .config import DB_PATH, LIBRARY
 
 SCHEMA = """
@@ -122,6 +122,7 @@ JSON_COLUMNS = ("authors", "categories")
 
 def init():
     LIBRARY.mkdir(parents=True, exist_ok=True)
+    safety.prepare(DB_PATH)  # base trop récente : refus clair ; base abîmée : mise de côté, copie remise en place
     with connect() as db:
         db.executescript(SCHEMA)
         # Colonnes ajoutées après la création de la base
@@ -157,6 +158,7 @@ def init():
             db.execute("ALTER TABLE ai_exchanges ADD COLUMN steps TEXT")
         if "card" not in columns:  # relecture d'un chapitre terminée par sa fiche (reprise par la relecture du livre)
             db.execute("ALTER TABLE ai_exchanges ADD COLUMN card INTEGER DEFAULT 0")
+        db.execute(f"PRAGMA user_version = {safety.DB_VERSION}")
     _move_secrets()
 
 
