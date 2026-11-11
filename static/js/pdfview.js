@@ -99,6 +99,22 @@ export class PdfView {
     app?.eventBus.on("updateviewarea", () => callback(this.location()));
   }
 
+  // Lien interne cliqué dans le PDF (renvoi, table des matières de pdf.js) : `callback` est appelé juste avant le saut,
+  // quand l'endroit lu est encore là. Dépend de PDFLinkService de pdf.js (vendored, figé) ; absent : rien ne change.
+  async onJump(callback) {
+    const service = (await this.ready())?.pdfLinkService;
+    if (!service || service.arxivJump) return;
+    service.arxivJump = true;
+    for (const name of ["goToDestination", "goToPage"]) {
+      const original = service[name];
+      if (typeof original !== "function") continue;
+      service[name] = function (...args) {
+        try { callback(); } catch { /* le saut a lieu quand même */ }
+        return original.apply(this, args);
+      };
+    }
+  }
+
   // texte du PDF, mot à mot avec page et hauteur (calculé une fois)
   text() {
     // un échec n'est pas gardé : la prochaine demande réessaie

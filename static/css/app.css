@@ -474,7 +474,19 @@ a.button.primary { text-decoration: none; }
   background: var(--text); color: var(--surface); font: 14px var(--font-ui); box-shadow: var(--shadow); cursor: pointer;
 }
 .back-button.visible { display: inline-flex; }
-.reader[data-view="pdf"] .back-button { display: none; }  /* le retour ne concerne que le HTML (sa pile est gardée) */
+.proof-dock { position: sticky; top: calc(var(--topbar-h) + var(--toolbar-h)); height: 0; z-index: 14; display: flex; justify-content: flex-end; pointer-events: none; }
+.proof-dock[hidden] { display: none; }
+.proof-bar-link {
+  pointer-events: auto; display: inline-flex; gap: 8px; align-items: baseline; max-width: min(46%, 28rem); margin: 4px 14px 0 auto; padding: 3px 12px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface); box-shadow: var(--shadow);
+  font: 13px var(--font-ui); color: var(--text); text-decoration: none; overflow: hidden; white-space: nowrap;
+}
+.proof-bar-link .name { overflow: hidden; text-overflow: ellipsis; color: var(--muted, var(--text)); }
+.keys-dialog { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font: 14px var(--font-ui); padding: 16px 20px; max-width: 32rem; }
+.keys-dialog h3 { margin: 0 0 10px; }
+.keys-dialog th { text-align: left; padding: 3px 14px 3px 0; white-space: nowrap; font-weight: normal; }
+.keys-dialog kbd { font: 13px var(--font-ui); padding: 1px 6px; border: 1px solid var(--border); border-radius: 4px; }
+.keys-dialog .button { margin-top: 12px; }
 
 /* ---------- Aperçus au survol ---------- */
 .preview {

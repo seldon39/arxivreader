@@ -18,6 +18,7 @@ import { typesetFragment, typesetMath, typesetTex, undefinedFonts } from "./math
 
 import { t, tn } from "./i18n.js";
 import { DEFAULT_FONT_SIZE, READING_WIDTHS, onSettingsChange, saveSettings, settings } from "./settings.js";
+import { Trail, neighbourStatement, proofOwnerOf, readingKey, trailKey } from "./trail.js";
 import { decodePosition, encodePdfPosition, encodePosition, positionSaver } from "./position.js";
 import { debounce, escapeRegExp, formatDate, h, icons, metaDialog, nativeBridge, navigation, openRoute, plainTitle, titleTex, toast, toastError, toggleIcon, wantsNewTab, withMath } from "./util.js";
 import { chooseBibFor, texChecks } from "./texfile.js";
@@ -92,6 +93,7 @@ class Reader {
     this.structure = structure;
     this.nodes = structure.nodes;
     this.byId = new Map(this.nodes.map((n) => [n.id, n]));
+    this.indexProofs();
     this.bib = new Map(structure.bibliography.map((b) => [b.id, b]));
     this.selected = null;
     this.tab = "statements";
@@ -99,7 +101,7 @@ class Reader {
     this.showRemarks = false;
     this.kindFilter = new Set();
     this.search = "";
-    this.backStack = [];
+    this.trail = new Trail();  // sauts faits (HTML et PDF) : « Retour », ⌥← / ⌥→, ⌘[ / ⌘]
     this.anchors = null;
     this.cleanups = [];
     this.viewToken = 0;
@@ -305,6 +307,7 @@ class Reader {
       const from = this.wordAt(this.htmlText, anchor, save);
       this.pdfMode = true;
       this.root.dataset.view = "pdf";
+      this.proofBar.hidden = true;
       this.notesFollowView();
       if (!this.pdf) this.createPdf();
       scrollTo({ top: 0, behavior: "instant" });
@@ -377,6 +380,7 @@ class Reader {
     this.pdf = new PdfView(this.pdfUrl(), this.paper.title);
     // à l'ouverture (vue PDF gardée), l'annotateur n'existe pas encore : PdfNotes créé juste après lui
     if (this.annotator) this.pdfNotes = this.makePdfNotes();
+    this.pdf.onJump(() => this.rememberPlace());  // lien interne du PDF ([12], Theorem 3.4) : l'endroit quitté est gardé
     this.pdfView = h("div", { class: "paper pdf-mode pdf-view" }, this.pdf.frame);
     this.scroller.append(this.pdfView);
     this.followPdf();
@@ -417,10 +421,11 @@ class Reader {
   }
 
   // Article lu dans le PDF : page de l'énoncé, de la section ou de la preuve, et énoncé choisi dans le panneau
-  showInPdf(id) {
+  showInPdf(id, { remember = false } = {}) {
     this.viewToken++; // un recalage en attente (bascule HTML → PDF) ne déplace plus le PDF ensuite
     const node = this.byId.get(id);
     const spot = this.pdfSpot(id);
+    if (spot && this.pdf && remember) this.rememberPlace();
     if (spot && this.pdf) this.pdf.goTo(spot.page, spot.top);
     else if (this.pdf && (this.texOnly || this.pages)) toast(t("reader.noPdfPage"));  // pas de clic sans réponse
     if (node) this.select(id, { openPanel: true });
@@ -514,8 +519,14 @@ class Reader {
     this.panel = h("aside", { class: "panel", "aria-label": t("reader.panel") });
     this.content = h("div", { class: "paper-content" });
     this.article = h("article", { class: "paper", dataset: { marks: settings.marginMarks ? "on" : "off" } });
-    this.backButton = h("button", { class: "back-button", type: "button", onclick: () => this.goBack() }, h("span", { class: "reason-icon", html: icons.undo }), t("reader.returnTo"));
-    this.scroller = h("div", { class: "paper-scroll" }, this.article, this.backButton);
+    this.backButton = h("button", { class: "back-button", type: "button", title: t("reader.returnKeys"), onclick: () => this.stepTrail(-1) }, h("span", { class: "reason-icon", html: icons.undo }), t("reader.returnTo"));
+    // « Preuve du Théorème 3.2 » : barre sans hauteur (comme le cadre de recherche), la pastille flotte au-dessus du texte
+    this.proofLink = h("a", { class: "proof-bar-link", href: "#" });
+    this.proofLink.addEventListener("click", (event) => { event.preventDefault(); if (this.proofBarId) this.navigate(this.proofBarId); });
+    this.proofLink.addEventListener("mouseenter", () => { clearTimeout(this.hideTimer); this.showTimer = setTimeout(() => this.showPreview(this.proofLink), 250); });
+    this.proofLink.addEventListener("mouseleave", () => { clearTimeout(this.showTimer); this.scheduleHide(); });
+    this.proofBar = h("div", { class: "proof-dock", hidden: true }, this.proofLink);
+    this.scroller = h("div", { class: "paper-scroll" }, this.proofBar, this.article, this.backButton);
 
     const meta = h("div", { class: "paper-meta" },
       paper.primary_category && h("span", { class: "chip category" }, paper.primary_category),
@@ -912,16 +923,36 @@ class Reader {
     }
   }
 
+  // Preuves : bloc de preuve (ou section) → énoncé, et passages indiqués comme preuve (énoncé lu pendant une preuve)
+  indexProofs() {
+    this.proofOwners = new Map();
+    for (const node of this.nodes) for (const id of node.proofs || []) this.proofOwners.set(id, node.id);
+  }
+
+  // Énoncé dont la preuve contient l'élément (bloc, section à part ou passage indiqué), sinon null
+  proofOwner(element) {
+    const passages = this.nodes.filter((n) => n.proofPassage)
+      .map((n) => ({ node: n.id, start: this.find(n.proofPassage.start), end: this.find(n.proofPassage.end) }));
+    return proofOwnerOf(element, this.proofOwners, passages);
+  }
+
   // Structure renvoyée par le serveur après une indication de preuve
   setStructure(structure) {
     this.structure = structure;
     this.nodes = structure.nodes;
     this.byId = new Map(this.nodes.map((n) => [n.id, n]));
+    this.indexProofs();
+    // livre : chapitres et graphes par chapitre refaits (ils gardent des copies des anciens énoncés)
+    this.chapters = null;
+    this.chapterNodes = null;
     if (this.annotator) {
       this.annotator.nodes = this.nodes;
       this.annotator.byId = this.byId;
     }
     this.assistant?.setStructure(structure);
+    // rattachements des preuves dans la page : ceux du serveur (l'ancien data-proof-of ne reste pas)
+    this.content.querySelectorAll("[data-proof-of]").forEach((el) => el.removeAttribute("data-proof-of"));
+    for (const [id, node] of this.proofOwners) { const el = this.find(id); if (el) el.dataset.proofOf = node; }
     this.renderProofPointers();
     this.anchors = null;
     this.renderPanel();
@@ -1253,7 +1284,7 @@ class Reader {
   }
 
   navigate(id, options) {
-    if (this.pdfMode) { this.showInPdf(id); return; }
+    if (this.pdfMode) { this.showInPdf(id, { remember: options?.remember ?? true }); return; }
     const target = this.find(id);
     if (target) this.navigateElement(target.closest(".ltx_theorem, .ltx_para, .ltx_bibitem, .ltx_equation, .eq-scroll, .ltx_figure, .ltx_table, .ltx_proof, section") || target, options);
   }
@@ -1300,27 +1331,59 @@ class Reader {
 
   navigateElement(element, { remember = true } = {}) {
     this.reveal(element);
-    if (remember) {
-      // endroit lu : élément et décalage dans l'élément (la mise en page peut changer d'ici le retour), hauteur en secours
-      const anchor = this.currentAnchor();
-      this.backStack.push({ id: anchor?.id, off: anchor ? this.viewTop() + 24 - anchor.getBoundingClientRect().top : 0, y: scrollY });
-      this.backButton.classList.add("visible");
-    }
+    if (remember) this.rememberPlace();
     this.scrollToElement(element);
     element.classList.remove("flash");
     element.getBoundingClientRect(); // recalcul : l'animation repart (offsetWidth n'existe pas pour un élément SVG)
     element.classList.add("flash");
   }
 
-  goBack() {
-    const top = this.backStack.pop();
-    if (top) {
-      const anchor = this.find(top.id);
-      const visible = anchor && anchor.offsetParent !== null;
-      const y = visible ? anchor.getBoundingClientRect().top + scrollY + top.off - this.viewTop() - 24 : top.y;
-      scrollTo({ top: Math.max(0, Math.round(y)), behavior: "instant" });
+  // Endroit lu, comme ancre (trail.js) : élément et décalage dans l'élément en HTML (la mise en page peut changer
+  // d'ici le retour), page et hauteur dans le PDF
+  currentPlace() {
+    if (this.pdfMode) {
+      const location = this.pdf?.location();
+      return location ? { kind: "pdf", page: location.page, top: location.top } : null;
     }
-    this.backButton.classList.toggle("visible", this.backStack.length > 0);
+    const anchor = this.currentAnchor();
+    if (!anchor) return null;
+    return { kind: "html", id: anchor.id, off: this.viewTop() + 24 - anchor.getBoundingClientRect().top, y: scrollY };
+  }
+
+  // Saut qui va partir : l'endroit lu est gardé pour y revenir
+  rememberPlace() {
+    this.trail.visit(this.currentPlace());
+    this.updateBackButton();
+  }
+
+  updateBackButton() {
+    this.backButton.classList.toggle("visible", this.trail.canBack);
+  }
+
+  // « Retour » (dir -1) et « Suivant » (dir +1) dans l'historique des sauts, d'une vue à l'autre
+  async stepTrail(dir) {
+    const place = dir < 0 ? this.trail.back(this.currentPlace()) : this.trail.forward(this.currentPlace());
+    this.updateBackButton();
+    if (place) await this.goToPlace(place);
+  }
+
+  async goToPlace(place) {
+    if (place.kind === "pdf") {
+      if (!this.pdfMode) await this.setView("pdf", { save: false });
+      if (this.destroyed || !this.pdfMode) return;
+      this.viewToken++;  // le recalage de la bascule ne reprend pas la main
+      this.pdf.goTo(place.page, place.top);
+      return;
+    }
+    if (this.pdfMode) {
+      if (this.texOnly) return;
+      await this.setView("html", { save: false, restore: false });
+    }
+    if (this.destroyed || this.pdfMode) return;
+    const anchor = this.find(place.id);
+    const visible = anchor && anchor.offsetParent !== null;
+    const y = visible ? anchor.getBoundingClientRect().top + scrollY + (place.off || 0) - this.viewTop() - 24 : place.y;
+    if (y != null) scrollTo({ top: Math.max(0, Math.round(y)), behavior: "instant" });
   }
 
   computeAnchors() {
@@ -1345,7 +1408,7 @@ class Reader {
   }
 
   onScroll() {
-    if (this.article.classList.contains("typesetting") || this.pdfMode) return; // article pas en page, ou lu dans le PDF
+    if (this.article.classList.contains("typesetting") || this.pdfMode) { this.proofBar.hidden = true; return; } // article pas en page, ou lu dans le PDF
     const anchor = this.currentAnchor();
     if (!anchor) return;
     // Section courante dans le sommaire : la dernière dont le début est au-dessus de la ligne de lecture
@@ -1360,11 +1423,27 @@ class Reader {
       if (id === section) a.setAttribute("aria-current", "location"); else a.removeAttribute("aria-current");
     });
     this.followStatementsChapter();
-    // Énoncé courant dans la liste
+    // Énoncé courant dans la liste : celui qu'on lit, ou celui dont on lit la preuve (barre « Preuve de … »)
     const theorem = anchor.closest(".ltx_theorem");
+    const owner = theorem ? null : this.proofOwner(anchor);
+    const current = theorem?.id || owner;
     this.panel.querySelectorAll(".node-item.current").forEach((el) => el.classList.remove("current"));
-    if (theorem) this.panel.querySelector(`.node-item[data-id="${CSS.escape(theorem.id)}"]`)?.classList.add("current");
+    if (current) this.panel.querySelector(`.node-item[data-id="${CSS.escape(current)}"]`)?.classList.add("current");
+    this.showProofBar(owner);
     this.savePosition(encodePosition(anchor.id, this.viewTop() + 24 - anchor.getBoundingClientRect().top));
+  }
+
+  // Barre « Preuve de Théorème 3.2 — nom » : énoncé dont on lit la preuve (null : barre cachée)
+  showProofBar(id) {
+    const node = id && this.byId.get(id);
+    if (!node) { this.proofBar.hidden = true; this.proofBarId = null; return; }
+    if (this.proofBarId !== id) {
+      this.proofBarId = id;
+      this.proofLink.setAttribute("href", `#${id}`);
+      this.proofLink.title = t("reader.proofBarGo");
+      this.proofLink.replaceChildren(h("span", {}, t("reader.proofOf", { label: node.label })), node.name ? h("span", { class: "name" }, withMath(node.name)) : "");
+    }
+    this.proofBar.hidden = false;
   }
 
   // Livre : chapitre de l'endroit lu (onglet IA : résumé, relecture de ce chapitre par défaut) ; dans le PDF : aucun
@@ -2258,6 +2337,7 @@ class Reader {
     const onKey = (event) => {
       if (event.target.closest?.("input, textarea, select, [contenteditable]")) return;
       if (event.key === "Escape") { this.hidePreview(); this.closeDrawers(); }
+      if (this.onReadingKey(event)) return;
       if (event.key.toLowerCase() === "d" && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey) {
         event.preventDefault();  // ⌘D : marque-page ici (pas le signet du navigateur)
         this.addBookmark();
@@ -2303,6 +2383,86 @@ class Reader {
       () => removeEventListener("arxivreader:ai-accounts", onAccounts));
   }
 
+  // Touches de lecture (parent et cadre du PDF) : ⌥← / ⌥→ (⌘[ / ⌘]) dans l'historique des sauts ; ] [ énoncé suivant /
+  // précédent, p preuve de l'énoncé lu, ? liste des touches. Rien pendant une fenêtre modale ou une sélection de passage.
+  onReadingKey(event) {
+    if (this.destroyed || this.picking || document.querySelector("dialog[open]")) return false;
+    const step = trailKey(event);
+    if (step) {
+      event.preventDefault();
+      this.stepTrail(step);
+      return true;
+    }
+    const key = readingKey(event);
+    if (!key) return false;
+    event.preventDefault();
+    if (key === "help") this.showKeys();
+    else if (key === "proof") this.keyProof();
+    else this.keyStatement(key === "next" ? 1 : -1);
+    return true;
+  }
+
+  // Énoncés dans l'ordre de l'article, avec leur hauteur : en HTML (échelle de la page), dans le PDF (page puis hauteur)
+  statementItems() {
+    const items = [];
+    for (const node of this.nodes) {
+      if (this.pdfMode) {
+        const spot = this.pdfSpot(node.id);
+        if (spot) items.push({ id: node.id, y: spot.page * 1e5 - (spot.top ?? 0) });
+        continue;
+      }
+      const element = this.find(node.id);
+      if (element && element.offsetParent !== null) items.push({ id: node.id, y: element.getBoundingClientRect().top + scrollY });
+    }
+    return items.sort((a, b) => a.y - b.y);
+  }
+
+  keyStatement(dir) {
+    const items = this.statementItems();
+    let line = 0;
+    if (this.pdfMode) {
+      const here = this.pdf?.location();
+      if (here) line = here.page * 1e5 - (here.top ?? 0);
+    } else line = scrollY + this.viewTop() + 24;
+    // sauts rapides (défilement doux en cours) : on repart du dernier énoncé atteint
+    const from = this.keyStatementAt && Date.now() - this.keyStatementAt.time < 900 ? this.keyStatementAt.id : null;
+    const next = neighbourStatement(items, line, dir, from);
+    if (!next) return;
+    this.keyStatementAt = { id: next.id, time: Date.now() };
+    this.navigate(next.id, { remember: !from });  // la série de sauts ne s'empile pas : un seul retour à la lecture
+  }
+
+  // p : preuve de l'énoncé lu (lu : l'énoncé, ou celui dont on lit la preuve) ; repliée : dépliée, sinon repliée ;
+  // ailleurs (section à part, passage) : on y va
+  keyProof() {
+    const element = this.pdfMode ? this.find(this.readingId || this.startAt) : this.currentAnchor();
+    const statement = element?.closest(".ltx_theorem")?.id || (element && this.proofOwner(element));
+    const node = statement && this.byId.get(statement);
+    if (!node || this.pdfMode) { if (node) this.navigate(node.proofs[0] || node.id); return; }
+    const proof = this.find(node.proofs[0]);
+    if (proof?.querySelector(":scope > .proof-toggle")) {
+      this.setProof(proof, !proof.classList.contains("collapsed"));
+      if (!proof.classList.contains("collapsed")) this.navigateElement(proof, { remember: false });
+    } else if (node.proofs[0] || node.proofPassage) this.navigate(node.proofs[0] || node.proofPassage.start);
+  }
+
+  showKeys() {
+    const opener = document.activeElement;
+    const close = h("button", { class: "button", type: "button" }, t("graph.close"));
+    const row = (keys, text) => h("tr", {}, h("th", { scope: "row" }, h("kbd", {}, keys)), h("td", {}, t(text)));
+    const dialog = h("dialog", { class: "keys-dialog", "aria-label": t("reader.keys") },
+      h("h3", {}, t("reader.keys")),
+      h("table", {}, h("tbody", {},
+        row("⌥← / ⌘[", "reader.keyBack"), row("⌥→ / ⌘]", "reader.keyForward"),
+        row("]", "reader.keyNext"), row("[", "reader.keyPrev"), row("p", "reader.keyProof"), row("?", "reader.keyHelp"))),
+      close);
+    close.addEventListener("click", () => dialog.close());
+    dialog.addEventListener("close", () => { dialog.remove(); opener?.focus?.({ preventScroll: true }); });
+    document.body.append(dialog);
+    dialog.showModal();
+    close.focus();
+  }
+
   // surlignages et zones du PDF ; une zone peut partir vers l'assistant s'il lit les images (Claude, Gemini)
   makePdfNotes() {
     setTimeout(() => { if (this.assistant && !this.assistant.status) this.assistant.refreshStatus(); }, 0);
@@ -2312,6 +2472,7 @@ class Reader {
       onAskZone: (zone) => this.assistant?.setZone(zone),
       onTranscribe: (zone) => this.assistant?.ask({ task: "transcribe", zone }),
       onAddBookmark: (at) => this.addBookmark(at),
+      onKey: (event) => this.onReadingKey(event),
       onBookmark: (annotation, rect) => this.editBookmark(annotation, rect),
       onContextMenu: (point, items) => contextMenuAt(point, items),
       relocate: this.texFile,  // fichier TeX recompilé : passages surlignés retrouvés s'ils ont bougé
