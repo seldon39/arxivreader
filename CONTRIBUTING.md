@@ -115,6 +115,12 @@ full-text search, `tests/test_texfile.py` the notes that lose their place after 
 `tests/test_localpdf.py` the bibliography look-ups (arXiv, zbMATH) and `tests/test_ai.py` the detection of
 questions about other versions, notes to carry over or delete.
 
+Since 1.13, `tests/test_safety.py` covers the daily copy and the integrity check, `tests/test_bibtex.py` BibTeX,
+`tests/test_ai_honesty.py`, `tests/test_ai_rigor.py` and `tests/test_ai_verify.py` what the assistant says it read and the
+review checked on demand, `tests/test_notes_reliability.py` notes between computers, `tests/test_position.py` and
+`tests/test_trail.py` the reading position and back / forward (the page's pure functions, run with Node), and
+`tests/test_hardening.py` the other fixes.
+
 There are no automated interface tests yet ([#9](https://github.com/seldon39/arxivreader/issues/9)): check
 interface changes by hand in WebKit (Safari or the Mac app), in light and dark mode, below 900 px and on wide
 screens, and on several papers — a fix for one paper's LaTeXML output often breaks another's.
@@ -156,6 +162,13 @@ screens, and on several papers — a fix for one paper's LaTeXML output often br
   start of the text, do not move.
 - **Routes with parameters** (`#/search?terms=…`): the parameters are fully percent-encoded, because the Mac and
   Windows shells only open routes that match the pattern in `macos/main.swift` and `windows/shell/MainForm.cs`.
+- **Mac menu commands** go through `static/js/commands.js`: the menu item (`macos/main.swift`) carries a fixed command
+  name, the shell sends it to the page (`app:command`), and `commands.js` or `Reader.menuCommand` maps it to an action.
+  A command name never comes from the page, and the shell only accepts letters, digits and dots in it; the page
+  only reports its state (`menuState`) so that items are greyed out and relabelled.
+- **Data safety**: a change that makes the database unreadable by the previous version raises `safety.DB_VERSION`; every
+  SQLite connection waits for a busy database (`timeout=30`, as `db.connect`); the daily copy (`app/safety.py`) and the
+  integrity check never delete or overwrite a library: a damaged file is set aside, never erased.
 - **Analysis changes**: when `app/structure.py` or `app/texstructure.py` changes what it extracts or marks, bump
   `STRUCTURE_VERSION` so imported papers are re-analysed.
 - **Reader layout changes**: anything that changes the height of sections away from the screen (text size, width,

@@ -99,6 +99,16 @@ that bundles Python and its packages. `macos/release.sh` publishes it as a new v
   ⌘-click (or middle-click) on a paper, in the library, the feed or a cross-reference, opens it in a new
   background tab (⇧⌘-click: in front). A tab dragged out of the bar becomes a window (two papers side by
   side); ⌘N opens a new window.
+- **Menus** built from the app's functions; what does not apply is greyed out, and labels follow the state ("Show HTML",
+  "Hide Contents", "Zoom In" in the PDF…). **File**: import from arXiv (⌘O) or a PDF / TeX file (⇧⌘O), add the paper being
+  read to the library, copy its BibTeX, open it on arXiv, show its PDF in the Finder, export the whole library as .bib
+  ("Show the library in Finder" opens the folder of the papers). **Edit**: find in the paper (⌘F), in the library (⌥⌘F),
+  bookmark (⌘D). **View**: HTML / PDF (⌥⌘P), contents (⌃⌘S), panel tabs (⌥⌘1…⌥⌘5), panel (⌥⌘0), fold the proofs, zoom, text
+  width. **Go**: Library, Feed, Search, Related papers (⌃⌘1…⌃⌘4), previous / next page, statements (j / k / p recalled).
+  **Help**: keyboard shortcuts.
+- Asks before quitting if an answer from the AI assistant is still coming; the tabs of the last session are reopened at
+  launch (only the tab shown is loaded); "Reopen Closed Tab" (⌘⇧T); ⌘+ ⌘− ⌘0 (text size, or PDF zoom); ⌘1…⌘9 (tab by number);
+  downloads are saved without bringing the Finder forward; after a page that keeps crashing, a message and a button.
 - **Library**: `~/Library/Application Support/arXivReader` (arXivReader menu → Show the library in Finder).
   File menu → Copy a Library…: an existing library (the `library/` folder of this project, or another Mac's)
   replaces the current one, which is set aside in a folder next to it; quit the other version first. After
@@ -156,6 +166,12 @@ sync, with `.venv` as a link to it. The address is http://127.0.0.1:8710/; the s
 - Layout adapted to the window width: 3 columns (≥ 1280 px), 2 (≥ 900 px), 1 column with drawers.
 - **Long papers stay light**: sections more than one screen away from the window are not drawn, and drawn again
   before they come into view (on a long paper full of formulas, about a third of the memory).
+- **Reading position never lost**: also in imported PDFs and TeX files, to the line in HTML, saved when the tab is closed.
+- **Back / forward**: ⌥← and ⌥→ return to the place you left, in HTML and in the PDF (internal links of the PDF included).
+- **Reading keys**: `j` / `k` next / previous statement (also `]` / `[`), `p` fold or unfold the proof of the statement
+  being read, `?` the list of shortcuts.
+- **"Proof of …" banner** while a proof is being read (hover: the statement; click: go to it); the matching statement is
+  marked in the panel.
 
 Dependencies come from the cross-references (`\ref`, `\eqref`, `\cite`) in a statement and in its proof:
 an argument used without an explicit reference does not show up.
@@ -214,7 +230,19 @@ the text, at most three per paper. Each match gives its kind (Note, Highlight, S
 section it is in (or "PDF, p. n") and an extract with its formulas; a click opens the paper at that place, and a
 highlight, a free note or an annotation of the PDF opens in its own view (HTML or PDF). The search ignores accents and
 case, finds words inside formulas (their TeX), covers imported PDFs (by page) and the notes of older versions of a
-paper (marked "· version k"). At most 200 results.
+paper (marked "· version k"). At most 200 results. Several words must all be in the paper; "an exact phrase" in quotes
+is looked for as written; formulas are found whatever the spaces and braces; papers read from their PDF are searched
+too, TeX source included.
+
+## BibTeX and references
+
+- **Copy BibTeX** for the paper being read, on library cards, for a selection or a folder ("Export as .bib"), and on a
+  bibliography reference recognised by its arXiv identifier or DOI. Built offline from what is stored: `@article` only
+  when the journal is known, nothing is invented.
+- **References to the library**: "+ Library" on a reference that has an arXiv identifier; "Add the n arXiv references to
+  the library", under the title of the bibliography (one by one, can be stopped). These two buttons, like the reader's
+  bookmark and "+ Library" in a reference preview, ask where to file the paper: the library only, an existing folder or a
+  new folder.
 
 ## Zotero
 
@@ -278,6 +306,8 @@ How relevance is computed (app/relevance.py): closeness in vocabulary (TF-IDF of
 and in meaning (Semantic Scholar SPECTER vectors, compared within the day's batch), best match in the
 profile; + followed authors, keywords; − closeness to 👎 papers.
 A Semantic Scholar API key (free, optional) avoids request limits.
+The feed cache is pruned at launch: announcements older than 60 days are removed, except papers in the library or read,
+rated 👍 / 👎, or citing yours; a pruned day is asked from arXiv again if you go back to it.
 
 ## Where the proofs are
 
@@ -482,6 +512,8 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   their state, highlighted passages by section, formulas in LaTeX), a .zip with the images in an `images/` folder
   when the paper has framed PDF regions; Settings > Reading, "Export library and notes (.zip)": all notes, one
   file per paper, with these images, in a .zip archive (Downloads folder).
+- **Notes between computers**: the images of PDF regions are imported too, deletions are carried over (the most recent
+  change wins) and there is only one row per statement (duplicates are merged without loss).
 
 ## Claude on the paper
 
@@ -511,6 +543,20 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   the assistant followed in detail or only read through. Errors are always stated, and a repair never removes them; a
   wrong proof is not presented as a false result. A single review can miss errors: a cross-review misses fewer. The **summary** also gives the novelty claimed by the authors, then the
   limitations and open questions.
+  Each critical or serious point quotes the exact line concerned and, for a step judged wrong or doubtful, gives the
+  smallest case to redo by hand. A *Results taken from the literature* section lists each outside result the proofs
+  depend on, with its reference as printed and a status: *matches the known statement* (from memory, to confirm), *seems
+  misquoted* (why), or *not verifiable here* (what to check).
+- **Check the serious points**, under the latest review (single or cross) of a paper, section or chapter: the same
+  assistant, with a model of your choice (a lighter one by default), tries to refute each critical or serious point from the
+  text, then the review is rewritten; points come out *Confirmed*, *Uncertain* or withdrawn (with the reason). 2 more
+  requests, only when you decide; the verified review stays on top. A cost line ("≈ n requests the size of the paper")
+  appears before multiple runs.
+- **Check by computation** (statement, selected passage, PDF region): the assistant writes a Sage or SymPy script that
+  tests the formula on special cases; "Copy the code" button. The app never runs anything.
+- **What the assistant read**: a banner "Read: n % of the text only (pages … not sent)" when the paper was cut, and
+  "Answer cut off by the assistant" when the answer stops on a limit; a cut review is no longer reused as complete. The
+  answer being written is saved every few seconds.
 - **Cross-review**, when a second assistant is ready (Claude, Codex, Gemini or a local model): *Single review* |
   *Cross-review* above the button of the *Review* tab, then each reviewer's assistant, model and reasoning level. Both
   assistants review the paper on their own, the second compares the two reviews, the first answers that comparison
@@ -613,6 +659,9 @@ but has not been tried with a real account.
   reference is hovered or focused), GitHub (once a day, number of the latest version; can be turned off), the chosen
   AI assistant, Zotero if a key is given; `./arxivreader check` also calls each of them, except zbMATH. DOI,
   MathSciNet and zbMATH links open in the browser, only when clicked.
+- **Daily copy** of the database in `backups/` (7 kept, without the vector cache) and integrity check at launch: a
+  truly damaged database is set aside and the latest sound copy put back, a database that is merely busy is never moved,
+  and a database written by a newer version is refused with a clear message. Settings show the date of the last copy and the folder.
 
 ## Maintenance
 
@@ -644,6 +693,9 @@ app/            Python server (FastAPI)
   journals.py   journal where a paper appeared (arXiv, Semantic Scholar)
   search.py     search across arXiv (Search tab); related.py: related papers (graph); zotero.py: Zotero synchronisation; check.py: check of the external services; onboarding.py: getting-started assistant; export.py: notes export; notesync.py: signed notes export and import between computers
   folders.py    library folders; fulltext.py: search in the text and notes of the library
+  bibtex.py     BibTeX of a paper, built offline from what is stored
+  safety.py     schema version, integrity check at launch, daily copy of the database (backups/)
+  feedprune.py  pruning of the feed cache after 60 days, vectors kept in binary
   profile.py    research profile, prefill, followed authors (namesakes); relevance.py: relevance ranking
   annotations.py  highlights, notes, reading state
   ai.py         paper text and instructions for Claude, called without tools (Claude Agent SDK); pages of a scan
@@ -667,6 +719,8 @@ windows/        Windows app: shell/ (C# window with tabs, WebView2), launcher.py
 static/         interface (HTML, CSS, JavaScript with no build step);
                 vendor/mathjax (MathJax 3.2.2), vendor/pdfjs (pdf.js 6.5.438, Apache 2.0)
                 and fonts/ (Latin Modern) copied locally
+                menus of the Mac app: commands.js (commands of the menu bar and their state), trail.js (back / forward),
+                position.js (reading position), biblibrary.js (references to the library), bibtex.js (copy and export)
 tests/          offline tests: .venv/bin/python -m unittest discover tests
 ```
 

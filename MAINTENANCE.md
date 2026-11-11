@@ -48,6 +48,12 @@ English.
 | Paper versions (each arXiv version with its own notes, Version menu) | `library.py` (`archive_key`, `versions_of`, `open_version`, `ensure_version`, `_replace_version`, `recover_interrupted`), `db.py` (`archived_of`, `archives_of`), `notesync.py` (`_version_of_notes`), `main.py` (`_same_version`) | `reader.js` (`versionChip`), `library.js` (`updatePaper`, shared with the feed), `api.js` (`setReadingVersion`) |
 | Notes, highlights, reading state, export | `annotations.py`, `export.py` (`paper_export`: `.md`, or `.zip` with the images of the regions), `notesync.py` (signed export, import from one computer to another) | `annotations.js` (Notes tab: sections "In the HTML" / "In the PDF", `notesGroup`, `cardTools`, `removeMany`, `restore`), `markdown.js`, `bookmarks.js` (bookmarks, right-click menu), `pdfnotes.js` (passages, regions and notes in the PDF; passages found again after recompilation; `readingHeights`, `placeOf`, `addZone`, `addPin`) |
 | Search of the library (full text and notes) | `fulltext.py` (no index), route `/api/library/search` | `library.js` (`searchText`, `drawTextHits`), `reader.js` (`showAnnotation`) |
+| BibTeX (paper, selection, folder, library; bibliography entries of papers in the library) | `bibtex.py` (offline, from what is stored; the journal known to Semantic Scholar is passed in by the caller), routes `/api/papers/{id}/bibtex`, `/api/bibtex`, `/api/folders/{id}/bibtex`, `/api/library/bibtex` (and the `.bib` forms that download) | `bibtex.js` (`copyBibtex`, `saveBibtex`), `library.js`, `reader.js` |
+| References into the library (+ Library, add all arXiv references, folder choice) | `crossrefs.py` (`match_by`: `by` = `id`, `doi` or `title`; `nodes_of`: cached index of other papers' statements), `library.quick_add` | `biblibrary.js` (`addButton`, `askDestination`; also used by the reader's bookmark) |
+| Reading position, back / forward, reading keys | `db.py` / `main.py` (`papers.position`, 200 characters) | `position.js` (`encodePosition`, `decodePosition`, `positionSaver`: saved on close with `keepalive`), `trail.js` (`Trail`, `samePlace`: one history of jumps for HTML and PDF), `reader.js` (`j` / `k` / `p` / `?`, "Proof of…" banner) |
+| Data safety (schema version, integrity check, daily copy) | `safety.py` (`prepare`, `snapshot`, `status`; `DB_VERSION`), `db.py` (`init`, `connect`), `main.py` (`_startup_maintenance`, `/api/library/backups`) | `settings.js` (`backupsLine`) |
+| Feed cache pruning | `feedprune.py` (`prune`, `pack` / `unpack` of the vectors), `feed.py`, `main.py` (`_startup_maintenance`) | `feed.js` |
+| Mac menus (bridge with the page) | — | `commands.js` (`command`, `reportMenu`, `copyFromMenu`, `showKeys`), `reader.js` (`menuCommand`), `macos/main.swift` (`pageCommand`, `validateMenuItem`) |
 | Bibliography and paper links (DOI, MathSciNet, zbMATH, "Look up on arXiv") | `localpdf.py` (`reference_arxiv`, `reference_zbmath`, `zbmath_search`), routes `/api/references/arxiv`, `/api/references/zbmath` | `reader.js` (`findLinks`, `addFindLinks`, `bibActions`, `paperFindLinks`, `zbmathLink`, `lookUpArxiv`), `search.js` (`presetTerms`) |
 | PDF and TeX files from the computer | `localpdf.py` (imported PDFs: text, title, arXiv version), `texfile.py` (TeX files: compilation, bibliography, checks, identifiers taken from the `\label` commands, background jobs) | `library.js` (import), `texfile.js` (import window, reader checks), `reader.js` (Recompile, books: statements and graph by chapter) |
 | Experimental HTML version (LaTeXML) | `latexml.py` (on-demand conversion, the paper's `html/` folder, identifiers aligned with the structure of the source) | `latexml.js` ("HTML β" button, warning, waiting), `reader.js` |
@@ -60,6 +66,7 @@ English.
 | AI | `ai.py` (Claude, Agent SDK; scans: pages attached as images; books that are too long: beginning and a window around the question), `providers.py` (Codex, Gemini, local), `bookjob.py` (book: all chapters in parallel, then synthesis) | `ai.js` (tab as a conversation: sub-tabs Questions / Summary / Review according to the root of each exchange, `viewOf`; a question on a summary or a review has that document as its parent; thread memory: `ai.thread_history` (same thread as `viewOf`: the whole Questions thread, or the document and the questions asked about it; finished or stopped, with an answer; the answered exchange even if in error, marked "[answer interrupted by an error]") and `_history_block` (`<conversation_history>`, at most `limit / HISTORY_SHARE` characters: the document and the answered exchange always, then the most recent ones; tags neutralised; not for summary, review, transcription); reading positions `positions`, ↑ ↓ buttons in the margin of the thread; cross-references in answers `buildRefs`: statements, equations,
 sections according to the number in the title (`toc`), references in brackets or author-year (`bibliography`), except the statement of a
 cited paper, "Theorem 3.1 of [12]", "[12, Theorem 3.1]"; hover preview through `reader.previewFor`), `aiproviders.js`, `reader.js` (`contextPages`: pages of a scan rendered by pdf.js) |
+| Reviewing aids (review checked on demand, check by computation, what the assistant read) | `ai.py` (`verify_review`, `verifier`, `REVIEW_GUIDANCE`, `REVIEW_POINTS`; `coverage` and `cut` columns of `ai_exchanges`), `main.py` (`AIRequest.check`) | `ai.js` (button "Check the serious points", cost line, "Copy the code", banners "Read: n %" and "cut off") |
 | AI on annotations (notes carried between views, versions or compilations; deletions; questions on another version) | `ai.py` (`asks_adaptation`, `_adapting`, `_annotations_block`, `asks_deletion`, `_deleting`, `version_asked`, `_versions_compared`), `texfile.py` (`track_lost_notes`, `notes_to_check`) | `ai.js` (`parseProposals`, `applyProposals`, `surfaceOf`, `prefill`), `annotations.js` (`addPin`, `setFreeNote`, `restore`), `pdfnotes.js`, `reader.js` (`pdfQuote`, `ensurePdf`) |
 | Zotero | `zotero.py` | `zotero.js`, `settings.js` |
 | First launch | `onboarding.py` | `onboarding.js` |
@@ -67,7 +74,7 @@ cited paper, "Theorem 3.1 of [12]", "[12, Theorem 3.1]"; hover preview through `
 | Formulas, DOM construction | `feed.tex_text` (TeX of titles and abstracts) | `math.js` (MathJax; `undefinedFonts`, `linksInText`), `amsfix.js`, `util.js` (`h`, `withMath`, `tidyTitle`, `texToText`: TeX of titles shown as plain text) |
 | Settings | `main.py` (`allowed` list and `_valid_setting` of `/api/settings`) | `settings.js` ("About" section: version, updates, copyright, license) |
 | Interface texts | — | `i18n.js` (FR and EN blocks: same keys) |
-| Mac application | — | `macos/main.swift` (tabs, dragging onto a tab, downloads, test runs, native folder and file pickers: `chooseFolder`, `chooseFiles`; `isBeta`), `macos/build.sh`, `macos/release.sh`, `macos/build-beta.sh` (betas, section 5) |
+| Mac application | — | `macos/main.swift` (menus, session restored at launch, tabs, dragging onto a tab, downloads, test runs, native folder and file pickers: `chooseFolder`, `chooseFiles`; `isBeta`), `macos/build.sh`, `macos/release.sh`, `macos/build-beta.sh` (betas, section 5) |
 | Windows application | `windows/launcher.py` (windowless server, Edge fallback) | `windows/shell/` (C# window: `MainForm.cs`, `TabStrip.cs`, `Program.cs`), `windows/smoke.ps1`, `.github/workflows/windows.yml` |
 
 Database: `app/db.py` (`SCHEMA` as `CREATE TABLE IF NOT EXISTS`, columns added by `ALTER TABLE` after
@@ -112,6 +119,11 @@ text coming from arXiv, Semantic Scholar, Zotero or an AI goes through text or `
   next one in a tab), `ARXIVREADER_SNAPSHOT=fichier.png` (image of the page), `ARXIVREADER_WINDOWSHOT=fichier.png`
   (whole window and report in `fichier.png.txt`), `ARXIVREADER_EVAL` (JavaScript run on load),
   `ARXIVREADER_SNAPSHOT_DELAY`. Do not take over the user's screen.
+  `ARXIVREADER_MENU=view.tab.3,go.feed` chooses menu items one by one (one per second, from 3 s on), each given by its
+  command name or its exact title; the report of `ARXIVREADER_WINDOWSHOT` (`fichier.png.txt`) has an `items=` dump
+  of every menu item (menu > title [shortcut], with `off` when greyed out and `hidden`), to check labels and states.
+  A run with one of these variables set opens a single start page and leaves the user's saved session alone.
+  `ARXIVREADER_NO_SNAPSHOT=1` skips the daily copy of the database (tests).
 - **Before handing back**: tests green; every feature or fix carried over into all the documentation files: `MAINTENANCE.md`
   ("What is where" table, external services, known pitfalls), `CONTRIBUTING.md` (principles, code rules), `ROADMAP.md`
   (steps done, next steps), `README.md` and `README.fr.md` together (including "Code layout"); `i18n.js` keys present in both languages (plurals: `.one` and `.other`).
@@ -245,7 +257,23 @@ hand, in the installed app:
   `notes-trusted.json`; any change to the block's content goes through `FORMAT` (old files remain readable);
 - the browser's right-click menu is suppressed (`app.js`) except on a selection, a field, a link or an image;
   right-click on the paper (`annotations.js`) and on the PDF (`pdfnotes.js`) offers the bookmarks (`bookmarks.js`);
-- downloads (notes export: Downloads folder, `WKDownloadDelegate`);
+- downloads (notes export: Downloads folder, `WKDownloadDelegate`; once saved, the shell sends the page an
+  `arxivreader:downloaded` event, the page says so with "Show in Finder", and the Finder is not brought forward);
+- Mac menus, a bridge in both directions. Page to shell: `static/js/commands.js` posts two messages through
+  `window.webkit.messageHandlers.arxivreader`: `menuState` (page, reader or not, PDF or HTML, contents and panel shown,
+  proofs folded, arXiv address, paper id…: stored in `Tab.menuState`, read by `validateMenuItem` to grey items out and
+  change labels such as "Show HTML" / "Show PDF") and `copyText` (the clipboard of WebKit refuses a write that does not follow a click on
+  the page, so the shell copies; in a browser `copyFromMenu` uses `navigator.clipboard`). Shell to page: `pageCommand`
+  evaluates `document.dispatchEvent(new CustomEvent('app:command', { detail: name }))` in the key tab; the page's
+  `app:command` listener (`commands.js`) maps the name to an action (`go.*` pages, `import.arxiv`, `import.file`,
+  `edit.searchLibrary`, `export.bib`, `help.keys`) or hands it to the open reader (`Reader.menuCommand`: `reader.*`, `view.*`,
+  `go.back` / `go.forward` / `go.next` / `go.prev` / `go.proof`). A command name is fixed in Swift (the menu item's
+  `representedObject`), never taken from the page, and `pageCommand` refuses any name that is not made of letters, digits
+  and dots, since it is put in a script. The same holds for the other events (`app:find`, `app:zoom`, fixed
+  words). The paper's PDF shown in the Finder and the arXiv page opened come from `menuState`, checked in Swift (an id
+  of ASCII letters, digits and `._-`, an address starting with `https://arxiv.org/abs/`). To add a menu item: item and
+  `representedObject` in `main.swift`, its name in `commands.js` (or `Reader.menuCommand`), its state in `validateMenuItem`
+  if it can be greyed out, its label in both languages (`tr`), the shortcuts list `showKeys` and `i18n.js` if it has a key;
 - scrolling through a long, formula-heavy paper (`lazypaint.js`). WebKit keeps the image of everything that has been
   scrolled and does not release it when it contains formulas: 2.3 GB for 2611.03736 read in full, peak of 4 GB. The
   sections more than one screen away from the window (`AHEAD`) therefore switch to `content-visibility: hidden`, at the height
@@ -768,6 +796,50 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   its own version); archived versions are never repaired this way.
 - People's names serve as examples in the interface: do not put real names or real
   identifiers there ("Your name", "arxiv.org/a/…").
+- **Daily copy and integrity check** (`app/safety.py`): `safety.prepare` runs in `db.init()` before anything opens the
+  database; `main._startup_maintenance` makes the day's copy at startup (`safety.snapshot`, one file
+  `backups/arxivreader-YYYY-MM-DD.db`, 7 kept, vector cache left out; `ARXIVREADER_NO_SNAPSHOT` for tests), then prunes the
+  feed. The check opens the file normally (not read-only, so that SQLite replays a leftover journal) and only a proven
+  corruption (`malformed`, `not a database`, `corrupt`) sets the file aside as `backups/corrupt-<date>.db` and puts the
+  latest sound copy back (`recovery.json` says what happened, shown in Settings); a busy or unreadable database (rights,
+  disk) raises instead and is never moved. A database whose `PRAGMA user_version` is above `safety.DB_VERSION` is refused
+  (`NewerLibrary`), never downgraded: raise `DB_VERSION` when a release changes the schema in a way the previous code
+  could not read. Every `sqlite3.connect` of the code is `connect(timeout=30)` (`db.connect`, `safety.BUSY_TIMEOUT`): a
+  writer waits for another (the `VACUUM` of the pruning) instead of failing with "database is locked"; `feedprune.prune`
+  opens the connection of its `VACUUM` by hand and must keep that timeout.
+- **Feed pruning** (`app/feedprune.py`, at startup): `feed_items` older than `KEEP_DAYS` = 60 days are deleted, except
+  papers in the library, with a status (read, 👍 / 👎), in the last recommendation (`s2_rank`), citing the reader's papers
+  (`citing`); embedding vectors are stored as float32 bytes (`pack` / `unpack`, which still reads the old JSON text). The
+  file is compacted with `VACUUM` once at least `VACUUM_FROM` = 1000 rows are gone. A pruned day is forgotten from
+  `feed.days` (otherwise the page would show it as loaded and empty); a day that kept some papers is thinned: it is
+  listed in the setting `feed.partialDays`; the day route (`main.py`) then fetches it again when the OAI-PMH is available
+  (`feed.oai_available`), and `feed.py` updates the mark when a day is fetched whole. Anything new that stores feed rows must say whether pruning may delete them.
+- **Review checked on demand**: `AIRequest.check` (`app/main.py`) is the id of a finished review (single or cross-review)
+  whose critical and serious points the same assistant tries to refute (`ai.verify_review`; the checker is `ai.verifier`:
+  a lighter model, `sonnet` for Claude, unless the reader chose another). It goes through `ai.build_prompt` like any other
+  request, and rewrites the review: points come out confirmed, uncertain or withdrawn. It is not a mode of the review
+  request but a separate action on a finished review (the first review stays visible). A review whose answer was cut
+  (`cut`) or whose text was partly sent (`coverage`) is never taken as complete.
+- **Cut answers and coverage**: `ai_exchanges.coverage` (JSON: total, sent, partial, pages) and `cut` record what the
+  assistant read and whether its answer stopped on a limit; the answer being written is saved every few seconds with
+  `status = 'running'` (`ai.stop_running` closes whatever is still `running` as `stopped` at shutdown; `GET /api/ai/running` tells the Mac shell
+  what is in progress, to ask before quitting). Block tags added to a prompt go through `ai._neutral`.
+- **Notes between computers**: a deleted annotation leaves a row in `annotation_deletions` (uid, paper, date), carried by
+  the export so that an import does not bring it back (the latest change wins; forgotten after about a year); `db._one_row_per_statement` merges
+  duplicates once and creates the unique partial indexes `annotations_single` and `annotations_general`: a new kind of
+  annotation that must exist once per statement has to be excluded from, or added to, those indexes.
+- **Reading position** (`papers.position`, 200 characters): `id`, `id@pixels` or `pdf:page:top`
+  (`position.js`). An old app reads the PDF form as an unknown id and ignores it; keep the forms prefix-compatible. The
+  history of jumps (`trail.js`) stores anchors (element and offset, or PDF page and height), never raw pixels, since the layout changes with the
+  text size. `j` / `k` in the PDF of an arXiv paper stop only on statements whose page is known.
+- **BibTeX** (`app/bibtex.py`): a wrong entry is worse than none. `@article` only when the journal is known, no volume,
+  pages or year invented, a name split into "Last, First" only when the split is certain; the button on a bibliography
+  entry is shown only when `crossrefs.match_by` returns `id` or `doi`, never `title`. The WebKit clipboard takes a write
+  only after a gesture: `copyBibtex` passes the answer as a promise to `ClipboardItem`.
+- **Subject-class identifiers** (`math.DG/0211159`): normalised without the class (`math/0211159`) on entry
+  (`arxiv.strip_subject_class`, `crossrefs._norm`); `library.stored_key` finds an older record stored with the class.
+- **Cached cross-reference index**: `crossrefs.nodes_of` reads another paper's `structure.json` as stored, cached by
+  (date, size); it never re-analyses, which would rewrite every other paper's structure when one is opened.
 
 ## 10. Logs and diagnostics
 

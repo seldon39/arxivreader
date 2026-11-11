@@ -103,6 +103,18 @@ augmenté `VERSION` dans `app/version.py`) : étiquette Git, envoi sur GitHub, i
   un nouvel onglet ; ⌘-clic (ou clic du milieu) sur un article, dans la bibliothèque, le feed ou un renvoi,
   l'ouvre dans un nouvel onglet en arrière-plan (⇧⌘-clic : au premier plan). Un onglet glissé hors de la
   barre devient une fenêtre (deux articles côte à côte) ; ⌘N ouvre une nouvelle fenêtre.
+- **Menus** refaits d'après les fonctions de l'app ; ce qui ne s'applique pas est grisé, et les libellés suivent l'état
+  (« Afficher le HTML », « Masquer le sommaire », « Zoom avant » dans le PDF…). **Fichier** : importer depuis arXiv (⌘O) ou
+  un PDF / TeX (⇧⌘O), ajouter l'article lu à la bibliothèque, copier son BibTeX, l'ouvrir sur arXiv, montrer son PDF dans
+  le Finder, exporter toute la bibliothèque en .bib (« Afficher la bibliothèque dans le Finder » ouvre le dossier des
+  articles). **Édition** : rechercher dans l'article (⌘F), dans la bibliothèque (⌥⌘F), marque-page (⌘D). **Présentation** :
+  HTML / PDF (⌥⌘P), sommaire (⌃⌘S), onglets du panneau (⌥⌘1…⌥⌘5), panneau (⌥⌘0), replier les preuves, zoom, largeur du
+  texte. **Aller** : Bibliothèque, Feed, Recherche, Papiers liés (⌃⌘1…⌃⌘4), page précédente / suivante, énoncés (j / k / p
+  rappelés). **Aide** : raccourcis clavier.
+- Confirmation avant de quitter si une réponse de l'assistant IA est en cours ; onglets de la dernière session rouverts
+  au lancement (seul l'onglet affiché se charge) ; « Rouvrir l'onglet fermé » (⌘⇧T) ; ⌘+ ⌘− ⌘0 (taille du texte, ou zoom du
+  PDF) ; ⌘1…⌘9 (onglet par numéro) ; téléchargements enregistrés sans passer au Finder ; après un plantage répété de la
+  page, un message et un bouton.
 - **Bibliothèque** : `~/Library/Application Support/arXivReader` (menu arXivReader → Afficher la bibliothèque
   dans le Finder). Menu Fichier → Recopier une bibliothèque… : une bibliothèque existante (le dossier `library/`
   de ce projet, celle d'un autre Mac) remplace l'actuelle, mise de côté dans un dossier voisin ; quitter d'abord
@@ -160,6 +172,13 @@ pas, avec `.venv` comme lien vers lui. L'adresse est http://127.0.0.1:8710/ ; le
 - Mise en page adaptée à la largeur : 3 colonnes (≥ 1280 px), 2 (≥ 900 px), 1 colonne avec tiroirs.
 - **Longs articles légers** : les sections à plus d'un écran de la fenêtre ne sont pas dessinées, et le sont de
   nouveau avant d'arriver à l'écran (sur un long article plein de formules, environ un tiers de la mémoire).
+- **Position de lecture jamais perdue** : aussi dans les PDF importés et les fichiers TeX, à la ligne près en HTML,
+  enregistrée à la fermeture de l'onglet.
+- **Retour / avant** : ⌥← et ⌥→ ramènent à l'endroit quitté, en HTML comme dans le PDF (liens internes du PDF compris).
+- **Touches de lecture** : `j` / `k` énoncé suivant / précédent (aussi `]` / `[`), `p` plier ou déplier la preuve de
+  l'énoncé lu, `?` la liste des raccourcis.
+- **Bandeau « Preuve du … »** pendant la lecture d'une preuve (survol : l'énoncé ; clic : y aller) ; l'énoncé
+  correspondant est marqué dans le panneau.
 
 Les dépendances viennent des renvois (`\ref`, `\eqref`, `\cite`) dans l'énoncé et dans sa preuve :
 un argument utilisé sans renvoi explicite n'apparaît pas.
@@ -225,7 +244,19 @@ donne sa nature (Note, Surlignage, Énoncé, Texte), l'énoncé ou la section o�
 extrait avec ses formules ; un clic ouvre l'article à cet endroit, et un surlignage, une note libre ou une annotation
 du PDF s'ouvre dans sa propre vue (HTML ou PDF). La recherche ignore accents et majuscules, trouve les mots dans les
 formules (leur TeX), couvre les PDF importés (par page) et les notes des anciennes versions d'un article (signalées
-« · version k »). 200 résultats au plus.
+« · version k »). 200 résultats au plus. Plusieurs mots doivent tous être dans l'article ; "une expression exacte" entre
+guillemets est cherchée telle qu'écrite ; les formules sont trouvées malgré les espaces et les accolades ; les articles lus
+dans leur PDF sont inclus, source TeX comprise.
+
+## BibTeX et références
+
+- **Copier le BibTeX** de l'article lu, sur les cartes de la bibliothèque, pour une sélection ou un dossier (« Exporter en
+  .bib »), et sur une référence de bibliographie reconnue par son identifiant arXiv ou son DOI. Construit hors ligne d'après
+  ce qui est enregistré : `@article` seulement si la revue est connue, rien n'est inventé.
+- **Références vers la bibliothèque** : « + Bibliothèque » sur une référence qui a un identifiant arXiv ; « Ajouter les n
+  références arXiv à la bibliothèque », sous le titre de la bibliographie (une par une, arrêt possible). Ces deux boutons,
+  comme le signet du lecteur et « + Bibliothèque » dans l'aperçu d'une référence, demandent où ranger l'article : la
+  bibliothèque seulement, un dossier existant ou un nouveau dossier.
 
 ## Zotero
 
@@ -292,6 +323,8 @@ Calcul de la pertinence (app/relevance.py) : proximité de vocabulaire (TF-IDF d
 et proximité de sens (vecteurs SPECTER de Semantic Scholar, comparés au lot du jour), meilleure
 référence du profil ; + auteurs suivis, mots-clés ; − proximité avec les articles 👎.
 Une clé d'API Semantic Scholar (gratuite, facultative) évite les limitations de requêtes.
+Le cache du feed est élagué au lancement : les annonces de plus de 60 jours disparaissent, sauf les articles de la
+bibliothèque ou lus, notés 👍 / 👎, ou qui citent les vôtres ; un jour élagué est redemandé à arXiv si l'on y revient.
 
 ## Où sont les preuves
 
@@ -507,6 +540,8 @@ il suffit de la fermer et d'aller dans le feed.
   `images/` quand l'article a des zones encadrées du PDF ; Réglages > Lecture, « Exporter la bibliothèque et les
   notes (.zip) » : toutes les notes, un fichier par article, avec ces images, dans une archive .zip (dossier
   Téléchargements).
+- **Notes entre ordinateurs** : les images des zones du PDF sont importées aussi, les suppressions sont transmises (la
+  modification la plus récente gagne) et il n'y a qu'une ligne par énoncé (doublons fusionnés sans perte).
 
 ## Claude sur l'article (étape 4)
 
@@ -539,6 +574,20 @@ il suffit de la fermer et d'aller dans le feed.
   parcouru. Les erreurs sont toujours dites, et une réparation ne les retire jamais ; une preuve fausse n'est pas
   présentée comme un résultat faux. Une relecture simple peut manquer des erreurs : une relecture croisée en manque
   moins. Le **résumé** dit aussi la nouveauté revendiquée par les auteurs, puis les limites et questions ouvertes.
+  Chaque point critique ou sérieux cite la ligne exacte concernée et, pour une étape jugée fausse ou douteuse, donne le
+  plus petit cas à refaire à la main. Une rubrique *Results taken from the literature* liste chaque résultat extérieur dont
+  dépendent les preuves, avec son renvoi tel qu'imprimé et un statut : *conforme à l'énoncé connu* (de mémoire, à
+  confirmer), *semble mal cité* (pourquoi) ou *non vérifiable ici* (quoi vérifier).
+- **Vérifier les points graves**, sous la dernière relecture (simple ou croisée) d'un article, d'une section ou d'un
+  chapitre : le même assistant, avec un modèle au choix (plus léger par défaut), tente de réfuter chaque point critique ou
+  sérieux d'après le texte, puis la relecture est réécrite ; les points sortent *Confirmé*, *Incertain* ou retirés (avec
+  la raison). 2 demandes de plus, seulement quand on le décide ; la relecture vérifiée reste au-dessus. Une ligne de coût
+  (« ≈ n demandes de la taille de l'article ») précède les lancements multiples.
+- **Vérifier par le calcul** (énoncé, passage sélectionné, zone du PDF) : l'assistant écrit un script Sage ou SymPy qui
+  teste la formule sur des cas particuliers ; bouton « Copier le code ». L'application n'exécute jamais rien.
+- **Ce que l'assistant a lu** : bandeau « Lu : n % du texte seulement (pages … non envoyées) » quand l'article a été
+  coupé, et « Réponse coupée par l'assistant » quand la réponse s'arrête sur une limite ; une relecture coupée n'est plus
+  reprise comme complète. La réponse en cours est enregistrée toutes les quelques secondes.
 - **Relecture croisée**, quand un deuxième assistant est prêt (Claude, Codex, Gemini ou un modèle local) :
   *Relecture simple* | *Relecture croisée* au-dessus du bouton de l'onglet *Relecture*, puis l'assistant, le modèle et le niveau
   de réflexion de chaque relecteur. Les deux assistants relisent l'article chacun de leur côté, le second compare
@@ -645,6 +694,10 @@ mais n'a pas été essayée avec un vrai compte.
   lien zbMATH d'une référence est survolé ou atteint au clavier), GitHub (une fois par jour, numéro de la dernière
   version ; désactivable), l'assistant IA choisi, Zotero si une clé est donnée ; `./arxivreader check` appelle aussi
   chacun d'eux, sauf zbMATH. Les liens DOI, MathSciNet et zbMATH s'ouvrent dans le navigateur, seulement au clic.
+- **Copie quotidienne** de la base dans `backups/` (7 gardées, sans le cache des vecteurs) et contrôle d'intégrité au
+  démarrage : une base réellement abîmée est mise de côté et la dernière copie saine remise, une base seulement occupée
+  n'est jamais déplacée, et une base écrite par une version plus récente est refusée avec un message clair. Les réglages
+  donnent la date de la dernière copie et le dossier.
 
 ## Maintenance
 
@@ -676,6 +729,9 @@ app/            serveur Python (FastAPI)
   journals.py   revue où un article est paru (arXiv, Semantic Scholar)
   search.py     recherche dans tout arXiv (onglet Recherche) ; related.py : papiers liés (graphe) ; zotero.py : synchronisation avec Zotero ; check.py : vérification des services extérieurs ; onboarding.py : assistant de premier lancement ; export.py : export des notes ; notesync.py : export signé et import des notes d'un ordinateur à l'autre
   folders.py    dossiers de la bibliothèque ; fulltext.py : recherche dans le texte et les notes de la bibliothèque
+  bibtex.py     BibTeX d'un article, construit hors ligne d'après ce qui est enregistré
+  safety.py     version du schéma, contrôle d'intégrité au démarrage, copie quotidienne de la base (backups/)
+  feedprune.py  élagage du cache du feed après 60 jours, vecteurs gardés en binaire
   profile.py    profil de recherche, pré-remplissage, auteurs suivis (homonymes) ; relevance.py : tri par pertinence
   annotations.py  surlignages, notes, état de lecture
   ai.py         texte de l'article et consignes pour Claude, appel sans outils (SDK Claude Agent) ; pages d'un
@@ -699,6 +755,8 @@ windows/        application Windows : shell/ (fenêtre à onglets en C#, WebView
 static/         interface (HTML, CSS, JavaScript sans compilation) ;
                 vendor/mathjax (MathJax 3.2.2), vendor/pdfjs (pdf.js 6.5.438, Apache 2.0)
                 et fonts/ (Latin Modern) copiés localement
+                menus de l'app Mac : commands.js (commandes de la barre de menus et leur état), trail.js (retour / avant),
+                position.js (position de lecture), biblibrary.js (références vers la bibliothèque), bibtex.js (copie et export)
 tests/          tests hors ligne : .venv/bin/python -m unittest discover tests
 ```
 

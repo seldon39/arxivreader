@@ -24,8 +24,8 @@ finished work or steps not yet made into an issue.
 
 - ~~[#6](https://github.com/seldon39/arxivreader/issues/6) Full-text search across the library~~: done in 1.12.0
   (the Library search field also searches the text of the papers, imported PDFs and the notes).
-- [#7](https://github.com/seldon39/arxivreader/issues/7) Export references as BibTeX and copy a citation
-  (good first issue).
+- ~~[#7](https://github.com/seldon39/arxivreader/issues/7) Export references as BibTeX and copy a citation~~: done in
+  1.13.0 (copy for the paper being read, cards, a selection or a folder, bibliography entries; ".bib" export of the library).
 - [#13](https://github.com/seldon39/arxivreader/issues/13) Drawings LaTeXML cannot convert (PSTricks, picture).
 - Your own TeX files (papers and books being written): compiled PDF with statements, checks and recompiling, and an
   experimental HTML version made on demand by LaTeXML (if installed), also for arXiv papers without HTML: done in
@@ -56,6 +56,11 @@ finished work or steps not yet made into an issue.
   papers listed in the feed, and the AI tab compares versions and adapts notes from one version to another: done in
   1.12.0. In the same release, the AI carries notes between the HTML and PDF views, and puts back the notes of a TeX
   file that lost their place after an edit.
+- Reading and writing aids: reading position kept in every kind of paper, back / forward (⌥← ⌥→) and reading keys
+  (`j` `k` `p` `?`), references added to the library, and Mac menus rebuilt around the app's functions: done in 1.13.0.
+  In the same release, the AI quotes the exact line and gives a test case in reviews, lists the results taken from the
+  literature, can check the serious points of a review on demand and write a Sage / SymPy script to test a formula, and says
+  what it read; the database is copied daily with an integrity check, and the feed cache is pruned after 60 days.
 - [#12](https://github.com/seldon39/arxivreader/issues/12) Cancelling a related-papers build should interrupt
   the request in flight.
 

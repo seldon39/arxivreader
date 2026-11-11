@@ -19,7 +19,7 @@ APP=$BUILD/arXivReader.app
 PLIST=$APP/Contents/Info.plist
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier local.arxivreader.beta" \
   -c "Set :CFBundleName arXivReader Beta" -c "Set :CFBundleDisplayName arXivReader Beta" "$PLIST"
-cp "$ROOT/BETA.md" "$APP/Contents/Resources/BETA.md"  # menu Aide → Notes de la bêta
+[ -f "$ROOT/BETA.md" ] && cp "$ROOT/BETA.md" "$APP/Contents/Resources/BETA.md"  # menu Aide → Notes de la bêta (si la bêta en a)
 xattr -cr "$APP"
 codesign --force --sign - "$APP"
 codesign --verify "$APP"
