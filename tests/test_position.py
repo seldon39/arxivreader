@@ -44,7 +44,7 @@ class PositionRoute(unittest.TestCase):
 @unittest.skipUnless(shutil.which("node"), "Node absent")
 class PositionHelpers(unittest.TestCase):
     def run_js(self, expression):
-        code = f'import {{ decodePosition, encodePosition, encodePdfPosition, positionSaver }} from "{ROOT / "static/js/position.js"}";\n' \
+        code = f'import {{ decodePosition, encodePosition, encodePdfPosition, positionSaver }} from "{(ROOT / "static/js/position.js").as_uri()}";\n' \
                f"console.log(JSON.stringify({expression}));"
         done = subprocess.run(["node", "--input-type=module", "-e", code], capture_output=True, text=True, check=True)
         return json.loads(done.stdout)

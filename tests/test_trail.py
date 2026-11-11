@@ -12,7 +12,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 @unittest.skipUnless(shutil.which("node"), "Node absent")
 class TrailHelpers(unittest.TestCase):
     def run_js(self, expression):
-        code = f'import * as T from "{ROOT / "static/js/trail.js"}";\nconsole.log(JSON.stringify({expression}));'
+        code = f'import * as T from "{(ROOT / "static/js/trail.js").as_uri()}";\nconsole.log(JSON.stringify({expression}));'
         done = subprocess.run(["node", "--input-type=module", "-e", code], capture_output=True, text=True, check=True)
         return json.loads(done.stdout)
 
