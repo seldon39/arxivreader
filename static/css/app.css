@@ -488,6 +488,12 @@ a.button.primary { text-decoration: none; }
 .keys-dialog kbd { font: 13px var(--font-ui); padding: 1px 6px; border: 1px solid var(--border); border-radius: 4px; }
 .keys-dialog .button { margin-top: 12px; }
 .keys-dialog th.keys-group { padding: 12px 0 4px; font-weight: 600; color: var(--muted); }
+.notes-dialog { max-width: min(46rem, calc(100vw - 32px)); }
+.notes-dialog-body { max-height: min(70vh, 640px); overflow-y: auto; padding-right: 6px; }
+.notes-dialog-body h4 { margin: .9em 0 .3em; font: 600 18px var(--font-ui); }
+.notes-dialog-body h4:first-child { margin-top: 0; }
+.notes-dialog-body h5 { margin: 1em 0 .3em; font: 600 16px var(--font-ui); }
+.notes-dialog-body h6 { margin: .8em 0 .2em; font: 600 14px var(--font-ui); }
 
 /* ---------- Aperçus au survol ---------- */
 .preview {

@@ -6,6 +6,7 @@
 import { api } from "./api.js";
 import { saveBibtex } from "./bibtex.js";
 import { t, tn } from "./i18n.js";
+import { markdownToHtml } from "./markdown.js";
 import { h, toast, toastError } from "./util.js";
 
 const mac = () => window.webkit?.messageHandlers?.arxivreader || null;
@@ -93,6 +94,23 @@ async function command(name) {
 document.addEventListener("app:command", (event) => {
   if (typeof event.detail !== "string") return;
   command(event.detail).catch(toastError);
+});
+
+// Notes de la bêta (texte du fichier BETA.md de l'application, envoyé par le menu Aide), en Markdown rendu ici
+document.addEventListener("app:notes", (event) => {
+  if (typeof event.detail !== "string") return;
+  document.querySelector("dialog.notes-dialog")?.close();
+  const opener = document.activeElement;
+  const body = h("div", { class: "markdown notes-dialog-body" });
+  body.innerHTML = markdownToHtml(event.detail);  // texte échappé : seules les balises du rendu Markdown
+  const close = h("button", { class: "button", type: "button" }, t("graph.close"));
+  const dialog = h("dialog", { class: "keys-dialog notes-dialog", "aria-label": t("notes.beta") }, body, close);
+  close.addEventListener("click", () => dialog.close());
+  dialog.addEventListener("close", () => { dialog.remove(); opener?.focus?.({ preventScroll: true }); });
+  document.body.append(dialog);
+  dialog.showModal();
+  body.scrollTop = 0;
+  close.focus({ preventScroll: true });
 });
 
 // Raccourcis : ceux du lecteur, et dans l'application Mac ceux des menus ; renvoie la fenêtre (le lecteur la ferme

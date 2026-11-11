@@ -579,8 +579,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let url = arxivURL(keyTab?.menuState ?? [:]) { NSWorkspace.shared.open(url) }
     }
     // version d'essai : sa note (BETA.md, copiée dans l'application par build-beta.sh)
+    // notes de la bêta affichées dans l'app (commands.js), sans dépendre de l'application associée aux .md
     @objc func showBetaNotes() {
-        if let url = Bundle.main.url(forResource: "BETA", withExtension: "md") { NSWorkspace.shared.open(url) }
+        guard let url = Bundle.main.url(forResource: "BETA", withExtension: "md"),
+              let text = try? String(contentsOf: url, encoding: .utf8) else { return }
+        keyTab?.webView.callAsyncJavaScript("document.dispatchEvent(new CustomEvent('app:notes', { detail: text }))",
+                                           arguments: ["text": text], in: nil, in: .page, completionHandler: nil)
     }
 
     func buildMenu() {
@@ -1107,12 +1111,12 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
         if let script = env["ARXIVREADER_EVAL"] {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { webView.evaluateJavaScript(script) }
         }
-        // ARXIVREADER_MENU=« view.tab.3,go.feed » : commandes de menu choisies une à une (une par seconde, dès 3 s)
+        // ARXIVREADER_MENU=« view.tab.3,go.feed » (nom de commande ou titre exact) : commandes de menu choisies une à une (une par seconde, dès 3 s)
         for (index, name) in (env["ARXIVREADER_MENU"] ?? "").split(separator: ",").map(String.init).enumerated() {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3 + Double(index)) {
                 for menu in NSApp.mainMenu?.items.compactMap(\.submenu) ?? [] {
                     menu.update()
-                    if let at = menu.items.firstIndex(where: { $0.representedObject as? String == name }), menu.items[at].isEnabled {
+                    if let at = menu.items.firstIndex(where: { $0.representedObject as? String == name || $0.title == name }), menu.items[at].isEnabled {
                         menu.performActionForItem(at: at)
                     }
                 }
