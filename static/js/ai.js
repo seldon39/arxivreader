@@ -438,6 +438,7 @@ export class Assistant {
       model: this.status?.model || currentModel(), created_at: new Date().toISOString().slice(0, 19).replace("T", " ") };
     this.exchanges.push(local);
     let finish;
+    let ended = false;  // l'événement final {done} est arrivé : sans lui, le flux s'est interrompu
     this.running = { exchange: local, controller, finished: new Promise((resolve) => { finish = resolve; }) };
     this.view = this.viewOf(local);
     if (this.byChapter(this.view)) this.chapterOf[this.view] = this.chapterOfExchange(local);
@@ -459,9 +460,12 @@ export class Assistant {
         if (event.delta) { local.answer += event.delta; redraw(); }
         if (event.phase) local.phase = event.phase;  // ligne d'attente : mise à jour chaque seconde
         if (event.step) { local.steps.push(event.step); this.onChange(); }
+        if (event.coverage) local.coverage = event.coverage;
+        if (event.cut) local.cut = true;
         if (event.error) { local.error = event.error; local.errorCode = event.code; }
-        if (event.done) Object.assign(local, event.exchange, { answer: event.exchange.answer || local.answer });
+        if (event.done) { ended = true; Object.assign(local, event.exchange, { answer: event.exchange.answer || local.answer }); }
       }, controller.signal);
+      if (!ended && !local.error) local.status = "stopped";  // connexion coupée en cours de réponse : pas une réponse terminée
     } catch (error) {
       if (error.name === "AbortError") local.status = "stopped";
       else { local.status = "error"; local.error = error.message; }
@@ -1293,6 +1297,13 @@ export class Assistant {
       parts.push(runningLine(exchange));
     } else {
       if (exchange.status === "stopped") parts.push(h("span", { class: "badge warn" }, t("ai.stopped")));
+      if (exchange.cut) parts.push(h("span", { class: "badge warn" }, t("ai.cut")));
+      const covered = exchange.coverage;
+      if (covered?.partial && covered.total) {
+        const percent = Math.min(99, Math.round(100 * covered.sent / covered.total));
+        const pages = (covered.pages || []).join(", ");
+        parts.push(h("span", { class: "badge warn" }, t(pages ? "ai.coveragePages" : "ai.coverage", { percent, pages })));
+      }
       if (exchange.status === "error" || exchange.error) {
         parts.push(h("div", { class: "notice small" }, t(ERROR_KEYS[exchange.errorCode] || "ai.error.other", { message: exchange.error || "" })));
       }

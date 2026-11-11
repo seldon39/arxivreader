@@ -5,6 +5,7 @@ import base64
 import contextlib
 import hmac
 import json
+import logging
 import mimetypes
 import os
 import re
@@ -627,6 +628,8 @@ def _same_version(paper_id: str, version: int | None = Header(None, alias="X-ArX
 
 
 READER_WRITE = [Depends(_same_version)]
+log = logging.getLogger(__name__)
+PARTIAL_EVERY = 3.0  # secondes entre deux écritures de la réponse reçue (échange en cours)
 
 
 @app.post("/api/papers/{paper_id}/annotations", dependencies=READER_WRITE)
@@ -846,18 +849,28 @@ async def ask_ai(paper_id: str, body: AIRequest):
         else:
             # mémoire de la conversation : les échanges précédents du fil (Questions, ou ce résumé, cette relecture)
             history = await run_in_threadpool(ai.thread_history, paper_id, parent, body.task)
+            seen, flags = {}, {}
             system, prompt = await run_in_threadpool(ai.build_prompt, paper, structure, body.task, target, quote, question,
                                                      parent, settings.get("language", "fr"), ai.paper_limit(model), zone,
                                                      [number for number, _ in pages], max(1, body.page) if body.page else None,
-                                                     chapter=chapter, history=history)
-            events = ({"delta": text} async for text in ai.stream_answer(system, prompt, model, image, [data for _, data in pages]))
+                                                     chapter=chapter, history=history, coverage=seen)
+
+            async def single():
+                if seen:
+                    yield {"coverage": seen}
+                async for text in ai.stream_answer(system, prompt, model, image, [data for _, data in pages], flags):
+                    yield {"delta": text}
+                if flags.get("cut"):
+                    yield {"cut": True}
+            events = single()
     except ai.AIError as error:
         return JSONResponse({"error": str(error)}, status_code=400)
     exchange = ai.create(paper_id, body.task, target, quote, question, parent["id"] if parent else None, model, image)
 
     async def lines():
-        answer, steps = [], []
+        answer, steps, coverage, cut = [], [], None, False
         status = "stopped"  # si la page interrompt la réponse
+        saved = time.monotonic()
         try:
             yield json.dumps({"exchange": exchange}) + "\n"
             async with contextlib.aclosing(events) as stream:
@@ -866,13 +879,23 @@ async def ask_ai(paper_id: str, body: AIRequest):
                         answer.append(event["delta"])
                     if "step" in event:
                         steps.append(event["step"])
+                    coverage = event.get("coverage") or coverage
+                    cut = cut or bool(event.get("cut"))
+                    if time.monotonic() - saved >= PARTIAL_EVERY:  # un plantage ou une fenêtre fermée garde ce qui est reçu
+                        saved = time.monotonic()
+                        ai.save_partial(exchange["id"], "".join(answer), steps, coverage)
                     yield json.dumps(event) + "\n"
             status = "done"
         except ai.AIError as error:
             status = "error"
             yield json.dumps({"error": str(error), "code": error.code}) + "\n"
+        except Exception as error:  # noqa: BLE001 — sinon l'échec serait enregistré comme un arrêt demandé par la page
+            log.exception("ai exchange")
+            status = "error"
+            yield json.dumps({"error": str(error) or type(error).__name__, "code": "other"}) + "\n"
         finally:
-            final = ai.finish(exchange["id"], "".join(answer), status, steps, card=bool(chapter) and body.task == "review")
+            final = ai.finish(exchange["id"], "".join(answer), status, steps, card=bool(chapter) and body.task == "review",
+                              coverage=coverage, cut=cut)
         yield json.dumps({"done": True, "exchange": final}) + "\n"
 
     return StreamingResponse(lines(), media_type="application/x-ndjson", headers={"Cache-Control": "no-store"})

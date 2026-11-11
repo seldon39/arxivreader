@@ -93,7 +93,7 @@ class Compute(unittest.TestCase):
         self.assertEqual(ai._describe({"task": "compute", "target": None, "quote": "$x$"}, STRUCTURE, "en"), "Check by computation — $x$")
 
     def test_follow_up_with_the_output(self):
-        async def fake(system, prompt, model, image=None, pages=()):
+        async def fake(system, prompt, model, image=None, pages=(), flags=None):
             yield "```python\nprint(1)\n```"
         ai.stream_answer = fake
         client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
@@ -102,7 +102,7 @@ class Compute(unittest.TestCase):
         self.assertEqual((first["task"], first["status"]), ("compute", "done"))
         seen = {}
 
-        async def second(system, prompt, model, image=None, pages=()):
+        async def second(system, prompt, model, image=None, pages=(), flags=None):
             seen["prompt"] = prompt
             yield "Confirmed on these cases."
         ai.stream_answer = second

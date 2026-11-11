@@ -209,7 +209,9 @@ At most four sentences and no list, even when many results are affected (group t
 sections). For each main result: is it proved as written, under the stated hypotheses? Name \
 plainly any main result that is not (e.g. "Theorem 1.2 is not proved as written: step (4.7) is false"), and say what \
 stands regardless (the results that do not depend on the problems found). A wrong proof is not a false result: never \
-call a result or the text false unless you have a counterexample to the statement itself."""
+call a result or the text false unless you have a counterexample to the statement itself. If <paper> says that parts \
+of the text are omitted or cut, the Verdict begins by saying which parts you did not read (with their pages when \
+given); do not review what you did not read."""
 REVIEW_POINTS = """### Points to check, by seriousness
 Under **Critical** (a main result unproved or false), **Serious** (a gap or error that needs real work to fix) and \
 **Minor** (local slips, missing details), numbered continuously. """ + REVIEW_STYLE + """ Minor points take one or \
@@ -407,6 +409,17 @@ CHAPTER_STATEMENTS = 40      # énoncés d'autres chapitres joints, au plus, dan
 STATEMENT_LIMIT = 2000       # caractères d'un énoncé joint
 # balises des blocs de données d'un chapitre : neutralisées dans le texte d'un énoncé
 DATA_TAGS = re.compile(r"</?(?=(?:statement|used_statements|dependent_statements|statements_proved_here|cited_statements|contents|paper)\b)", re.I)
+# toutes les balises des blocs de données de l'invite : neutralisées dans ce que le texte de l'article, un énoncé, une
+# preuve ou un passage contient, pour qu'aucun ne referme son bloc (« </paper> », « <focus> »…)
+GUARD_TAGS = re.compile(r"</?(?=(?:paper|focus|passage|zone|tex_context|context_pages|previous_exchange|conversation_history|exchange|"
+                        r"request|question|answer|review|previous_version|previous_annotations|current_annotations|other_version|"
+                        r"annotation|statement|used_statements|dependent_statements|statements_proved_here|cited_statements|contents)\b)", re.I)
+
+
+def _guard(text):
+    return GUARD_TAGS.sub(lambda m: m.group(0).replace("<", "&lt;"), text or "")
+
+
 CITED_STATEMENTS = 30        # énoncés repris de la littérature, joints à une relecture, au plus
 TEX_CHAPTER = re.compile(r"\\chapter\*?(?=\s*[\[{])")  # source sans commentaires ni texte masqué (tex_body)
 TEX_SECTION = re.compile(r"\\section\*?(?=\s*[\[{])")
@@ -779,19 +792,19 @@ def _node_text(soup, index, structure, node):
     statement = index.get(node["id"])
     parts = []
     if statement is None and node.get("tex"):  # article lu dans le PDF : énoncé et preuve en LaTeX
-        parts.append(f'<focus kind="statement" label="{node["label"]}">\n{node["tex"]}\n</focus>')
+        parts.append(f'<focus kind="statement" label="{node["label"]}">\n{_guard(node["tex"])}\n</focus>')
         if node.get("proofTex"):
-            parts.append(f'<focus kind="proof" of="{node["label"]}">\n{node["proofTex"]}\n</focus>')
+            parts.append(f'<focus kind="proof" of="{node["label"]}">\n{_guard(node["proofTex"])}\n</focus>')
     if statement is not None:
-        parts.append(f'<focus kind="statement" label="{node["label"]}">\n{element_text(statement)}\n</focus>')
+        parts.append(f'<focus kind="statement" label="{node["label"]}">\n{_guard(element_text(statement))}\n</focus>')
     for proof_id in node.get("proofs") or []:
         proof = index.get(proof_id)
         if proof is not None:
-            parts.append(f'<focus kind="proof" of="{node["label"]}">\n{element_text(proof)}\n</focus>')
+            parts.append(f'<focus kind="proof" of="{node["label"]}">\n{_guard(element_text(proof))}\n</focus>')
     passage = node.get("proofPassage")
     if passage:
         from .structure import passage_elements
-        text = "\n\n".join(element_text(e) for e in passage_elements(soup, passage["start"], passage["end"], index.get))
+        text = _guard("\n\n".join(element_text(e) for e in passage_elements(soup, passage["start"], passage["end"], index.get)))
         parts.append(f'<focus kind="proof" of="{node["label"]}">\n{text}\n</focus>')
     if node.get("manual") == "immediate":
         parts.append(f"The author regards {node['label']} as immediate and gives no proof.")
@@ -799,7 +812,7 @@ def _node_text(soup, index, structure, node):
         parts.append(f"{node['label']} is admitted in the paper (proved elsewhere); the paper does not prove it.")
     justification = index.get(node.get("justifiedBy") or "")
     if justification is not None:
-        parts.append(f'<focus kind="justification" of="{node["label"]}">\n{element_text(justification)}\n</focus>\n'
+        parts.append(f'<focus kind="justification" of="{node["label"]}">\n{_guard(element_text(justification))}\n</focus>\n'
                      f"The paper gives no formal proof of {node['label']}: this sentence of the paper is its only justification.")
     if node.get("cited") and not node.get("proofs"):
         parts.append(f"{node['label']} is quoted from the literature (see its title); the paper does not prove it.")
@@ -1384,9 +1397,25 @@ def _versions_compared(paper, question, room, thread=()):
     return f'<other_version version="{number}">\n{body}\n</other_version>', prompt
 
 
+# marqueurs d'omission que _window, _reduced_to_section et la coupe d'un chapitre mettent dans le texte envoyé
+OMISSION = re.compile(r"\n*\[… [^\]\n]*?(?:omitted|is cut)[^\]\n]*…\]\n*")
+OMITTED_PAGES = re.compile(r"\(pages (\d+)–(\d+)\) is omitted")
+
+
+def coverage_of(total, sent_text):
+    """Ce que l'assistant lit du texte : {"total", "sent"} en caractères, et, si une partie manque, "partial": True avec les
+    pages omises ("pages") quand le texte les marque. `total` : longueur du texte avant réduction."""
+    sent = len(OMISSION.sub("", sent_text))
+    info = {"total": total, "sent": min(sent, total)}
+    if OMISSION.search(sent_text) or sent < total:
+        info["partial"] = True
+        info["pages"] = [f"{a}–{b}" for a, b in OMITTED_PAGES.findall(sent_text)]
+    return info
+
+
 def build_prompt(paper, structure, task, target=None, quote=None, question=None, parent=None, language="fr",
                  limit=PAPER_LIMIT, zone=None, pages=(), page=None, profile=None, extra=(), instruction=None, chapter=None,
-                 history=None):
+                 history=None, coverage=None):
     """`zone` ({"page"}) : question sur une zone du PDF, dont l'image accompagne le texte ; `quote` y est alors le
     texte que la couche de texte du PDF donne pour cette zone (souvent faux ou absent pour une formule numérisée).
     `pages` : numéros des pages jointes en images (PDF sans texte), avant l'image de la zone. `page` : page du PDF
@@ -1395,7 +1424,8 @@ def build_prompt(paper, structure, task, target=None, quote=None, question=None,
     `extra` : blocs ajoutés avant la consigne, `instruction` : consigne à la place de celle de la tâche (relecture croisée).
     `chapter` : résumé ou relecture d'un seul chapitre d'un livre, ou d'une seule section d'un article (identifiant de
     `parts_of(structure)`) ; pour une section, tout l'article est envoyé.
-    `history` : échanges précédents du fil (thread_history), joints à la place du seul échange `parent`."""
+    `history` : échanges précédents du fil (thread_history), joints à la place du seul échange `parent`.
+    `coverage` : dict (facultatif) rempli de ce que l'assistant lit vraiment du texte (coverage_of) ; pas pour la transcription."""
     if task not in TASKS:
         raise AIError("Unknown task")
     if task in ("zone", "transcribe") and not zone:
@@ -1410,6 +1440,10 @@ def build_prompt(paper, structure, task, target=None, quote=None, question=None,
     if chapter and (entry is None or task not in ("summary", "review")):
         raise AIError("Unknown chapter")
     by_section = entry is not None and not structure.get("chapters")
+    if entry is not None and not by_section:
+        total = len(_chapter_text(soup, index, structure, text, chapter))  # un chapitre : lui seul est le texte à lire
+    else:
+        total = len(text)
     context = _chapter_context(index, structure, chapter, max(20000, limit // 4)) if entry is not None else ""
     if by_section:
         room = max(limit // 2, limit - len(context))  # le contexte compte aussi (modèle local)
@@ -1446,12 +1480,14 @@ def build_prompt(paper, structure, task, target=None, quote=None, question=None,
     if task == "compute" and not (node or quote or zone):
         raise AIError("Nothing to check")
 
+    if coverage is not None and task != "transcribe":
+        coverage.update(coverage_of(total, text))
     origin = (f' arxiv="{paper["arxiv_id"]}v{paper["version"]}"' if paper.get("arxiv_id")
               else ' source="TeX source of an unpublished document by the user"' if paper.get("source") == "local-tex"
               else ' source="PDF imported by the user"')
     title = html.escape(paper["title"] or "", quote=True)  # titre d'un PDF importé : écrit par n'importe qui
     part = f' part="{html.escape(entry["title"], quote=True)}"' if entry and not by_section else ""
-    parts = [f'<paper title="{title}"{origin}{part}>\n{text}\n</paper>']
+    parts = [f'<paper title="{title}"{origin}{part}>\n{_guard(text)}\n</paper>']
     if entry is not None:
         parts.append(context)
     if structure.get("source") == "tex" and task != "transcribe":
@@ -1472,14 +1508,14 @@ def build_prompt(paper, structure, task, target=None, quote=None, question=None,
                      f"its image is attached. Text that the PDF's text layer gives for this region (often wrong or "
                      f"missing for formulas in a scanned paper): {found}\n</zone>")
     elif quote:
-        parts.append(f"<passage>\n{quote}\n</passage>")
+        parts.append(f"<passage>\n{_guard(quote)}\n</passage>")
     replied = False  # la demande répond à un échange joint
     if history:
         block, replied = _history_block(history, parent, structure, limit // HISTORY_SHARE)
         parts.append(block)
     elif parent and history is None:
         parts.append(f"<previous_exchange>\n<question>{_describe(parent, structure)}</question>\n"
-                     f"<answer>\n{parent.get('answer') or ''}\n</answer>\n</previous_exchange>")
+                     f"<answer>\n{_guard(parent.get('answer'))}\n</answer>\n</previous_exchange>")
         replied = True
     adapted = _adapting(paper, question, limit - sum(map(len, parts)), history or ([parent] if parent else [])) if task == "ask" and question else ()
     if adapted:
@@ -1909,9 +1945,10 @@ def logout(provider):
         _claude_models.update(email=None, at=0.0, models=None, failed=0.0)
 
 
-async def stream_answer(system, prompt, model, image=None, pages=()):
+async def stream_answer(system, prompt, model, image=None, pages=(), flags=None):
     """Morceaux de texte de la réponse, au fil de l'eau. `image` (PNG) : zone du PDF, jointe à la question ;
-    `pages` (JPEG) : pages d'un PDF sans texte autour de la question, jointes avant elle."""
+    `pages` (JPEG) : pages d'un PDF sans texte autour de la question, jointes avant elle. `flags` : dict où l'on note
+    {"cut": True} si l'assistant a arrêté sa réponse de lui-même (longueur maximale, filtre) : le texte reçu est gardé."""
     provider = providers.provider_of(model)
     images = [("image/jpeg", page) for page in pages] + ([("image/png", image)] if image else [])
     if images and provider not in IMAGE_PROVIDERS:
@@ -1936,6 +1973,10 @@ async def stream_answer(system, prompt, model, image=None, pages=()):
     try:
         async with contextlib.aclosing(stream) as chunks:
             async for text in chunks:
+                if isinstance(text, providers.Cut):
+                    if flags is not None:
+                        flags["cut"] = True
+                    continue
                 yield text
     except providers.ProviderError as error:
         raise AIError(str(error), error.code)
@@ -2066,14 +2107,17 @@ async def cross_review(paper, structure, first, second, language="fr", pages=(),
         return build_prompt(paper, structure, "review", language=language, limit=paper_limit(model),
                             pages=numbers if reads_images(model) else (), profile=profile, chapter=chapter, **options)
 
+    flags = {}  # {"cut": True} : une des réponses a été coupée par son assistant
+
     async def step(model, built):
-        """Réponse entière ; une erreur de l'assistant B porte son nom (pas le code de connexion, qui vise A)."""
+        """Réponse entière ; une erreur de l'assistant B porte son nom et garde son code (limit, offline…), qui vise B ;
+        celui de la connexion, « login » ou « missing », ne vise pas A : l'erreur redevient « other »."""
         try:
-            return "".join([text async for text in stream_answer(*built, model, None, images(model))])
+            return "".join([text async for text in stream_answer(*built, model, None, images(model), flags)])
         except AIError as error:
             if model == first:
                 raise
-            raise AIError(f"{assistant_name(second)}: {error}")
+            raise AIError(f"{assistant_name(second)}: {error}", error.code if error.code in ("limit", "offline") else "other")
 
     # section d'un article : tout l'article est joint, la comparaison et la synthèse restent sur cette section
     title = next((s["title"] for s in parts_of(structure) if s["id"] == chapter), "") if chapter and not structure.get("chapters") else ""
@@ -2081,7 +2125,10 @@ async def cross_review(paper, structure, first, second, language="fr", pages=(),
              "context. “Main result” means a main result of this section, and a problem elsewhere counts only if it affects "
              "this section.") if title else ""
     yield {"phase": "reviews"}
-    built = [await asyncio.to_thread(prompt, model) for model in (first, second)]
+    seen = {}
+    built = [await asyncio.to_thread(prompt, model, coverage=seen if model == first else None) for model in (first, second)]
+    if seen:
+        yield {"coverage": seen}
     tasks = [asyncio.ensure_future(step(model, b)) for model, b in zip((first, second), built)]
     try:
         review_a, review_b = await asyncio.gather(*tasks)
@@ -2103,8 +2150,10 @@ async def cross_review(paper, structure, first, second, language="fr", pages=(),
     synthesis = SYNTHESIS_PROMPT + ("" if not chapter else CHAPTER_SYNTHESIS if structure.get("chapters") else _to_sections(CHAPTER_SYNTHESIS)) + scope
     system, text = await asyncio.to_thread(prompt, first, instruction=synthesis, extra=(
         _review_block("A", review_a, yours=True), _review_block("B", review_b), _review_block("comparison", comparison)))
-    async for delta in stream_answer(system, text, first, None, images(first)):
+    async for delta in stream_answer(system, text, first, None, images(first), flags):
         yield {"delta": delta}
+    if flags.get("cut"):
+        yield {"cut": True}
 
 
 # ---------- Historique ----------
@@ -2119,6 +2168,8 @@ def _decoded(exchange):
     if exchange["task"] in ("zone", "transcribe"):
         exchange["image"] = image_path(exchange).exists()
     exchange["steps"] = json.loads(exchange["steps"]) if exchange.get("steps") else None
+    exchange["coverage"] = json.loads(exchange["coverage"]) if exchange.get("coverage") else None
+    exchange["cut"] = bool(exchange.get("cut"))
     return exchange
 
 
@@ -2148,13 +2199,23 @@ def create(paper_id, task, target, quote, question, parent_id, model, image=None
     return exchange
 
 
-def finish(exchange_id, answer, status, steps=None, card=False):
+def finish(exchange_id, answer, status, steps=None, card=False, coverage=None, cut=False):
     """`steps` : étapes d'une relecture croisée ([{kind, model, answer}]), gardées sous la synthèse. `card` : relecture
-    d'un chapitre, terminée par la fiche du chapitre (CHAPTER_RECORD)."""
+    d'un chapitre, terminée par la fiche du chapitre (CHAPTER_RECORD). `coverage` : ce que l'assistant a lu (coverage_of),
+    `cut` : réponse arrêtée par l'assistant lui-même."""
     with db.connect() as connection:
-        connection.execute("UPDATE ai_exchanges SET answer = ?, status = ?, steps = ?, card = ? WHERE id = ?",
-                           (answer, status, json.dumps(steps) if steps else None, 1 if card else 0, exchange_id))
+        connection.execute("UPDATE ai_exchanges SET answer = ?, status = ?, steps = ?, card = ?, coverage = ?, cut = ? WHERE id = ?",
+                           (answer, status, json.dumps(steps) if steps else None, 1 if card else 0,
+                            json.dumps(coverage) if coverage else None, 1 if cut else 0, exchange_id))
     return get(exchange_id)
+
+
+def save_partial(exchange_id, answer, steps=None, coverage=None):
+    """Réponse reçue jusqu'ici, écrite pendant le flux (« running ») : un plantage ou une fenêtre fermée en garde le début ;
+    stop_running la clôt alors comme interrompue."""
+    with db.connect() as connection:
+        connection.execute("UPDATE ai_exchanges SET answer = ?, steps = ?, coverage = ? WHERE id = ? AND status = 'running'",
+                           (answer, json.dumps(steps) if steps else None, json.dumps(coverage) if coverage else None, exchange_id))
 
 
 def set_applied(exchange_id, applied):

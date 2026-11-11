@@ -95,7 +95,7 @@ class Job:
             entry["exchange"] = exchange["id"]
             self.open.add(exchange["id"])
             try:
-                answer, steps = [], []
+                answer, steps, seen, flags = [], [], {}, {}
                 if self.second:  # relecture croisée du chapitre : quatre demandes (ai.cross_review)
                     async for event in ai.cross_review(self.paper, self.structure, self.model, self.second, self.language,
                                                        chapter=entry["id"]):
@@ -103,17 +103,23 @@ class Job:
                             answer.append(event["delta"])
                         if "step" in event:
                             steps.append(event["step"])
+                        seen = event.get("coverage") or seen
+                        if event.get("cut"):
+                            flags["cut"] = True
                 else:
                     system, prompt = await asyncio.to_thread(
                         ai.build_prompt, self.paper, self.structure, self.task, language=self.language,
-                        limit=ai.paper_limit(self.model), profile=self.profile, chapter=entry["id"])
-                    async for text in ai.stream_answer(system, prompt, self.model):
+                        limit=ai.paper_limit(self.model), profile=self.profile, chapter=entry["id"], coverage=seen)
+                    async for text in ai.stream_answer(system, prompt, self.model, flags=flags):
                         answer.append(text)
+                if not "".join(answer).strip():  # un chapitre sans réponse ne doit pas disparaître en silence de la synthèse
+                    raise ai.AIError("The assistant gave an empty answer for a chapter")
             except BaseException:
                 entry["state"] = "wait"
                 raise
             text = "".join(answer)
-            ai.finish(exchange["id"], text, "done", steps or None, card=self.task == "review")
+            ai.finish(exchange["id"], text, "done", steps or None, card=self.task == "review", coverage=seen or None,
+                      cut=bool(flags.get("cut")))
             self.open.discard(exchange["id"])
             self.answers[entry["id"]] = text
             entry["state"], entry["seconds"] = "done", round(time.time() - entry["started"])
@@ -125,9 +131,10 @@ class Job:
         exchange = ai.create(self.paper["id"], self.task, ai.BOOK, None, None, None, self.model)
         self.synthesis["exchange"] = exchange["id"]
         self.open.add(exchange["id"])
-        async for text in ai.stream_answer(system, prompt, self.model):
+        flags = {}
+        async for text in ai.stream_answer(system, prompt, self.model, flags=flags):
             self.synthesis["answer"] += text
-        ai.finish(exchange["id"], self.synthesis["answer"], "done")
+        ai.finish(exchange["id"], self.synthesis["answer"], "done", cut=bool(flags.get("cut")))
         self.open.discard(exchange["id"])
 
     def close_open(self):
