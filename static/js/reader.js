@@ -2500,7 +2500,7 @@ class Reader {
     const proofs = this.pdfMode ? [] : [...this.content.querySelectorAll(".ltx_proof")];
     const paper = this.paper;
     reportMenu({
-      reader: true, pdf: Boolean(this.pdfMode), canSwitch: Boolean(this.viewSwitch),
+      reader: true, id: paper.id, pdf: Boolean(this.pdfMode), canSwitch: Boolean(this.viewSwitch),
       inLibrary: Boolean(paper.in_library), canAdd: !paper.archived_of && !paper.in_library,
       arxiv: paper.arxiv_id ? `https://arxiv.org/abs/${paper.arxiv_id}${paper.version ? `v${paper.version}` : ""}` : null,
       toc: this.root.dataset.toc === "open", panel: this.root.dataset.panel === "open",

@@ -56,7 +56,8 @@ documents du dépôt (README, MAINTENANCE…) seront mis à jour seulement si la
   au lancement (seul l'onglet affiché se charge) ; « Rouvrir l'onglet fermé » ⌘⇧T ; ⌘+ ⌘− ⌘0 (taille du texte, ou zoom
   du PDF) ; ⌘1…⌘9 ; téléchargements sans passage au Finder ; message et bouton après un plantage répété de la page.
 - Menus refaits d'après les fonctions de l'app : **Fichier** (importer arXiv ⌘O / PDF-TeX ⇧⌘O, ajouter l'article lu à
-  la bibliothèque, copier son BibTeX, l'ouvrir sur arXiv, exporter toute la bibliothèque en .bib) ; **Édition**
+  la bibliothèque, copier son BibTeX, l'ouvrir sur arXiv, montrer son PDF dans le Finder, exporter toute la
+  bibliothèque en .bib ; « Afficher la bibliothèque dans le Finder » ouvre le dossier des articles) ; **Édition**
   (rechercher dans l'article ⌘F, dans la bibliothèque ⌥⌘F, marque-page ⌘D) ; **Présentation** (HTML/PDF ⌥⌘P,
   sommaire ⌃⌘S, onglets du panneau ⌥⌘1…⌥⌘5, panneau ⌥⌘0, replier les preuves, zoom, largeur du texte) ; **Aller**
   (Bibliothèque, Feed, Recherche, Papiers liés ⌃⌘1…⌃⌘4, page précédente/suivante, énoncés j / k / p rappelés) ;

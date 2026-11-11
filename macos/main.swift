@@ -467,6 +467,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case #selector(zoomReset): item.title = pdf ? tr("Zoom par défaut", "Default Zoom") : tr("Taille du texte par défaut", "Default Text Size"); return true
         case #selector(findOpen): item.title = reader ? tr("Rechercher dans l'article…", "Find in Paper…") : tr("Rechercher…", "Find…"); return true
         case #selector(openArxiv): return reader && arxivURL(state) != nil
+        case #selector(showPaperPDF): return reader && paperPDF(state) != nil
         case #selector(pageCommand(_:)): break
         default: return true
         }
@@ -552,8 +553,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     @objc func goBack() { keyTab?.webView.goBack() }
     @objc func goForward() { keyTab?.webView.goForward() }
-    // le dossier de la bibliothèque ouvert dans le Finder (son contenu, pas le dossier sélectionné dans Application Support)
-    @objc func showLibraryFolder() { NSWorkspace.shared.open(support) }
+    // les articles de la bibliothèque (un dossier par article) ouverts dans le Finder ; le reste du dossier est technique
+    @objc func showLibraryFolder() {
+        let papers = support.appendingPathComponent("papers", isDirectory: true)
+        NSWorkspace.shared.open(FileManager.default.fileExists(atPath: papers.path) ? papers : support)
+    }
+    // PDF de l'article lu, sélectionné dans le Finder (seulement un identifiant d'article et un PDF déjà téléchargé)
+    func paperPDF(_ state: [String: Any]) -> URL? {
+        guard let id = state["id"] as? String, !id.isEmpty, id != ".", id != "..",
+              id.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || "._-".contains($0)) }) else { return nil }
+        let pdf = support.appendingPathComponent("papers", isDirectory: true).appendingPathComponent(id, isDirectory: true)
+            .appendingPathComponent("paper.pdf")
+        return FileManager.default.fileExists(atPath: pdf.path) ? pdf : nil
+    }
+    @objc func showPaperPDF() {
+        guard let state = keyTab?.menuState, state["reader"] as? Bool == true, let pdf = paperPDF(state) else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([pdf])
+    }
     // commande d'un menu faite par la page (commands.js) ; nom fixé ici, jamais venu de la page
     @objc func pageCommand(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String, name.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "." }) else { return }
@@ -619,6 +635,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             command(tr("Ajouter à la bibliothèque…", "Add to Library…"), "reader.library"),
             command(tr("Copier le BibTeX", "Copy BibTeX"), "reader.bibtex"),
             entry(tr("Ouvrir sur arXiv", "Open on arXiv"), #selector(openArxiv), target: self),
+            entry(tr("Afficher le PDF dans le Finder", "Show the PDF in Finder"), #selector(showPaperPDF), target: self),
             command(tr("Exporter la bibliothèque en .bib…", "Export the Library as .bib…"), "export.bib"),
             .separator(),
             entry(tr("Afficher la bibliothèque dans le Finder", "Show the Library in Finder"), #selector(showLibraryFolder), target: self),
