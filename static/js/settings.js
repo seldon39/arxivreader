@@ -80,9 +80,23 @@ export async function saveSettings(values) {
   try {
     await api.saveSettings(values);
   } catch {
-    // réglage appliqué localement même si l'enregistrement échoue
+    // réglage appliqué localement même si l'enregistrement échoue : on le dit (il serait perdu au redémarrage)
+    toast(t("settings.saveFailed"), { error: true });
   }
 }
+
+// Mac : ⌘+, ⌘− et ⌘0 (menu Présentation) changent la taille du texte, comme le curseur des réglages
+document.addEventListener("app:zoom", (event) => {
+  const next = event.detail === "reset" ? DEFAULT_FONT_SIZE
+    : Math.min(24, Math.max(14, (Number(settings.fontSize) || DEFAULT_FONT_SIZE) + (event.detail === "in" ? 1 : -1)));
+  if (next === settings.fontSize) return;
+  const range = document.querySelector('dialog[open] input[name="fontSize"]'); // réglages ouverts : curseur et libellé suivent
+  if (range) {
+    range.value = next;
+    document.getElementById("setting-fontSize")?.replaceChildren(t("settings.fontSize", { n: next }));
+  }
+  saveSettings({ fontSize: next });
+});
 
 // Assistant à configurer : à quoi il sert, s'il est prêt (sinon la marche à suivre), son compte ou sa clé, et pour un
 // modèle local, l'adresse du serveur. Celui qui répond et son modèle se choisissent dans l'onglet IA (modelPicker).

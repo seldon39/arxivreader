@@ -49,8 +49,8 @@ export function openOnboarding({ onDone = null } = {}) {
 
   // 1. qui êtes-vous ?
   function stepWho() {
-    const name = h("input", { class: "text-input", type: "text", value: state.name, autocomplete: "name", placeholder: t("onboarding.namePlaceholder") });
-    const ident = h("input", { class: "text-input", type: "text", value: state.identifier, spellcheck: "false", placeholder: t("onboarding.identifierPlaceholder") });
+    const name = h("input", { class: "text-input", type: "text", value: state.name, autocomplete: "name", placeholder: t("onboarding.namePlaceholder"), "aria-label": t("onboarding.name") });
+    const ident = h("input", { class: "text-input", type: "text", value: state.identifier, spellcheck: "false", placeholder: t("onboarding.identifierPlaceholder"), "aria-label": t("onboarding.identifier") });
     const go = h("button", { class: "button primary", type: "submit" }, t("onboarding.find"));
     const run = async () => {
       if (go.disabled) return; // Entrée pendant la recherche : une seule
@@ -68,7 +68,8 @@ export function openOnboarding({ onDone = null } = {}) {
         stepPapers();
       } catch (error) {
         if (stale()) return;
-        toast(t(`onboarding.error.${error.code || "network"}`), { error: true });
+        // sans code : réponse du serveur local (500…) ou pas de réponse du tout ; ni l'un ni l'autre n'est « arXiv ne répond pas »
+        toast(t(`onboarding.error.${error.code || (error.status ? "local" : "network")}`), { error: true });
         stepWho();
       }
     };
@@ -142,7 +143,7 @@ export function openOnboarding({ onDone = null } = {}) {
     const cats = state.suggestions.categories.map((c) => h("label", { class: "check onboarding-chip" },
       h("input", { type: "checkbox", checked: state.categories.has(c.category), onchange: toggle(state.categories, c.category) }),
       h("span", {}, c.category), c.count ? h("span", { class: "muted small" }, ` (${c.count})`) : null));
-    const extra = h("input", { class: "text-input", type: "text", spellcheck: "false", placeholder: "math.AP, math-ph…" });
+    const extra = h("input", { class: "text-input", type: "text", spellcheck: "false", placeholder: "math.AP, math-ph…", "aria-label": t("onboarding.moreCategories") });
     const authors = state.suggestions.authors.map((a) => h("label", { class: "check onboarding-chip" },
       h("input", { type: "checkbox", checked: state.authors.has(a.name), onchange: toggle(state.authors, a.name) }),
       h("span", {}, a.name), h("span", { class: "muted small" }, ` · ${t(`onboarding.why.${a.why}`)}`)));

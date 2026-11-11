@@ -22,6 +22,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var quitting = false
     var confirmedLeaving = false   // « Quitter quand même » déjà répondu : pas de seconde question
     var asking = false
+    var restoring = false          // onglets de la session précédente en cours de remise en place : aucun ne se charge d'office
+    var closingGroup = false       // ⌘⇧W : la session enregistrée garde le groupe fermé tant que d'autres restent
+    var recentlyClosed: [(route: String, title: String)] = []  // derniers onglets fermés (⌘⇧T), le plus récent en dernier
+    var recentMenu: NSMenu?
+    var saveTimer: Timer?
     var origin: String { "http://127.0.0.1:\(port)" }
     // jeton de la session, tiré au hasard : le serveur ne répond qu'aux pages qui l'ont (cookie déposé par « /?t= »)
     let token = (0..<32).map { _ in String(format: "%02x", UInt8.random(in: 0...255)) }.joined()
@@ -37,8 +42,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
         // premier onglet (essais : ARXIVREADER_START=#/paper/…,#/feed ouvre ces pages, les suivantes en onglets)
         let routes = (ProcessInfo.processInfo.environment["ARXIVREADER_START"] ?? "").split(separator: ",").map(String.init)
-        let first = openTab(routes.first ?? "", beside: nil)
-        for route in routes.dropFirst() { openTab(route, beside: first.window, front: false) }
+        if !routes.isEmpty || !sessionEnabled || !restoreSession() {
+            let first = openTab(routes.first ?? "", beside: nil)
+            for route in routes.dropFirst() { openTab(route, beside: first.window, front: false) }
+        }
         NSApp.activate(ignoringOtherApps: true)
         port = freePort(preferred: isBeta ? 8730 : 8720)
         startServer()
@@ -74,6 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        saveSession()
         if serverReady && !confirmedLeaving && !quitting {
             askIfRunning { leave in
                 guard leave else { return NSApp.reply(toApplicationShouldTerminate: false) }
@@ -295,7 +303,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Nouvel onglet à côté de `anchor` (sinon une nouvelle fenêtre) ; `front` : affiché aussitôt
     @discardableResult
-    func openTab(_ route: String, beside anchor: NSWindow?, front: Bool = true) -> Tab {
+    func openTab(_ route: String, beside anchor: NSWindow?, front: Bool = true, lazy: Bool = false, title: String? = nil) -> Tab {
         let first = tabs.isEmpty
         let tab = Tab(app: self)
         tabs.append(tab)
@@ -316,7 +324,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             tab.window.tabbingMode = .automatic
         }
         showTabBar(tab.window)
-        tab.load(route)
+        if lazy {
+            // onglet d'une session rouverte : chargé à son premier affichage (beaucoup d'articles d'un coup pèseraient lourd)
+            tab.lazyRoute = route
+            if let title, !title.isEmpty { tab.window.title = title }
+        } else {
+            tab.load(route)
+        }
         return tab
     }
 
@@ -328,7 +342,122 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func closed(_ tab: Tab) { tabs.removeAll { $0 === tab } }
+    func closed(_ tab: Tab) {
+        let route = tab.currentRoute, title = tab.window.title
+        tabs.removeAll { $0 === tab }
+        guard !quitting else { return }
+        // bibliothèque vide (« #/ ») : rien à rouvrir ; au plus 20 gardés
+        if route != "#/" {
+            recentlyClosed.append((route, title))
+            if recentlyClosed.count > 20 { recentlyClosed.removeFirst() }
+            rebuildRecentMenu()
+        }
+        if !closingGroup { sessionChanged() }
+    }
+
+    // ---------- Session : onglets rouverts au lancement, onglets fermés ----------
+
+    // Essais (ARXIVREADER_START, _SNAPSHOT, _WINDOWSHOT, _EVAL) : une seule page de départ, et la session de l'utilisateur intacte
+    var sessionEnabled: Bool {
+        let env = ProcessInfo.processInfo.environment
+        return !["ARXIVREADER_START", "ARXIVREADER_SNAPSHOT", "ARXIVREADER_WINDOWSHOT", "ARXIVREADER_EVAL"].contains { env[$0] != nil }
+    }
+    var sessionFile: URL { support.appendingPathComponent("session.json") }
+
+    // Seules les routes de l'application sont rouvertes (même règle que les messages de la page)
+    static func validRoute(_ route: String) -> Bool {
+        route.range(of: "^#/[A-Za-z0-9/._%~-]*(\\?[A-Za-z0-9._%~=&-]*)?$", options: .regularExpression) != nil
+    }
+
+    // Groupes d'onglets (une fenêtre chacun) : [{tabs: [{route, title}], selected}]
+    func saveSession() {
+        saveTimer?.invalidate()
+        saveTimer = nil
+        guard sessionEnabled, !quitting, !tabs.isEmpty else { return }  // dernière fenêtre fermée : on garde la session d'avant
+        var groups: [[String: Any]] = []
+        var seen = Set<ObjectIdentifier>()
+        for tab in tabs {
+            let windows = tab.window.tabGroup?.windows ?? [tab.window]
+            guard seen.insert(ObjectIdentifier(tab.window.tabGroup ?? tab.window)).inserted else { continue }
+            let members = windows.compactMap { window in tabs.first { $0.window === window } }
+            let entries: [[String: String]] = members.map { ["route": $0.currentRoute, "title": $0.window.title] }
+            let selected = members.firstIndex { $0.window === tab.window.tabGroup?.selectedWindow } ?? 0
+            groups.append(["tabs": entries, "selected": selected])
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: ["groups": groups]) else { return }
+        try? data.write(to: sessionFile, options: .atomic)
+    }
+
+    // Enregistrement différé d'une seconde (le titre et l'adresse changent plusieurs fois par page)
+    func sessionChanged() {
+        guard sessionEnabled, !quitting else { return }
+        saveTimer?.invalidate()
+        saveTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: false) { [weak self] _ in self?.saveSession() }
+    }
+
+    // Rouvre la session enregistrée ; faux s'il n'y en a pas (fichier absent ou illisible : démarrage ordinaire).
+    // Seul l'onglet affiché de chaque fenêtre se charge ; les autres à leur premier affichage (windowDidBecomeKey)
+    func restoreSession() -> Bool {
+        guard let data = try? Data(contentsOf: sessionFile),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let groups = root["groups"] as? [[String: Any]] else { return false }
+        var shown: [Tab] = []
+        restoring = true
+        for group in groups {
+            let entries = (group["tabs"] as? [[String: String]] ?? []).filter { Self.validRoute($0["route"] ?? "") }
+            guard !entries.isEmpty else { continue }
+            let selected = min(max(group["selected"] as? Int ?? 0, 0), entries.count - 1)
+            var anchor: NSWindow?
+            var current: Tab?
+            for (index, entry) in entries.enumerated() {
+                let tab = openTab(entry["route"] ?? "#/", beside: anchor, front: false, lazy: index != selected, title: entry["title"])
+                anchor = anchor ?? tab.window
+                if index == selected { current = tab }
+            }
+            if let current { shown.append(current) }
+        }
+        guard let last = shown.last else { restoring = false; return false }
+        for tab in shown { tab.window.tabGroup?.selectedWindow = tab.window }
+        last.window.makeKeyAndOrderFront(nil)
+        // les changements de fenêtre active du début sont passés : les onglets en attente se chargent désormais à l'affichage
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.restoring = false
+            self?.tabs.forEach { if $0.window.tabGroup?.selectedWindow === $0.window { $0.loadIfLazy() } }
+        }
+        return true
+    }
+
+    @objc func reopenClosedTab() {
+        guard let last = recentlyClosed.popLast() else { return }
+        rebuildRecentMenu()
+        openTab(last.route, beside: keyTab?.window)
+    }
+    @objc func reopenRecent(_ sender: NSMenuItem) {
+        guard sender.tag >= 0, sender.tag < recentlyClosed.count else { return }
+        let entry = recentlyClosed.remove(at: sender.tag)
+        rebuildRecentMenu()
+        openTab(entry.route, beside: keyTab?.window)
+    }
+    func rebuildRecentMenu() {
+        guard let menu = recentMenu else { return }
+        menu.removeAllItems()
+        if recentlyClosed.isEmpty {
+            let none = NSMenuItem(title: tr("Aucun", "None"), action: nil, keyEquivalent: "")
+            none.isEnabled = false
+            menu.addItem(none)
+            return
+        }
+        for (index, entry) in recentlyClosed.enumerated().reversed() {
+            let title = entry.title.isEmpty ? entry.route : String(entry.title.prefix(60))
+            let item = NSMenuItem(title: title, action: #selector(reopenRecent(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = index
+            menu.addItem(item)
+        }
+    }
+    @objc func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        item.action == #selector(reopenClosedTab) ? !recentlyClosed.isEmpty : true
+    }
 
     func startPage() -> String {
         """
@@ -352,7 +481,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // (close() ne passe pas par windowShouldClose : la question des travaux en cours est posée ici si c'est la dernière fenêtre)
     @objc func closeWindow() {
         let windows = keyTab?.window.tabGroup?.windows ?? keyTab.map { [$0.window] } ?? []
-        let doClose = { windows.forEach { $0.close() } }
+        let doClose = {
+            self.saveSession()
+            self.closingGroup = true
+            windows.forEach { $0.close() }
+            self.closingGroup = false
+            self.sessionChanged()
+        }
         if tabs.count > windows.count { doClose() } else { askIfRunning { if $0 { doClose() } } }
     }
     // Rechercher : la page s'en charge (barre de recherche du lecteur, champ de la bibliothèque)
@@ -362,6 +497,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func findOpen() { find("open") }
     @objc func findNext() { find("next") }
     @objc func findPrevious() { find("previous") }
+    // taille du texte : la page change son réglage (settings.js), comme le curseur des Réglages
+    func zoom(_ command: String) {
+        keyTab?.webView.evaluateJavaScript("document.dispatchEvent(new CustomEvent('app:zoom', { detail: '\(command)' }))")
+    }
+    @objc func zoomIn() { zoom("in") }
+    @objc func zoomOut() { zoom("out") }
+    @objc func zoomReset() { zoom("reset") }
+    // ⌘1 à ⌘8 : l'onglet de ce numéro dans la fenêtre active ; ⌘9 : le dernier (comme Safari)
+    @objc func selectTabNumber(_ sender: NSMenuItem) {
+        guard let group = keyTab?.window.tabGroup else { return }
+        let number = Int(sender.keyEquivalent) ?? 1
+        let windows = group.windows
+        let index = number == 9 ? windows.count - 1 : number - 1
+        if index >= 0, index < windows.count { group.selectedWindow = windows[index] }
+    }
     @objc func goBack() { keyTab?.webView.goBack() }
     @objc func goForward() { keyTab?.webView.goForward() }
     @objc func showLibraryFolder() { NSWorkspace.shared.activateFileViewerSelecting([support]) }
@@ -382,6 +532,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item.target = target
             return item
         }
+        let recentItem = NSMenuItem(title: tr("Onglets récemment fermés", "Recently Closed"), action: nil, keyEquivalent: "")
+        let recent = NSMenu(title: recentItem.title)
+        recentItem.submenu = recent
+        recentMenu = recent
+        rebuildRecentMenu()
         submenu("arXivReader", [
             entry(tr("À propos d'arXivReader", "About arXivReader"), #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
             .separator(),
@@ -400,6 +555,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .separator(),
             entry(tr("Fermer l'onglet", "Close Tab"), #selector(NSWindow.performClose(_:)), "w"),
             entry(tr("Fermer la fenêtre", "Close Window"), #selector(closeWindow), "w", [.command, .shift], target: self),
+            entry(tr("Rouvrir l'onglet fermé", "Reopen Closed Tab"), #selector(reopenClosedTab), "t", [.command, .shift], target: self),
+            recentItem,
             .separator(),
             entry(tr("Afficher tous les onglets", "Show All Tabs"), #selector(NSWindow.toggleTabOverview(_:)), "|"),
             .separator(),
@@ -421,6 +578,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         submenu(tr("Présentation", "View"), [
             entry(tr("Recharger", "Reload"), #selector(reloadPage), "r", target: self),
             .separator(),
+            // taille du texte du lecteur (celle des Réglages) ; ⌘= est aussi pris en charge par TabWindow
+            entry(tr("Agrandir le texte", "Increase Text Size"), #selector(zoomIn), "+", target: self),
+            entry(tr("Réduire le texte", "Decrease Text Size"), #selector(zoomOut), "-", target: self),
+            entry(tr("Taille du texte par défaut", "Default Text Size"), #selector(zoomReset), "0", target: self),
+            .separator(),
             entry(tr("Plein écran", "Enter Full Screen"), #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
         ])
         submenu(tr("Aller", "Go"), [
@@ -435,7 +597,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             entry(tr("Afficher l'onglet suivant", "Show Next Tab"), #selector(NSWindow.selectNextTab(_:)), "}"),
             entry(tr("Placer l'onglet dans une nouvelle fenêtre", "Move Tab to New Window"), #selector(NSWindow.moveTabToNewWindow(_:))),
             entry(tr("Fusionner toutes les fenêtres", "Merge All Windows"), #selector(NSWindow.mergeAllWindows(_:))),
-        ]
+            .separator(),
+        ] + (1...9).map { entry($0 == 9 ? tr("Dernier onglet", "Last Tab") : tr("Onglet \($0)", "Tab \($0)"), #selector(selectTabNumber(_:)), String($0), target: self) }
+          + [.separator(), entry(tr("Tout ramener au premier plan", "Bring All to Front"), #selector(NSApplication.arrangeInFront(_:)))]
         submenu(tr("Fenêtre", "Window"), windowMenu)
         NSApp.mainMenu = main
         NSApp.windowsMenu = main.items.last?.submenu
@@ -448,6 +612,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 /// glissé (de la page, d'une autre fenêtre) qui s'attarde sur un onglet de la barre ouvre cet onglet : on le dépose
 /// ensuite dans sa page (sur un dossier…), comme d'une fenêtre à l'autre.
 final class TabWindow: NSWindow {
+    // ⌘= agrandit aussi le texte (sur un clavier français ou américain, « + » demande ⇧ ou n'est pas à la même place)
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command, event.charactersIgnoringModifiers == "=" {
+            (NSApp.delegate as? AppDelegate)?.zoomIn()
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
     override func newWindowForTab(_ sender: Any?) {
         (NSApp.delegate as? AppDelegate)?.openTab("#/", beside: self)
     }
@@ -556,6 +729,8 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
     var pending: String?            // page à ouvrir dès que le serveur répond
     var tested = false
     var titleObserver: NSKeyValueObservation?
+    var urlObserver: NSKeyValueObservation?
+    var lazyRoute: String?          // onglet d'une session rouverte, pas encore chargé
     var downloads: [ObjectIdentifier: URL] = [:]  // téléchargement en cours → fichier où il s'écrit
     var lastDownload: URL?                        // dernier fichier enregistré (bouton « Afficher dans le Finder »)
     var pendingDialogs: [UUID: () -> Void] = [:]  // fenêtres de la page ouvertes → réponse « annulé » si l'onglet se ferme avant
@@ -586,11 +761,23 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
         titleObserver = webView.observe(\.title) { [weak self] web, _ in
             let title = web.title ?? ""
             self?.window.title = title.isEmpty ? (isBeta ? "arXivReader Beta" : "arXivReader") : isBeta ? "β \(title)" : title
+            self?.app.sessionChanged()
         }
+        // les routes sont des fragments (#/paper/…) : l'adresse change sans nouvelle page, la session le suit
+        urlObserver = webView.observe(\.url) { [weak self] _, _ in self?.app.sessionChanged() }
     }
 
     // Page de l'application (« #/paper/… ») ; avant que le serveur réponde : page d'attente
+    // route affichée (pour la session et ⌘⇧T) ; page pas encore chargée : celle qui l'attend
+    var currentRoute: String {
+        if let route = lazyRoute ?? pending { return route }
+        let route = webView.url.flatMap { $0.fragment.map { "#\($0)" } } ?? "#/"
+        return AppDelegate.validRoute(route) ? route : "#/"
+    }
+    func loadIfLazy() { if let route = lazyRoute { load(route) } }
+
     func load(_ route: String) {
+        lazyRoute = nil
         if app.serverReady {
             pending = nil
             // « /?t=<jeton> » dépose le cookie de la session puis renvoie à « / » (la route, après #, est gardée)
@@ -604,6 +791,7 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
 
     // Serveur prêt (ou relancé, peut-être sur un autre port) : page en attente, sinon la même page
     func reconnect() {
+        if lazyRoute != nil { return }  // chargé à son premier affichage
         let route = pending ?? webView.url.flatMap { $0.fragment.map { "#\($0)" } } ?? ""
         load(route)
     }
@@ -629,7 +817,7 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
         }
         guard let body = message.body as? [String: Any], body["action"] as? String == "openTab",
               let route = body["route"] as? String,
-              route.range(of: "^#/[A-Za-z0-9/._%~-]*(\\?[A-Za-z0-9._%~=&-]*)?$", options: .regularExpression) != nil else { return }
+              AppDelegate.validRoute(route) else { return }
         // comme Safari : nouvel onglet en arrière-plan (⇧ en plus : affiché aussitôt)
         app.openTab(route, beside: window, front: body["front"] as? Bool ?? false)
     }
@@ -671,7 +859,10 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
         }
     }
 
-    func windowDidBecomeKey(_ notification: Notification) { app.showTabBar(window) }
+    func windowDidBecomeKey(_ notification: Notification) {
+        app.showTabBar(window)
+        if !app.restoring { loadIfLazy() }
+    }
 
     // Dernier onglet (bouton rouge, ⌘W) : refusé si des travaux tournent et qu'on veut les garder
     func windowShouldClose(_ sender: NSWindow) -> Bool {
@@ -686,6 +877,7 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
         pendingDialogs = [:]
         cancels.forEach { $0() }
         titleObserver = nil
+        urlObserver = nil
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "arxivreader")
         app.closed(self)
     }
