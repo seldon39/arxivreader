@@ -20,6 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var server: Process?
     var port = 8720
     var quitting = false
+    var confirmedLeaving = false   // « Quitter quand même » déjà répondu : pas de seconde question
+    var asking = false
     var origin: String { "http://127.0.0.1:\(port)" }
     // jeton de la session, tiré au hasard : le serveur ne répond qu'aux pages qui l'ont (cookie déposé par « /?t= »)
     let token = (0..<32).map { _ in String(format: "%02x", UInt8.random(in: 0...255)) }.joined()
@@ -44,7 +46,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
+    // Travaux en cours côté serveur (réponses de l'assistant, relectures du livre, liens) : quitter les perdrait.
+    // Serveur muet ou réponse illisible : comme zéro, jamais de blocage.
+    func askIfRunning(_ proceed: @escaping (Bool) -> Void) {
+        if asking { return proceed(false) }  // une question est déjà en route
+        guard serverReady, !confirmedLeaving, let url = URL(string: "\(origin)/api/ai/running") else { return proceed(true) }
+        asking = true
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 2)
+        request.setValue(token, forHTTPHeaderField: "X-ArXivReader-Token")
+        URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
+            let count = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }?["count"] as? Int ?? 0
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.asking = false
+                guard count > 0 else { return proceed(true) }
+                let alert = NSAlert()
+                alert.messageText = tr("Des travaux sont en cours.", "Work is still running.")
+                alert.informativeText = tr("\(count) en cours (réponse de l'assistant, relecture, liens) : quitter maintenant les interrompt.",
+                                           "\(count) in progress (assistant answer, review, related papers): quitting now interrupts them.")
+                alert.addButton(withTitle: tr("Continuer", "Keep running"))
+                alert.addButton(withTitle: tr("Quitter quand même", "Quit anyway"))
+                let leave = alert.runModal() == .alertSecondButtonReturn
+                if leave { self.confirmedLeaving = true }
+                proceed(leave)
+            }
+        }.resume()
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if serverReady && !confirmedLeaving && !quitting {
+            askIfRunning { leave in
+                guard leave else { return NSApp.reply(toApplicationShouldTerminate: false) }
+                if self.shutDown() == .terminateNow { NSApp.reply(toApplicationShouldTerminate: true) }
+            }
+            return .terminateLater
+        }
+        return shutDown()
+    }
+
+    func shutDown() -> NSApplication.TerminateReply {
         quitting = true
         guard let server, server.isRunning else { return .terminateNow }
         server.terminate() // SIGTERM : le serveur termine proprement (vérification en cours, base)
@@ -309,7 +349,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func newTab() { openTab("#/", beside: keyTab?.window) }
     @objc func newWindow() { openTab("#/", beside: nil) }
     // tous les onglets de la fenêtre
-    @objc func closeWindow() { (keyTab?.window.tabGroup?.windows ?? keyTab.map { [$0.window] } ?? []).forEach { $0.close() } }
+    // (close() ne passe pas par windowShouldClose : la question des travaux en cours est posée ici si c'est la dernière fenêtre)
+    @objc func closeWindow() {
+        let windows = keyTab?.window.tabGroup?.windows ?? keyTab.map { [$0.window] } ?? []
+        let doClose = { windows.forEach { $0.close() } }
+        if tabs.count > windows.count { doClose() } else { askIfRunning { if $0 { doClose() } } }
+    }
     // Rechercher : la page s'en charge (barre de recherche du lecteur, champ de la bibliothèque)
     func find(_ command: String) {
         keyTab?.webView.evaluateJavaScript("document.dispatchEvent(new CustomEvent('app:find', { detail: '\(command)' }))")
@@ -512,6 +557,9 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
     var tested = false
     var titleObserver: NSKeyValueObservation?
     var downloads: [ObjectIdentifier: URL] = [:]  // téléchargement en cours → fichier où il s'écrit
+    var lastDownload: URL?                        // dernier fichier enregistré (bouton « Afficher dans le Finder »)
+    var pendingDialogs: [UUID: () -> Void] = [:]  // fenêtres de la page ouvertes → réponse « annulé » si l'onglet se ferme avant
+    var crashes: [Date] = []
 
     init(app: AppDelegate) {
         self.app = app
@@ -571,6 +619,10 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
             webView.evaluateJavaScript("window.dispatchEvent(new CustomEvent('arxivreader:dropped', { detail: \(json)[0] }))")
             return
         }
+        if (message.body as? [String: Any])?["action"] as? String == "revealDownload" {
+            if let file = lastDownload { NSWorkspace.shared.activateFileViewerSelecting([file]) } // sur demande seulement
+            return
+        }
         if let body = message.body as? [String: Any], body["action"] as? String == "chooseFiles" {
             chooseFiles(bib: body["kind"] as? String == "bib")
             return
@@ -621,7 +673,18 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
 
     func windowDidBecomeKey(_ notification: Notification) { app.showTabBar(window) }
 
+    // Dernier onglet (bouton rouge, ⌘W) : refusé si des travaux tournent et qu'on veut les garder
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if app.tabs.count > 1 || app.confirmedLeaving || !app.serverReady { return true }
+        app.askIfRunning { [weak self] leave in if leave { self?.window.close() } }
+        return false
+    }
+
     func windowWillClose(_ notification: Notification) {
+        // fenêtres de alert()/confirm()/prompt() restées ouvertes : WebKit exige une réponse à chacune
+        let cancels = Array(pendingDialogs.values)
+        pendingDialogs = [:]
+        cancels.forEach { $0() }
         titleObserver = nil
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "arxivreader")
         app.closed(self)
@@ -682,15 +745,28 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         guard let url = action.request.url else { return nil }
-        if isAppURL(url) { app.openTab(url.fragment.map { "#\($0)" } ?? "#/", beside: window) } else { openOutside(url, action) }
+        if isAppURL(url) { app.openTab(url.fragment.map { "#\($0)" } ?? "#/", beside: window) }
+        else if ["http", "https"].contains(url.scheme?.lowercased() ?? "") { NSWorkspace.shared.open(url) } // window.open : WebKit n'appelle ceci que sur un geste de l'utilisateur
+        else { openOutside(url, action) }
         return nil
     }
 
-    // Page plantée (manque de mémoire…) : rechargée, mais pas en boucle si elle replante aussitôt
-    var crashes: [Date] = []
+    // Page plantée (manque de mémoire…) : rechargée, mais pas en boucle si elle replante aussitôt ;
+    // après trois plantages en une minute : un message et un bouton, pas une page blanche
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         crashes = crashes.filter { $0.timeIntervalSinceNow > -60 } + [Date()]
-        if crashes.count <= 3 { webView.reload() }
+        if crashes.count <= 3 { webView.reload(); return }
+        crashes = []
+        let alert = NSAlert()
+        alert.messageText = tr("Cette page a planté à plusieurs reprises.", "This page crashed several times.")
+        alert.informativeText = tr("Elle est sans doute trop lourde pour la mémoire disponible. Vous pouvez la recharger ou fermer l'onglet.",
+                                   "It is probably too heavy for the available memory. You can reload it or close the tab.")
+        alert.addButton(withTitle: tr("Recharger", "Reload"))
+        alert.addButton(withTitle: tr("Fermer l'onglet", "Close tab"))
+        sheet(alert, cancel: {}) { [weak self] response in
+            guard let self else { return }
+            if response == .alertFirstButtonReturn { self.webView.reload() } else { self.window.close() }
+        }
     }
 
     // Essais (premier onglet) : ARXIVREADER_SNAPSHOT=fichier.png, image de la page quelques secondes après le
@@ -733,11 +809,13 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
         downloads[ObjectIdentifier(download)] = target
         completionHandler(target)
     }
-    // enregistré : montré dans le Finder (export des notes…) ; échec : signalé
+    // enregistré : la page le dit (avec « Afficher dans le Finder »), sans faire passer le Finder devant ; échec : signalé
     func downloadDidFinish(_ download: WKDownload) {
-        if let target = downloads.removeValue(forKey: ObjectIdentifier(download)) {
-            NSWorkspace.shared.activateFileViewerSelecting([target])
-        }
+        guard let target = downloads.removeValue(forKey: ObjectIdentifier(download)) else { return }
+        lastDownload = target
+        guard let data = try? JSONSerialization.data(withJSONObject: [target.lastPathComponent]),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView.evaluateJavaScript("window.dispatchEvent(new CustomEvent('arxivreader:downloaded', { detail: \(json)[0] }))")
     }
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
         downloads.removeValue(forKey: ObjectIdentifier(download))
@@ -752,7 +830,7 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
                  initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
         let alert = NSAlert()
         alert.messageText = message
-        alert.beginSheetModal(for: window) { _ in completionHandler() }
+        sheet(alert, cancel: completionHandler) { _ in completionHandler() }
     }
 
     func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
@@ -761,7 +839,7 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
         alert.messageText = message
         alert.addButton(withTitle: "OK")
         alert.addButton(withTitle: tr("Annuler", "Cancel"))
-        alert.beginSheetModal(for: window) { completionHandler($0 == .alertFirstButtonReturn) }
+        sheet(alert, cancel: { completionHandler(false) }) { completionHandler($0 == .alertFirstButtonReturn) }
     }
 
     func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?,
@@ -774,7 +852,7 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
         alert.addButton(withTitle: "OK")
         alert.addButton(withTitle: tr("Annuler", "Cancel"))
         alert.window.initialFirstResponder = field
-        alert.beginSheetModal(for: window) { completionHandler($0 == .alertFirstButtonReturn ? field.stringValue : nil) }
+        sheet(alert, cancel: { completionHandler(nil) }) { completionHandler($0 == .alertFirstButtonReturn ? field.stringValue : nil) }
     }
 
     func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
@@ -782,7 +860,22 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = parameters.allowsMultipleSelection
         panel.canChooseDirectories = parameters.allowsDirectories
-        panel.beginSheetModal(for: window) { completionHandler($0 == .OK ? panel.urls : nil) }
+        let id = UUID()
+        pendingDialogs[id] = { completionHandler(nil) }
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard self?.pendingDialogs.removeValue(forKey: id) != nil else { return }
+            completionHandler(response == .OK ? panel.urls : nil)
+        }
+    }
+
+    // Fenêtre attachée à l'onglet ; fermé avant la réponse, windowWillClose la clôt par « annulé » (une seule réponse)
+    func sheet(_ alert: NSAlert, cancel: @escaping () -> Void, answer: @escaping (NSApplication.ModalResponse) -> Void) {
+        let id = UUID()
+        pendingDialogs[id] = cancel
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard self?.pendingDialogs.removeValue(forKey: id) != nil else { return }
+            answer(response)
+        }
     }
 
 }
