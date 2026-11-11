@@ -25,7 +25,7 @@ export class PdfNotes {
   // zones : `readsImages()` (l'assistant lit-il les images ?), `onAskZone(zone)`, `onTranscribe(zone)`
   // marque-pages : `onAddBookmark(at)` (clic droit, ⌘D), `onBookmark(annotation, rect)` (clic sur un ruban)
   constructor({ annotator, view, onAskAI, readsImages = () => false, onAskZone = null, onTranscribe = null,
-    onAddBookmark = null, onBookmark = null, onContextMenu = null, relocate = false }) {
+    onAddBookmark = null, onKey = null, onBookmark = null, onContextMenu = null, relocate = false }) {
     this.annotator = annotator;
     this.view = view;
     this.onAskAI = onAskAI;
@@ -33,6 +33,7 @@ export class PdfNotes {
     this.onAskZone = onAskZone;
     this.onTranscribe = onTranscribe;
     this.onAddBookmark = onAddBookmark;
+    this.onKey = onKey;
     this.onBookmark = onBookmark;
     this.onContextMenu = onContextMenu;
     this.relocate = relocate;
@@ -66,6 +67,8 @@ export class PdfNotes {
     // (l'annotateur n'écoute que sa page), et la barre au défilement du PDF ou à un clic ailleurs dans l'application
     this.doc.addEventListener("mousedown", () => { this.hideToolbar(); this.annotator.closePopover(); closeBookmarkUi(); });
     this.doc.addEventListener("keydown", (event) => {
+      // retour, énoncé suivant… : comme dans l'article (pas pendant une saisie : champ de recherche de pdf.js)
+      if (this.onKey && !event.target.closest?.("input, textarea, select, [contenteditable]") && this.onKey(event)) return;
       if (event.key === "Escape") { this.hideToolbar(); this.annotator.closePopover(); this.setZoneMode(false); closeBookmarkUi(); }
       // ⌘D (Ctrl+D) : marque-page, comme dans le reste du lecteur
       if (event.key.toLowerCase() === "d" && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && this.onAddBookmark) {

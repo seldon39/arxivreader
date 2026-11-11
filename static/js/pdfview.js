@@ -53,18 +53,19 @@ export class PdfView {
     return Boolean(this.frame.getAttribute("src"));
   }
 
-  // pdf.js prêt (document ouvert, pages en place) ; null s'il ne l'est pas 30 s après le début du
-  // chargement (le PDF peut d'abord être téléchargé depuis arXiv : l'attente compte à partir de load())
+  // pdf.js prêt (document ouvert, pages en place) ; l'attente ne s'arrête pas (un gros PDF, ou un téléchargement depuis
+  // arXiv, peut être long) : seulement quand le cadre quitte la page, ou n'y est jamais entré (null)
   async ready() {
-    for (let i = 0; i < 1200 && !this.loaded && this.frame.isConnected !== false; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
+    let idle = 0;
+    for (let tick = 0; ; tick++) {
+      if (this.frame.isConnected) this.attached = true;
+      else if (this.attached || ++idle > 300) return null;
+      if (this.loaded) {
+        const app = this.frame.contentWindow?.PDFViewerApplication;
+        if (app?.pdfDocument && app.pdfViewer?.pagesCount > 0) return app;
+      }
+      await new Promise((resolve) => setTimeout(resolve, tick < 300 ? 100 : 500));  // plus lentement après 30 s
     }
-    for (let i = 0; i < 300; i++) {
-      const app = this.frame.contentWindow?.PDFViewerApplication;
-      if (app?.pdfDocument && app.pdfViewer?.pagesCount > 0) return app;
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-    return null;
   }
 
   // page (et hauteur, en coordonnées du PDF, quand on la connaît) ; le zoom ne change pas
@@ -96,6 +97,22 @@ export class PdfView {
   async onMove(callback) {
     const app = await this.ready();
     app?.eventBus.on("updateviewarea", () => callback(this.location()));
+  }
+
+  // Lien interne cliqué dans le PDF (renvoi, table des matières de pdf.js) : `callback` est appelé juste avant le saut,
+  // quand l'endroit lu est encore là. Dépend de PDFLinkService de pdf.js (vendored, figé) ; absent : rien ne change.
+  async onJump(callback) {
+    const service = (await this.ready())?.pdfLinkService;
+    if (!service || service.arxivJump) return;
+    service.arxivJump = true;
+    for (const name of ["goToDestination", "goToPage"]) {
+      const original = service[name];
+      if (typeof original !== "function") continue;
+      service[name] = function (...args) {
+        try { callback(); } catch { /* le saut a lieu quand même */ }
+        return original.apply(this, args);
+      };
+    }
   }
 
   // texte du PDF, mot à mot avec page et hauteur (calculé une fois)
