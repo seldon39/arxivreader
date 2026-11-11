@@ -552,7 +552,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     @objc func goBack() { keyTab?.webView.goBack() }
     @objc func goForward() { keyTab?.webView.goForward() }
-    @objc func showLibraryFolder() { NSWorkspace.shared.activateFileViewerSelecting([support]) }
+    // le dossier de la bibliothèque ouvert dans le Finder (son contenu, pas le dossier sélectionné dans Application Support)
+    @objc func showLibraryFolder() { NSWorkspace.shared.open(support) }
     // commande d'un menu faite par la page (commands.js) ; nom fixé ici, jamais venu de la page
     @objc func pageCommand(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String, name.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "." }) else { return }
