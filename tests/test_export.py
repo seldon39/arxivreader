@@ -120,7 +120,9 @@ class Export(unittest.TestCase):
         self.assertIn(f"![Zone de la page (image)]({inside})", markdown)
         self.assertIn("*Zone de la page (image)*", markdown)  # l'autre zone, sans image
         self.assertIn("Le diagramme.", markdown)
-        self.assertNotIn(str(lost["id"]) + ".png", markdown)
+        # zone sans image : aucun lien (l'identifiant seul se retrouvait par hasard à la fin d'un uid hexadécimal)
+        self.assertNotIn(f"{lost['uid']}.png", markdown)
+        self.assertEqual(markdown.count("](images/"), 1)
         # route : nouvelle adresse et ancienne, nom de fichier en .zip
         client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
         for url in (f"/api/papers/{pid}/notes", f"/api/papers/{pid}/notes.md"):
