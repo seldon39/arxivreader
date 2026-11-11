@@ -411,7 +411,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             var current: Tab?
             for (index, entry) in entries.enumerated() {
                 let tab = openTab(entry["route"] ?? "#/", beside: anchor, front: false, lazy: index != selected, title: entry["title"])
-                anchor = anchor ?? tab.window
+                anchor = tab.window  // chaque onglet après le précédent : l'ordre enregistré est gardé
                 if index == selected { current = tab }
             }
             if let current { shown.append(current) }
