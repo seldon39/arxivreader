@@ -1113,7 +1113,9 @@ button.ai-book-name:disabled { cursor: default; color: inherit; }
 .ai-tag { display: inline-block; font: 600 0.72em/1.6 var(--font-ui); padding: 0 0.55em; margin-right: 0.4em; border-radius: 999px; vertical-align: 0.1em;
   background: var(--surface-soft); color: var(--muted); border: 1px solid var(--border); }
 .ai-tag.both { background: var(--accent-soft); color: var(--accent-strong); border-color: transparent; }
-.ai-tag.dispute { background: var(--warning-bg); color: var(--warning-text); border-color: transparent; }
+.ai-tag.dispute, .ai-tag.uncertain { background: var(--warning-bg); color: var(--warning-text); border-color: transparent; }
+.ai-tag.confirmed { background: var(--accent-soft); color: var(--accent-strong); border-color: transparent; }
+.ai-cost { margin: 4px 0 0; }
 .ai-steps { margin: 2px 0 8px; font-size: 13px; color: var(--muted); }
 .ai-steps summary { cursor: pointer; }
 .ai-step { margin: 6px 0 0 16px; }

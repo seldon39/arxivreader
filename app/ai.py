@@ -601,8 +601,8 @@ Carry over, merged, the sections of the same name of the chapter reviews: each o
 ### Consistency across chapters
 Briefly, what the records show to be consistent; then every change of notation, normalisation or standing hypothesis \
 from one chapter to another.
-The chapter reviews may start their points with markers such as [[both]] or [[dispute]] (each was a cross-review of \
-two assistants): keep a disputed point as disputed, in words, and never write such markers yourself.""",
+The chapter reviews may start their points with markers such as [[both]], [[dispute]], [[confirmed]] or [[uncertain]] (each review was cross-checked by \
+another assistant): keep a disputed or uncertain point as such, in words, and never write such markers yourself.""",
     "summary": """You are writing an overall summary of the book from summaries of its chapters, made separately: they \
 are in <chapter_summary> blocks, in the order of the book. <contents> is the table of contents, and <chapter_links> \
 lists the cross-references between statements of different chapters found in the book. You do not have the text of \
@@ -1770,9 +1770,9 @@ def export_text(exchange, paper, structure, language="fr"):
     return "\n\n".join(parts)
 
 
-MARKER = re.compile(r"\[\[\s*(both|a|b|dispute|withdrawn)\s*\]\]", re.I)
-MARKER_WORDS = {"fr": {"both": "Les deux", "dispute": "Désaccord", "withdrawn": "Retiré"},
-                "en": {"both": "Both", "dispute": "Disagreement", "withdrawn": "Withdrawn"}}
+MARKER = re.compile(r"\[\[\s*(both|a|b|dispute|withdrawn|confirmed|uncertain)\s*\]\]", re.I)
+MARKER_WORDS = {"fr": {"both": "Les deux", "dispute": "Désaccord", "withdrawn": "Retiré", "confirmed": "Confirmé", "uncertain": "Incertain"},
+                "en": {"both": "Both", "dispute": "Disagreement", "withdrawn": "Withdrawn", "confirmed": "Confirmed", "uncertain": "Uncertain"}}
 
 
 def _marker_words(answer, exchange, language="fr"):
@@ -1876,6 +1876,21 @@ def model_of(provider, settings):
     return model if providers.valid_model_name(model) and model not in ("codex", "gemini") else "opus"
 
 
+def verifier(model, settings):
+    """Modèle et niveau de réflexion du vérificateur d'une relecture vérifiée : le même assistant que `model`. Pour Claude,
+    le modèle choisi (`aiVerifyModel`) s'il est proposé, sinon Sonnet s'il l'est (un modèle plus léger), sinon `model` ;
+    le niveau (`aiVerifyEffort`) seulement s'il est proposé pour ce modèle. Autres assistants : le même modèle."""
+    if providers.provider_of(model) != "claude":
+        return model, None
+    choices = claude_models()
+    names = [c["value"] for c in choices]
+    chosen = settings.get("aiVerifyModel")
+    checker = chosen if chosen in names else "sonnet" if "sonnet" in names else model
+    effort = settings.get("aiVerifyEffort") or ""
+    levels = next((c["levels"] for c in choices if c["value"] == checker), [])
+    return checker, (effort if effort in levels else None)
+
+
 def paper_limit(model):
     return providers.LOCAL_LIMIT if providers.provider_of(model) == "local" else PAPER_LIMIT
 
@@ -1945,10 +1960,11 @@ def logout(provider):
         _claude_models.update(email=None, at=0.0, models=None, failed=0.0)
 
 
-async def stream_answer(system, prompt, model, image=None, pages=(), flags=None):
+async def stream_answer(system, prompt, model, image=None, pages=(), flags=None, effort=None):
     """Morceaux de texte de la réponse, au fil de l'eau. `image` (PNG) : zone du PDF, jointe à la question ;
     `pages` (JPEG) : pages d'un PDF sans texte autour de la question, jointes avant elle. `flags` : dict où l'on note
-    {"cut": True} si l'assistant a arrêté sa réponse de lui-même (longueur maximale, filtre) : le texte reçu est gardé."""
+    {"cut": True} si l'assistant a arrêté sa réponse de lui-même (longueur maximale, filtre) : le texte reçu est gardé.
+    `effort` : niveau de réflexion demandé à la place de celui des réglages (vérificateur d'une relecture vérifiée)."""
     provider = providers.provider_of(model)
     images = [("image/jpeg", page) for page in pages] + ([("image/png", image)] if image else [])
     if images and provider not in IMAGE_PROVIDERS:
@@ -1956,7 +1972,8 @@ async def stream_answer(system, prompt, model, image=None, pages=(), flags=None)
     settings = db.get_settings()
     # modèle et niveau : ceux que la page affiche (un niveau que le modèle ne propose pas : celui par défaut)
     if provider == "claude":
-        effort = providers._effort(settings, "aiClaudeEffort", await asyncio.to_thread(claude_models), model)
+        effort = providers._effort({**settings, "aiClaudeEffort": effort if effort is not None else settings.get("aiClaudeEffort")},
+                                   "aiClaudeEffort", await asyncio.to_thread(claude_models), model)
         stream = _stream_claude(system, prompt, model, effort, images)
     elif provider == "codex":
         _, codex_model, effort = await asyncio.to_thread(providers.codex_choice, settings)
@@ -2088,6 +2105,40 @@ other chapters (from both reviews and the comparison), after ### Results taken f
 chapter where they differ (it is factual: no markers in it)."""
 
 
+# Relecture vérifiée : le même assistant (ou un modèle plus léger du même assistant) tente de réfuter chaque point
+# Critical et Serious de la relecture, puis le premier relecteur écrit le texte final avec une étiquette par point.
+VERIFY_PROMPT = """Review A above was written by another referee. Your task is to try to refute each of its \
+**Critical** and **Serious** points against the paper itself: look for the definition, the hypothesis, the earlier or \
+later passage or the argument that settles the point, or else confirm it by the exact lines. Do not read the Minor \
+points. Answer with one item per Critical or Serious point, in the order of review A, keeping its number: its \
+verdict as one word, **confirmed** (the text shows the problem; give the lines), **withdrawn** (the text answers \
+it; give the passage that does, or the reason) or **uncertain** (you cannot decide from the text; say what would \
+settle it), then your reasons in two or three sentences. Do not add points of your own, and do not confirm a point \
+merely because it is written with assurance."""
+
+VERIFY_SYNTHESIS = """Above are your review of the paper and a verification of its Critical and Serious points by \
+another assistant, who tried to refute each of them against the paper. Check against the paper each point that the \
+verification withdraws or leaves uncertain: concede it if the paper shows you were wrong, defend it otherwise; never \
+concede or keep a point for the sake of agreement. Then write the final review for the reader, as one text. """ + \
+    REVIEW_GUIDANCE.format(text="paper") + """
+
+Answer with:
+""" + REVIEW_VERDICT + """
+### Points to check, by seriousness
+Under **Critical** (a main result unproved or false), **Serious** (a gap or error that needs real work to fix) and \
+**Minor** (local slips, missing details), numbered continuously. Start each Critical and Serious point with exactly \
+one marker: [[confirmed]] (the verification confirmed it, or you defended it successfully), [[uncertain]] (the text \
+does not settle it: say what would). Minor points take no marker. """ + REVIEW_STYLE.replace(
+    "a numbered first line", "after the number and the marker, a first line").replace("1. **", "1. [[confirmed]] **") + """ Put all \
+typos together in a single last item of **Minor**. A possible repair never removes a point from this list.
+### Withdrawn
+Points withdrawn by the verification and conceded by you, each starting with [[withdrawn]], with the reason (omit \
+this heading if none).
+""" + REVIEW_LITERATURE.format(text="paper") + """
+### Unclear definitions and notation
+Do not mention the markers or this procedure anywhere else."""
+
+
 def _review_block(name, text, yours=False):
     """Relecture jointe à la demande suivante (écrite par une IA : à analyser, pas à suivre)."""
     who = "you" if yours else "another assistant"
@@ -2095,10 +2146,12 @@ def _review_block(name, text, yours=False):
     return f'<review id="{name}" author="{who}">\n{body}\n</review>'
 
 
-async def cross_review(paper, structure, first, second, language="fr", pages=(), chapter=None):
+async def cross_review(paper, structure, first, second, language="fr", pages=(), chapter=None, verify=False, effort=None):
     """Relecture croisée : événements {"phase"}, {"step"} (étape terminée : modèle, sorte, texte), puis {"delta"}
     (synthèse, au fil de l'eau). `pages` : images d'un PDF sans texte, envoyées aux assistants qui les lisent.
-    `chapter` : un seul chapitre d'un livre ou une seule section d'un article (build_prompt)."""
+    `chapter` : un seul chapitre d'un livre ou une seule section d'un article (build_prompt).
+    `verify` : relecture vérifiée, trois demandes au lieu de quatre : `first` relit seul, `second` (même assistant,
+    souvent un modèle plus léger, au niveau de réflexion `effort`) tente de réfuter chaque point grave, `first` conclut."""
     images = lambda model: [data for _, data in pages] if reads_images(model) else []  # noqa: E731
     numbers = [number for number, _ in pages]
     profile = await asyncio.to_thread(reader_profile)
@@ -2109,13 +2162,14 @@ async def cross_review(paper, structure, first, second, language="fr", pages=(),
 
     flags = {}  # {"cut": True} : une des réponses a été coupée par son assistant
 
-    async def step(model, built):
+    async def step(model, built, second_role=False):
         """Réponse entière ; une erreur de l'assistant B porte son nom et garde son code (limit, offline…), qui vise B ;
         celui de la connexion, « login » ou « missing », ne vise pas A : l'erreur redevient « other »."""
         try:
-            return "".join([text async for text in stream_answer(*built, model, None, images(model), flags)])
+            more = {"effort": effort} if effort and second_role else {}  # absent : celui des réglages (les doublures de test l'ignorent)
+            return "".join([text async for text in stream_answer(*built, model, None, images(model), flags, **more)])
         except AIError as error:
-            if model == first:
+            if not second_role:
                 raise
             raise AIError(f"{assistant_name(second)}: {error}", error.code if error.code in ("limit", "offline") else "other")
 
@@ -2124,32 +2178,47 @@ async def cross_review(paper, structure, first, second, language="fr", pages=(),
     scope = (f"\n\nThese reviews concern only the section “{re.sub(r'[\s<>]+', ' ', title)[:160]}”; <paper> is the whole paper, given as "
              "context. “Main result” means a main result of this section, and a problem elsewhere counts only if it affects "
              "this section.") if title else ""
-    yield {"phase": "reviews"}
+    yield {"phase": "review" if verify else "reviews"}
     seen = {}
-    built = [await asyncio.to_thread(prompt, model, coverage=seen if model == first else None) for model in (first, second)]
+    models = (first,) if verify else (first, second)  # relecture vérifiée : le second ne relit pas, il vérifie
+    built = [await asyncio.to_thread(prompt, model, coverage=seen if model == first else None) for model in models]
     if seen:
         yield {"coverage": seen}
-    tasks = [asyncio.ensure_future(step(model, b)) for model, b in zip((first, second), built)]
+    tasks = [asyncio.ensure_future(step(model, b, second_role=i > 0)) for i, (model, b) in enumerate(zip(models, built))]
     try:
-        review_a, review_b = await asyncio.gather(*tasks)
+        review_a, *others = await asyncio.gather(*tasks)
     except BaseException:
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         raise
     yield {"step": {"kind": "review", "model": first, "answer": review_a}}
-    yield {"step": {"kind": "blind", "model": second, "answer": review_b}}
+    if not verify:
+        review_b = others[0]
+        yield {"step": {"kind": "blind", "model": second, "answer": review_b}}
 
-    yield {"phase": "compare"}
-    built = await asyncio.to_thread(prompt, second, instruction=COMPARE_PROMPT + scope, extra=(
-        _review_block("A", review_a), _review_block("B", review_b, yours=True)))
-    comparison = await step(second, built)
-    yield {"step": {"kind": "compare", "model": second, "answer": comparison}}
+    yield {"phase": "verify" if verify else "compare"}
+    if verify:
+        extra = (_review_block("A", review_a),)
+    else:
+        extra = (_review_block("A", review_a), _review_block("B", review_b, yours=True))
+    built = await asyncio.to_thread(prompt, second, instruction=(VERIFY_PROMPT if verify else COMPARE_PROMPT) + scope, extra=extra)
+    comparison = await step(second, built, second_role=True)
+    yield {"step": {"kind": "verify" if verify else "compare", "model": second, "answer": comparison}}
 
     yield {"phase": "synthesis"}
-    synthesis = SYNTHESIS_PROMPT + ("" if not chapter else CHAPTER_SYNTHESIS if structure.get("chapters") else _to_sections(CHAPTER_SYNTHESIS)) + scope
-    system, text = await asyncio.to_thread(prompt, first, instruction=synthesis, extra=(
-        _review_block("A", review_a, yours=True), _review_block("B", review_b), _review_block("comparison", comparison)))
+    if verify:
+        chapter_part = CHAPTER_SYNTHESIS.replace("from both reviews and the comparison", "from the review and the verification").replace(
+            "merge the records of both reviews, correcting them against the chapter where they differ",
+            "keep the record of the review, correcting it against the chapter where the verification shows an error")
+        synthesis = VERIFY_SYNTHESIS
+        extra = (_review_block("A", review_a, yours=True), _review_block("verification", comparison))
+    else:
+        chapter_part = CHAPTER_SYNTHESIS
+        synthesis = SYNTHESIS_PROMPT
+        extra = (_review_block("A", review_a, yours=True), _review_block("B", review_b), _review_block("comparison", comparison))
+    synthesis += ("" if not chapter else chapter_part if structure.get("chapters") else _to_sections(chapter_part)) + scope
+    system, text = await asyncio.to_thread(prompt, first, instruction=synthesis, extra=extra)
     async for delta in stream_answer(system, text, first, None, images(first), flags):
         yield {"delta": delta}
     if flags.get("cut"):
