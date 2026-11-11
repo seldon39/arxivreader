@@ -115,8 +115,10 @@ augmenté `VERSION` dans `app/version.py`) : étiquette Git, envoi sur GitHub, i
   au lancement (seul l'onglet affiché se charge) ; « Rouvrir l'onglet fermé » (⌘⇧T) ; ⌘+ ⌘− ⌘0 (taille du texte, ou zoom du
   PDF) ; ⌘1…⌘9 (onglet par numéro) ; téléchargements enregistrés sans passer au Finder ; après un plantage répété de la
   page, un message et un bouton.
-- **Bibliothèque** : `~/Library/Application Support/arXivReader` (menu arXivReader → Afficher la bibliothèque
-  dans le Finder). Menu Fichier → Recopier une bibliothèque… : une bibliothèque existante (le dossier `library/`
+- Bouton **Afficher tous les onglets** à droite de la barre de titre, au-dessus du + des onglets (aussi ⇧⌘\\) ; en
+  plein écran, la barre de titre et les onglets restent en place au-dessus de la page au lieu de glisser par-dessus.
+- **Bibliothèque** : `~/Library/Application Support/arXivReader` (menu Fichier → Afficher la bibliothèque
+  dans le Finder, qui ouvre le dossier des articles). Menu Fichier → Recopier une bibliothèque… : une bibliothèque existante (le dossier `library/`
   de ce projet, celle d'un autre Mac) remplace l'actuelle, mise de côté dans un dossier voisin ; quitter d'abord
   l'autre version. Ensuite, les deux ne partagent plus rien.
 - **Connexion des assistants IA** : bouton *Se connecter…* / *Lancer dans le Terminal* dans l'onglet IA.

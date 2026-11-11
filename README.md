@@ -109,7 +109,9 @@ that bundles Python and its packages. `macos/release.sh` publishes it as a new v
 - Asks before quitting if an answer from the AI assistant is still coming; the tabs of the last session are reopened at
   launch (only the tab shown is loaded); "Reopen Closed Tab" (⌘⇧T); ⌘+ ⌘− ⌘0 (text size, or PDF zoom); ⌘1…⌘9 (tab by number);
   downloads are saved without bringing the Finder forward; after a page that keeps crashing, a message and a button.
-- **Library**: `~/Library/Application Support/arXivReader` (arXivReader menu → Show the library in Finder).
+- **Show All Tabs** button at the right of the title bar, above the + of the tabs (also ⇧⌘\\); in full screen the
+  title bar and the tabs stay in place above the page instead of sliding over it.
+- **Library**: `~/Library/Application Support/arXivReader` (File menu → Show the Library in Finder, which opens the folder of the papers).
   File menu → Copy a Library…: an existing library (the `library/` folder of this project, or another Mac's)
   replaces the current one, which is set aside in a folder next to it; quit the other version first. After
   that, the two share nothing.

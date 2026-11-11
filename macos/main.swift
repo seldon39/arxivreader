@@ -841,7 +841,7 @@ final class MessageProxy: NSObject, WKScriptMessageHandler {
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) { tab?.received(message) }
 }
 
-final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
+final class Tab: NSObject, NSWindowDelegate, NSToolbarDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
     unowned let app: AppDelegate
     let window: TabWindow
     let webView: DropWebView
@@ -877,6 +877,14 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
         window.registerForDraggedTypes(TabWindow.dragTypes) // article glissé sur un onglet : l'ouvre (TabWindow)
         window.contentView = webView
         window.delegate = self
+        // barre d'outils réduite à la ligne du titre : le bouton « Tous les onglets » (comme Safari), et en plein écran
+        // la barre des onglets reste en place, opaque, au-dessus de la page au lieu de la recouvrir par transparence
+        let toolbar = NSToolbar(identifier: "arXivReader.toolbar")
+        toolbar.delegate = self
+        toolbar.displayMode = .iconOnly
+        toolbar.allowsUserCustomization = false
+        window.toolbar = toolbar
+        window.toolbarStyle = .unifiedCompact
         // titre de l'onglet et de la fenêtre : celui de la page (article lu, « Bibliothèque », « Feed »)
         titleObserver = webView.observe(\.title) { [weak self] web, _ in
             let title = web.title ?? ""
@@ -990,6 +998,29 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
         }
     }
 
+    static let tabOverviewItem = NSToolbarItem.Identifier("arXivReader.tabOverview")
+    static var fullScreenTried = false  // essais : ARXIVREADER_FULLSCREEN, une seule fois
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [.flexibleSpace, Tab.tabOverviewItem] }
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [.flexibleSpace, Tab.tabOverviewItem] }
+    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        guard id == Tab.tabOverviewItem else { return nil }
+        let item = NSToolbarItem(itemIdentifier: id)
+        let image = NSImage(systemSymbolName: "square.on.square", accessibilityDescription: tr("Afficher tous les onglets", "Show All Tabs"))
+            ?? NSImage(named: NSImage.iconViewTemplateName)!
+        // bouton icône seule (sans libellé à côté), qui vise la fenêtre de l'onglet par la chaîne des répondeurs
+        let button = NSButton(image: image, target: nil, action: #selector(NSWindow.toggleTabOverview(_:)))
+        button.bezelStyle = .toolbar
+        button.toolTip = tr("Afficher tous les onglets", "Show All Tabs")
+        item.view = button
+        item.label = tr("Tous les onglets", "All Tabs")
+        item.toolTip = button.toolTip
+        return item
+    }
+    // plein écran : barre d'outils et onglets toujours visibles (pas de bandeau qui glisse par-dessus la page)
+    func window(_ window: NSWindow, willUseFullScreenPresentationOptions proposedOptions: NSApplication.PresentationOptions = []) -> NSApplication.PresentationOptions {
+        proposedOptions.subtracting(.autoHideToolbar)
+    }
+
     func windowDidBecomeKey(_ notification: Notification) {
         app.showTabBar(window)
         if !app.restoring { loadIfLazy() }
@@ -1013,6 +1044,13 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
         app.closed(self)
     }
 
+    // vues de la barre de titre et des onglets (classe, cadre, masquée) : pour les essais (ARXIVREADER_WINDOWSHOT)
+    func viewTree(_ view: NSView?, depth: Int) -> String {
+        guard let view, depth < 9 else { return "" }
+        let name = String(describing: type(of: view))
+        let line = name.contains("WK") ? "" : "\n" + String(repeating: "  ", count: depth) + "\(name) \(Int(view.frame.minX)),\(Int(view.frame.minY)) \(Int(view.frame.width))x\(Int(view.frame.height))\(view.isHidden ? " hidden" : "") a=\(view.alphaValue)"
+        return line + (name.contains("WK") ? "" : view.subviews.map { viewTree($0, depth: depth + 1) }.joined())
+    }
     func windowShot(_ path: String) {
         // relevé détaillé : chaque article après validation (grisé « off », masqué « hidden »), avec son raccourci
         let items = (NSApp.mainMenu?.items.compactMap(\.submenu) ?? []).flatMap { menu -> [String] in
@@ -1030,6 +1068,8 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
             "titles=\(window.tabGroup?.windows.map(\.title) ?? [])",
             "menus=\(NSApp.mainMenu?.items.map { "\($0.title): " + ($0.submenu?.items.map { $0.isSeparatorItem ? "—" : $0.title } ?? []).joined(separator: " | ") } ?? [])",
             "items=\(items)",
+            "fullScreen=\(window.styleMask.contains(.fullScreen)) options=\(NSApp.currentSystemPresentationOptions.rawValue) frame=\(window.frame) web=\(window.contentView?.frame ?? .zero)",
+            "views=\(viewTree(window.contentView?.superview, depth: 0))",
         ]
         try? lines.joined(separator: "\n").write(toFile: path + ".txt", atomically: true, encoding: .utf8)
         guard let frame = window.contentView?.superview, let rep = frame.bitmapImageRepForCachingDisplay(in: frame.bounds) else { return }
@@ -1122,6 +1162,11 @@ final class Tab: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
                     }
                 }
             }
+        }
+        // ARXIVREADER_FULLSCREEN=1 : la fenêtre passe en plein écran à 2 s (essais de la barre des onglets)
+        if env["ARXIVREADER_FULLSCREEN"] == "1", !Tab.fullScreenTried {
+            Tab.fullScreenTried = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { NSApp.activate(ignoringOtherApps: true); webView.window?.toggleFullScreen(nil) }
         }
         let delay = Double(env["ARXIVREADER_SNAPSHOT_DELAY"] ?? "") ?? 4
         if let path = env["ARXIVREADER_WINDOWSHOT"] {

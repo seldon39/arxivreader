@@ -123,7 +123,10 @@ text coming from arXiv, Semantic Scholar, Zotero or an AI goes through text or `
   command name or its exact title; the report of `ARXIVREADER_WINDOWSHOT` (`fichier.png.txt`) has an `items=` dump
   of every menu item (menu > title [shortcut], with `off` when greyed out and `hidden`), to check labels and states.
   A run with one of these variables set opens a single start page and leaves the user's saved session alone.
-  `ARXIVREADER_NO_SNAPSHOT=1` skips the daily copy of the database (tests).
+  `ARXIVREADER_NO_SNAPSHOT=1` skips the daily copy of the database (tests). `ARXIVREADER_FULLSCREEN=1` puts the window
+  in full screen at 2 s (this does take over the screen for the run: say so first); the report then gives
+  `fullScreen=… frame=… web=…` and a `views=` tree of the title bar, toolbar and tab bar (the cached capture does not
+  draw the glass of the tab bar, so read its geometry there).
 - **Before handing back**: tests green; every feature or fix carried over into all the documentation files: `MAINTENANCE.md`
   ("What is where" table, external services, known pitfalls), `CONTRIBUTING.md` (principles, code rules), `ROADMAP.md`
   (steps done, next steps), `README.md` and `README.fr.md` together (including "Code layout"); `i18n.js` keys present in both languages (plurals: `.one` and `.other`).
