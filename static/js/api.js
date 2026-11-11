@@ -72,6 +72,7 @@ export const api = {
   zoteroStatus: () => request("GET", "/api/zotero"),
   zoteroSync: () => request("POST", "/api/zotero/sync", {}),
   papersRelevance: () => request("GET", "/api/papers/relevance"),
+  libraryBackups: () => request("GET", "/api/library/backups"),
   librarySearch: (query) => request("GET", `/api/library/search?q=${encodeURIComponent(query)}`),
   folders: () => request("GET", "/api/folders"),
   createFolder: (name, papers = []) => request("POST", "/api/folders", { name, papers }),

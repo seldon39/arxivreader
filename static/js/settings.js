@@ -325,6 +325,7 @@ export function openSettingsDialog({ section = null } = {}) {
     ["about", t("settings.about"), [
       ...check("checkUpdates", t("settings.checkUpdates"), settings.checkUpdates !== false),
       updatesSection(),
+      backupsLine(),
       h("p", {}, h("strong", {}, "arXivReader"), " — © 2026 ", h("a", { href: "https://github.com/seldon39", target: "_blank",
         rel: "noopener noreferrer" }, "seldon39")),
       h("p", {}, t("about.license"), " ", h("a", { href: "https://github.com/seldon39/arxivreader", target: "_blank",
@@ -508,6 +509,18 @@ function texToolsRow() {
   return h("div", { class: "row" }, h("span", {}, t("settings.texTools")), status);
 }
 
+// copie quotidienne de la base (7 gardées) : date de la dernière et dossier (le Finder l'ouvre depuis « Afficher la bibliothèque »)
+function backupsLine() {
+  const line = h("p", { class: "hint muted small" });
+  api.libraryBackups().then(({ path, last, count, recovery }) => {
+    line.append(last ? t("settings.backups", { date: last, n: count }) : t("settings.backupsNone"), " ", t("settings.backupsPath"), " ",
+      h("code", {}, path));
+    if (recovery) line.append(" ", recovery.restored ? t("settings.backupsRestored", { date: recovery.at, name: recovery.restored })
+      : t("settings.backupsAside", { date: recovery.at }));
+  }).catch(() => line.remove());
+  return line;
+}
+
 // empreinte de la clé qui signe les notes exportées ici : à comparer quand un autre ordinateur demande confiance
 function deviceLine() {
   const line = h("p", { class: "hint muted small" });
@@ -539,6 +552,7 @@ async function importNotes(list) {
       report = await api.importNotes(files, unknown.map(([key]) => key));
     }
     const parts = [t("settings.notesImported", { added: report.added, updated: report.updated })];
+    if (report.deleted) parts.push(t("settings.notesImportedDeleted", { n: report.deleted }));
     if (report.papers) parts.push(t("settings.notesImportedPapers", { n: report.papers }));
     if (report.folders) parts.push(t("settings.notesImportedFolders", { n: report.folders }));
     if (report.rejected.length) parts.push(t("settings.notesImportRejected", { n: report.rejected.length }));

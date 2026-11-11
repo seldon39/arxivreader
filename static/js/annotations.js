@@ -375,18 +375,23 @@ export function noteEditor({ value = "", placeholder = "", onSave, autofocus = f
   const show = h("button", { class: "note-tab", type: "button", "aria-pressed": "false" }, t("notes.preview"));
   const grow = () => { area.style.height = "auto"; area.style.height = `${Math.min(420, area.scrollHeight + 2)}px`; };
   let saved = value;
-  const save = async () => {
-    if (area.value === saved) return;
+  // Enregistrements l'un après l'autre, et « enregistré » = le texte ENVOYÉ : ce qui est tapé pendant la requête
+  // reste à enregistrer (sinon les derniers caractères se perdaient)
+  const run = async () => {
+    const sent = area.value;
+    if (sent === saved) return;
     status.textContent = t("notes.saving");
     try {
-      await onSave(area.value);
-      saved = area.value;
-      status.textContent = t("notes.saved");
+      await onSave(sent);
+      saved = sent;
+      status.textContent = area.value === saved ? t("notes.saved") : "";
     } catch (error) {
       status.textContent = t("error.generic", { message: error.message }); // le texte reste dans le champ
       if (error.code === "stale_version") toastError(error);
     }
   };
+  let queue = Promise.resolve();
+  const save = () => (queue = queue.then(run));
   const later = debounce(save, 700);
   area.addEventListener("input", () => { grow(); status.textContent = ""; later(); });
   area.addEventListener("blur", save);
@@ -972,12 +977,20 @@ export class Annotator {
       bar,
       h("div", { class: "legend" }, STATES.map((s) => h("span", {}, h("span", { class: `dot state-${s}` }), `${t(`notes.state.${s}`)} : ${counts[s]}`)))));
 
-    body.append(h("div", { class: "panel-section" }, h("h3", {}, t("notes.general")),
-      noteEditor({ value: this.general?.note || "", placeholder: t("notes.placeholderGeneral"),
-        onSave: async (note) => {
-          const annotation = await api.addAnnotation(this.paperId, { kind: "general", note });
-          this.items = this.items.filter((a) => a.kind !== "general").concat(annotation);
-        } })));
+    // fiche enregistrée : le reste de l'application (bouton « Exporter », compteurs) est mis au courant quand on quitte
+    // le champ, jamais pendant la frappe (onChange redessine le panneau : le champ perdrait le curseur)
+    let sheetSaved = false;
+    const sheet = noteEditor({ value: this.general?.note || "", placeholder: t("notes.placeholderGeneral"),
+      onSave: async (note) => {
+        const annotation = await api.addAnnotation(this.paperId, { kind: "general", note });
+        this.items = this.items.filter((a) => a.kind !== "general").concat(annotation);
+        sheetSaved = true;
+      } });
+    sheet.addEventListener("focusout", async () => {
+      await sheet.flush();
+      if (sheetSaved && !document.activeElement?.closest?.(".note-editor")) { sheetSaved = false; this.onChange(); }
+    });
+    body.append(h("div", { class: "panel-section" }, h("h3", {}, t("notes.general")), sheet));
 
     // annotations
     const located = this.items.filter((a) => !["general", "bookmark"].includes(a.kind) && (a.kind === "highlight" || a.note || a.state)).map((a) => {
