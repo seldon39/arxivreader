@@ -380,7 +380,7 @@ export class Assistant {
 
   // ---------- Demandes ----------
 
-  // Actions sur un énoncé : expliquer ; et sur sa preuve, s'il en a une : détailler, auditer
+  // Actions sur un énoncé : expliquer, vérifier par le calcul ; et sur sa preuve, s'il en a une : détailler, auditer
   actionsFor(nodeId, { compact = false } = {}) {
     const node = this.byId.get(nodeId);
     if (!node) return null;
@@ -391,6 +391,7 @@ export class Assistant {
       action("explain", t("ai.task.explain")),
       hasText || node.manual === "immediate" ? action("detail", t("ai.task.detail")) : null,
       hasText ? action("audit", t("ai.task.audit")) : null,
+      action("compute", t("ai.task.compute")),
       action("annotate", t("ai.task.annotate")));
   }
 
@@ -575,6 +576,7 @@ export class Assistant {
     if (chapter) return t(`ai.title.${exchange.task}Chapter`, { label: this.chapterTitle(chapter) });
     const node = this.byId.get(exchange.target);
     const label = node?.label || "";
+    if (exchange.task === "compute" && !node) return t("ai.title.computePassage");  // passage ou zone : pas d'énoncé nommé
     return t(`ai.title.${exchange.task}`, { label });
   }
 
@@ -1087,6 +1089,14 @@ export class Assistant {
     };
     // question modifiée : l'ancien échange supprimé d'abord (rien n'est envoyé si la suppression échoue)
     const afterDiscard = (replaces, go) => (replaces ? this.discard(replaces).then((ok) => ok && go()) : go());
+    // « Vérifier par le calcul » sur le passage ou la zone choisis (la question écrite, s'il y en a une, précise quoi tester)
+    const compute = () => {
+      if (!this.canAsk()) return;
+      const question = area.value.trim();
+      const { quote, zone, parent, replaces } = pending;
+      Object.assign(pending, { quote: null, parent: null, question: "", zone: null, replaces: null });
+      afterDiscard(replaces, () => this.ask({ task: "compute", quote, zone, question: question || null, parent }));
+    };
     // Entrée envoie ; Maj + Entrée va à la ligne (et rien pendant la composition d'un caractère : accents, IME)
     area.addEventListener("keydown", (event) => {
       // keyCode 229 : Entrée qui valide un caractère composé (WebKit ne met pas toujours isComposing)
@@ -1125,7 +1135,10 @@ export class Assistant {
       : h("button", { class: "ai-send", type: "button", title: t("ai.send"), "aria-label": t("ai.send"), html: ARROW_UP, onclick: send });
     if (!running) area.addEventListener("input", () => sendButton.classList.toggle("ready", Boolean(area.value.trim() || pending.quote || pending.zone)));
     sendButton.classList.toggle("ready", ready);
+    const checkable = view === "questions" && !running && (pending.quote || pending.zone);
     const box = h("div", { class: "ai-ask" }, ...chips,
+      checkable && h("div", { class: "ai-actions ai-pending-actions" },
+        h("button", { class: "button small-button ai-action compact", type: "button", title: t("ai.task.computeHint"), onclick: compute }, t("ai.task.compute"))),
       h("div", { class: "ai-field" }, area, sendButton),
       h("div", { class: "ai-foot" }, this.modelPicker() || h("span", { class: "muted small" }, modelLabel(currentModel())),
         h("span", { class: "spacer" }), h("span", { class: "muted small ai-enter" }, t("ai.enterToSend"))));
@@ -1201,7 +1214,7 @@ export class Assistant {
       bubble.append(h("div", { class: "ai-reply-to" }, h("div", { class: "ai-reply-who" }, `${modelLabel(parent.model)} · ${timeOf(parent)}`),
         h("div", { class: "ai-reply-text" }, excerpt(parent.answer))));
     }
-    const zone = ["zone", "transcribe"].includes(exchange.task);
+    const zone = ["zone", "transcribe"].includes(exchange.task) || exchange.task === "compute" && Boolean(exchange.imageUrl || exchange.image);
     if (zone && (exchange.imageUrl || exchange.image)) {  // zone du PDF : son image (le texte de la couche, souvent faux, n'est pas montré)
       bubble.append(h("blockquote", { class: "note-quote ai-quote zone-quote" }, h("img", { src: exchange.imageUrl || `/api/ai/${exchange.id}/image`, alt: "" })));
     } else if (exchange.quote && !zone) bubble.append(h("blockquote", { class: "note-quote ai-quote" }, exchange.quote));
@@ -1796,13 +1809,24 @@ class LiveAnswer {
       added.push(block);
     }
     this.tail.innerHTML = final ? "" : this.html(blocks[complete] || "");
-    if (added.length) typesetTex(added);
+    if (added.length) { for (const block of added) addCopyButtons(block); typesetTex(added); }
   }
 
   html(text) {
     if (!this.names) return markdownToHtml(text, { refs: this.refs });
     const marked = markdownToHtml(withTags(text, this.names, (kind) => `\u0001${kind}\u0001`), { refs: this.refs });
     return marked.replace(/\u0001(\w+)\u0001/g, (_, kind) => `<span class="ai-tag ${kind}">${escapeHtml(this.names[kind] || t(`ai.tag.${kind}`))}</span>`);
+  }
+}
+
+// Bouton « Copier » au-dessus de chaque bloc de code d'une réponse terminée (script à coller dans Sage) ; le code n'est
+// jamais exécuté par l'application. Le presse-papiers s'écrit pendant le clic (Safari).
+function addCopyButtons(root) {
+  for (const pre of root.querySelectorAll("pre")) {
+    if (pre.previousElementSibling?.classList.contains("ai-code-bar")) continue;
+    const copy = () => navigator.clipboard.writeText(pre.querySelector("code")?.textContent ?? pre.textContent)
+      .then(() => toast(t("ai.codeCopied")), () => toast(t("ai.copyFailed")));
+    pre.before(h("div", { class: "ai-code-bar" }, h("button", { class: "ai-act", type: "button", title: t("ai.copyCodeHint"), onclick: copy }, t("ai.copyCode"))));
   }
 }
 
