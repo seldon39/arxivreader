@@ -6,10 +6,12 @@ import { api } from "./api.js";
 import { t, tn } from "./i18n.js";
 import { h, toast, toastError } from "./util.js";
 
-// Bouton d'une entrée : demande où ranger l'article (bibliothèque seule, ou aussi un dossier), l'ajoute (son import se
-// poursuit en arrière-plan), puis devient une marque
-export function addButton(arxivId) {
-  const button = h("button", { class: "bib-add", type: "button", title: t("bibadd.title") }, `+ ${t("bibadd.add")}`);
+// Bouton d'une entrée de la bibliographie, ou de son aperçu au survol : demande où ranger l'article (bibliothèque
+// seule, ou aussi un dossier), l'ajoute (son import se poursuit en arrière-plan), puis devient une marque ; un message
+// le confirme (l'aperçu a pu se fermer entre-temps). `withId` : l'identifiant affiché (référence à plusieurs identifiants)
+export function addButton(arxivId, { withId = false } = {}) {
+  const button = h("button", { class: "bib-add", type: "button", title: t("bibadd.title") },
+    `+ ${t("bibadd.add")}${withId ? ` (arXiv:${arxivId})` : ""}`);
   button.addEventListener("click", async () => {
     button.disabled = true;
     try {
@@ -19,6 +21,7 @@ export function addButton(arxivId) {
       const paper = await api.quickAdd(arxivId);
       if (folder) await api.setInFolder(folder.id, paper.id, true);
       button.replaceWith(h("span", { class: "bib-added" }, `✓ ${folder ? t("bibadd.inFolder", { name: folder.name }) : t("bibadd.in")}`));
+      toast(folder ? t("feed.addedTo", { name: folder.name }) : t("feed.added"));
     } catch (error) {
       button.disabled = false;
       toastError(error);

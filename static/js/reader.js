@@ -1663,20 +1663,12 @@ class Reader {
     if (ids.length > 1 && heading && !heading.parentElement.querySelector(":scope > .bib-all")) heading.after(allButton(ids, () => !this.destroyed));
   }
 
-  // Référence : l'importer depuis arXiv, ou la retrouver
+  // Aperçu d'une référence : l'ajouter à la bibliothèque (et si l'on veut à un dossier, comme dans la bibliographie),
+  // ou la retrouver
   bibActions(entry) {
     if (!entry) return null;
-    return h("span", { class: "bib-actions" }, (entry.arxiv || []).map((arxivId) => h("button", {
-      type: "button",
-      onclick: async () => {
-        try {
-          const paper = await api.importPaper(arxivId);
-          toast(`${t("reader.import")} ✓ ${paper.title}`);
-        } catch (error) {
-          toastError(error);
-        }
-      },
-    }, `${t("reader.import")} arXiv:${arxivId}`)), ...this.findLinks(entry));
+    const ids = entry.arxiv || [];
+    return h("span", { class: "bib-actions" }, ids.map((arxivId) => addButton(arxivId, { withId: ids.length > 1 })), ...this.findLinks(entry));
   }
 
   // Identifiants arXiv des références (repérés par l'analyse) : liens qui ouvrent l'article dans l'application
