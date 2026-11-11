@@ -2430,28 +2430,37 @@ class Reader {
     for (const node of this.nodes) {
       if (this.pdfMode) {
         const spot = this.pdfSpot(node.id);
-        if (spot) items.push({ id: node.id, y: spot.page * 1e5 - (spot.top ?? 0) });
+        if (spot) items.push({ id: node.id, y: spot.page * 1e5 - (spot.top ?? 0), page: spot.page, loose: spot.top == null });
         continue;
       }
       const element = this.find(node.id);
       if (element && element.offsetParent !== null) items.push({ id: node.id, y: element.getBoundingClientRect().top + scrollY });
     }
-    return items.sort((a, b) => a.y - b.y);
+    // PDF : ordre de l'article (les pages connues sont parfois celles de la section, sans hauteur : un tri par
+    // hauteur mêlerait les énoncés)
+    return this.pdfMode ? items : items.sort((a, b) => a.y - b.y);
   }
 
   keyStatement(dir) {
     const items = this.statementItems();
-    let line = 0;
+    let line = 0, page = null;
     if (this.pdfMode) {
       const here = this.pdf?.location();
-      if (here) line = here.page * 1e5 - (here.top ?? 0);
+      if (here) { line = here.page * 1e5 - (here.top ?? 0); page = here.page; }
     } else line = scrollY + this.viewTop() + 24;
-    // sauts rapides (défilement doux en cours) : on repart du dernier énoncé atteint
-    const from = this.keyStatementAt && Date.now() - this.keyStatementAt.time < 900 ? this.keyStatementAt.id : null;
+    // on repart du dernier énoncé atteint si le saut est encore en cours (défilement doux, sauts rapides) ou si la
+    // lecture n'en a pas bougé : dans le PDF l'énoncé arrive plus bas que le haut de la vue, et « suivant » le
+    // reprendrait sans fin
+    const last = this.keyStatementAt;
+    const fast = !!last && Date.now() - last.time < 900;
+    const reached = last && items.find((item) => item.id === last.id);
+    // énoncé situé à la page près (sans hauteur) : « pas bougé » veut dire encore sur sa page
+    const still = !!reached && (reached.loose ? reached.page === page : Math.abs(reached.y - line) < (this.pdfMode ? 200 : 60));
+    const from = fast || still ? last.id : null;
     const next = neighbourStatement(items, line, dir, from);
     if (!next) return;
     this.keyStatementAt = { id: next.id, time: Date.now() };
-    this.navigate(next.id, { remember: !from });  // la série de sauts ne s'empile pas : un seul retour à la lecture
+    this.navigate(next.id, { remember: !fast });  // la série rapide ne s'empile pas : un seul retour à la lecture
   }
 
   // p : preuve de l'énoncé lu (lu : l'énoncé, ou celui dont on lit la preuve) ; repliée : dépliée, sinon repliée ;
