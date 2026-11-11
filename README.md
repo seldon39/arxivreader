@@ -490,6 +490,9 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
 - **Bookmarks**: right-click → "Add bookmark" (or ⌘D), with a name of your choice. A red ribbon marks the place in the margin; all bookmarks are listed at the top of the Notes tab (a click
   takes you there, switching between HTML and PDF if needed). A bookmark set on an earlier arXiv version is flagged
   ("set on v1"); opening and saving it confirms it for the current version.
+- **References in your notes**: in the preview of a note ("Preview" tab of the editor, cards of the Notes tab),
+  "Theorem 2.3", "Lemma 4", "(2.11)", "Section 3", "[12]" become links, as in the assistant's answers: preview on
+  hover in the panel, click to go there. What you wrote is not changed.
 - **Notes tab** of the panel: reading progress, the paper's reading sheet, then the annotations in two foldable
   sections, "In the HTML (n)" in the order of the paper and "In the PDF (n)" by page, then from top to bottom
   (highlights, regions and pinned notes together); the section of the view being read is open, and follows the

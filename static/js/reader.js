@@ -131,6 +131,7 @@ class Reader {
       },
       aiActions: (id) => this.assistant.actionsFor(id, { compact: true }),
       onAskAI: (quote) => this.assistant.setPassage(quote),
+      refs: () => this.assistant?.refs,
     });
     if (this.pdf && !this.pdfNotes) this.pdfNotes = this.makePdfNotes();
     if (this.texFile) this.loadTexReport();
@@ -2070,7 +2071,7 @@ class Reader {
     if (this.annotator) {
       card.append(h("div", { class: "dep-notes" }, this.annotator.stateControl(node.id),
         noteEditor({ value: this.annotator.block(node.id)?.note || "", placeholder: t("notes.placeholderBlock"),
-          onSave: (note) => this.annotator.saveBlock(node.id, { note }) })));
+          ...this.annotator.linking(), onSave: (note) => this.annotator.saveBlock(node.id, { note }) })));
     }
     const section = (title, items) => h("div", { class: "panel-section" }, h("h3", {}, title),
       items.length ? h("div", { class: "node-list" }, items) : h("p", { class: "hint" }, t("panel.none")));

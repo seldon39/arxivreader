@@ -349,15 +349,31 @@ function authorBadge(annotation) {
 
 // ---------- Éditeur de note (Markdown + LaTeX) ----------
 
-function renderNote(element, text) {
-  element.innerHTML = markdownToHtml(text);
+function renderNote(element, text, refs) {
+  element.innerHTML = markdownToHtml(text, { refs: refs?.() });
   typesetTex([element]);
 }
 
-export function noteEditor({ value = "", placeholder = "", onSave, autofocus = false }) {
+// Renvois de l'article dans une note (« Theorem 2.3 », « (4.1) », « Section 3 », « [12] ») : liens comme dans les
+// réponses de l'IA (aperçu au survol dans le panneau, clic : aller au renvoi, sans ouvrir la carte qui le contient)
+export function followRefs(element, navigate) {
+  element.addEventListener("click", (event) => {
+    const ref = event.target.closest("a.ai-ref");
+    if (!ref || !navigate) return;
+    event.preventDefault();
+    event.stopPropagation();
+    navigate(ref.dataset.ref);
+  });
+  element.addEventListener("keydown", (event) => {  // Entrée sur le lien : le lien, pas la carte
+    if (event.target.closest("a.ai-ref") && (event.key === "Enter" || event.key === " ")) event.stopPropagation();
+  });
+  return element;
+}
+
+export function noteEditor({ value = "", placeholder = "", onSave, autofocus = false, refs = null, navigate = null }) {
   const area = h("textarea", { class: "note-input", rows: 3, placeholder, "aria-label": placeholder || t("notes.write") });
   area.value = value;
-  const preview = h("div", { class: "note-preview markdown", hidden: true });
+  const preview = followRefs(h("div", { class: "note-preview markdown", hidden: true }), navigate);
   const status = h("span", { class: "note-status muted small" });
   const write = h("button", { class: "note-tab", type: "button", "aria-pressed": "true" }, t("notes.write"));
   const show = h("button", { class: "note-tab", type: "button", "aria-pressed": "false" }, t("notes.preview"));
@@ -389,7 +405,7 @@ export function noteEditor({ value = "", placeholder = "", onSave, autofocus = f
   });
   show.addEventListener("click", () => {
     show.setAttribute("aria-pressed", "true"); write.setAttribute("aria-pressed", "false");
-    renderNote(preview, area.value || `*${t("notes.empty")}*`);
+    renderNote(preview, area.value || `*${t("notes.empty")}*`, refs);
     area.hidden = true; preview.hidden = false;
   });
   const element = h("div", { class: "note-editor" },
@@ -403,7 +419,7 @@ export function noteEditor({ value = "", placeholder = "", onSave, autofocus = f
 // ---------- Annotateur d'un article ----------
 
 export class Annotator {
-  constructor({ paperId, content, nodes, navigate, onChange, aiActions, onAskAI }) {
+  constructor({ paperId, content, nodes, navigate, onChange, aiActions, onAskAI, refs }) {
     this.paperId = paperId;
     this.content = content;
     this.nodes = nodes;
@@ -412,6 +428,7 @@ export class Annotator {
     this.onChange = onChange;
     this.aiActions = aiActions;
     this.onAskAI = onAskAI;
+    this.refs = refs;  // () => fonction qui relie les renvois de l'article (celle des réponses de l'IA), ou rien
     this.items = [];
     this.popover = null;
     this.toolbar = null;
@@ -419,6 +436,11 @@ export class Annotator {
     this.selecting = false;
     this.selected = new Set();
     this.groupsOpen = null;
+  }
+
+  // options de noteEditor : renvois de l'article cliquables dans l'aperçu (depuis une bulle : bulle fermée, on part ailleurs)
+  linking() {
+    return { refs: this.refs, navigate: (id) => { if (this.popover) this.closePopover(); this.navigate(id); } };
   }
 
   async load() {
@@ -524,7 +546,7 @@ export class Annotator {
       this.closePopover();
       this.removeMany([id]);
     });
-    const editor = noteEditor({ value: annotation.note || "", placeholder: t("notes.placeholderFree"), autofocus: focus,
+    const editor = noteEditor({ value: annotation.note || "", placeholder: t("notes.placeholderFree"), autofocus: focus, ...this.linking(),
       onSave: async (note) => { Object.assign(annotation, await api.updateAnnotation(id, { note })); this.onChange(); } });
     this.openPopover(anchor, [
       h("div", { class: "popover-head" }, h("span", { class: "popover-title" }, t("notes.freeNote")), h("span", { class: "spacer" }), button),
@@ -612,7 +634,7 @@ export class Annotator {
     const title = isTheorem ? node?.label || t("notes.statement") : `${t("reader.proof")}${proofOf ? ` — ${proofOf.label}` : ""}`;
     const body = [h("div", { class: "popover-title" }, title)];
     if (isTheorem) body.push(this.stateControl(id));
-    body.push(noteEditor({ value: this.block(id)?.note || "", placeholder: t("notes.placeholderBlock"), autofocus: !isTheorem,
+    body.push(noteEditor({ value: this.block(id)?.note || "", placeholder: t("notes.placeholderBlock"), autofocus: !isTheorem, ...this.linking(),
       onSave: (note) => this.saveBlock(id, { note }) }));
     const actions = this.aiActions?.(isTheorem ? id : proofOf?.id);
     if (actions) {
@@ -923,7 +945,7 @@ export class Annotator {
     });
     this.openPopover(anchor, [
       h("div", { class: "popover-head" }, colors, authorBadge(annotation), h("span", { class: "spacer" }), remove),
-      noteEditor({ value: annotation.note || "", placeholder: t("notes.placeholderHighlight"), autofocus: focus,
+      noteEditor({ value: annotation.note || "", placeholder: t("notes.placeholderHighlight"), autofocus: focus, ...this.linking(),
         onSave: async (note) => { Object.assign(annotation, await api.updateAnnotation(id, { note })); this.onChange(); } }),
     ]);
   }
@@ -976,7 +998,7 @@ export class Annotator {
     // fiche enregistrée : le reste de l'application (bouton « Exporter », compteurs) est mis au courant quand on quitte
     // le champ, jamais pendant la frappe (onChange redessine le panneau : le champ perdrait le curseur)
     let sheetSaved = false;
-    const sheet = noteEditor({ value: this.general?.note || "", placeholder: t("notes.placeholderGeneral"),
+    const sheet = noteEditor({ value: this.general?.note || "", placeholder: t("notes.placeholderGeneral"), ...this.linking(),
       onSave: async (note) => {
         const annotation = await api.addAnnotation(this.paperId, { kind: "general", note });
         this.items = this.items.filter((a) => a.kind !== "general").concat(annotation);
@@ -1091,8 +1113,8 @@ export class Annotator {
         h("span", { class: "label" }, node?.label || (proof ? `${t("reader.proof")}${proofOf ? ` — ${proofOf.label}` : ""}` : annotation.target?.id)),
         annotation.state && h("span", { class: `state-pill state-${annotation.state}` }, t(`notes.state.${annotation.state}`)));
     }
-    const note = h("div", { class: "markdown note-body" });
-    if (annotation.note) note.innerHTML = markdownToHtml(annotation.note);
+    const note = followRefs(h("div", { class: "markdown note-body" }), this.navigate);
+    if (annotation.note) note.innerHTML = markdownToHtml(annotation.note, { refs: this.refs?.() });
     const found = element || inPdf;
     // mode sélection : un clic sur la carte la coche (au lieu de montrer la note)
     const act = () => { if (this.selecting) card.querySelector(".note-check")?.click(); else go(); };

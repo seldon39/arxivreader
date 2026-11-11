@@ -515,6 +515,9 @@ il suffit de la fermer et d'aller dans le feed.
 - **Marque-pages** : clic droit → « Ajouter un marque-page » (ou ⌘D), avec un nom au choix. Un ruban rouge marque l'endroit dans la marge ; tous sont listés en tête de l'onglet Notes
   (un clic y ramène, en passant du HTML au PDF au besoin). Un marque-page posé sur une version arXiv antérieure est
   signalé (« posé sur la v1 ») ; l'ouvrir et l'enregistrer le confirme pour la version actuelle.
+- **Renvois dans vos notes** : dans l'aperçu d'une note (onglet « Aperçu » de l'éditeur, cartes de l'onglet Notes),
+  « Theorem 2.3 », « Lemme 4 », « (2.11) », « Section 3 », « [12] » deviennent des liens, comme dans les réponses de
+  l'assistant : aperçu au survol dans le panneau, clic = aller à l'endroit. Le texte écrit n'est pas modifié.
 - **Onglet Notes** du panneau : progression de lecture, fiche de lecture de l'article, puis les annotations en deux
   sections dépliables, « Dans le HTML (n) » dans l'ordre de l'article et « Dans le PDF (n) » par page, puis de haut en
   bas (passages surlignés, zones et notes épinglées ensemble) ; celle de la vue lue est ouverte, et suit la vue tant
