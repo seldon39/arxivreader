@@ -474,6 +474,7 @@ a.button.primary { text-decoration: none; }
   background: var(--text); color: var(--surface); font: 14px var(--font-ui); box-shadow: var(--shadow); cursor: pointer;
 }
 .back-button.visible { display: inline-flex; }
+.reader[data-view="pdf"] .back-button { display: none; }  /* le retour ne concerne que le HTML (sa pile est gardée) */
 
 /* ---------- Aperçus au survol ---------- */
 .preview {

@@ -17,8 +17,10 @@ function failure(status, data) {
   return error;
 }
 
-async function request(method, url, body, headers = {}) {
+// `keepalive` : l'envoi se termine même si la page se ferme (position de lecture)
+async function request(method, url, body, headers = {}, { keepalive = false } = {}) {
   const options = { method, headers: { ...headers } };
+  if (keepalive) options.keepalive = true;
   if (body !== undefined) {
     options.headers["Content-Type"] = "application/json";
     options.body = JSON.stringify(body);
@@ -90,7 +92,7 @@ export const api = {
   pages: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/pages`),
   crosslinks: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/crosslinks`),
   statement: (id, node) => request("GET", `/api/papers/${encodeURIComponent(id)}/statements/${encodeURIComponent(node)}`),
-  savePosition: (id, anchor) => request("PUT", `/api/papers/${encodeURIComponent(id)}/position`, { anchor }, versioned(id)),
+  savePosition: (id, anchor, options) => request("PUT", `/api/papers/${encodeURIComponent(id)}/position`, { anchor }, versioned(id), options),
   refresh: (id) => request("POST", `/api/papers/${encodeURIComponent(id)}/refresh`, {}),
   importing: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/importing`),
   versions: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/versions`),

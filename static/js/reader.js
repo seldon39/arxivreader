@@ -18,6 +18,7 @@ import { typesetFragment, typesetMath, typesetTex, undefinedFonts } from "./math
 
 import { t, tn } from "./i18n.js";
 import { DEFAULT_FONT_SIZE, READING_WIDTHS, onSettingsChange, saveSettings, settings } from "./settings.js";
+import { decodePosition, encodePdfPosition, encodePosition, positionSaver } from "./position.js";
 import { debounce, escapeRegExp, formatDate, h, icons, metaDialog, nativeBridge, navigation, openRoute, plainTitle, titleTex, toast, toastError, toggleIcon, wantsNewTab, withMath } from "./util.js";
 import { chooseBibFor, texChecks } from "./texfile.js";
 import { htmlFlow, rememberView, wantsHtml } from "./latexml.js";
@@ -295,7 +296,7 @@ class Reader {
       if (save) this.htmlScroll = scrollY;
       // à l'ouverture : l'énoncé demandé (renvoi), sinon la dernière position de lecture ; ensuite, l'endroit
       // lu dans le HTML (à l'ouverture, l'article n'est pas encore dans la page : recherche dans son contenu)
-      const position = this.startAt || this.paper.position;
+      const position = this.startAt || decodePosition(this.paper.position)?.id;
       const anchor = save ? this.currentAnchor()
         : position ? this.find(position) || this.content.querySelector(`#${CSS.escape(position)}`) : null;
       const anchorId = anchor?.id ?? (save ? null : position);
@@ -403,12 +404,25 @@ class Reader {
     this.pdf.onMove(follow);
   }
 
+  // Article sans HTML : la page lue est gardée (« pdf:page:hauteur »)
+  followPdfPlace(target) {
+    const started = Date.now();
+    let arrived = target <= 1;
+    this.pdf.onMove((location) => {
+      if (!location || this.destroyed) return;
+      // pdf.js annonce d'abord la page 1, avant d'atteindre celle demandée : cette annonce n'est pas gardée
+      if (!arrived) { if (location.page >= target || Date.now() - started > 5000) arrived = true; else return; }
+      this.savePosition?.(encodePdfPosition(location.page, location.top));
+    });
+  }
+
   // Article lu dans le PDF : page de l'énoncé, de la section ou de la preuve, et énoncé choisi dans le panneau
   showInPdf(id) {
     this.viewToken++; // un recalage en attente (bascule HTML → PDF) ne déplace plus le PDF ensuite
     const node = this.byId.get(id);
     const spot = this.pdfSpot(id);
     if (spot && this.pdf) this.pdf.goTo(spot.page, spot.top);
+    else if (this.pdf && (this.texOnly || this.pages)) toast(t("reader.noPdfPage"));  // pas de clic sans réponse
     if (node) this.select(id, { openPanel: true });
   }
 
@@ -561,7 +575,11 @@ class Reader {
       this.pdf = new PdfView(this.pdfUrl(), paper.title);
       const spot = this.startAt ? this.pdfSpot(this.startAt) : null;
       const recompiled = this.recompiledPage();  // toujours lue : pas gardée pour une ouverture suivante
-      this.pdf.load(spot?.page || recompiled, spot?.top ?? null);
+      // sinon la dernière page lue (position « pdf:page:hauteur »), pas après une recompilation (sa page l'emporte)
+      const saved = !this.startAt && recompiled === 1 ? decodePosition(paper.position)?.pdf : null;
+      this.pdf.load(spot?.page || saved?.page || recompiled, spot ? spot.top ?? null : saved?.top ?? null);
+      if (saved?.page > 1) toast(t("reader.resumedPdf", { page: saved.page }));
+      this.followPdfPlace(spot?.page || saved?.page || recompiled);
       this.article.classList.add("pdf-mode");
       this.article.append(this.pdf.frame);
       this.content = statementsContainer(this.structure);
@@ -1283,7 +1301,9 @@ class Reader {
   navigateElement(element, { remember = true } = {}) {
     this.reveal(element);
     if (remember) {
-      this.backStack.push(scrollY);
+      // endroit lu : élément et décalage dans l'élément (la mise en page peut changer d'ici le retour), hauteur en secours
+      const anchor = this.currentAnchor();
+      this.backStack.push({ id: anchor?.id, off: anchor ? this.viewTop() + 24 - anchor.getBoundingClientRect().top : 0, y: scrollY });
       this.backButton.classList.add("visible");
     }
     this.scrollToElement(element);
@@ -1294,7 +1314,12 @@ class Reader {
 
   goBack() {
     const top = this.backStack.pop();
-    if (top !== undefined) scrollTo({ top, behavior: "instant" });
+    if (top) {
+      const anchor = this.find(top.id);
+      const visible = anchor && anchor.offsetParent !== null;
+      const y = visible ? anchor.getBoundingClientRect().top + scrollY + top.off - this.viewTop() - 24 : top.y;
+      scrollTo({ top: Math.max(0, Math.round(y)), behavior: "instant" });
+    }
     this.backButton.classList.toggle("visible", this.backStack.length > 0);
   }
 
@@ -1339,7 +1364,7 @@ class Reader {
     const theorem = anchor.closest(".ltx_theorem");
     this.panel.querySelectorAll(".node-item.current").forEach((el) => el.classList.remove("current"));
     if (theorem) this.panel.querySelector(`.node-item[data-id="${CSS.escape(theorem.id)}"]`)?.classList.add("current");
-    this.savePosition(anchor.id);
+    this.savePosition(encodePosition(anchor.id, this.viewTop() + 24 - anchor.getBoundingClientRect().top));
   }
 
   // Livre : chapitre de l'endroit lu (onglet IA : résumé, relecture de ce chapitre par défaut) ; dans le PDF : aucun
@@ -1352,11 +1377,15 @@ class Reader {
   }
 
   restorePosition() {
-    const target = this.find(this.paper.position);
+    const place = decodePosition(this.paper.position);
+    const target = this.find(place?.id);
     if (!target) return;
     this.reveal(target);
     requestAnimationFrame(() => {
       this.scrollToElement(target, false);
+      // décalage dans l'élément (jamais au-delà de sa hauteur : la mise en page a pu changer)
+      const extra = Math.min(place.offset, target.getBoundingClientRect().height) - 12;
+      if (extra > 0) scrollBy({ top: extra, behavior: "instant" });
       toast(t("reader.resumed"));
     });
   }
@@ -2150,7 +2179,14 @@ class Reader {
   // ---------- Événements ----------
 
   bindEvents() {
-    this.savePosition = debounce((anchor) => api.savePosition(this.paper.id, anchor).catch(() => {}), 1500);
+    // la position en attente est envoyée à la fermeture de l'onglet (un seul envoi, qui se termine même page fermée)
+    this.positionSaver = positionSaver((place) => api.savePosition(this.paper.id, place, { keepalive: true }).catch(() => {}));
+    this.savePosition = this.positionSaver.save;
+    const flushPosition = () => this.positionSaver.flush();
+    const onHidden = () => { if (document.visibilityState === "hidden") flushPosition(); };
+    document.addEventListener("visibilitychange", onHidden);
+    addEventListener("pagehide", flushPosition);
+    this.cleanups.push(() => { document.removeEventListener("visibilitychange", onHidden); removeEventListener("pagehide", flushPosition); });
     const onScroll = debounce(() => this.onScroll(), 120);
     // L'article défile avec la fenêtre (et non dans une zone intérieure) : Safari ne fait plus
     // trembler le texte d'un pixel à l'arrêt du défilement.
@@ -2629,6 +2665,7 @@ class Reader {
 
   destroy() {
     this.destroyed = true;
+    this.positionSaver?.flush();
     document.body.classList.remove("reading");
     this.annotator?.destroy();
     this.pdfNotes?.destroy();
