@@ -136,6 +136,8 @@ class Reader {
     if (this.pdf && !this.pdfNotes) this.pdfNotes = this.makePdfNotes();
     if (this.texFile) this.loadTexReport();
     // onglet Notes : passage surligné dans le PDF, lu en HTML → vue PDF d'abord
+    this.annotator.hoverRefs = (element) => this.hoverRefs?.(element);  // aperçu au survol dans les bulles de note
+    this.annotator.hidePreview = () => this.hidePreview();
     this.annotator.version = paper.version;  // notes libres : version de l'article où elles sont posées
     this.annotator.singleView = this.texOnly;  // onglet Notes : une seule liste (pas de sections HTML et PDF)
     // clic droit dans l'article : marque-page sur le paragraphe cliqué
@@ -1794,7 +1796,8 @@ class Reader {
     const footer = h("div", { class: "preview-footer" },
       preview.extra || h("span", {}, preview.label || ""),
       preview.id && h("button", { type: "button", onclick: () => { this.hidePreview(); this.navigate(preview.id); } }, t("reader.goTo")));
-    const box = h("div", { class: "preview", role: "tooltip" }, preview.body, footer);
+    // renvoi d'une bulle de note : l'aperçu passe au-dessus de la bulle
+    const box = h("div", { class: `preview${link.closest(".note-popover") ? " over-popover" : ""}`, role: "tooltip" }, preview.body, footer);
     box.addEventListener("mouseenter", () => clearTimeout(this.hideTimer));
     box.addEventListener("click", this.interceptLinks);
     box.addEventListener("mouseleave", () => this.scheduleHide());
@@ -2364,6 +2367,8 @@ class Reader {
     };
     hoverPreviews(this.scroller, 'a[href^="#"], .ltx_note_mark', (link) => this.content.contains(link));
     hoverPreviews(this.panel, "a.ai-ref");
+    // bulles de note (hors du panneau, posées sur la page) : renvois de l'aperçu de la note
+    this.hoverRefs = (element) => hoverPreviews(element, "a.ai-ref");
 
     const onKey = (event) => {
       if (event.target.closest?.("input, textarea, select, [contenteditable]")) return;

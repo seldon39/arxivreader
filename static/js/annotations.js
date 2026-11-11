@@ -440,7 +440,7 @@ export class Annotator {
 
   // options de noteEditor : renvois de l'article cliquables dans l'aperçu (depuis une bulle : bulle fermée, on part ailleurs)
   linking() {
-    return { refs: this.refs, navigate: (id) => { if (this.popover) this.closePopover(); this.navigate(id); } };
+    return { refs: this.refs, navigate: (id) => { this.hidePreview?.(); if (this.popover) this.closePopover(); this.navigate(id); } };
   }
 
   async load() {
@@ -954,6 +954,7 @@ export class Annotator {
     this.closePopover();
     this.popover = h("div", { class: "note-popover", role: "dialog" }, children);
     document.body.append(this.popover);
+    this.hoverRefs?.(this.popover);  // renvois de l'aperçu de la note : aperçu au survol, comme dans le panneau
     const rect = anchor.getBoundingClientRect();
     const width = this.popover.offsetWidth;
     const height = this.popover.offsetHeight;
@@ -1113,7 +1114,7 @@ export class Annotator {
         h("span", { class: "label" }, node?.label || (proof ? `${t("reader.proof")}${proofOf ? ` — ${proofOf.label}` : ""}` : annotation.target?.id)),
         annotation.state && h("span", { class: `state-pill state-${annotation.state}` }, t(`notes.state.${annotation.state}`)));
     }
-    const note = followRefs(h("div", { class: "markdown note-body" }), this.navigate);
+    const note = followRefs(h("div", { class: "markdown note-body" }), this.linking().navigate);
     if (annotation.note) note.innerHTML = markdownToHtml(annotation.note, { refs: this.refs?.() });
     const found = element || inPdf;
     // mode sélection : un clic sur la carte la coche (au lieu de montrer la note)

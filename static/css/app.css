@@ -501,6 +501,7 @@ a.button.primary { text-decoration: none; }
   background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: var(--shadow);
   padding: 14px 20px; font-family: var(--paper-font); font-size: calc(var(--font-size) * .9); line-height: 1.5; text-align: justify; hyphens: auto;
 }
+.preview.over-popover { z-index: 57; } /* renvoi d'une bulle de note (.note-popover : 56) */
 .preview .ltx_theorem { margin: 0; }
 .preview .ltx_p { text-indent: 0 !important; }
 .preview .ltx_proof { display: none; }
