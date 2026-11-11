@@ -1647,10 +1647,10 @@ class Reader {
       if (row) row.append(...links);
       else if (links.length) item.append(h("div", { class: "bib-links" }, links));
     }
-    // En fin de titre de la bibliographie : tout ajouter à un dossier
+    // Sous le titre de la bibliographie : tout ajouter à un dossier
     const ids = [...new Set([...this.bib.values()].flatMap((entry) => entry.arxiv || []))];
     const heading = this.content.querySelector(".ltx_bibliography > .ltx_title");
-    if (ids.length > 1 && heading && !heading.querySelector(".bib-all")) heading.append(allButton(ids, () => !this.destroyed));
+    if (ids.length > 1 && heading && !heading.parentElement.querySelector(":scope > .bib-all")) heading.after(allButton(ids, () => !this.destroyed));
   }
 
   // Référence : l'importer depuis arXiv, ou la retrouver

@@ -96,10 +96,10 @@ export async function addAllToFolder(ids, alive = () => true) {
   else toast(tn(stopped ? "bibadd.stopped" : "bibadd.done", done, { name: folder.name, total: ids.length }) + (failed ? ` ${tn("bibadd.failed", failed)}` : ""));
 }
 
-// Bouton de l'en-tête de la bibliographie : ajouté en fin de titre ; classe « bib-links » : ajout de l'application
+// Bouton de la bibliographie : sous son titre ; classe « bib-links » : ajout de l'application
 // (hors sélection, retiré des aperçus)
 export function allButton(ids, alive) {
-  return h("span", { class: "bib-links bib-all" },
+  return h("div", { class: "bib-links bib-all" },
     h("button", { class: "bib-add", type: "button", title: t("bibadd.allHint"), onclick: () => addAllToFolder(ids, alive) },
       tn("bibadd.all", ids.length)));
 }
