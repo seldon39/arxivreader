@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS feed_items (
     link TEXT,
     fetched_at TEXT DEFAULT (datetime('now'))
 );
+CREATE INDEX IF NOT EXISTS feed_items_announced ON feed_items (announced);
+CREATE INDEX IF NOT EXISTS feed_items_rank ON feed_items (s2_rank);
 -- Profil de recherche : articles, livres, auteurs suivis, mots-clés
 CREATE TABLE IF NOT EXISTS profile_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

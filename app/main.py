@@ -5,6 +5,7 @@ import base64
 import contextlib
 import hmac
 import json
+import logging
 import mimetypes
 import os
 import re
@@ -25,7 +26,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Red
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import (ai, alerts, annotations, bibtex, bookjob, notesync, citations, crossrefs, db, export, feed, folders, fulltext, journals, latexml, library, localpdf, onboarding, profile, providers, related, texfile,
+from . import (ai, alerts, annotations, bibtex, bookjob, notesync, citations, crossrefs, db, export, feed, feedprune, folders, fulltext, journals, latexml, library, localpdf, onboarding, profile, providers, related, texfile,
                relevance, search, updates, zotero)
 from .arxiv import ArxivError, fetch_metadata, paper_key, parse_arxiv_id
 from .config import HOST, PORT, STATIC, TOKEN, TOKEN_FILE
@@ -77,6 +78,10 @@ async def lifespan(_app):
     providers.forget_gemini_cli()
     ai.stop_running()
     library.clean_cache()
+    try:
+        feedprune.prune()  # feed et vecteurs anciens (hors ceux gardés) : la base ne grossit plus sans fin
+    except Exception:
+        logging.getLogger(__name__).warning("élagage du feed impossible", exc_info=True)
     threading.Thread(target=localpdf.redetect_all, daemon=True).start()  # PDF importés : titre et auteurs relus
     # vérification périodique des auteurs suivis (ARXIVREADER_NO_ALERTS=1 pour la couper, par ex. en test)
     alerts.stop.clear()
@@ -581,7 +586,11 @@ def set_library(paper_id: str, body: LibraryRequest):
 @app.get("/api/papers/{paper_id}/pdf")
 def paper_pdf(paper_id: str):
     """PDF de l'article (affiché dans le lecteur) ; téléchargé depuis arXiv la première fois."""
-    path = library.ensure_pdf(checked_paper(paper_id))
+    paper = checked_paper(paper_id)
+    try:
+        path = library.ensure_pdf(paper)
+    except (httpx.HTTPError, ArxivError) as error:  # hors ligne, arXiv en panne : pas un 500 muet
+        return _failed(error)
     if path is None:
         raise HTTPException(404, "No PDF")
     return FileResponse(path, media_type="application/pdf")
@@ -590,7 +599,11 @@ def paper_pdf(paper_id: str):
 @app.get("/api/papers/{paper_id}/pages")
 def paper_pages(paper_id: str):
     """Endroit du PDF de chaque énoncé et section : {"pages": {id: page}, "tops": {id: hauteur}}."""
-    pages = library.pdf_pages(checked_paper(paper_id))
+    paper = checked_paper(paper_id)
+    try:
+        pages = library.pdf_pages(paper)
+    except (httpx.HTTPError, ArxivError) as error:
+        return _failed(error)
     if pages is None:
         raise HTTPException(404, "No PDF")
     return pages

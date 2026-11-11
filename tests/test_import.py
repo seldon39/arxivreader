@@ -50,7 +50,7 @@ class ArxivIds(unittest.TestCase):
         self.assertEqual(parse_arxiv_id("https://arxiv.org/abs/2608.24719v1"), ("2608.24719", 1))
         self.assertEqual(parse_arxiv_id("https://arxiv.org/pdf/2608.24719"), ("2608.24719", None))
         self.assertEqual(parse_arxiv_id("https://arxiv.org/abs/math/0601001v3"), ("math/0601001", 3))
-        self.assertEqual(parse_arxiv_id("math.DG/0601001"), ("math.DG/0601001", None))
+        self.assertEqual(parse_arxiv_id("math.DG/0601001"), ("math/0601001", None))  # classe retirée : la forme des flux et de Semantic Scholar
         with self.assertRaises(ArxivError):
             parse_arxiv_id("not an id")
 
@@ -284,7 +284,7 @@ class QuickAdd(unittest.TestCase):
         from app import db, library
         release = threading.Event()
 
-        def slow_import(arxiv_id, add_to_library=True):
+        def slow_import(arxiv_id, add_to_library=True, **_):
             release.wait(5)  # import long (figures, source)
             db.update_paper(arxiv_id, source="arxiv-html", version=1)
             return db.get_paper(arxiv_id)
@@ -320,7 +320,7 @@ class NoLongRequests(unittest.TestCase):
         db.DB_PATH, db.LIBRARY, library.PAPERS = tmp / "test.db", tmp, tmp / "papers"
         db.init()
         try:
-            def done(arxiv_id, add_to_library=True):
+            def done(arxiv_id, add_to_library=True, **_):
                 db.update_paper(arxiv_id, source="arxiv-html")
             with mock.patch.object(library, "import_paper", side_effect=OSError("network")):
                 library.quick_add("2609.40232", {"title": "Spectra"}, in_library=False)

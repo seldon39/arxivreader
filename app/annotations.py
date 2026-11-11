@@ -239,14 +239,28 @@ def counts():
             "SELECT paper_id, COUNT(*) AS n FROM annotations WHERE kind != 'proof' GROUP BY paper_id")}
 
 
+SIDE_KINDS = ("remark", "example", "notation")  # pas comptés dans l'avancement (comme l'onglet Notes)
+
+
 def stats():
     """Par article : passages surlignés, notes écrites, énoncés compris ou vérifiés (cartes de la bibliothèque)."""
+    from . import crossrefs
     with db.connect() as connection:
         rows = connection.execute(
             "SELECT paper_id, SUM(kind = 'highlight') AS highlights, "
-            "SUM(note IS NOT NULL AND TRIM(note) != '') AS notes, "
-            "SUM(state IN ('understood', 'verified')) AS done FROM annotations GROUP BY paper_id").fetchall()
-    return {r["paper_id"]: {"highlights": r["highlights"], "notes": r["notes"], "done": r["done"]} for r in rows}
+            "SUM(note IS NOT NULL AND TRIM(note) != '') AS notes FROM annotations GROUP BY paper_id").fetchall()
+        states = connection.execute(
+            "SELECT paper_id, json_extract(target, '$.id') AS node FROM annotations "
+            "WHERE kind = 'block' AND state IN ('understood', 'verified')").fetchall()
+    # comme la barre de l'onglet Notes : énoncés (ni remarque, ni exemple, ni notation) qui existent encore
+    done, kinds = {}, {}
+    for row in states:
+        if row["paper_id"] not in kinds:
+            kinds[row["paper_id"]] = {n["id"]: n["kind"] for n in crossrefs.nodes_of(row["paper_id"]) or []}
+        kind = kinds[row["paper_id"]].get(row["node"])
+        if kind is not None and kind not in SIDE_KINDS:
+            done[row["paper_id"]] = done.get(row["paper_id"], 0) + 1
+    return {r["paper_id"]: {"highlights": r["highlights"], "notes": r["notes"], "done": done.get(r["paper_id"], 0)} for r in rows}
 
 
 # ---- Import (notes exportées par arXivReader, bloc de données signé : notesync.py) ----

@@ -312,6 +312,10 @@ def parse_oai_day(xml_text, day, categories):
             continue
         primary = cats[0] in wanted
         if len(versions) == 1:
+            # la date de filtrage OAI est celle de la dernière modification des métadonnées : un vieil article
+            # à une seule version dont on vient de compléter le DOI n'est pas nouveau
+            if (datetime.fromisoformat(day) - datetime.fromisoformat(last)).days > NEW_MAX_DAYS:
+                continue
             kind = "new" if primary else "cross"
         elif (datetime.fromisoformat(day) - datetime.fromisoformat(last)).days <= 5:
             kind = "replace" if primary else "replace-cross"
@@ -334,6 +338,7 @@ def parse_oai_day(xml_text, day, categories):
 # mettre plusieurs minutes avant d'échouer : on ne l'essaie que pour la semaine écoulée, avec un délai
 # court, et l'API de recherche prend le relais (nouveaux articles et croisés, sans les nouvelles versions).
 OAI_DAYS = 7
+NEW_MAX_DAYS = 30  # une soumission en attente peut être annoncée longtemps après sa date de dépôt
 OAI_TIMEOUT = httpx.Timeout(40, connect=10, read=25)
 OAI_PAUSE = 3600  # après un échec, l'OAI-PMH n'est plus essayé pendant une heure
 _oai_failed = None  # moment (time.monotonic) du dernier échec

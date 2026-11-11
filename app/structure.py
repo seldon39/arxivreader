@@ -7,7 +7,7 @@ from bs4 import NavigableString, Tag
 
 from .arxiv import ID_RE, extract_ids
 
-STRUCTURE_VERSION = 15  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
+STRUCTURE_VERSION = 16  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
 
 SECTION_LEVELS = {
     "ltx_part": 0, "ltx_chapter": 0, "ltx_section": 1, "ltx_appendix": 1,
@@ -16,16 +16,16 @@ SECTION_LEVELS = {
 
 # Nature d'un énoncé d'après le premier mot de son étiquette (« Theorem 2.1 », « Lemme 3 »…).
 KIND_PREFIXES = [
-    ("theorem", ("theorem", "théorème", "theoreme", "thm", "main theorem")),
-    ("lemma", ("lemma", "lemme", "sublemma")),
-    ("proposition", ("proposition", "prop")),
-    ("corollary", ("corollary", "corollaire", "cor")),
-    ("definition", ("definition", "définition", "defn", "def")),
-    ("conjecture", ("conjecture",)),
+    ("theorem", ("theorem", "théorème", "theoreme", "thm", "main theorem", "satz", "teorema")),
+    ("lemma", ("lemma", "lemme", "sublemma", "lema", "hilfssatz")),
+    ("proposition", ("proposition", "prop", "property", "proposición", "proposizione", "criterion")),
+    ("corollary", ("corollary", "corollaire", "cor", "korollar", "folgerung", "corolario", "corollario")),
+    ("definition", ("definition", "définition", "defn", "def", "definición", "definizione")),
+    ("conjecture", ("conjecture", "vermutung", "conjetura")),
     ("claim", ("claim", "assertion", "fact", "fait", "step", "étape")),
-    ("remark", ("remark", "remarque", "note", "observation")),
-    ("example", ("example", "exemple", "counterexample", "contre-exemple")),
-    ("notation", ("notation", "convention", "setting", "assumption", "hypothesis", "hypothèse")),
+    ("remark", ("remark", "remarque", "note", "observation", "bemerkung", "observación", "osservazione")),
+    ("example", ("example", "exemple", "counterexample", "contre-exemple", "beispiel", "ejemplo")),
+    ("notation", ("notation", "convention", "setting", "assumption", "hypothesis", "hypothèse", "axiom", "condition", "annahme")),
     ("problem", ("problem", "problème", "question", "exercise", "exercice")),
 ]
 
@@ -292,8 +292,12 @@ def has_class(element, name):
 
 def classify(label, classes):
     word = label.lower()
+    first = re.match(r"[^\W\d_]+", word)
+    first = first.group(0) if first else ""
     for kind, prefixes in KIND_PREFIXES:
-        if any(word.startswith(prefix) for prefix in prefixes):
+        # abréviations (« thm », « prop », « cor », « def ») : le premier mot seulement, sinon « Corner » ou « Defect »
+        # passeraient pour un corollaire ou une définition
+        if any(first == prefix if len(prefix) <= 4 and " " not in prefix else word.startswith(prefix) for prefix in prefixes):
             return kind
     for cls in classes:
         if cls.startswith("ltx_theorem_"):

@@ -18,6 +18,7 @@ import httpx
 from . import db, s2
 from .arxiv import with_retry
 from .config import PAPERS
+from .feedprune import pack, unpack
 
 S2_BATCH = f"{s2.GRAPH}/paper/batch"
 STOPWORDS = set("""
@@ -145,7 +146,7 @@ def cached_embeddings(keys):
         rows = connection.execute(
             f"SELECT key, vector FROM embeddings WHERE key IN ({','.join('?' * len(keys))})", keys
         ).fetchall()
-    return {r["key"]: json.loads(r["vector"]) if r["vector"] else None for r in rows}
+    return {r["key"]: unpack(r["vector"]) for r in rows}
 
 
 def fetch_embeddings(keys, api_key=None, timeout=60):
@@ -173,7 +174,7 @@ def fetch_embeddings(keys, api_key=None, timeout=60):
                     connection.execute(
                         "INSERT INTO embeddings (key, vector, fetched_at) VALUES (?, ?, datetime('now')) "
                         "ON CONFLICT(key) DO UPDATE SET vector = excluded.vector, fetched_at = excluded.fetched_at",
-                        (key, json.dumps(vector) if vector else None),
+                        (key, pack(vector)),
                     )
     return True
 

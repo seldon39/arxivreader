@@ -31,9 +31,20 @@ def my_papers():
     return papers
 
 
+PAGE = 100
+MAX_PAGES = 5  # 500 citations au plus : au-delà, un article très cité resterait trop long à relever
+
+
 def fetch(key, api_key=None):
-    data = profile._get_s2(f"/paper/{key}/citations", {"fields": FIELDS, "limit": 100}, api_key) or {}
-    return [entry["citingPaper"] for entry in data.get("data") or [] if (entry.get("citingPaper") or {}).get("paperId")]
+    """Articles citants, page par page (Semantic Scholar ne garantit pas de donner les plus récents d'abord)."""
+    citing, offset = [], 0
+    for _ in range(MAX_PAGES):
+        data = profile._get_s2(f"/paper/{key}/citations", {"fields": FIELDS, "limit": PAGE, "offset": offset}, api_key) or {}
+        citing += [entry["citingPaper"] for entry in data.get("data") or [] if (entry.get("citingPaper") or {}).get("paperId")]
+        if data.get("next") is None:
+            break
+        offset = data["next"]
+    return citing
 
 
 def _store(connection, paper, cites):

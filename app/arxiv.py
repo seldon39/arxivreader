@@ -32,15 +32,21 @@ def parse_arxiv_id(text):
     if not match:
         raise ArxivError(f"Identifiant arXiv introuvable dans « {text} »")
     version = int(match.group(2)[1:]) if match.group(2) else None
-    return match.group(1), version
+    return strip_subject_class(match.group(1)), version
+
+
+def strip_subject_class(arxiv_id):
+    """math.DG/0211159 → math/0211159 : la forme des flux, de la recherche et de Semantic Scholar."""
+    return re.sub(r"^([a-z][a-z\-]*)\.[A-Z]{2}/", r"\1/", arxiv_id)
 
 
 def extract_ids(text):
     """Tous les identifiants arXiv distincts d'un texte, dans l'ordre d'apparition."""
     seen = []
     for match in ID_RE.finditer(text):
-        if match.group(1) not in seen:
-            seen.append(match.group(1))
+        found = strip_subject_class(match.group(1))
+        if found not in seen:
+            seen.append(found)
     return seen
 
 
