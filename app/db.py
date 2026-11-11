@@ -83,6 +83,13 @@ CREATE TABLE IF NOT EXISTS annotations (
     updated_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS annotations_paper ON annotations (paper_id);
+-- Notes supprimées (uid, article, date UTC) : portées par l'export, pour qu'un import d'un autre ordinateur ne les
+-- ressuscite pas (la modification la plus récente l'emporte) ; oubliées après environ un an
+CREATE TABLE IF NOT EXISTS annotation_deletions (
+    uid TEXT PRIMARY KEY,
+    paper_id TEXT NOT NULL,
+    deleted_at TEXT NOT NULL
+);
 -- Questions posées à Claude sur un article, et ses réponses
 CREATE TABLE IF NOT EXISTS ai_exchanges (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -151,6 +158,7 @@ def init():
             db.execute("ALTER TABLE annotations ADD COLUMN uid TEXT")
         db.execute("UPDATE annotations SET uid = lower(hex(randomblob(16))) WHERE uid IS NULL")
         db.execute("CREATE UNIQUE INDEX IF NOT EXISTS annotations_uid ON annotations (uid)")
+        _one_row_per_statement(db)
         columns = {row["name"] for row in db.execute("PRAGMA table_info(ai_exchanges)")}
         if "applied" not in columns:  # annotations proposées par la réponse déjà appliquées à l'article
             db.execute("ALTER TABLE ai_exchanges ADD COLUMN applied INTEGER DEFAULT 0")
@@ -160,6 +168,27 @@ def init():
             db.execute("ALTER TABLE ai_exchanges ADD COLUMN card INTEGER DEFAULT 0")
         db.execute(f"PRAGMA user_version = {safety.DB_VERSION}")
     _move_secrets()
+
+
+def _one_row_per_statement(db):
+    """Une seule ligne par énoncé, preuve et fiche de lecture et par article (deux requêtes simultanées pouvaient en
+    créer deux) : doublons existants fusionnés une fois (on garde celle qui a une note ou un état, puis la plus
+    récente), puis index unique partiel."""
+    if db.execute("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'annotations_single'").fetchone():
+        return
+    groups = {}
+    for row in db.execute("SELECT id, paper_id, kind, json_extract(target, '$.id') AS node, updated_at, "
+                          "(COALESCE(TRIM(note), '') != '' OR state IS NOT NULL) AS filled "
+                          "FROM annotations WHERE kind IN ('block', 'proof', 'general')"):
+        if row["kind"] == "general" or row["node"] is not None:
+            groups.setdefault((row["paper_id"], row["kind"], row["node"]), []).append(row)
+    for rows in groups.values():
+        rows.sort(key=lambda r: (r["filled"], r["updated_at"] or "", r["id"]), reverse=True)
+        for extra in rows[1:]:
+            db.execute("DELETE FROM annotations WHERE id = ?", (extra["id"],))
+    db.execute("CREATE UNIQUE INDEX annotations_single ON annotations (paper_id, kind, json_extract(target, '$.id')) "
+               "WHERE kind IN ('block', 'proof')")
+    db.execute("CREATE UNIQUE INDEX annotations_general ON annotations (paper_id) WHERE kind = 'general'")
 
 
 @contextmanager

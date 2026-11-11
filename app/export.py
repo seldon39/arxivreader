@@ -79,7 +79,8 @@ IMAGES = "images"
 
 def zone_images(paper_id, notes):
     """Images des zones du PDF de l'article : {id d'annotation : (chemin dans l'archive, fichier)} ; une zone sans
-    image enregistrée (export d'un autre ordinateur) n'en a pas."""
+    image enregistrée n'en a pas. Nommées par identifiant stable (celui de l'annotation partout), pas par numéro local :
+    l'import les rattache ainsi à leur zone (notesync.py)."""
     stem = re.sub(r"[^\w.-]+", "-", paper_id)  # « math/0601001 » : pas de sous-dossier
     found = {}
     for note in notes:
@@ -87,8 +88,31 @@ def zone_images(paper_id, notes):
         if note["kind"] == "highlight" and "rect" in pdf:
             path = annotations.image_path(note)
             if path.is_file():
-                found[note["id"]] = (f"{IMAGES}/{stem}-zone-{note['id']}.png", path)
+                found[note["id"]] = (f"{IMAGES}/{stem}-zone-{note['uid']}.png", path)
     return found
+
+
+FENCE = re.compile(r"\s{0,3}(`{3,}|~{3,})")
+SETEXT = re.compile(r"\s{0,3}(=+|-+)\s*")
+
+
+def _text(note):
+    """Texte d'une note pour le Markdown exporté : une ligne qui commence par « # » (ou un soulignement « === » sous
+    du texte) n'y devient pas un titre qui s'ajoute au plan du fichier ; une barre oblique la précède. Rien n'est
+    touché dans un bloc de code. Le bloc de données garde le texte tel quel (l'import ne lit que lui : aller-retour exact)."""
+    out, fence, previous = [], None, ""
+    for line in note.strip().splitlines():
+        marker = FENCE.match(line)
+        if fence:
+            if marker and marker.group(1)[0] == fence[0] and len(marker.group(1)) >= len(fence) and not line.strip().strip(fence[0]):
+                fence = None
+        elif marker:
+            fence = marker.group(1)
+        elif re.match(r"\s{0,3}#", line) or (SETEXT.fullmatch(line) and previous.strip()):
+            line = re.sub(r"^(\s*)", lambda m: m.group(1) + "\\", line, count=1)
+        out.append(line)
+        previous = line
+    return "\n".join(out)
 
 
 def paper_markdown(paper_id, language="fr", images=None):
@@ -118,9 +142,9 @@ def paper_markdown(paper_id, language="fr", images=None):
     bookmarks = [n for n in notes if n["kind"] == "bookmark" and n.get("target")]
     if not (sheet or blocks or highlights or bookmarks):
         # rien de lisible (emplacements de preuve seulement) : les données restent, pour l'import
-        return "\n".join(lines + [words["empty"], ""] + (["", notesync.data_block(paper, notes), ""] if notes else []))
+        return "\n".join(lines + [words["empty"], ""] + (["", notesync.data_block(paper, notes), ""] if notes or annotations.deletions_for(paper_id) else []))
     if sheet:
-        lines += [f"## {words['sheet']}", "", sheet["note"].strip(), ""]
+        lines += [f"## {words['sheet']}", "", _text(sheet["note"]), ""]
     if bookmarks:  # HTML dans l'ordre de l'article, puis PDF par page
         lines += [f"## {words['bookmarks']}", ""]
         spot = lambda n: (1, n["target"]["pdf"]["page"], -(n["target"]["pdf"].get("top") or 0)) if "pdf" in n["target"] \
@@ -143,7 +167,7 @@ def paper_markdown(paper_id, language="fr", images=None):
             state = f" — *{states[note['state']]}*" if note.get("state") in states else ""
             lines += [f"### {label}{state}", ""]
             if (note.get("note") or "").strip():
-                lines += [note["note"].strip() + _who(note, words), ""]
+                lines += [_text(note["note"]) + _who(note, words), ""]
     if highlights:
         lines += [f"## {words['highlights']}", ""]
         current = None  # section du passage précédent (titre répété seulement quand elle change)
@@ -170,7 +194,7 @@ def paper_markdown(paper_id, language="fr", images=None):
                     zone = _quote(note.get("quote"))
                 lines += [zone, ""]
             if (note.get("note") or "").strip():
-                lines += [note["note"].strip() + _who(note, words), ""]
+                lines += [_text(note["note"]) + _who(note, words), ""]
     # données de toutes les annotations, signées : l'import les recrée à l'identique (notesync.py)
     lines += ["", notesync.data_block(paper, notes), ""]
     return "\n".join(lines)
@@ -242,9 +266,10 @@ def library_zip(language="fr"):
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(LIBRARY_FILE, library_markdown(language))
         # articles qui ont de vraies notes, ou des emplacements de preuve indiqués à la main (à garder à l'import)
-        for paper_id in sorted(annotations.annotated_papers()):
+        # ou des suppressions de notes (à propager à l'import)
+        for paper_id in sorted(annotations.annotated_papers() | annotations.papers_with_deletions()):
             paper, notes = db.get_paper(paper_id), annotations.list_for(paper_id)
-            if paper and (has_notes(notes) or any(n["kind"] == "proof" for n in notes)):
+            if paper and (has_notes(notes) or any(n["kind"] == "proof" for n in notes) or annotations.deletions_for(paper_id)):
                 images = zone_images(paper_id, notes)
                 archive.writestr(filename(paper), paper_markdown(paper_id, language, images))
                 for inside, path in images.values():

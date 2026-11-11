@@ -3,6 +3,7 @@
 import base64
 import json
 import re
+import sqlite3
 import uuid
 
 from . import db
@@ -110,25 +111,32 @@ def create(paper_id, kind, target=None, color=None, quote=None, note=None, state
         raise ValueError("block without target")  # sinon une nouvelle ligne à chaque enregistrement
     if kind in ("bookmark", "note"):
         _check_bookmark(target or {})
-    with db.connect() as connection:
-        existing = None
-        if kind == "general":
-            existing = connection.execute(
-                "SELECT id FROM annotations WHERE paper_id = ? AND kind = 'general'", (paper_id,)).fetchone()
-        elif kind == "block":
-            existing = connection.execute(
-                "SELECT id FROM annotations WHERE paper_id = ? AND kind = 'block' AND json_extract(target, '$.id') = ?",
-                (paper_id, (target or {}).get("id"))).fetchone()
-        if not existing:
-            if not (uid and RESTORED_UID.fullmatch(uid)
-                    and not connection.execute("SELECT 1 FROM annotations WHERE uid = ?", (uid,)).fetchone()):
-                uid = uuid.uuid4().hex
-            cursor = connection.execute(
-                "INSERT INTO annotations (paper_id, kind, target, color, quote, note, state, author, uid, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))",
-                (paper_id, kind, json.dumps(target) if target else None, color, quote, note, state, author, uid,
-                 created_at if created_at and CREATED_AT.fullmatch(created_at) else None))
-            created = cursor.lastrowid
+    for attempt in (1, 2):  # (deuxième tour : une requête simultanée vient de créer la ligne unique de l'énoncé)
+        try:
+            with db.connect() as connection:
+                existing = None
+                if kind == "general":
+                    existing = connection.execute(
+                        "SELECT id FROM annotations WHERE paper_id = ? AND kind = 'general'", (paper_id,)).fetchone()
+                elif kind == "block":
+                    existing = connection.execute(
+                        "SELECT id FROM annotations WHERE paper_id = ? AND kind = 'block' AND json_extract(target, '$.id') = ?",
+                        (paper_id, (target or {}).get("id"))).fetchone()
+                if not existing:
+                    if not (uid and RESTORED_UID.fullmatch(uid)
+                            and not connection.execute("SELECT 1 FROM annotations WHERE uid = ?", (uid,)).fetchone()):
+                        uid = uuid.uuid4().hex
+                    cursor = connection.execute(
+                        "INSERT INTO annotations (paper_id, kind, target, color, quote, note, state, author, uid, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))",
+                        (paper_id, kind, json.dumps(target) if target else None, color, quote, note, state, author, uid,
+                         created_at if created_at and CREATED_AT.fullmatch(created_at) else None))
+                    created = cursor.lastrowid
+                    connection.execute("DELETE FROM annotation_deletions WHERE uid = ?", (uid,))  # remise : plus supprimée
+            break
+        except sqlite3.IntegrityError:
+            if attempt == 2:
+                raise
     if not existing:
         item = get(created)  # relu après l'enregistrement (fin du bloc « with »)
         if image:
@@ -175,17 +183,44 @@ def update(annotation_id, color=None, note=None, state=None, clear_state=False, 
     return get(annotation_id)
 
 
+def _forget(connection, annotation_id):
+    """Supprime la ligne et en garde la trace (uid, date) : l'export la porte, l'import d'un autre ordinateur ne la
+    ressuscite pas. Les traces de plus d'un an sont oubliées."""
+    row = connection.execute("SELECT uid, paper_id FROM annotations WHERE id = ?", (annotation_id,)).fetchone()
+    if row and row["uid"]:
+        connection.execute("INSERT OR REPLACE INTO annotation_deletions (uid, paper_id, deleted_at) "
+                           "VALUES (?, ?, datetime('now'))", (row["uid"], row["paper_id"]))
+    connection.execute("DELETE FROM annotation_deletions WHERE deleted_at < datetime('now', '-400 days')")
+    connection.execute("DELETE FROM annotations WHERE id = ?", (annotation_id,))
+
+
 def delete(annotation_id):
     item = get(annotation_id)
     if item and zone_of(item["target"]):
         image_path(item).unlink(missing_ok=True)
     with db.connect() as connection:
-        connection.execute("DELETE FROM annotations WHERE id = ?", (annotation_id,))
+        _forget(connection, annotation_id)
 
 
 def delete_for(paper_id):
+    """Article retiré de la bibliothèque : ses notes partent avec lui, sans trace (ce n'est pas une suppression de notes
+    à propager)."""
     with db.connect() as connection:
         connection.execute("DELETE FROM annotations WHERE paper_id = ?", (paper_id,))
+        connection.execute("DELETE FROM annotation_deletions WHERE paper_id = ?", (paper_id,))
+
+
+def deletions_for(paper_id):
+    """Notes supprimées de cet article, pour l'export : [{"uid", "deleted_at"}]."""
+    with db.connect() as connection:
+        rows = connection.execute("SELECT uid, deleted_at FROM annotation_deletions WHERE paper_id = ? ORDER BY uid",
+                                  (paper_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def papers_with_deletions():
+    with db.connect() as connection:
+        return {r["paper_id"] for r in connection.execute("SELECT DISTINCT paper_id FROM annotation_deletions")}
 
 
 def annotated_papers():
@@ -209,21 +244,27 @@ def set_proof(paper_id, node_id, mode, ref=None, start=None, end=None):
         target["ref"] = ref
     if mode == "passage":
         target.update(start=start, end=end or start)
-    with db.connect() as connection:
-        existing = _proof_row(connection, paper_id, node_id)
-        if existing:
-            connection.execute("UPDATE annotations SET target = ?, updated_at = datetime('now') WHERE id = ?",
-                               (json.dumps(target), existing["id"]))
-        else:
-            connection.execute("INSERT INTO annotations (paper_id, kind, target, uid) VALUES (?, 'proof', ?, ?)",
-                               (paper_id, json.dumps(target), uuid.uuid4().hex))
+    for attempt in (1, 2):  # (deuxième tour : une requête simultanée vient de créer la ligne)
+        try:
+            with db.connect() as connection:
+                existing = _proof_row(connection, paper_id, node_id)
+                if existing:
+                    connection.execute("UPDATE annotations SET target = ?, updated_at = datetime('now') WHERE id = ?",
+                                       (json.dumps(target), existing["id"]))
+                else:
+                    connection.execute("INSERT INTO annotations (paper_id, kind, target, uid) VALUES (?, 'proof', ?, ?)",
+                                       (paper_id, json.dumps(target), uuid.uuid4().hex))
+            break
+        except sqlite3.IntegrityError:
+            if attempt == 2:
+                raise
 
 
 def clear_proof(paper_id, node_id):
     with db.connect() as connection:
-        connection.execute(
-            "DELETE FROM annotations WHERE paper_id = ? AND kind = 'proof' AND json_extract(target, '$.id') = ?",
-            (paper_id, node_id))
+        row = _proof_row(connection, paper_id, node_id)
+        if row:
+            _forget(connection, row["id"])
 
 
 def proof_overrides(paper_id):
@@ -278,7 +319,9 @@ def import_one(paper_id, item):
               "author": item.get("author") if item.get("author") in AUTHORS else None,
               "updated_at": clean(item.get("updated_at"), 30) or "1970-01-01 00:00:00"}
     with db.connect() as connection:
-        existing = connection.execute("SELECT id, updated_at FROM annotations WHERE uid = ?", (item["uid"],)).fetchone()
+        existing = connection.execute("SELECT id, paper_id, updated_at FROM annotations WHERE uid = ?", (item["uid"],)).fetchone()
+        if existing and existing["paper_id"] != paper_id:
+            return "unchanged"  # même identifiant sur un autre article (annotation copiée) : on n'y touche pas
         if not existing and kind == "general":
             existing = connection.execute("SELECT id, updated_at FROM annotations WHERE paper_id = ? AND kind = 'general'",
                                           (paper_id,)).fetchone()
@@ -292,8 +335,52 @@ def import_one(paper_id, item):
             assignments = ", ".join(f"{k} = ?" for k in values)
             connection.execute(f"UPDATE annotations SET {assignments} WHERE id = ?", (*values.values(), existing["id"]))
             return "updated"
-        connection.execute(
-            "INSERT INTO annotations (paper_id, kind, uid, created_at, target, color, quote, note, state, author, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (paper_id, kind, item["uid"], clean(item.get("created_at"), 30) or values["updated_at"], *values.values()))
+        gone = connection.execute("SELECT deleted_at FROM annotation_deletions WHERE uid = ?", (item["uid"],)).fetchone()
+        if gone and values["updated_at"] <= gone["deleted_at"]:
+            return "unchanged"  # supprimée ici depuis cette version : elle ne revient pas
+        try:
+            connection.execute(
+                "INSERT INTO annotations (paper_id, kind, uid, created_at, target, color, quote, note, state, author, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (paper_id, kind, item["uid"], clean(item.get("created_at"), 30) or values["updated_at"], *values.values()))
+        except sqlite3.IntegrityError:
+            return "unchanged"  # (ligne unique de l'énoncé créée entre-temps)
+        connection.execute("DELETE FROM annotation_deletions WHERE uid = ?", (item["uid"],))  # refaite depuis : plus supprimée
         return "added"
+
+
+def import_deletion(paper_id, uid, deleted_at):
+    """Suppression venue d'un autre ordinateur : la note d'ici est supprimée si elle n'a pas été modifiée depuis
+    (la plus récente l'emporte) ; la trace est gardée pour les imports suivants. Renvoie "deleted" ou "unchanged"."""
+    if not (isinstance(uid, str) and 8 <= len(uid) <= 64 and isinstance(deleted_at, str) and CREATED_AT.fullmatch(deleted_at)):
+        return "unchanged"
+    with db.connect() as connection:
+        row = connection.execute("SELECT id, paper_id, updated_at, target FROM annotations WHERE uid = ?", (uid,)).fetchone()
+        if row and (row["paper_id"] != paper_id or (row["updated_at"] or "") > deleted_at):
+            return "unchanged"  # modifiée après sa suppression ailleurs (ou d'un autre article) : elle reste
+        if row:
+            target = json.loads(row["target"]) if row["target"] else None
+            if zone_of(target):
+                image_path({"paper_id": row["paper_id"], "id": row["id"]}).unlink(missing_ok=True)
+            connection.execute("DELETE FROM annotations WHERE id = ?", (row["id"],))
+        connection.execute("INSERT INTO annotation_deletions (uid, paper_id, deleted_at) VALUES (?, ?, ?) "
+                           "ON CONFLICT(uid) DO UPDATE SET deleted_at = MAX(deleted_at, excluded.deleted_at)",
+                           (uid, paper_id, deleted_at))
+    return "deleted" if row else "unchanged"
+
+
+def import_image(paper_id, uid, raw, replace=True):
+    """Image d'une zone du PDF venue de l'archive : posée sur l'annotation importée (`replace` faux : seulement si elle
+    n'en a pas). Image invalide ou annotation absente : ignorée."""
+    data = raw if isinstance(raw, bytes) and len(raw) <= MAX_IMAGE and raw.startswith(b"\x89PNG\r\n\x1a\n") else None
+    with db.connect() as connection:
+        row = connection.execute("SELECT id, paper_id, target FROM annotations WHERE uid = ?", (uid,)).fetchone()
+    if not data or not row or row["paper_id"] != paper_id or not zone_of(json.loads(row["target"] or "null")):
+        return False
+    path = image_path(row)
+    if path.exists() and not replace:
+        return False
+    from .library import write_atomic_bytes
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_atomic_bytes(path, data)
+    return True

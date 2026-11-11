@@ -3,7 +3,9 @@
 identifiant stable). Ce bloc est signé (Ed25519) par la clé de l'installation qui l'a exporté : à l'import, un fichier
 non signé, modifié ou d'une autre origine est refusé ; celui d'un autre ordinateur ne passe qu'une fois cet appareil
 accepté (« faire confiance »). Une annotation déjà présente (même identifiant) n'est remplacée que par une version plus
-récente ; énoncé, preuve et fiche de lecture (un seul par article) sont rapprochés par leur cible.
+récente ; énoncé, preuve et fiche de lecture (un seul par article) sont rapprochés par leur cible. Les suppressions
+(clé « deleted », facultative) suivent la même règle : une note modifiée après sa suppression ailleurs est gardée. Les
+images des zones du PDF viennent de l'archive (images/…-zone-<identifiant>.png).
 """
 
 import base64
@@ -116,8 +118,12 @@ PAPER_FIELDS = ("id", "arxiv_id", "version", "title", "authors", "source", "doi"
 
 def data_block(paper, notes):
     """Notes d'un article (fin de son fichier Markdown)."""
-    return _signed({"paper": {k: paper.get(k) for k in PAPER_FIELDS},
-                    "annotations": [{k: note.get(k) for k in FIELDS} for note in notes]})
+    payload = {"paper": {k: paper.get(k) for k in PAPER_FIELDS},
+               "annotations": [{k: note.get(k) for k in FIELDS} for note in notes]}
+    deleted = annotations.deletions_for(paper["id"])
+    if deleted:  # clé facultative (signée avec le reste) : un export sans suppressions reste identique à l'ancien format
+        payload["deleted"] = deleted
+    return _signed(payload)
 
 
 def library_block(papers, folder_list):
@@ -155,6 +161,28 @@ def _texts(files):
             yield item["name"], data.decode("utf-8", errors="replace")
 
 
+ZONE_IMAGE = re.compile(r"(?:.*/)?[^/]*-zone-([0-9a-f]{32})\.png", re.I)
+
+
+def _images(files):
+    """Images des zones du PDF des archives (images/…-zone-<identifiant>.png) : {identifiant de l'annotation : octets}.
+    Taille bornée ; une image dont le nom n'est pas celui d'aujourd'hui (ancien export, numéro local) est ignorée."""
+    found, total = {}, 0
+    for item in files:
+        if item["data"][:4] != b"PK\x03\x04":
+            continue
+        with zipfile.ZipFile(io.BytesIO(item["data"])) as archive:
+            for info in archive.infolist():
+                name = ZONE_IMAGE.fullmatch(info.filename) if info.filename.lower().endswith(".png") else None
+                if info.is_dir() or not name or info.file_size > annotations.MAX_IMAGE:
+                    continue
+                total += info.file_size
+                if total > MAX_TEXT:
+                    raise ImportError_("too large")
+                found[name.group(1).lower()] = archive.read(info)
+    return found
+
+
 def _verify(text):
     """Bloc de données vérifié : (payload, identifiant de la clé du signataire, appareil, empreinte) ; ImportError_
     sinon. Le bloc lu est le dernier du fichier (celui qu'ajoute l'export : une note peut citer le marqueur)."""
@@ -180,7 +208,7 @@ def import_files(files, accept=()):
     importé de leurs fichiers tant qu'ils ne sont pas acceptés)."""
     own = key_id(_raw(_private_key().public_key()))
     known = trusted()
-    report = {"papers": 0, "folders": 0, "added": 0, "updated": 0, "unchanged": 0, "missing": [], "rejected": [], "untrusted": {}}
+    report = {"papers": 0, "folders": 0, "added": 0, "updated": 0, "unchanged": 0, "deleted": 0, "missing": [], "rejected": [], "untrusted": {}}
     verified = []
     for name, text in _texts(files):
         try:
@@ -200,12 +228,13 @@ def import_files(files, accept=()):
         return report  # la page demande d'abord : rien n'est importé à moitié
     # bibliothèque (articles, même non annotés) d'abord, puis les notes, puis les dossiers (articles alors présents)
     verified.sort(key=lambda payload: 0 if "library" in payload else 1)
+    images = _images(files)
     for payload in verified:
         if "library" in payload:
             for paper in payload.get("library") or []:
                 _ensure_paper(paper, report)
         else:
-            _import_paper(payload, report)
+            _import_paper(payload, report, images)
     for payload in verified:
         for folder in payload.get("folders") or []:
             _import_folder(folder, report)
@@ -270,7 +299,7 @@ def _version_of_notes(paper, paper_id):
     return library.ensure_version(here, version)
 
 
-def _import_paper(payload, report):
+def _import_paper(payload, report, images=None):
     paper_id = _ensure_paper(payload["paper"], report)
     if not paper_id:
         return
@@ -278,3 +307,8 @@ def _import_paper(payload, report):
     for item in payload.get("annotations") or []:
         outcome = annotations.import_one(paper_id, item)
         report[outcome] += 1
+        if images and isinstance(item, dict) and item.get("uid") in images:  # zone du PDF : son image (même sans changement, si elle manque)
+            annotations.import_image(paper_id, item["uid"], images[item["uid"]], replace=outcome != "unchanged")
+    for gone in payload.get("deleted") or []:  # après les notes : une note modifiée plus tard qu'une suppression reste
+        if isinstance(gone, dict):
+            report[annotations.import_deletion(paper_id, gone.get("uid"), gone.get("deleted_at"))] += 1

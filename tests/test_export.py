@@ -113,7 +113,7 @@ class Export(unittest.TestCase):
         content, name, media = export.paper_export(pid, "fr")
         self.assertEqual((name, media), ("0806.2370 Toeplitz operators on.zip", "application/zip"))
         archive = zipfile.ZipFile(io.BytesIO(content))
-        inside = f"images/0806.2370-zone-{zone['id']}.png"
+        inside = f"images/0806.2370-zone-{zone['uid']}.png"
         self.assertEqual(archive.namelist(), ["0806.2370 Toeplitz operators on.md", inside])
         self.assertEqual(archive.read(inside), b"\x89PNG\r\n\x1a\nzone")
         markdown = archive.read("0806.2370 Toeplitz operators on.md").decode()

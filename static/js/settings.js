@@ -552,6 +552,7 @@ async function importNotes(list) {
       report = await api.importNotes(files, unknown.map(([key]) => key));
     }
     const parts = [t("settings.notesImported", { added: report.added, updated: report.updated })];
+    if (report.deleted) parts.push(t("settings.notesImportedDeleted", { n: report.deleted }));
     if (report.papers) parts.push(t("settings.notesImportedPapers", { n: report.papers }));
     if (report.folders) parts.push(t("settings.notesImportedFolders", { n: report.folders }));
     if (report.rejected.length) parts.push(t("settings.notesImportRejected", { n: report.rejected.length }));
