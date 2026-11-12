@@ -1831,7 +1831,7 @@ def update_settings(values: dict):
     allowed = {"language", "theme", "fontSize", "readingWidth", "proofsCollapsed", "tocOpen", "panelOpen", "panelWidth", "tocWidth", "paperFont", "marginMarks", "mathRenderer",
                "feedCategories", "feedTypes", "s2ApiKey", "feedSort", "feedSortS2", "aiModel", "notifyFollowed",
                "aiProvider", "aiLocalUrl", "aiLocalModel", "checkUpdates", "aiFontSize", "notifyCitations", "readerView",
-               "citingCollapsed", "followedCollapsed", "geminiApiKey", "aiGeminiModel", "profileOpen",
+               "citingCollapsed", "followedCollapsed", "geminiApiKey", "aiGeminiModel", "mistralApiKey", "aiMistralModel", "profileOpen",
                "aiClaudeEffort", "aiCodexModel", "aiCodexEffort", "aiGeminiEffort", "zoteroApiKey", "zoteroAutoSync", "onboarded", "aiProfile",
                "aiReviewMode", "aiSecond", "aiVerifyModel", "aiVerifyEffort", "aiDefault", "feedNewVersions", "newVersionsCollapsed"}
     values = {k: v for k, v in values.items() if k in allowed}
@@ -1876,10 +1876,12 @@ def _valid_setting(key, value):
         return isinstance(value, str) and len(value) <= 200 and value.isprintable()
     if key == "geminiApiKey":
         return value == "" or providers.valid_gemini_key(value)
+    if key == "mistralApiKey":
+        return value == "" or providers.valid_mistral_key(value)
     if key == "zoteroApiKey":
         return isinstance(value, str) and (value == "" or re.fullmatch(r"[A-Za-z0-9]{16,64}", value) is not None)
-    if key in ("aiGeminiModel", "aiCodexModel", "aiModel", "aiVerifyModel"):
-        return providers.valid_model_name(value) and value not in ("codex", "gemini")
+    if key in ("aiGeminiModel", "aiMistralModel", "aiCodexModel", "aiModel", "aiVerifyModel"):
+        return providers.valid_model_name(value) and value not in providers.KEY_PROVIDERS
     if key in ("aiClaudeEffort", "aiCodexEffort", "aiGeminiEffort", "aiVerifyEffort"):
         return isinstance(value, str) and providers.valid_effort(value)
     if key == "s2ApiKey":

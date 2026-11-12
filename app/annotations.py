@@ -85,7 +85,7 @@ def get(annotation_id):
     return _row(row) if row else None
 
 
-AUTHORS = (None, "claude", "codex", "gemini", "local")  # annotation proposée par l'IA, acceptée
+AUTHORS = (None, "claude", "codex", "gemini", "mistral", "local")  # annotation proposée par l'IA, acceptée
 
 
 RESTORED_UID = re.compile(r"[0-9a-f]{32}")
