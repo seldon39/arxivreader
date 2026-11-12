@@ -352,8 +352,8 @@ class Placement(Setup):
         self.assertEqual(strip_notes(one), ONE)
         self.assertEqual(strip_notes(main_text), MAIN)
         self.assertEqual(todo_before(one, "Statement note"), "Let $x \\in \\mathbb{R}$. Then")
-        self.assertIn("{Theorem 2.1 (Main): Statement note $x \\in \\mathbb{R}$}", one)
-        self.assertEqual(todo_before(one, "Preuve de Theorem 2.1 --- à revoir"), "\\[")  # preuve qui commence par une formule
+        self.assertIn("{Theorem~\\ref{thm:main} (Main): Statement note $x \\in \\mathbb{R}$}", one)
+        self.assertEqual(todo_before(one, "Preuve de Theorem~\\ref{thm:main} --- à revoir"), "\\[")  # preuve qui commence par une formule
         self.assertEqual(todo_before(one, "Align note"), r"\begin{align}")
         self.assertEqual(todo_before(one, "Item note"), r"\item the second claim holds.")
         self.assertEqual(todo_before(main_text, "Footnote note"), r"Text with a footnote\footnote{A footnote that")
@@ -473,7 +473,7 @@ class EndNotes(Setup):
         one, main_tex = self.annotated("todo"), self.annotated("todo", "main.tex")
         margin = next(line for line in one.splitlines() if is_todo(line) and "A long remark" in line)
         self.assertTrue(margin.startswith("\\arxivreadertodo[color=orange!30,size=\\arxivreaderNoteSize]{"
-                                          "\\arxivreaderNoteMark{1}Theorem 2.1 (Main): A long remark"), margin)
+                                          "\\arxivreaderNoteMark{1}Theorem~\\ref{thm:main} (Main): A long remark"), margin)
         self.assertTrue(margin.endswith(" about~\\dots{} \\arxivreaderEndRef{1}}% [arXivReader]"), margin)
         self.assertNotIn("Lastwords", margin)
         self.assertIn("% " + self.LONG, one)  # texte entier aussi dans le bloc de commentaires
@@ -566,6 +566,51 @@ class TodoText(unittest.TestCase):
         self.assertTrue(long.endswith("\\dots{}") and len(long) < 320)
         cut = texexport.short_tex("x" * 290 + " $\\alpha + \\beta + \\gamma$", known)
         self.assertTrue(cut.endswith("\\dots{}") and "$" not in cut)  # formule jamais coupée
+
+    def references_known(self, eqref=True):
+        structure = {"equations": {"eqA": {"label": "(1.2)"}, "eqB": {"label": "(1.3)"}, "gone": {"label": "(9.9)"}},
+                     "labels": {"thmA": "tex-lbl-thmA", "One": "tex-lbl-thmA", "eqA": None},
+                     "nodes": [{"id": "tex-lbl-thmA", "label": "Theorem 2.1"}, {"id": "tex-txt-x", "label": "Lemma 3"}],
+                     "bibliography": [{"id": "bib.Smith20", "label": "1"}, {"id": "bib.Doe19", "label": "2"}]}
+        known = texexport.Known({"mathbb"})
+        known.refs = texexport.references(structure, "\\label{eqA} \\label{eqB} \\label{thmA} \\label{One}", eqref)
+        return known
+
+    def references_known_fr(self):
+        known = self.references_known()
+        known.refs["node"]["lemma 2.1"] = "thmA"  # (énoncé nommé « Lemma » par le document, « Lemme » dans la note)
+        return known
+
+    def test_references(self):
+        """Numéros écrits dans une note → \\eqref, \\ref, \\cite (structure de la dernière compilation) ; le reste
+        inchangé."""
+        known = self.references_known()
+        self.assertEqual(texexport.inline_tex("By (1.2) and Theorem 2.1, see [Smith20, Lemma 3] and [2].", known),
+                         "By \\eqref{eqA} and Theorem~\\ref{thmA}, see \\cite[Lemma 3]{Smith20} and \\cite{Doe19}.")
+        unknown = texexport.inline_tex("(9.9), Lemma 3, [Other21], (1.4), Section 2, [text](http://x)", known)
+        self.assertNotIn("\\ref", unknown)  # étiquette absente de la source, énoncé sans \label, clé inconnue…
+        self.assertNotIn("\\cite", unknown)
+        self.assertEqual(texexport.inline_tex("$f(1.2)$ and **Theorem 2.1**", known),
+                         "$f(1.2)$ and \\textbf{Theorem~\\ref{thmA}}")  # jamais dans une formule
+        self.assertEqual(texexport.inline_tex("\\cite[p. 3]{Smith20} \\eqref{eqB} \\ref{nope}", known),
+                         "\\cite[p. 3]{Smith20} \\eqref{eqB} \\textbackslash{}ref\\{nope\\}")
+        self.assertEqual(texexport.short_tex("Theorem 2.1: see (1.3)", known), "Theorem~\\ref{thmA}: see \\eqref{eqB}")
+        self.assertEqual(texexport.short_tex("Theorem 2.1: see (1.3)", known, limit=20), "Theorem~\\ref{thmA}: see\\dots{}")
+        self.assertEqual(texexport.inline_tex("(1.2)", self.references_known(eqref=False)), "(\\ref{eqA})")  # sans amsmath
+        self.assertEqual(texexport.inline_tex("(1.2) and [2]", {"mathbb"}), "(1.2) and [2]")  # renvois inconnus
+        for other in ("Theorem 2.1 of [Smith20]", "In [1] Theorem 2.1", "Smith's Theorem 2.1", "the (1.2) of [Doe19]",
+                      "On [1, 2] it holds", "a[2] and x_[1]", "`see (1.2)`"):
+            self.assertNotIn("\\ref", texexport.short_tex(other, known), other)  # numéro d'un autre article, intervalle, code
+            self.assertNotIn("\\cite{Smith20,", texexport.short_tex(other, known), other)
+        self.assertEqual(texexport.short_tex("Lemme 2.1 et\nTheorem\n2.1, [1,\nThm 3]", self.references_known_fr()),
+                         "Lemme~\\ref{thmA} et Theorem~\\ref{thmA}, \\cite[Thm 3]{Smith20}")
+        mislabelled = {"equations": {}, "labels": {"thmA": "tex-lbl-thmA"}, "bibliography": [],
+                       "nodes": [{"id": "tex-lbl-thmA", "label": "Theorem 2", "anchors": ["Item.4", "thm.1.3"]}]}
+        refs = texexport.references(mislabelled, "\\label{thmA}", True)
+        self.assertEqual(refs["node"], {"theorem 1.3": "thmA"})  # numéro de l'ancre de hyperref, pas celui d'un \item
+        block = texexport.comment_block({"title": "T", "note": "See (1.2) and $x_{(1.3)}$."}, texexport.WORDS["fr"], known)
+        self.assertIn("% Renvois : (1.2) = \\eqref{eqA}", block)
+        self.assertNotIn("eqB", "\n".join(block))
 
     def test_comment_block(self):
         block = texexport.comment_block({"title": "T\nwith newline", "state": "à revoir", "who": "Claude",
@@ -774,12 +819,12 @@ class Routes(Setup):
         self.assertEqual(response.headers["content-disposition"],
                          f"attachment; filename=\"my draft annote.zip\"; filename*=UTF-8''{quote('my draft annoté.zip')}")
         with zipfile.ZipFile(io.BytesIO(response.content)) as archive:  # mise en page « wide » par défaut
-            self.assertIn("\\arxivreadertodo[color=orange!30,size=\\arxivreaderNoteSize]{Theorem 2.1 (Main) --- à revoir: A note}% [arXivReader]",
+            self.assertIn("\\arxivreadertodo[color=orange!30,size=\\arxivreaderNoteSize]{Theorem~\\ref{thm:main} (Main) --- à revoir: A note}% [arXivReader]",
                           archive.read("my draft (annoté)/sec/one.tex").decode("utf-8"))
             self.assertIn("7 pt (\\arxivreaderNoteSize)", archive.read("my draft (annoté)/LISEZMOI-arXivReader.txt").decode("utf-8"))
         response = self.client.get(f"/api/papers/{pid}/tex-annotated?mode=todo&lang=en&layout=keep")
         with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
-            self.assertIn("\\arxivreadertodo[color=orange!30,size=\\scriptsize]{Theorem 2.1 (Main) --- to review: A note}% [arXivReader]",
+            self.assertIn("\\arxivreadertodo[color=orange!30,size=\\scriptsize]{Theorem~\\ref{thm:main} (Main) --- to review: A note}% [arXivReader]",
                           archive.read("my draft (annotated)/sec/one.tex").decode("utf-8"))
             self.assertNotIn("Layout of the margin notes", archive.read("my draft (annotated)/README-arXivReader.txt").decode("utf-8"))
         self.assertEqual(self.client.get(f"/api/papers/{pid}/tex-annotated/summary?mode=todo&layout=keep").json()["layout"], "keep")

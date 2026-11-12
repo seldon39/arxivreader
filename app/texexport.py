@@ -120,7 +120,7 @@ WORDS = {
                       "et finit par « % [/arXivReader] » ; en mode notes en marge, les lignes \\arxivreadertodo et le",
                       "bloc ajouté juste avant \\begin{{document}} portent aussi la marque « [arXivReader] ». Cherchez",
                       "« [arXivReader] » dans les fichiers .tex."],
-           "endTitle": "Notes de relecture (arXivReader)", "endPage": "en marge, page",
+           "refs": "Renvois", "endTitle": "Notes de relecture (arXivReader)", "endPage": "en marge, page",
            "endnotes": ["Notes longues ({n}) : la marge n'en montre que le début, suivi d'un renvoi « → note N, p. X » ;",
                         "leur texte entier est dans « Notes de relecture (arXivReader) », sur les dernières pages (ajoutées",
                         "juste avant \\end{document}, après la bibliographie : les pages d'avant ne changent pas). Les",
@@ -182,7 +182,7 @@ WORDS = {
                       "with \"% [/arXivReader]\"; in margin-note mode, the \\arxivreadertodo lines and the block added",
                       "just before \\begin{{document}} carry the mark \"[arXivReader]\" too. Search for \"[arXivReader]\"",
                       "in the .tex files."],
-           "endTitle": "Review notes (arXivReader)", "endPage": "in the margin, page",
+           "refs": "References", "endTitle": "Review notes (arXivReader)", "endPage": "in the margin, page",
            "endnotes": ["Long notes ({n}): the margin shows only their beginning, followed by a reference \"→ note N, p. X\";",
                         "their full text is in \"Review notes (arXivReader)\", on the last pages (added just before",
                         "\\end{document}, after the bibliography: the pages before do not change). The page numbers of the",
@@ -442,8 +442,9 @@ def one_line(text, limit=None):
     return text
 
 
-def comment_block(entry, words):
-    """Lignes du bloc de commentaires d'une note (jamais interprétées par TeX : chaque ligne commence par %)."""
+def comment_block(entry, words, known=None):
+    """Lignes du bloc de commentaires d'une note (jamais interprétées par TeX : chaque ligne commence par %) ; avec les
+    renvois du document (`known`) : une ligne qui donne leurs commandes (« (4.75) = \\eqref{…} »)."""
     title = entry["title"]
     if entry.get("state"):
         title += f" — {entry['state']}"
@@ -454,6 +455,9 @@ def comment_block(entry, words):
         lines.append("% " + words["quote"].format(quote=one_line(entry["quote"], MAX_QUOTE)))
     for line in (entry.get("note") or "").strip("\n").splitlines() if (entry.get("note") or "").strip() else []:
         lines.append(f"% {line}" if line.strip() else "%")
+    refs = ref_summary(f"{entry.get('quote') or ''}\n{entry.get('note') or ''}", known) if known is not None else ""
+    if refs:
+        lines.append(f"% {words['refs']} : {one_line(refs)}")
     lines.append(f"% {END_MARK}")
     return lines
 
@@ -669,19 +673,30 @@ def short_tex(text, known, limit=MAX_SHORT, word=False):
         if formula is not None and _safe_math(formula, known) and not re.search(r"\n\s*\n", formula):
             pieces.append((formula, True))
         elif formula is not None and len(formula) > 30:  # longue formule refusée : pas de code illisible en marge
-            pieces.append(("[…]", False))
+            pieces.append(("[…]", None))
         else:
-            pieces.append((match.group(0).replace("\\$", "$"), False))
+            pieces.append((match.group(0).replace("\\$", "$"), None))  # (formule refusée : ni Markdown ni renvoi)
         pos = match.end()
     pieces.append(((text or "")[pos:], False))
     merged = []
-    for part, is_math in pieces:  # Markdown retiré des morceaux de texte seulement
-        if not is_math:
-            for pattern, replacement in MARKDOWN:
-                part = pattern.sub(replacement, part)
-        merged.append((part, is_math))
+    for part, is_math in pieces:  # Markdown retiré des morceaux de texte seulement ; renvois : \eqref, \ref, \cite
+        if is_math is False:  # (code entre accents graves : sans renvoi)
+            for number, segment in enumerate(re.split(r"(`+[^`]*`+)", part)):
+                for pattern, replacement in MARKDOWN:
+                    segment = pattern.sub(replacement, segment)
+                merged += [(segment, False)] if number % 2 else _ref_pieces(segment, known)
+            continue
+        merged.append((part, bool(is_math)))
     out, used, cut = [], 0, False
     for part, is_math in merged:
+        if isinstance(is_math, str):  # renvoi : jamais coupé
+            shown = " ".join(part.split())
+            if used + len(shown) > limit:
+                cut = True
+                break
+            out.append(is_math)
+            used += len(shown)
+            continue
         if is_math:
             part = " ".join(part.split())
             if used + len(part) + 2 > limit:
@@ -773,7 +788,7 @@ def inline_tex(text, known):
     le reste échappé."""
     out, pos = [], 0
     for match in INLINE.finditer(text):
-        out.append(_breakable(text[pos:match.start()]))
+        out.append(_plain(text[pos:match.start()], known))
         pos = match.end()
         groups = match.groups()
         if groups[0]:
@@ -792,7 +807,7 @@ def inline_tex(text, known):
             out.append("\\textbf{" + inline_tex(groups[9], known) + "}")
         else:
             out.append("\\emph{" + inline_tex(groups[10], known) + "}")
-    out.append(_breakable(text[pos:]))
+    out.append(_plain(text[pos:], known))
     return re.sub(r" {2,}", " ", "".join(out)).strip()
 
 
@@ -1143,6 +1158,139 @@ def _known_words(text):
     return known
 
 
+# ---------- Renvois : \eqref, \ref, \cite à la place des numéros écrits dans les notes ----------
+
+class Known(set):
+    """Commandes et environnements disponibles (_known_words), et renvois du document (references)."""
+    refs = None
+
+
+NUMBER = r"\d+(?:\.\d+)*[a-z]?"
+REF_TEXT = re.compile(r"\\(cite[tp]?|ref|eqref|cref|Cref|autoref|pageref)\s*(\[[^\[\]{}]*\])?\s*\{([^{}]*)\}"
+                      r"|(?<![\w\\^_\]])\[([^\[\]]{1,80})\](?!\()"
+                      rf"|(?<![\w^_])\(({NUMBER})\)(?!\w)"
+                      rf"|\b([^\W\d_]{{2,}})(\.?)(?:\s+|~)({NUMBER})(?!\.?\d)")
+# noms d'énoncés écrits en français dans une note, pour un document en anglais (le mot écrit est gardé)
+KIND_NAMES = {"théorème": "theorem", "lemme": "lemma", "corollaire": "corollary", "définition": "definition",
+              "remarque": "remark", "remarques": "remarks", "exemple": "example", "hypothèse": "assumption",
+              "proposition": "proposition", "conjecture": "conjecture", "thm": "theorem", "lem": "lemma",
+              "prop": "proposition", "cor": "corollary", "def": "definition", "rem": "remark"}
+# « Theorem 4.3 of [KMM19] », « in [3] Theorem 1.1 », « Ma–Marinescu's Theorem 1.1 » : numéro d'un autre article
+OTHER_AFTER = re.compile(r"\s*,?\s*(?:of|in|from|de|du|des|dans|chez|d['’])\s*(?:\[|\\cite|[A-Z])")
+OTHER_BEFORE = re.compile(r"(?:\]|\\cite\w*\s*(?:\[[^\]]*\])?\s*\{[^{}]*\}|[A-Z][\w–-]*['’]s?)\s*,?\s*(?:the\s+|le\s+|la\s+|l['’])?$")
+# « on [1, 2] », « dans [0, 1] » : intervalle, pas deux références
+INTERVAL_BEFORE = re.compile(r"(?:\b(?:interval|intervalle|on|in|over|sur|dans|de|from)|∈)\s*$", re.I)
+BASE_REFS = {"cite", "ref", "pageref"}  # (les autres : commandes que la source emploie, \eqref : amsmath)
+
+
+def references(structure, text, eqref):
+    """Renvois du document, d'après la structure de la dernière compilation, gardés seulement si l'étiquette est
+    encore dans la source (\\label) et désigne un seul objet : équations (« (1.17) » → étiquette), énoncés
+    (« lemma 4.2 » → étiquette), bibliographie (clé et numéro affiché, « 2 » → clé)."""
+    labels = set(re.findall(r"\\label\s*\{([^{}]+)\}", text))
+
+    def unique(pairs):
+        found = {}
+        for name, key in pairs:
+            found.setdefault(name, set()).add(key)
+        return {name: keys.pop() for name, keys in found.items() if len(keys) == 1}
+    def anchored(shown, anchors):
+        """Nom affiché, son numéro confirmé par les ancres de hyperref (« thm.1.3 ») quand il y en a : la structure peut
+        se tromper (numéro d'un \\item étiqueté dans l'énoncé) ; numéro de l'ancre s'il n'y en a qu'un, sinon ""."""
+        shown = " ".join((shown or "").split())
+        numbers = {m.group(1) for a in anchors or [] for m in [re.fullmatch(r"(?!Item\.)[A-Za-z*]+\.(\d+(?:\.\d+)*)", a)] if m}
+        number = re.search(rf"{NUMBER}", shown)
+        if not numbers or (number and number.group(0) in numbers):
+            return shown
+        return shown[:number.start()] + numbers.pop() + shown[number.end():] if number and len(numbers) == 1 else ""
+
+    def agrees(shown, anchors):
+        return anchored(shown, anchors) == " ".join((shown or "").split())
+    equations = unique(((value or {}).get("label") or "", key) for key, value in (structure.get("equations") or {}).items()
+                       if key in labels and re.fullmatch(rf"\({NUMBER}\)", (value or {}).get("label") or "")
+                       and agrees((value or {}).get("label") or "", (value or {}).get("anchors")))
+    names = structure.get("labels") or {}
+    nodes = unique((anchored(node.get("label"), node.get("anchors")).lower(), node["id"][len("tex-lbl-"):])
+                   for node in structure.get("nodes") or [] if node.get("id", "").startswith("tex-lbl-")
+                   and node["id"][len("tex-lbl-"):] in labels and names.get(node["id"][len("tex-lbl-"):]) == node["id"]
+                   and re.fullmatch(rf"[^\W\d_]{{2,}}\.? {NUMBER}", anchored(node.get("label"), node.get("anchors"))))
+    keys = {item["id"][4:] for item in structure.get("bibliography") or []
+            if item.get("id", "").startswith("bib.") and re.fullmatch(r"[^\s{},%#\\~]+", item["id"][4:])}
+    bib = unique((name.lower(), item["id"][4:]) for item in structure.get("bibliography") or [] if item["id"][4:] in keys
+                 for name in {item["id"][4:], (item.get("label") or "").strip()} if name)
+    return {"eq": equations, "node": nodes, "bib": bib, "keys": keys, "labels": labels, "eqref": eqref}
+
+
+def _ref_tex(match, known):
+    """LaTeX d'un renvoi trouvé par REF_TEXT, ou None (inconnu du document : le texte reste tel quel)."""
+    refs = known.refs
+    if match.group(1):  # commande écrite dans la note : gardée si ses clés existent
+        command, option = match.group(1), match.group(2) or ""
+        keys = [key.strip() for key in match.group(3).split(",")]
+        if not all(keys) or (command not in BASE_REFS and command not in known
+                             and not (command == "eqref" and refs["eqref"])):
+            return None
+        if command.startswith("cite"):
+            if not all(key in refs["keys"] for key in keys):
+                return None
+        elif not all(key in refs["labels"] for key in keys) or (len(keys) > 1 and command not in ("cref", "Cref")):
+            return None
+        option = f"[{_text_chars(option[1:-1])}]" if option else ""
+        return f"\\{command}{option}{{{','.join(keys)}}}"
+    if match.group(4) is not None:  # [clé], [2], [clé, Theorem 3], [2, 5]
+        parts = [part.strip() for part in match.group(4).split(",")]
+        keys = []
+        while parts and parts[0].lower() in refs["bib"]:
+            keys.append(refs["bib"][parts.pop(0).lower()])
+        if not keys:
+            return None
+        option = " ".join(", ".join(parts).split())
+        return "\\cite" + (f"[{_text_chars(option)}]" if option else "") + "{" + ",".join(keys) + "}"
+    if match.group(5):
+        key = refs["eq"].get(f"({match.group(5)})")
+        return None if not key else (f"\\eqref{{{key}}}" if refs["eqref"] else f"(\\ref{{{key}}})")
+    word = match.group(6).lower()
+    key = refs["node"].get(f"{word} {match.group(8)}") or refs["node"].get(f"{KIND_NAMES.get(word, word)} {match.group(8)}")
+    return None if not key else f"{_text_chars(match.group(6) + match.group(7))}~\\ref{{{key}}}"
+
+
+def _ref_pieces(text, known):
+    """Texte découpé en (morceau, None) et (renvoi tel qu'écrit, son LaTeX)."""
+    if not getattr(known, "refs", None):
+        return [(text, None)]
+    pieces, pos = [], 0
+    for match in REF_TEXT.finditer(text):
+        before, after = text[max(0, match.start() - 40):match.start()], text[match.end():match.end() + 40]
+        if (match.group(5) or match.group(6)) and (OTHER_BEFORE.search(before) or OTHER_AFTER.match(after)):
+            continue  # numéro d'un autre article
+        if match.group(4) is not None and re.fullmatch(r"\s*\d+\s*,\s*\d+\s*", match.group(4)) \
+                and INTERVAL_BEFORE.search(before):
+            continue
+        tex = _ref_tex(match, known)
+        if tex:
+            pieces += [(text[pos:match.start()], None), (match.group(0), tex)]
+            pos = match.end()
+    pieces.append((text[pos:], None))
+    return [piece for piece in pieces if piece[0]]
+
+
+def _plain(text, known):
+    """_breakable, renvois du document en \\eqref, \\ref, \\cite."""
+    return "".join(_breakable(part) if tex is None else tex for part, tex in _ref_pieces(text, known))
+
+
+def ref_summary(text, known):
+    """« (4.75) = \\eqref{…} ; [2] = \\cite{…} » : renvois d'une note (hors formules), pour son bloc de commentaires."""
+    found = []
+    for part, tex in _ref_pieces(re.sub(r"\$\$[\s\S]*?\$\$|\$[^$]*\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)", " ", text or ""), known):
+        if tex is None:
+            continue
+        item = f"{' '.join(part.split())} = {tex.replace('~', ' ')}"
+        if part.strip() != tex and item not in found:
+            found.append(item)
+    return " ; ".join(found)
+
+
 def _todo_setup(text):
     """Préambule (texte développé sans commentaires) : (todonotes déjà chargé, avec l'option disable, \\todo défini
     par le document)."""
@@ -1219,6 +1367,9 @@ class Plan:
         if self.located is None:
             self.warnings.append(self.words["warn"]["noPositions"])
         self.saved = export._structure(pid)
+        self.known = Known(_known_words(self.located["text"]) if self.located else set())
+        if self.located:  # \eqref : amsmath chargé (ses environnements sont alors disponibles)
+            self.known.refs = references(self.saved or {}, self.located["text"], "env:pmatrix" in self.known)
         self.notes = [n for n in annotations.list_for(pid) if n["kind"] != "proof" and export.has_notes([n])]
         self.lost = {n["uid"] for n in texfile.notes_to_check(pid)}
         self.lost_context = texfile.lost_notes(paper_dir(pid)) if self.lost else {}  # énoncé d'avant la recompilation
@@ -1677,7 +1828,7 @@ class Plan:
                 entry["line"] = line  # note en marge remontée avant la formule, la boîte… : le commentaire avec elle
             entry["todoLine"] = line
             if known is None:
-                known = self.known = _known_words(self.located["text"]) if self.located else set()
+                known = self.known
             entry["short"] = self._short(entry, known)
             entry["long"] = self.endnotes and is_long(self._margin_title(entry), entry.get("note"), self.layout)
 
@@ -1879,7 +2030,7 @@ def _header(plan, counts, date):
     lines.append(f"% {END_MARK}")
     sheet = [e for e in plan.entries if e["kind"] == "general"]
     for entry in sheet:
-        lines += comment_block(entry, words)
+        lines += comment_block(entry, words, plan.known)
     marks = sorted((e for e in plan.entries if e["kind"] == "bookmark"), key=lambda e: (e["page"] or 0, e["id"]))
     if marks:
         lines.append(f"% {MARK} {words['bookmarks']}")
@@ -1890,7 +2041,7 @@ def _header(plan, counts, date):
     unplaced = sorted((e for e in plan.entries if e["precision"] == "none"), key=lambda e: (e["page"] or 0, e["id"]))
     for entry in unplaced:
         title = entry["title"] + (f" ({words['reason'][entry['reason']]})" if entry.get("reason") in words["reason"] else "")
-        block = comment_block({**entry, "title": words["unplacedOne"].format(title=title)}, words)
+        block = comment_block({**entry, "title": words["unplacedOne"].format(title=title)}, words, plan.known)
         lines += block
     return lines
 
@@ -2322,7 +2473,7 @@ def _insertions(plan):
             par = PAR_MACRO if plan.wide and _ends_paragraph(plan, name, line) else ""
             for entry, part in sorted(items, key=lambda item: (item[0]["rank"], item[0]["id"], item[1] == "todo")):
                 if part == "comment":
-                    new += comment_block(entry, plan.words)
+                    new += comment_block(entry, plan.words, plan.known)
                 else:
                     color = COLORS.get(entry.get("color") or "", NOTE_COLOR) if entry["kind"] in ("highlight", "zone") else NOTE_COLOR
                     size = SIZE_MACRO if plan.wide else "\\scriptsize"

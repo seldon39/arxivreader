@@ -1,4 +1,4 @@
-# arXivReader 1.14.0-beta.4 — copie .tex annotée
+# arXivReader 1.14.0-beta.5 — copie .tex annotée
 
 Bêta locale, issue de la 1.13.3 : seulement sur cet ordinateur, rien sur GitHub. Elle a sa propre bibliothèque
 (`~/Library/Application Support/arXivReader Beta`) et ne touche pas à l'application habituelle.
@@ -32,6 +32,15 @@ Il faut deux passes de LaTeX (latexmk les fait) : après une seule, les numéros
 y compris les matrices et systèmes (`pmatrix`, `cases`, `aligned`… si le document charge amsmath), et le passage
 cité aussi (il était recopié en code brut). Les lettres grecques et symboles tapés en Unicode (λ, ≤, ℝ, ²…) deviennent
 des symboles. En marge, une longue formule impossible à recopier devient « [...] » au lieu de son code.
+
+**Nouveau en beta.5 — renvois** : dans les notes en marge et en fin de document, les numéros écrits dans les
+notes deviennent des commandes du document : « (4.75) » → `\eqref{…}`, « Lemma 4.2 » → `Lemma~\ref{…}`, « [2] » ou
+« [Berndtsson03, Theorem 3] » → `\cite[Theorem 3]{Berndtsson03}` (et un `\cite`, `\ref`, `\eqref` écrit dans une note
+reste une commande). La correspondance vient de la dernière compilation, et seulement pour les étiquettes encore
+présentes dans la source : si vous renumérotez, les renvois suivent ; un numéro inconnu reste du texte. Dans le bloc de
+commentaires, une ligne « Renvois : (4.75) = \eqref{…} ; … » donne les étiquettes correspondantes. Les numéros sont lus
+tels que la note les écrit : une note qui parle du « Lemma 4.2 » d'un autre article, sans le citer entre crochets,
+pointerait vers le vôtre.
 
 Où vont les notes :
 - note ou état d'un énoncé, ou d'une preuve : juste avant son `\begin{…}` ;
