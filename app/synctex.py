@@ -168,8 +168,6 @@ def load(path, root, detail_pages=()):
                     stack.append(box)
                     continue
                 owner = next((box for box in reversed(stack) if box is not None), None)
-                if kind == b"h" and record.group(8) is not None and owner is None:
-                    continue
                 if owner is not None and number > 0:
                     owner[7].append((tag, number, h))
     except (OSError, EOFError, ValueError, gzip.BadGzipFile):

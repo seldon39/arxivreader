@@ -18,7 +18,7 @@ import zipfile
 import zlib
 from pathlib import Path
 from contextlib import asynccontextmanager
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 from datetime import date
 
 import httpx
@@ -1577,7 +1577,6 @@ def parse_ok(arxiv_id):
 # ---- Export des notes (Markdown) ----
 
 def _download(content, name, media_type):
-    from urllib.parse import quote
     return Response(content, media_type=media_type,
                     headers={"Content-Disposition": f"attachment; filename=\"notes.{name.rsplit('.', 1)[-1]}\"; filename*=UTF-8''{quote(name)}"})
 
@@ -1615,8 +1614,6 @@ def tex_annotated_summary(paper_id: str, mode: str = "comments", lang: str = "fr
 @app.get("/api/papers/{paper_id}/tex-annotated")
 def tex_annotated(paper_id: str, mode: str = "comments", lang: str = "fr", layout: str = "wide", endnotes: str = "1"):
     """Copie du dossier du projet TeX avec les notes insérées, en .zip (fichier temporaire supprimé après l'envoi)."""
-    from urllib.parse import quote
-
     _tex_annotated_args(paper_id, mode, lang, layout, endnotes)
     try:
         path, name = texexport.build_zip(paper_id, mode, lang, layout, endnotes == "1")
@@ -1680,7 +1677,6 @@ def _bibtex_papers(ids):
 
 
 def _bibtex_file(text, name):
-    from urllib.parse import quote
     name = re.sub(r"[\\/:*?\"<>|\x00-\x1f]", " ", name)
     name = " ".join(name.split())[:80] or "references"
     return Response(text, media_type="application/x-bibtex; charset=utf-8",

@@ -9,7 +9,7 @@ Deux formes, au choix :
   besoin pour une colonne de notes d'au moins 4,5 cm, notes en 7 pt, largeur du texte inchangée (lignes coupées comme
   dans l'original ; WIDE_LAYOUT, WIDE_TODO) ; « keep » : notes dans la marge telle qu'elle est. Notes longues
   (option « endnotes », par défaut) : la marge n'en montre que le début et un renvoi « → note N, p. X » ; leur texte
-  entier est dans une section « Notes de relecture (arXivReader) » ajoutée juste avant \\end{document} (ENDNOTES).
+  entier est dans une section « Notes de relecture (arXivReader) » ajoutée à la fin du document, par \\AtEndDocument (_end_section, ENDNOTE_MACROS).
 
 Place des notes :
 - énoncés et preuves (notes, états de lecture) : avant leur \\begin{…}, retrouvés par leur identifiant, celui que
@@ -83,7 +83,7 @@ WORDS = {
            "sheet": "Fiche de lecture", "bookmarks": "Marque-pages", "page": "page {page}",
            "approx": "emplacement approximatif", "ai": "{who} (proposé, non vérifié)", "local": "IA locale",
            "quote": "« {quote} »",
-           "unplaced": "Notes non localisées", "unplacedOne": "Note non localisée : {title}",
+           "unplacedOne": "Note non localisée : {title}",
            "reason": {"lost": "perdue à la recompilation", "notFound": "énoncé introuvable dans la source",
                       "quote": "passage introuvable dans la source", "position": "position inconnue dans la source",
                       "outside": "fichier hors du dossier du projet"},
@@ -146,7 +146,7 @@ WORDS = {
            "sheet": "Reading notes", "bookmarks": "Bookmarks", "page": "page {page}",
            "approx": "approximate location", "ai": "{who} (suggested, unverified)", "local": "local AI",
            "quote": "“{quote}”",
-           "unplaced": "Notes not located", "unplacedOne": "Note not located: {title}",
+           "unplacedOne": "Note not located: {title}",
            "reason": {"lost": "lost after recompiling", "notFound": "statement not found in the source",
                       "quote": "passage not found in the source", "position": "position unknown in the source",
                       "outside": "file outside the project folder"},
@@ -410,7 +410,7 @@ def _assistant(note):
     if not ASSISTANT_NOTE.match(text):
         return None, text
     name = re.match(r"\s*\*\*([^*\n]+)\*\*", text)
-    first, _, rest = text.lstrip().partition("\n")
+    rest = text.lstrip().partition("\n")[2]
     return (name.group(1).strip() if name else "Claude"), rest.strip("\n")
 
 
@@ -480,8 +480,7 @@ FORBIDDEN_WORDS = {"par", "begin", "end", "section", "subsection", "subsubsectio
                    "immediate", "special", "catcode", "csname", "endcsname", "expandafter", "noexpand", "endinput",
                    "the", "relax", "arxivreadertodo", "item", "cite", "ref", "eqref", "cref", "Cref"}
 TEXT_CHARS = {"’": "'", "‘": "'", "‚": ",", "“": "\"", "”": "\"", "„": "\"", "«": "\"", "»": "\"", "–": "--",
-              "—": "---", "…": "...", "\u00a0": " ", "\u202f": " ", "\u2009": " ", "×": "x", "→": "->",
-              "←": "<-", "⇒": "=>", "≤": "<=", "≥": ">=", "≠": "/=", "·": ".", "•": "-", "−": "-"}
+              "—": "---", "…": "...", "\u00a0": " ", "\u202f": " ", "\u2009": " ", "•": "-", "−": "-"}
 ESCAPES = {"\\": "\\textbackslash{}", "{": "\\{", "}": "\\}", "$": "\\$", "&": "\\&", "#": "\\#",
            "^": "\\textasciicircum{}", "_": "\\_", "%": "\\%", "~": "\\textasciitilde{}"}
 LATIN = set("àâäáãåçéèêëíìîïñóòôöõúùûüýÿÀÂÄÁÃÅÇÉÈÊËÍÌÎÏÑÓÒÔÖÕÚÙÛÜÝæÆøØœŒß")
@@ -913,8 +912,8 @@ OPERATOR_LETTERS = {"varliminf": "lim", "varlimsup": "lim", "varinjlim": "lim", 
 # caractères que pdf.js donne pour les polices de TeX et qui ne se ramènent pas d'eux-mêmes à la lettre : Δ (INCREMENT),
 # lettres sans point. NABLA (∇) n'est pas une lettre : ignoré des deux côtés, comme \nabla dans la source.
 LOOKALIKES = {"\u2206": "δ", "ı": "i", "ȷ": "j"}
-# commandes dont l'argument n'est pas imprimé tel quel (renvois, citations, noms d'environnements…)
-# commandes dont aucun argument n'est imprimé (couleurs, compteurs, longueurs : \\definecolor{c}{rgb}{…}, \\rule{w}{h}…)
+# TEX_TOKEN : commandes dont aucun argument n'est imprimé (couleurs, compteurs, longueurs : \\definecolor{c}{rgb}{…},
+# \\rule{w}{h}…), puis celles dont l'argument n'est pas imprimé tel quel (renvois, citations, noms d'environnements…)
 _ARG = r"\*?\s*(?:\[[^\]]*\]\s*)*\{[^{}]*\}"
 _DIMEN = r"-?\s*(?:\d+\.?\d*|\.\d+)\s*(?:true\s*)?(?:pt|mm|cm|em|ex|in|bp|sp|pc|dd|cc|mu|px|fil+)"
 TEX_TOKEN = re.compile(r"\\definecolor" + _ARG + r"\s*\{[^{}]*\}\s*\{[^{}]*\}"
@@ -1030,9 +1029,10 @@ class Letters:
     def of_macro(self, name, depth):
         if name in self.cache:
             return self.cache[name]
+        if depth >= MACRO_DEPTH:
+            return ""  # trop profond à partir d'ici : pas retenu, la même macro peut être lue de moins loin
         self.cache[name] = _builtin(name)  # définition récursive : le sens de LaTeX (ou rien)
-        letters = self.letters(self.macros[name], depth=depth + 1, limit=MACRO_LETTERS)[0] if depth < MACRO_DEPTH else ""
-        self.cache[name] = letters[:MACRO_LETTERS]
+        self.cache[name] = self.letters(self.macros[name], depth=depth + 1, limit=MACRO_LETTERS)[0][:MACRO_LETTERS]
         return self.cache[name]
 
     def word(self, name, depth=0):
@@ -1041,11 +1041,10 @@ class Letters:
             return self.of_macro(name, depth)
         return _builtin(name)
 
-    def letters(self, text, start=0, end=None, depth=0, limit=None):
-        """Lettres de `text[start:end]` et, pour chacune, sa position dans `text` (celle de la commande pour les
+    def letters(self, text, depth=0, limit=None):
+        """Lettres de `text` et, pour chacune, sa position dans `text` (celle de la commande pour les
         lettres d'une commande ou d'une macro) ; `limit` : arrêt au-delà de ce nombre de lettres."""
-        end = len(text) if end is None else end
-        out, where, pos = [], [], start
+        out, where, pos = [], [], 0
 
         def plain(a, b):
             for index in range(a, b):
@@ -1053,7 +1052,7 @@ class Letters:
                     out.append(letter)
                     where.append(index)
 
-        for match in TEX_TOKEN.finditer(text, start, end):
+        for match in TEX_TOKEN.finditer(text):
             plain(pos, match.start())
             if match.group(1):
                 for letter in self.word(match.group(1), depth):
@@ -1062,14 +1061,14 @@ class Letters:
             pos = match.end()
             if limit is not None and len(out) >= limit:
                 return "".join(out), where
-        plain(pos, end)
+        plain(pos, len(text))
         return "".join(out), where
 
 
-def tex_letters(text, start=0, end=None, macros=None):
-    """Lettres de la source TeX `text[start:end]` (commandes retirées ; lettres grecques, opérateurs et macros sans
+def tex_letters(text, macros=None):
+    """Lettres de la source TeX `text` (commandes retirées ; lettres grecques, opérateurs et macros sans
     argument de l'auteur gardés) et, pour chacune, sa position dans `text`."""
-    return Letters(macros).letters(text, start, end)
+    return Letters(macros).letters(text)
 
 
 MIN_WINDOW = 12          # lettres d'un début ou d'une fin de passage cherché seul
@@ -1351,12 +1350,12 @@ class Plan:
         if len(self.copy) > LARGE_FILES or self.size > LARGE_BYTES:
             self.warnings.append(self.words["warn"]["large"].format(
                 folder=self.root.name, files=len(self.copy), size=f"{self.size / 1_000_000:.0f}"))
-        self.copied = {rel for rel, _, _ in self.copy}
+        copied = {rel for rel, _, _ in self.copy}
         lowered = {}
-        for rel in self.copied:
+        for rel in copied:
             lowered.setdefault(rel.lower(), rel)
         # fichier lu par la source → fichier de la copie (même chemin, sinon à la casse près : disque insensible)
-        self.copy_name = {name: (name if name in self.copied else lowered.get(name.lower())) for name in self.files}
+        self.copy_name = {name: (name if name in copied else lowered.get(name.lower())) for name in self.files}
         outside = sorted(n for n in self.files if n.startswith("../") or n == ".." or posixpath.isabs(n))
         missing = sorted(n for n in self.files if n not in outside and not self.copy_name[n])
         if outside:
@@ -1381,7 +1380,7 @@ class Plan:
     # --- SyncTeX ---
     def _synctex(self):
         """SyncTeX de la dernière compilation, s'il est encore celui de la source (aucun fichier modifié depuis)."""
-        self.sync, self.sync_stale = None, False
+        self.sync = None
         path = paper_dir(self.pid) / texfile.SYNCTEX
         pdf_notes = [n for n in self.notes if ((n.get("target") or {}).get("pdf"))]
         if not path.is_file():
@@ -1389,14 +1388,15 @@ class Plan:
                 self.warnings.append(self.words["warn"]["noSynctex"])
             return
         made = path.stat().st_mtime
+        stale = False
         for name in self.files:
             try:
                 if (self.root / name).stat().st_mtime > made:
-                    self.sync_stale = True
+                    stale = True
                     break
             except OSError:
                 continue
-        if self.sync_stale:
+        if stale:
             if pdf_notes:
                 self.warnings.append(self.words["warn"]["staleSynctex"])
             return
@@ -1659,7 +1659,7 @@ class Plan:
                     title = self._title_line()
                     if title:
                         return self._place(entry, title[0], title[1], "approx")
-        return self._page_start(entry, page, "quote")
+        return self._page_start(entry, page)
 
     def _title_line(self):
         """(fichier, ligne) juste après la ligne de \\maketitle (sinon de \\begin{document}) : place des notes sur le
@@ -1710,7 +1710,7 @@ class Plan:
                 return kept[0][0], "approx"
         return None, None
 
-    def _page_start(self, entry, page, reason):
+    def _page_start(self, entry, page):
         """Passage introuvable : au premier énoncé (ou section) de sa page, sinon au haut de la page (SyncTeX). Section :
         après son titre (le titre commence la page : la note avant lui serait au bas de la page d'avant) ; énoncé :
         avant son \\begin, la note en marge dedans."""
@@ -1733,7 +1733,7 @@ class Plan:
                 first = self.sync.first_line(page)
                 if first and first[0] in self.files:
                     return self._place(entry, first[0], first[1] - 1, "approx")
-        entry["reason"] = reason
+        entry["reason"] = "quote"
         return entry
 
     def _after_heading(self, offset):
@@ -1799,7 +1799,6 @@ class Plan:
     def _order_entries(self):
         """Notes placées : fichier copié, ligne sûre (jamais dans un verbatim) ; sinon non localisées. Ligne de la note en
         marge choisie en mode « todo »."""
-        known = None
         for entry in self.entries:
             if entry["precision"] in ("exact", "approx"):
                 name = entry["file"]
@@ -1827,9 +1826,7 @@ class Plan:
             if not entry.get("statement") and line != entry["line"]:
                 entry["line"] = line  # note en marge remontée avant la formule, la boîte… : le commentaire avec elle
             entry["todoLine"] = line
-            if known is None:
-                known = self.known
-            entry["short"] = self._short(entry, known)
+            entry["short"] = self._short(entry, self.known)
             entry["long"] = self.endnotes and is_long(self._margin_title(entry), entry.get("note"), self.layout)
 
     def _unplace(self, entry, reason):
@@ -1883,7 +1880,7 @@ class Plan:
                         and e["precision"] in ("exact", "approx")), key=order)
         for number, entry in enumerate(found, 1):
             entry["endnote"] = number
-            entry["short"] = self._short(entry, getattr(self, "known", set()), number)
+            entry["short"] = self._short(entry, self.known, number)
         self.long_entries = found
 
     def counts(self):
@@ -2312,7 +2309,6 @@ def _preamble(plan):
     loaded, disabled, own = _todo_setup(text[:begin] if begin >= 0 else text)
     own = own or _todo_setup(text)[2]
     width_set = bool(SETS_WIDTH.search(text[:begin] if begin >= 0 else text))
-    plan.todo_macro = MACRO
     if disabled:
         plan.warnings.append(plan.words["warn"]["disabled"])
     lines = [f"% {MARK} {plan.words['preamble']}"]
@@ -2513,15 +2509,20 @@ def _texts(plan, insertions):
     return written, latin
 
 
+def _prepare(pid, mode, language, layout, endnotes):
+    """Plan de la copie, fichiers annotés (octets) et nombres de notes, avertissements complétés : commun au résumé et
+    à l'archive, qui montrent ainsi les mêmes avertissements."""
+    plan = Plan(pid, mode, language, layout, endnotes)
+    written, latin = _texts(plan, _insertions(plan))
+    if latin:
+        plan.warnings.append(plan.words["warn"]["latin1"].format(files=", ".join(latin)))
+    return plan, written, plan.counts()
+
+
 def summary(pid, mode, language, layout="wide", endnotes=True):
     """Ce que contiendra la copie (sans rien écrire) : nombres de notes placées, SyncTeX, taille, avertissements,
     notes longues renvoyées en fin de document."""
-    plan = Plan(pid, mode, language, layout, endnotes)
-    insertions = _insertions(plan)
-    _, latin = _texts(plan, insertions)
-    if latin:
-        plan.warnings.append(plan.words["warn"]["latin1"].format(files=", ".join(latin)))
-    counts = plan.counts()
+    plan, _, counts = _prepare(pid, mode, language, layout, endnotes)
     return {**{k: counts[k] for k in ("total", "exact", "approx", "unplaced", "header", "byKind")},
             "synctex": plan.sync is not None, "files": len(plan.copy), "size": plan.size, "folder": str(plan.root),
             "warnings": plan.warnings,
@@ -2575,12 +2576,7 @@ def build_zip(pid, mode, language, layout="wide", endnotes=True):
     """Archive .zip de la copie annotée, écrite dans un fichier temporaire : (chemin, nom proposé). L'appelant le
     supprime après l'envoi (et chaque appel supprime celles de plus de 6 h, oubliées)."""
     _purge_stale()
-    plan = Plan(pid, mode, language, layout, endnotes)
-    insertions = _insertions(plan)
-    written, latin = _texts(plan, insertions)
-    if latin:
-        plan.warnings.append(plan.words["warn"]["latin1"].format(files=", ".join(latin)))
-    counts = plan.counts()
+    plan, written, counts = _prepare(pid, mode, language, layout, endnotes)
     date = time.strftime("%Y-%m-%d")
     name = unicodedata.normalize("NFC", plan.root.name)
     folder = plan.words["folder"].format(name=name)

@@ -1164,6 +1164,10 @@ class Fixes(Setup):
         self.assertEqual(texexport.tex_letters(r"The map $\phi$ sends $\varphi$", macros=swap)[0], "themapφsendsφ")
         loop = texexport.user_macros(r"\renewcommand{\phi}{\phi}\def\a{\a\a}")
         self.assertEqual(texexport.tex_letters(r"\phi \a", macros=loop)[0], "φ")  # récursion : le sens de LaTeX
+        # chaîne trop longue lue d'en haut : coupée, mais une macro du bas reste lisible quand elle est employée seule
+        chain = texexport.user_macros("".join(f"\\def\\m{a}{{\\m{b}}}" for a, b in zip("abcdefg", "bcdefgh"))
+                                      + r"\def\mh{xyzw}")
+        self.assertEqual(texexport.tex_letters(r"\ma, then \mg", macros=chain)[0], "thenxyzw")
         fan = texexport.user_macros("\\def\\x{" + "\\y" * 140 + "}\\def\\y{" + "\\z" * 140 + "}\\def\\z{" + "a" * 290 + "}")
         start = time.monotonic()
         letters = texexport.tex_letters("\\x " * 1000, macros=fan)[0]
