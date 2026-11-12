@@ -42,6 +42,10 @@ commentaires, une ligne « Renvois : (4.75) = \eqref{…} ; … » donne les ét
 tels que la note les écrit : une note qui parle du « Lemma 4.2 » d'un autre article, sans le citer entre crochets,
 pointerait vers le vôtre.
 
+**Corrigé en beta.5** (existe aussi en 1.13.3) : un énoncé qui contient une liste avec des `\item\label{…}` prenait
+le numéro du dernier point (« Theorem 2 » au lieu de « Theorem 1.3 »). Les fichiers TeX importés sont ré-analysés à
+l'ouverture ; si le numéro reste faux, cliquer sur **Recompiler**.
+
 Où vont les notes :
 - note ou état d'un énoncé, ou d'une preuve : juste avant son `\begin{…}` ;
 - passage surligné : retrouvé par son texte (avec l'aide de SyncTeX quand le même texte revient plusieurs fois) ;

@@ -22,6 +22,9 @@ from .texsource import _expand, _read_archive, choose_main
 SECTIONS = {"part": 0, "chapter": 0, "section": 1, "subsection": 2, "subsubsection": 3}
 EQUATION_ENVS = {"equation", "align", "gather", "multline", "eqnarray", "flalign", "alignat", "split", "dmath",
                  "subequations"}
+# listes d'un énoncé (« \begin{enumerate} \item\label{One} … ») : leurs \label désignent un point, pas l'énoncé
+ITEM_LISTS = re.compile(r"\\(begin|end)\s*\{(?:enumerate|itemize|description|compactenum|compactitem|compactdesc|"
+                        r"asparaenum|asparaitem|inparaenum|inparaitem|list|trivlist)\*?\}")
 REF_COMMANDS = {"ref", "eqref", "cref", "Cref", "autoref", "vref", "Vref", "cpageref", "nameref", "Autoref", "zcref",
                 "thmref", "labelcref"}
 CITE_COMMANDS = {"cite", "citep", "citet", "Cite", "citealp", "citealt", "parencite", "textcite", "autocite"}
@@ -517,8 +520,10 @@ def extract(text, bbl="", positions=None):
                 labels.setdefault(key, ("equation", owner, proof))
                 if owner is None and proof is None:
                     text_equations.setdefault(key, match.start())  # équation du texte courant
-            elif owner:
-                labels.setdefault(key, ("theorem", owner))
+            elif owner:  # (étiquette d'un \item de l'énoncé : son numéro n'est pas celui de l'énoncé)
+                frame = next(f for f in reversed(stack) if f["type"] == "theorem")
+                depth = sum(1 if m.group(1) == "begin" else -1 for m in ITEM_LISTS.finditer(body, frame["start"], match.start()))
+                labels.setdefault(key, ("theorem", owner, depth > 0))
             continue
         if command in REF_COMMANDS or command == "hyperref":
             group = _group(body, pos, "[" if command == "hyperref" else "{")
@@ -619,6 +624,7 @@ def extract(text, bbl="", positions=None):
         positions["sections"] = {s: place(at, "start") for s, at in section_starts.items()}
     return assign_chapters({
         "labels": {key: (found[1] if found[0] == "theorem" else None) for key, found in labels.items()},
+        "itemLabels": [key for key, found in labels.items() if found[0] == "theorem" and found[2]],
         "macros": macros(preamble),
         "version": STRUCTURE_VERSION, "source": "tex", "toc": toc, "book": book,
         "nodes": [{k: v for k, v in nodes[n].items() if k not in ("insideProof", "chain")} for n in order],

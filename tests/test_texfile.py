@@ -331,6 +331,25 @@ class TexFile(unittest.TestCase):
         self.assertEqual(nodes["Proposition 2.7"]["anchors"][0], "theorem.2.7")
         self.assertEqual(structure["equations"]["eq:x"], {"label": "(2.1)", "owner": structure["labels"]["prop:b"], "anchors": ["equation.2.1"]})
 
+    def test_aux_item_labels_do_not_renumber_the_statement(self):
+        """\label d'un \item dans un énoncé (« (2) » de la liste) : jamais le numéro de l'énoncé."""
+        source = r"""\documentclass{amsart}\newtheorem{thm}{Theorem}[section]
+\begin{document}\section{A}\begin{thm}\label{t:main} Two claims:
+\begin{enumerate}\item\label{One} first;\item\label{Two} second.\end{enumerate}
+\end{thm}\begin{thm}\begin{itemize}\item no own label\end{itemize}\label{t:after}\end{thm}\end{document}"""
+        structure = texstructure.extract(source)
+        self.assertEqual(structure["itemLabels"], ["One", "Two"])
+        self.assertEqual(structure["labels"]["Two"], structure["labels"]["t:main"])  # toujours rattachés à l'énoncé
+        for node in structure["nodes"]:
+            node["anchors"] = ["x"]
+        out = self.tmp / "out"
+        out.mkdir()
+        (out / "main.aux").write_text("\\newlabel{t:main}{{1.1}{1}{}{thm.1.1}{}}\n\\newlabel{One}{{1}{1}{}{Item.1}{}}\n"
+                                      "\\newlabel{Two}{{2}{1}{}{Item.2}{}}\n\\newlabel{t:after}{{1.2}{1}{}{thm.1.2}{}}\n")
+        texfile.apply_aux(structure, out)
+        self.assertEqual([(n["label"], n["anchors"][0]) for n in structure["nodes"]],
+                         [("Theorem 1.1", "thm.1.1"), ("Theorem 1.2", "thm.1.2")])
+
     def test_biblatex_and_page_search(self):
         bbl = r"""\refsection{0}\entry{knuth}{book}{}\name{author}{1}{}{{{hash=a}{family={Knuth}, familyi={K\bibinitperiod}, given={Donald}, giveni={D\bibinitperiod}}}}
 \field{title}{The {\TeX}book}\field{year}{1984}\field{labelalpha}{Knu84}\verb{doi}

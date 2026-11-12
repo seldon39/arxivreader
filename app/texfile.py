@@ -300,11 +300,14 @@ def apply_aux(structure, out):
     de la bibliographie."""
     labels = aux_labels(out)
     nodes = {n["id"]: n for n in structure.get("nodes", [])}
+    items = set(structure.get("itemLabels", []))
     for key, owner in structure.get("labels", {}).items():
         number, anchor = labels.get(key, (None, None))
         node = nodes.get(owner)
         if node is None or not number or not node.get("anchors"):
             continue  # énoncé sans numéro (\\newtheorem*) : le numéro du .aux serait celui d'un autre compteur
+        if key in items or (anchor or "").startswith("Item."):
+            continue  # \\label d'un point de l'énoncé (« \\item\\label{Two} » : numéro 2, pas celui de l'énoncé)
         name = node["label"].rsplit(" ", 1)[0]
         if number != node["label"].rsplit(" ", 1)[-1]:
             node["label"] = f"{name} {number}"
