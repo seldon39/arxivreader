@@ -132,8 +132,8 @@ class Setup(unittest.TestCase):
         self.tempdir.start()
         self.project = self.tmp / "my draft"
         (self.project / "sec").mkdir(parents=True)
-        (self.project / "main.tex").write_text(MAIN, encoding="utf-8")
-        (self.project / "sec" / "one.tex").write_text(ONE, encoding="utf-8")
+        (self.project / "main.tex").write_text(MAIN, encoding="utf-8", newline="\n")
+        (self.project / "sec" / "one.tex").write_text(ONE, encoding="utf-8", newline="\n")
         self.client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
 
     def tearDown(self):
@@ -155,7 +155,7 @@ class Setup(unittest.TestCase):
         return json.loads((library.paper_dir(self.pid) / "structure.json").read_text(encoding="utf-8"))
 
     def save_structure(self, structure):
-        (library.paper_dir(self.pid) / "structure.json").write_text(json.dumps(structure), encoding="utf-8")
+        (library.paper_dir(self.pid) / "structure.json").write_text(json.dumps(structure), encoding="utf-8", newline="\n")
 
     def lemma_id(self):
         return next(n["id"] for n in self.structure()["nodes"] if n["kind"] == "lemma")
@@ -408,11 +408,11 @@ class Placement(Setup):
     def test_lost_note_and_html_paragraph_unplaced(self):
         pid = self.import_without_tex()
         note = annotations.create(pid, "block", {"id": "tex-lbl-thm:main"}, note="Lost one")
-        (library.paper_dir(pid) / texfile.PREVIOUS_NOTES).write_text(json.dumps({note["uid"]: {}}), encoding="utf-8")
+        (library.paper_dir(pid) / texfile.PREVIOUS_NOTES).write_text(json.dumps({note["uid"]: {}}), encoding="utf-8", newline="\n")
         gone = annotations.create(pid, "block", {"id": "tex-txt-lemma-0123456789"}, note="Gone one")
         (library.paper_dir(pid) / texfile.PREVIOUS_NOTES).write_text(json.dumps({
             note["uid"]: {}, gone["uid"]: {"on": "statement", "label": "Lemma 3.4", "statement": "An old\nlemma text " * 20,
-                                           "page": 3}}), encoding="utf-8")
+                                           "page": 3}}), encoding="utf-8", newline="\n")
         entries = {e["note"]: e for e in texexport.plan_json(pid)}
         entry = entries["Lost one"]
         self.assertEqual((entry["precision"], entry["reason"]), ("none", "lost"))
@@ -427,7 +427,7 @@ class Placement(Setup):
         """Passage écrit deux fois : sans SyncTeX, les pages des énoncés voisins départagent (approximatif) ; avec
         SyncTeX, la page de chaque ligne (exact)."""
         (self.project / "sec" / "one.tex").write_text(ONE.replace("and text after the alignment.", "and the first claim holds; again."),
-                                                      encoding="utf-8")
+                                                      encoding="utf-8", newline="\n")
         pid = self.import_without_tex()
         structure = self.structure()
         for node, page in zip(structure["nodes"], (1, 2)):
@@ -673,15 +673,15 @@ class Safety(unittest.TestCase):
 class Copy(Setup):
     def test_zip_layout_skipped_files_and_originals_unchanged(self):
         (self.project / "fig.png").write_bytes(b"\x89PNG\r\n\x1a\nbinary\x00data")
-        (self.project / "main.bbl").write_text("\\begin{thebibliography}{1}\\end{thebibliography}", encoding="utf-8")
+        (self.project / "main.bbl").write_text("\\begin{thebibliography}{1}\\end{thebibliography}", encoding="utf-8", newline="\n")
         for name in ("main.aux", "main.log", "main.synctex.gz", "main.fdb_latexmk", "notes.tex~", ".DS_Store"):
-            (self.project / name).write_text("x", encoding="utf-8")
+            (self.project / name).write_text("x", encoding="utf-8", newline="\n")
         for folder in (".git", "__MACOSX", "node_modules"):
             (self.project / folder).mkdir()
-            (self.project / folder / "inside.tex").write_text("x", encoding="utf-8")
+            (self.project / folder / "inside.tex").write_text("x", encoding="utf-8", newline="\n")
         outside = self.tmp / "elsewhere"
         outside.mkdir()
-        (outside / "secret.txt").write_text("secret", encoding="utf-8")
+        (outside / "secret.txt").write_text("secret", encoding="utf-8", newline="\n")
         (self.project / "linked").symlink_to(outside, target_is_directory=True)
         (self.project / "secret-link.txt").symlink_to(outside / "secret.txt")
         (self.project / "fig-link.png").symlink_to(self.project / "fig.png")
@@ -708,10 +708,10 @@ class Copy(Setup):
     def test_outside_files_limits_and_latin1(self):
         shared = self.tmp / "shared"
         shared.mkdir()
-        (shared / "macros.tex").write_text("\\newcommand{\\RR}{\\mathbb{R}}\n", encoding="utf-8")
+        (shared / "macros.tex").write_text("\\newcommand{\\RR}{\\mathbb{R}}\n", encoding="utf-8", newline="\n")
         (self.project / "sec" / "latin.tex").write_bytes("Caf\xe9 au lait: some latin words here.\r\n\\par\r\n".encode("latin-1"))
         text = MAIN.replace("\\input{sec/one}", "\\input{../shared/macros}\n\\input{sec/one}\n\\input{sec/latin}")
-        (self.project / "main.tex").write_text(text, encoding="utf-8")
+        (self.project / "main.tex").write_text(text, encoding="utf-8", newline="\n")
         pid = self.import_without_tex()
         annotations.create(pid, "highlight", {"pdf": {"page": 1, "start": 0, "endPage": 1, "end": 9}},
                            quote="some latin words here", note="Note: café ∑ end")
@@ -739,10 +739,10 @@ class Copy(Setup):
         copiés ; artefacts d'un .tex du projet ignorés ; droits gardés ; fichier illisible : erreur dès le bilan."""
         text = MAIN.replace("\\begin{document}", "\\usepackage{verbatim}\n\\begin{document}\n\\verbatiminput{run.out}"
                             "\n\\externaldocument{sup}", 1)
-        (self.project / "main.tex").write_text(text, encoding="utf-8")
+        (self.project / "main.tex").write_text(text, encoding="utf-8", newline="\n")
         for name in ("run.out", "sup.aux", "sup.tex", "data.tmp", "sec/one.aux", "sec/one.log", "main.toc", "main.tex.bak"):
-            (self.project / name).write_text("x\n", encoding="utf-8")
-        (self.project / "build.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+            (self.project / name).write_text("x\n", encoding="utf-8", newline="\n")
+        (self.project / "build.sh").write_text("#!/bin/sh\n", encoding="utf-8", newline="\n")
         (self.project / "build.sh").chmod(0o755)
         (self.project / "sec" / "one.tex").chmod(0o640)
         pid = self.import_without_tex()
@@ -756,7 +756,8 @@ class Copy(Setup):
         self.assertEqual(sorted(infos), ["README-arXivReader.txt", "build.sh", "data.tmp", "main.tex", "run.out",
                                          "sec/one.tex", "sup.aux", "sup.tex"])
         mode = {name: (info.external_attr >> 16) & 0o777 for name, info in infos.items()}
-        self.assertEqual((mode["sec/one.tex"], mode["build.sh"], mode["README-arXivReader.txt"]), (0o640, 0o755, 0o644))
+        if os.name != "nt":  # Windows : pas de droits Unix sur les fichiers (chmod ne règle que la lecture seule)
+            self.assertEqual((mode["sec/one.tex"], mode["build.sh"], mode["README-arXivReader.txt"]), (0o640, 0o755, 0o644))
         (self.project / "data.tmp").chmod(0)
         try:
             if os.access(self.project / "data.tmp", os.R_OK):
@@ -981,7 +982,7 @@ class Fixes(Setup):
         self.assertEqual(len(variants("Table 1: short")), 1)  # reste trop court
 
     def test_quotes_found_with_macros_operators_prefixes_and_short_windows(self):
-        (self.project / "main.tex").write_text(MATCH, encoding="utf-8")
+        (self.project / "main.tex").write_text(MATCH, encoding="utf-8", newline="\n")
         pid = self.import_without_tex()
         notes = {
             "macros": self.pdf_note(pid, "Let Lt = L + ∑ r≥1 trOr with ε > 0 and injX > 0."),
@@ -1013,7 +1014,7 @@ class Fixes(Setup):
 
     def test_page_fallback_after_section_heading(self):
         (self.project / "main.tex").write_text(MAIN.replace("runs over two lines}\n", "runs over two lines}\n\\label{sec:last}\n"),
-                                               encoding="utf-8")
+                                               encoding="utf-8", newline="\n")
         pid = self.import_without_tex()
         structure = self.structure()
         last = next(s for s in structure["toc"] if s["title"].startswith("3"))
@@ -1057,7 +1058,7 @@ class Fixes(Setup):
         self.assertNotIn(texexport.OWN_WIDTH, preamble)
         self.assertNotIn("\\makeatletter", preamble)
         (self.project / "main.tex").write_text(MAIN.replace("\\begin{document}", "\\usepackage[marginparwidth=5cm]{geometry}\n\\begin{document}", 1),
-                                               encoding="utf-8")
+                                               encoding="utf-8", newline="\n")
         preamble = self.annotated("todo", "main.tex", layout="keep").split("\n\\begin{document}\n")[0]
         self.assertNotIn("\\setlength{\\marginparwidth}{2cm}", preamble)  # largeur du document gardée (au plus)
         self.assertIn(texexport.OWN_WIDTH, preamble)
@@ -1196,7 +1197,7 @@ class Fixes(Setup):
             r"We study Toeplitz operators acting on Hardy spaces.",        # 5
             r"\end{abstract}",                                            # 6
             r"Another uniquely placed sentence for the page check here.",  # 7
-            r"\end{document}", ""]), encoding="utf-8")
+            r"\end{document}", ""]), encoding="utf-8", newline="\n")
         pid = self.import_without_tex()
         title = self.pdf_note(pid, "Toeplitz operators on the unit sphere", "Title note")
         here = self.pdf_note(pid, "Another uniquely placed sentence for the page check", "Right page", page=2)
@@ -1218,7 +1219,7 @@ class Fixes(Setup):
 
     def test_documentclass_on_the_line_of_begin_document(self):
         (self.project / "main.tex").write_text("\\documentclass{article}\\begin{document}\n"
-                                               "Some uniquely placed words in the text.\n\\end{document}\n", encoding="utf-8")
+                                               "Some uniquely placed words in the text.\n\\end{document}\n", encoding="utf-8", newline="\n")
         pid = self.import_without_tex()
         self.pdf_note(pid, "Some uniquely placed words in the text", "Shared line note")
         summary = texexport.summary(pid, "todo", "fr")
@@ -1251,7 +1252,7 @@ class Compiled(Setup):
             target.write_bytes(data)
         main_file = folder / "my draft (annoté)" / "main.tex"
         if patch:
-            main_file.write_text(patch(main_file.read_text(encoding="utf-8")), encoding="utf-8")
+            main_file.write_text(patch(main_file.read_text(encoding="utf-8")), encoding="utf-8", newline="\n")
         out = self.tmp / f"out-{mode}"
         shutil.rmtree(out, ignore_errors=True)
         out.mkdir()
@@ -1321,7 +1322,7 @@ class Compiled(Setup):
             r"\section{Second part}",
             r"\label{sec:second}",
             r"Words of the second page only.",
-            r"\end{document}", ""]), encoding="utf-8")
+            r"\end{document}", ""]), encoding="utf-8", newline="\n")
         self.pid = pid = texfile.import_tex(self.project / "main.tex")["paper"]["id"]
         annotations.create(pid, "highlight", {"pdf": {"page": 2, "start": 0, "endPage": 2, "end": 9}},
                            quote="nowhere in the paper", note="Omicron fallback note")
@@ -1412,7 +1413,7 @@ class Compiled(Setup):
                     r"\section{Second part}", r"Uniquebeta words of the second page.", filler, filler]
         (self.project / "main.tex").write_text("\n".join([
             *head.splitlines(), r"\begin{document}", *prefix.splitlines(), *body, r"\end{document}", ""]),
-            encoding="utf-8")
+            encoding="utf-8", newline="\n")
         self.pid = pid = texfile.import_tex(self.project / "main.tex")["paper"]["id"]
         original = self.chunks(library.paper_dir(pid) / "paper.pdf")
         for page, quote_, note in notes:
@@ -1591,13 +1592,13 @@ class Compiled(Setup):
     def test_todo_defined_in_a_local_package(self):
         """\\todo défini dans un .sty du projet (que l'analyse ne lit pas) : la copie compile, le \\todo du document
         garde son sens, les notes en marge passent par todonotes."""
-        (self.project / "mymacros.sty").write_text("\\newcommand{\\todo}[1]{\\textbf{MINE: #1}}\n", encoding="utf-8")
+        (self.project / "mymacros.sty").write_text("\\newcommand{\\todo}[1]{\\textbf{MINE: #1}}\n", encoding="utf-8", newline="\n")
         (self.project / "main.tex").write_text("\n".join([
             r"\documentclass{article}",
             r"\usepackage{mymacros}",
             r"\begin{document}",
             r"Opening words of the paper \todo{kept meaning}.",
-            r"\end{document}", ""]), encoding="utf-8")
+            r"\end{document}", ""]), encoding="utf-8", newline="\n")
         self.pid = pid = texfile.import_tex(self.project / "main.tex")["paper"]["id"]
         annotations.create(pid, "highlight", {"pdf": {"page": 1, "start": 0, "endPage": 1, "end": 9}},
                            quote="Opening words of the paper", note="Rho margin note")
@@ -1643,7 +1644,7 @@ class Compiled(Setup):
             body += [r"\begin{thebibliography}{9}", r"\bibitem{a} A. Author, \emph{Uniquebib title}, 2020.",
                      r"\end{thebibliography}"]
         (self.project / "main.tex").write_text("\n".join([*head.splitlines(), r"\begin{document}", *body,
-                                                          r"\end{document}", ""]), encoding="utf-8")
+                                                          r"\end{document}", ""]), encoding="utf-8", newline="\n")
         self.pid = pid = texfile.import_tex(self.project / "main.tex")["paper"]["id"]
         for page, quote_, author, note in self.LONG_NOTES:
             annotations.create(pid, "highlight", {"pdf": {"page": page, "start": 0, "endPage": page, "end": 9}},
@@ -1773,7 +1774,7 @@ class Compiled(Setup):
         self.assertNotIn("Uniquebib", " ".join(texts[len(texts0):]))
         main_tex = (self.project / "main.tex").read_text(encoding="utf-8")
         (self.project / "main.tex").write_text(main_tex.replace("\\end{thebibliography}\n\\end{document}",
-                                                                "\\end{thebibliography}\\end{document}"), encoding="utf-8")
+                                                                "\\end{thebibliography}\\end{document}"), encoding="utf-8", newline="\n")
         self.pid = texfile.import_tex(self.project / "main.tex")["paper"]["id"]
         source = self.annotated("todo", "main.tex")
         self.assertIn("\\AtEndDocument{% [arXivReader]", source.split("\n\\begin{document}\n")[0])
@@ -1815,7 +1816,7 @@ class Compiled(Setup):
             r"\begin{thebibliography}{9}",
             r"\bibitem{a} Uniquebibone Author, Title.",
             r"\end{thebibliography}",
-            r"\end{document}", ""]), encoding="utf-8")
+            r"\end{document}", ""]), encoding="utf-8", newline="\n")
         result = texfile.import_tex(self.project / "main.tex")
         self.pid = pid = result["paper"]["id"]
         for quote_, note in (("first uniqueitemone claim", "Alpha item note"), ("uniquedescone words", "Beta desc note"),
