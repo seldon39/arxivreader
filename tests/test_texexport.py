@@ -10,6 +10,7 @@ import pathlib
 import random
 import re
 import shutil
+import subprocess
 import tempfile
 import time
 import unittest
@@ -100,10 +101,15 @@ def block_before(text, title):
     return lines[index]
 
 
+def is_todo(line):
+    """Ligne d'une note en marge (précédée de \\arxivreaderPar quand la source termine le paragraphe juste après)."""
+    return line.removeprefix(texexport.PAR_MACRO).startswith(texexport.MACRO)
+
+
 def todo_before(text, words):
     """Première ligne d'origine après la note en marge qui contient `words`."""
     lines = text.splitlines()
-    start = next(i for i, line in enumerate(lines) if line.startswith(texexport.MACRO) and words in line)
+    start = next(i for i, line in enumerate(lines) if is_todo(line) and words in line)
     index = start + 1
     while index < len(lines) and (lines[index].startswith("%") or lines[index].endswith("% [arXivReader]")):
         index += 1
@@ -154,16 +160,16 @@ class Setup(unittest.TestCase):
     def lemma_id(self):
         return next(n["id"] for n in self.structure()["nodes"] if n["kind"] == "lemma")
 
-    def files_of(self, mode="comments", language="fr"):
-        path, name = texexport.build_zip(self.pid, mode, language)
+    def files_of(self, mode="comments", language="fr", layout="wide"):
+        path, name = texexport.build_zip(self.pid, mode, language, layout)
         try:
             with zipfile.ZipFile(path) as archive:
                 return name, {n: archive.read(n) for n in archive.namelist()}
         finally:
             os.unlink(path)
 
-    def annotated(self, mode="comments", name="sec/one.tex"):
-        _, files = self.files_of(mode)
+    def annotated(self, mode="comments", name="sec/one.tex", layout="wide"):
+        _, files = self.files_of(mode, layout=layout)
         return files[f"my draft (annoté)/{name}"].decode("utf-8")
 
     def snapshot(self):
@@ -354,12 +360,25 @@ class Placement(Setup):
         self.assertEqual(todo_before(main_text, "Caption note"), r"\begin{figure}[h]")
         self.assertEqual(todo_before(main_text, "Title note"), r"\section{A section title that")
         self.assertEqual(one.count(texexport.MACRO), 4)  # énoncé, preuve à revoir, alignement, item
-        self.assertNotIn("Closing paragraph", "".join(l for l in main_text.splitlines() if l.startswith(texexport.MACRO)))
+        self.assertNotIn("Closing paragraph", "".join(l for l in main_text.splitlines() if is_todo(l)))
         # préambule : todonotes chargé, \todo du document gardé (sauvegardé puis remis), juste avant \begin{document}
         before = main_text.split("\n\\begin{document}\n")[0]
         self.assertIn("\\let\\todo\\relax\\usepackage{todonotes}% [arXivReader]", before)
-        self.assertIn("\\newcommand{\\arxivreadertodo}[2][]{\\ifmmode\\else\\ifinner\\else\\arxivreaderTodonotes[#1]{#2}\\fi\\fi}", before)
+        # « wide » : entre deux paragraphes ou au début d'un paragraphe vide, la boîte de la note seulement
+        # (\\arxivreaderVtodo, \\arxivreaderHtodo), nos \\marginpar repérés pour la sortie ; « keep » : todonotes tel quel
+        self.assertIn("\\newcommand{\\arxivreadertodo}[2][]{\\ifmmode\\else\\ifinner\\else\\global\\arxivreaderOurstrue"
+                      "\\arxivreaderVcheck\\ifarxivreaderV\\arxivreaderVtodo{#1}{#2}\\else\\ifarxivreaderH"
+                      "\\arxivreaderHtodo{#1}{#2}\\else\\arxivreaderTodonotes[#1]{#2}\\fi\\fi\\global\\arxivreaderOursfalse"
+                      "\\fi\\fi}", before)
+        self.assertIn("\\def\\arxivreaderPar{\\ifmmode\\else\\ifinner\\else\\ifhmode\\ifnum\\lastnodetype=-1 "
+                      "{\\csname @@par\\endcsname}\\fi\\fi\\fi\\fi}", before)
+        # « [arXivReader] » sur chaque ligne ajoutée ; @ rendu tel qu'il était
+        self.assertIn("\\catcode`\\@=\\arxivreaderAt\\relax% [arXivReader]", before)
+        self.assertIn("\\arxivreaderTodonotes[nolist,#1]{#2}", before)
         self.assertTrue(before.rstrip("\n").endswith("% [/arXivReader]"))
+        kept = self.annotated("todo", "main.tex", layout="keep").split("\n\\begin{document}\n")[0]
+        self.assertIn("\\newcommand{\\arxivreadertodo}[2][]{\\ifmmode\\else\\ifinner\\else\\arxivreaderTodonotes[#1]{#2}\\fi\\fi}", kept)
+        self.assertNotIn("arxivreaderVtodo", kept)
         summary = texexport.summary(pid, "todo", "fr")
         self.assertEqual(summary["todoMacro"], "\\arxivreadertodo")
         self.assertTrue(any("\\todo" in w for w in summary["warnings"]))
@@ -379,10 +398,10 @@ class Placement(Setup):
             self.assertEqual(strip_notes(text), ONE)
             added = [l for l in text.splitlines() if l not in ONE.splitlines()]
             for line in added:
-                self.assertTrue(line.startswith("%") or (line.startswith(texexport.MACRO) and line.endswith("% [arXivReader]")), line)
+                self.assertTrue(line.startswith("%") or (is_todo(line) and line.endswith("% [arXivReader]")), line)
             self.assertIn("% line 2 \\end{document} }}}", text)
             self.assertIn("% \\input{evil}", text)
-        todo = [l for l in self.annotated("todo").splitlines() if l.startswith(texexport.MACRO)]
+        todo = [l for l in self.annotated("todo").splitlines() if is_todo(l)]
         self.assertIn("\\begin\\{verbatim\\}", todo[1].replace("\\textbackslash{}", "\\").replace(texexport.BREAK, "").replace(texexport.SPLIT, ""))
         self.assertIn("\\# \\$ \\& \\textasciicircum{} \\_ \\textasciitilde{} \\{", todo[1])
 
@@ -604,6 +623,28 @@ class Copy(Setup):
         finally:
             (self.project / "data.tmp").chmod(0o644)
 
+    def test_layouts(self):
+        """Notes en marge : en-tête et LISEZMOI décrivent la mise en page « wide » (pas « keep ») ; commentaires : la
+        mise en page ne change rien ; mise en page inconnue refusée."""
+        self.import_without_tex()
+        annotations.create(self.pid, "block", {"id": "tex-lbl-thm:main"}, note="A note")
+        first = texexport.WORDS["fr"]["layout"][0]
+        wide, kept = self.files_of("todo"), self.files_of("todo", layout="keep")
+        main_wide, main_kept = (files["my draft (annoté)/main.tex"].decode("utf-8") for _, files in (wide, kept))
+        self.assertIn(f"% {first}", main_wide)
+        self.assertNotIn(first, main_kept)
+        self.assertIn("\\AddToHook{begindocument/end}{\\arxivreaderLayout}", main_wide)
+        self.assertNotIn("arxivreaderLayout", main_kept)
+        self.assertIn(first, wide[1]["my draft (annoté)/LISEZMOI-arXivReader.txt"].decode("utf-8"))
+        self.assertNotIn(first, kept[1]["my draft (annoté)/LISEZMOI-arXivReader.txt"].decode("utf-8"))
+        self.assertTrue(all(line.rstrip().endswith("% [arXivReader]") or line.startswith("% ")
+                            for line in main_wide.split("\n\\begin{document}\n")[0].splitlines()
+                            if "arxivreader" in line.lower()))
+        self.assertEqual(self.files_of("comments")[1], self.files_of("comments", layout="keep")[1])
+        self.assertIsNone(texexport.summary(self.pid, "comments", "fr", "keep")["layout"])
+        self.assertTrue(texexport.check("todo", "en", "keep"))
+        self.assertFalse(texexport.check("todo", "en", "narrow"))
+
     def test_insert_lines(self):
         self.assertEqual(texexport.insert_lines("a\nb", {0: ["x"], 2: ["z"]}, "\n"), "x\na\nb\nz\n")
         self.assertEqual(texexport.insert_lines("\ufeffa\r\nb\r\n", {0: ["x"], 2: ["z"]}, "\r\n"), "\ufeffx\r\na\r\nb\r\nz\r\n")
@@ -632,9 +673,18 @@ class Routes(Setup):
         self.assertEqual(response.headers["content-type"], "application/zip")
         self.assertEqual(response.headers["content-disposition"],
                          f"attachment; filename=\"my draft annote.zip\"; filename*=UTF-8''{quote('my draft annoté.zip')}")
-        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
-            self.assertIn("\\arxivreadertodo[color=orange!30,size=\\scriptsize]{Theorem 2.1 (Main) --- à revoir: A note}% [arXivReader]",
+        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:  # mise en page « wide » par défaut
+            self.assertIn("\\arxivreadertodo[color=orange!30,size=\\arxivreaderNoteSize]{Theorem 2.1 (Main) --- à revoir: A note}% [arXivReader]",
                           archive.read("my draft (annoté)/sec/one.tex").decode("utf-8"))
+            self.assertIn("7 pt (\\arxivreaderNoteSize)", archive.read("my draft (annoté)/LISEZMOI-arXivReader.txt").decode("utf-8"))
+        response = self.client.get(f"/api/papers/{pid}/tex-annotated?mode=todo&lang=en&layout=keep")
+        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+            self.assertIn("\\arxivreadertodo[color=orange!30,size=\\scriptsize]{Theorem 2.1 (Main) --- to review: A note}% [arXivReader]",
+                          archive.read("my draft (annotated)/sec/one.tex").decode("utf-8"))
+            self.assertNotIn("Layout of the margin notes", archive.read("my draft (annotated)/README-arXivReader.txt").decode("utf-8"))
+        self.assertEqual(self.client.get(f"/api/papers/{pid}/tex-annotated/summary?mode=todo&layout=keep").json()["layout"], "keep")
+        self.assertEqual(self.client.get(f"/api/papers/{pid}/tex-annotated/summary?mode=todo").json()["layout"], "wide")
+        self.assertIsNone(self.client.get(f"/api/papers/{pid}/tex-annotated/summary?mode=comments&layout=keep").json()["layout"])
         self.assertEqual(set(pathlib.Path(tempfile.gettempdir()).glob("arxivreader-annotated-*")), leftovers)  # supprimé
         (self.project / "main.tex").unlink()
         response = self.client.get(f"/api/papers/{pid}/tex-annotated/summary?lang=fr")
@@ -711,7 +761,7 @@ class Fixes(Setup):
             self.assertIn(words[1], entries["Check it"]["short"])
             self.assertNotIn("non vérifié", entries["Mine"]["short"])
             self.assertNotIn("unverified", entries["Mine"]["short"])
-        todo = [l for l in self.annotated("todo").splitlines() if l.startswith(texexport.MACRO)]
+        todo = [l for l in self.annotated("todo").splitlines() if is_todo(l)]
         self.assertTrue(any("Claude (proposé, non vérifié): Typo here" in l for l in todo), todo)
 
     def test_every_approximate_note_says_so(self):
@@ -855,7 +905,7 @@ class Fixes(Setup):
     def test_margin_width_and_breakable_notes(self):
         pid = self.import_without_tex()
         self.pdf_note(pid, "the second claim holds", "Note")
-        preamble = self.annotated("todo", "main.tex").split("\n\\begin{document}\n")[0]
+        preamble = self.annotated("todo", "main.tex", layout="keep").split("\n\\begin{document}\n")[0]
         self.assertIn("\\setlength{\\marginparwidth}{2cm}% [arXivReader]", preamble)  # avant todonotes, remplacé ensuite
         self.assertIn("\\AtBeginDocument{\\arxivreaderWidth\\maxdimen", preamble)
         self.assertIn("\\csname if@reversemargin\\endcsname", preamble)
@@ -863,7 +913,7 @@ class Fixes(Setup):
         self.assertNotIn("\\makeatletter", preamble)
         (self.project / "main.tex").write_text(MAIN.replace("\\begin{document}", "\\usepackage[marginparwidth=5cm]{geometry}\n\\begin{document}", 1),
                                                encoding="utf-8")
-        preamble = self.annotated("todo", "main.tex").split("\n\\begin{document}\n")[0]
+        preamble = self.annotated("todo", "main.tex", layout="keep").split("\n\\begin{document}\n")[0]
         self.assertNotIn("\\setlength{\\marginparwidth}{2cm}", preamble)  # largeur du document gardée (au plus)
         self.assertIn(texexport.OWN_WIDTH, preamble)
         added = preamble.split("% [arXivReader] marges")[1].splitlines()[1:]
@@ -900,9 +950,11 @@ class Fixes(Setup):
         _, files = self.files_of("comments", "en")
         self.assertIn("% “the second claim holds”", files["my draft (annotated)/sec/one.tex"].decode("utf-8"))
         self.assertIn("% « the second claim holds »", self.annotated())
-        for query, message in (("mode=bad&lang=fr", "Forme de copie ou langue inconnue"),
-                               ("mode=bad&lang=en", "Unknown copy form or language"),
-                               ("mode=todo&lang=de", "Unknown copy form or language")):
+        for query, message in (("mode=bad&lang=fr", "Forme de copie, mise en page ou langue inconnue"),
+                               ("mode=bad&lang=en", "Unknown copy form, layout or language"),
+                               ("mode=todo&lang=de", "Unknown copy form, layout or language"),
+                               ("mode=todo&lang=fr&layout=narrow", "Forme de copie, mise en page ou langue inconnue"),
+                               ("mode=comments&lang=en&layout=", "Unknown copy form, layout or language")):
             for route in ("tex-annotated/summary", "tex-annotated"):
                 response = self.client.get(f"/api/papers/{pid}/{route}?{query}")
                 self.assertEqual((response.status_code, response.json()["detail"]), (400, message))
@@ -1037,10 +1089,10 @@ class Compiled(Setup):
         import pypdf
         return [page.extract_text() for page in pypdf.PdfReader(str(path)).pages]
 
-    def compile_copy(self, mode, patch=None, with_log=False):
+    def compile_copy(self, mode, patch=None, with_log=False, layout="wide"):
         """Copie annotée compilée : texte de chaque page (et le journal) ; `patch` change le texte du fichier principal
         de la copie avant la compilation."""
-        _, files = self.files_of(mode)
+        _, files = self.files_of(mode, layout=layout)
         folder = self.tmp / f"copy-{mode}"
         for name, data in files.items():
             target = folder / name
@@ -1054,6 +1106,7 @@ class Compiled(Setup):
         out.mkdir()
         pdf, log, tool = texfile.compile_pdf(main_file, out, "pdflatex", False, [])
         self.assertIsNotNone(pdf, log[-2000:])
+        self.pdf = pdf
         self.assertEqual(texfile._log_report(log)[0], [], log[-3000:])
         self.assertNotRegex(log, r"(?m)^! ")
         return (self.pdf_text(pdf), log) if with_log else self.pdf_text(pdf)
@@ -1104,7 +1157,7 @@ class Compiled(Setup):
         width, paper, hoffset, odd, text, sep = values
         return width, paper - 72.27 - hoffset - odd - text - sep  # largeur des notes, place libre (pt)
 
-    def margin_document(self, geometry, extra=""):
+    def margin_document(self, geometry, extra="", layout="keep"):
         """Article de deux pages (la seconde commence par une section) ; notes : passage introuvable de la page 2, note de
         Claude avec des mots longs. Rend (textes des pages en lettres, largeur des notes, place libre) en mode « todo »."""
         (self.project / "main.tex").write_text("\n".join([
@@ -1128,7 +1181,7 @@ class Compiled(Setup):
                                 "Wohlgeformtheitsbedingungen https://arxiv.org/abs/2401.12345v2")
         entry = next(e for e in texexport.plan_json(pid, "todo") if e["note"] == "Omicron fallback note")
         self.assertEqual((entry["precision"], entry["line"]), ("approx", 8))  # après \section{Second part} et son \label
-        pages, log = self.compile_copy("todo", patch=self.layout, with_log=True)
+        pages, log = self.compile_copy("todo", patch=self.layout, with_log=True, layout=layout)
         width, room = self.margins(log)
         return [texexport.plain_letters(p) for p in pages], width, room, log
 
@@ -1154,6 +1207,230 @@ class Compiled(Setup):
         self.assertAlmostEqual(width, 72.27 + hoffset + odd - sep - 0.3 * cm, delta=0.1)
         self.assertGreater(width, 4 * cm)
         self.assertNotRegex(log, r"Overfull \\hbox")
+
+    # --- Mise en page « wide » : notes lisibles, corps du texte inchangé ---
+
+    def chunks(self, path):
+        """Morceaux de texte de chaque page : (largeur de la page, [(x, y, taille, texte)]) en points PDF, y compté depuis
+        le haut de la page (todonotes, par pgf, donne au PDF la taille \\paperwidth × \\paperheight du document, que
+        l'original n'a pas toujours : article en lettre US compilé sur du A4)."""
+        import pypdf
+        pages = []
+        for page in pypdf.PdfReader(str(path)).pages:
+            found, top = [], float(page.mediabox.top)
+
+            def visit(text, cm, tm, font, size, found=found, top=top):
+                if text.strip():
+                    x = tm[4] * cm[0] + tm[5] * cm[2] + cm[4]
+                    y = top - (tm[4] * cm[1] + tm[5] * cm[3] + cm[5])
+                    found.append((x, y, size * (tm[0] ** 2 + tm[1] ** 2) ** .5 * (cm[0] ** 2 + cm[1] ** 2) ** .5, text))
+            page.extract_text(visitor_text=visit)
+            pages.append((float(page.mediabox.width), found))
+        return pages
+
+    def values(self, text):
+        """Fichier principal qui écrit dans le journal la mise en page avant celle de la copie (\\AtBeginDocument) et
+        à la fin du document (après celle de la copie, refaite au besoin par \\twocolumn ou geometry)."""
+        dims = ("\\the\\paperwidth;\\the\\hoffset;\\the\\oddsidemargin;\\the\\evensidemargin;\\the\\textwidth;"
+                "\\the\\textheight;\\the\\marginparsep;\\the\\marginparwidth")
+        return re.sub(r"(?m)^\\begin\{document\}", lambda m: f"\\AtBeginDocument{{\\typeout{{BEFORE={dims}}}}}\n"
+                      f"\\AtEndDocument{{\\typeout{{AFTER={dims}}}}}\n\\begin{{document}}", text, count=1)
+
+    FILLER = "Some filler text to make a paragraph long enough to break across lines. " * 4
+    NOTES = ((1, "Uniquealpha opening words", "Alpha vertical note with enough words to wrap over a few lines"),
+             (1, "Middle uniquegamma words", "Gamma paragraph note"),
+             (2, "Uniquebeta words", "Beta second page note"))
+
+    def wide_document(self, head, twoside=False, twocolumn=False, prefix="", body=None, notes=NOTES, crop=False):
+        """Article (préambule `head`, `prefix` au début du texte), par défaut de deux pages et trois notes loin des bas
+        de page : en tête de paragraphe (mode vertical) sur chaque page et au milieu d'un paragraphe. Copie « wide »
+        compilée, puis vérifie : pas de débordement, largeur de la page du PDF = celle calculée, colonne des notes de
+        4,5 à 6 cm à 0,4 cm du bord au plus, notes en 7 pt dans la page (à droite du texte, sauf sur deux colonnes),
+        corps de chaque page au même endroit que dans l'original au décalage horizontal près. `crop` : marges
+        comptées depuis le bord de la page coupée (\\hoffset), feuille du PDF plus grande. Rend (avant, après,
+        journal) en points TeX."""
+        filler = self.FILLER
+        if body is None:
+            body = [r"\section{First part}", r"Uniquealpha opening words of the first page.", filler, filler,
+                    r"Middle uniquegamma words of the paragraph.", filler, "", filler, filler, "", r"\newpage",
+                    r"\section{Second part}", r"Uniquebeta words of the second page.", filler, filler]
+        (self.project / "main.tex").write_text("\n".join([
+            *head.splitlines(), r"\begin{document}", *prefix.splitlines(), *body, r"\end{document}", ""]),
+            encoding="utf-8")
+        self.pid = pid = texfile.import_tex(self.project / "main.tex")["paper"]["id"]
+        original = self.chunks(library.paper_dir(pid) / "paper.pdf")
+        for page, quote_, note in notes:
+            annotations.create(pid, "highlight", {"pdf": {"page": page, "start": 0, "endPage": page, "end": 9}},
+                               quote=quote_, note=note)
+        _, log = self.compile_copy("todo", patch=self.values, with_log=True)
+        self.assertNotRegex(log, r"Overfull \\hbox")
+        self.assertIn("arXivReader [mise en page] notes en marge larges de", log)
+        before, after = ([float(v.rstrip("pt")) for v in re.search(rf"{key}=([^\n]*)", log).group(1).split(";")]
+                         for key in ("BEFORE", "AFTER"))
+        paper, hoffset, odd, even, text, height, sep, width = after
+        cm, bp = 72.27 / 2.54, 72 / 72.27
+        self.assertEqual((text, height), (before[4], before[5]))  # largeur et hauteur du texte inchangées
+        self.assertGreaterEqual(width, 4.5 * cm - 0.1)
+        self.assertLessEqual(width, 6 * cm + 0.1)
+        wide = self.chunks(self.pdf)
+        self.assertEqual(len(wide), len(original))
+        origin = 72.27 + (0 if crop else hoffset)  # bord gauche de la page (coupée), en points TeX depuis la feuille
+
+        def left(values, number):  # marge de gauche, depuis le bord de la page (coupée)
+            return 72.27 + (0 if crop else values[1]) + (values[3] if twoside and number % 2 == 0 else values[2])
+        for number, ((width0, body0), (width1, body1)) in enumerate(zip(original, wide), 1):
+            if not crop:
+                self.assertAlmostEqual(width1, paper * bp, delta=0.05)  # page du PDF élargie comme calculé
+            start = left(after, number)
+            if not twocolumn:
+                self.assertLessEqual(start, min(left(before, number), 1.5 * cm) + 0.1)  # texte décalé vers la gauche
+                self.assertAlmostEqual(width, min(paper - 0.4 * cm - start - text - sep, 6 * cm), delta=0.1)
+            shift = (start - left(before, number)) * bp
+            # notes : morceaux en 7 pt absents de la page d'origine (texte et hauteur ; amsart a des en-têtes en 7 pt) ;
+            # le reste est le corps (découpé autrement là où une note est ancrée : comparé ligne par ligne)
+            known = {(round(y), re.sub(r"\s+", "", words)) for x, y, size, words in body0}
+            found = [c for c in body1 if 6.8 <= c[2] <= 7.2 and (round(c[1]), re.sub(r"\s+", "", c[3])) not in known]
+            self.assertTrue(found or number > len({page for page, _, _ in notes}), number)
+            for x, y, size, words in found:
+                self.assertGreaterEqual(x, (origin - 72.27) * bp - 0.1)  # dans la page (coupée)
+                self.assertLess(x, (origin - 72.27 + paper) * bp - 0.4 * cm * bp)
+                if not twocolumn:
+                    self.assertGreater(x, (origin - 72.27 + start + text) * bp)  # à droite du texte, page paire comprise
+            rows0, rows1 = {}, {}
+            for rows, chunks in ((rows0, body0), (rows1, [c for c in body1 if c not in found])):
+                for x, y, size, words in chunks:
+                    rows.setdefault(round(y), []).append((x, words, y))
+            self.assertEqual(sorted(rows0), sorted(rows1), number)  # mêmes lignes, à la même hauteur
+            for y in rows0:
+                line0, line1 = sorted(rows0[y]), sorted(rows1[y])
+                self.assertAlmostEqual(min(c[2] for c in line0), min(c[2] for c in line1), delta=0.2)  # (au 0,2 pt près)
+                self.assertEqual(re.sub(r"\s+", "", "".join(c[1] for c in line0)),
+                                 re.sub(r"\s+", "", "".join(c[1] for c in line1)), (number, y))
+                if not crop:  # (crop : pypdf ne suit pas le placement de la page sur la feuille)
+                    self.assertAlmostEqual(line1[0][0] - line0[0][0], shift, delta=0.3)
+        margin = texexport.plain_letters(" ".join(self.pdf_text(self.pdf)))
+        for _, _, note in notes:
+            self.assertIn(texexport.plain_letters(note), margin, note)
+        return before, after, log
+
+    def test_wide_article(self):
+        """Article (lettre US) : marge de droite assez large, page non élargie ; texte décalé vers la gauche, à 1,5 cm ;
+        colonne des notes limitée à 6 cm (lignes de notes lisibles)."""
+        before, after, _ = self.wide_document("\\documentclass{article}")
+        self.assertEqual(after[0], before[0])
+        cm = 72.27 / 2.54
+        self.assertAlmostEqual(72.27 + after[1] + after[2], 1.5 * cm, delta=0.1)
+        self.assertAlmostEqual(after[7], 6 * cm, delta=0.1)
+
+    def test_wide_amsart(self):
+        """amsart (recto verso par défaut, en-têtes en 7 pt comme les notes)."""
+        self.wide_document("\\documentclass{amsart}", twoside=True)
+
+    def test_wide_narrow_geometry(self):
+        """geometry margin=2.6cm (A4) : page élargie juste assez pour une colonne de 4,5 cm."""
+        cm = 72.27 / 2.54
+        before, after, _ = self.wide_document("\\documentclass[a4paper]{article}\n\\usepackage[margin=2.6cm]{geometry}")
+        self.assertAlmostEqual(after[7], 4.5 * cm, delta=0.1)
+        self.assertGreater(after[0], before[0] + 1 * cm)
+
+    def test_wide_room_just_above_the_minimum(self):
+        """Marge de droite de 5 cm, \\marginparsep de 0,3 cm : 4,3 cm de place, page élargie de 0,2 cm (TeX ne doit
+        pas comparer à 4,5 cm avant d'avoir retiré les 0,4 cm du bord)."""
+        cm = 72.27 / 2.54
+        before, after, _ = self.wide_document("\\documentclass[a4paper]{article}\n"
+                                              "\\usepackage[left=1.5cm,right=5cm,marginparsep=0.3cm]{geometry}")
+        self.assertAlmostEqual(after[7], 4.5 * cm, delta=0.1)
+        self.assertAlmostEqual(after[0] - before[0], 0.2 * cm, delta=0.1)
+
+    def test_wide_twoside(self):
+        """Recto verso : même marge de gauche sur les pages paires, notes à droite (page 2 comprise)."""
+        _, after, _ = self.wide_document("\\documentclass[twoside]{article}", twoside=True)
+        self.assertEqual(after[2], after[3])
+
+    def test_wide_twocolumn(self):
+        """Deux colonnes : texte non décalé, page élargie des deux côtés pour les notes."""
+        cm = 72.27 / 2.54
+        before, after, _ = self.wide_document("\\documentclass[a4paper,twocolumn]{article}", twocolumn=True)
+        self.assertGreater(after[0], before[0])
+        self.assertGreaterEqual(after[7], 4.5 * cm - 0.1)
+
+    def test_wide_twocolumn_after_begin_document(self):
+        """\\twocolumn au début du texte (comme acmart sigconf dans \\maketitle) : mise en page refaite pour deux
+        colonnes, notes de la colonne de gauche dans la page."""
+        before, after, log = self.wide_document("\\documentclass[a4paper]{article}\n\\sloppy", twocolumn=True,
+                                                prefix="\\twocolumn")
+        self.assertGreaterEqual(after[2], before[2])  # texte remis à sa place (page élargie à gauche au besoin)
+        self.assertEqual(log.count("arXivReader [mise en page]"), 2)
+
+    def test_wide_twocolumn_classes(self):
+        """revtex (deux colonnes de ltxgrid, \\if@twocolumn faux) et acmart sigconf (\\twocolumn dans \\maketitle)."""
+        for head, prefix in (("\\documentclass[aps,prl,twocolumn]{revtex4-2}", ""),
+                             ("\\documentclass[sigconf]{acmart}\n\\settopmatter{printacmref=false}\\setcopyright{none}",
+                              "\\title{T}\\maketitle")):
+            if not shutil.which("kpsewhich") or not subprocess.run(
+                    ["kpsewhich", re.search(r"\{(\w[\w-]*)\}", head).group(1) + ".cls"], capture_output=True).stdout:
+                continue
+            with self.subTest(head):
+                self.wide_document(head, twocolumn=True, prefix=prefix)
+
+    def test_wide_hyperref(self):
+        """hyperref fixe lui-même la taille de la page du PDF : la page élargie s'y retrouve."""
+        before, after, _ = self.wide_document("\\documentclass[a4paper]{article}\n\\usepackage[margin=2.6cm]{geometry}\n"
+                                              "\\usepackage{hyperref}")
+        self.assertGreater(after[0], before[0])
+
+    def test_wide_restoregeometry(self):
+        """\\restoregeometry au début du texte (geometry y remet ses valeurs) : mise en page refaite, page et colonne
+        des notes comme sans lui."""
+        cm = 72.27 / 2.54
+        before, after, _ = self.wide_document("\\documentclass[a4paper]{article}\n\\usepackage[margin=2.6cm]{geometry}",
+                                              prefix="\\restoregeometry")
+        self.assertAlmostEqual(after[7], 4.5 * cm, delta=0.1)
+        self.assertGreater(after[0], before[0] + 1 * cm)
+
+    def test_wide_crop(self):
+        """crop (page A4 centrée sur une feuille A3 : \\hoffset) : marges comptées depuis le bord de la page coupée,
+        texte et notes dans la page coupée."""
+        cm = 72.27 / 2.54
+        _, after, _ = self.wide_document("\\documentclass[a4paper]{article}\n\\usepackage[a3,center,cam]{crop}", crop=True)
+        self.assertAlmostEqual(72.27 + after[2], 1.5 * cm, delta=0.1)
+        self.assertGreater(after[1], 0)
+
+    def test_wide_own_margin_width(self):
+        """Largeur des notes trop petite choisie par le document (1 cm) : remplacée par la colonne calculée."""
+        before, after, _ = self.wide_document("\\documentclass{article}\n\\setlength{\\marginparwidth}{1cm}")
+        self.assertAlmostEqual(before[7], 72.27 / 2.54, delta=0.1)
+        self.assertGreater(after[7], 4.5 * 72.27 / 2.54)
+
+    def test_wide_footnote_page_break(self):
+        """Note au début d'un énoncé en bas d'une page qui a une note de bas de page : LaTeX remet les notes de bas de
+        page à la fin de la page après chaque \\marginpar ; pour les nôtres, avant (et sans coupure de plus) — pages
+        coupées comme dans l'original (ici, sans cela, la fin de la page 1 change)."""
+        filler = self.FILLER[:72]
+        body = [r"\section{First part}", "Opening words with a footnote\\footnote{" + filler * 3 + "} and more. " + filler * 6,
+                "", filler * 25, "", (filler * 30)[:780], "", r"\vspace{8.5pt}", "", r"\begin{theorem}",
+                "Uniquetheorem words of the statement. " + filler * 6, r"\end{theorem}", filler * 30, "", filler * 30]
+        self.wide_document("\\documentclass{article}\n\\newtheorem{theorem}{Theorem}", body=body,
+                           notes=((1, "Uniquetheorem words of the statement", "Theorem note"),))
+
+    def test_wide_notes_after_a_display(self):
+        """Notes juste après une formule centrée (paragraphe encore vide) : avant un \\item (paragraphe terminé
+        d'abord, \\arxivreaderPar) et avant une ligne qui ne commence que par une couleur (boîte seule, sans repère de
+        trait qui donnerait de la hauteur à la ligne) : rien ne bouge dans le texte."""
+        filler = self.FILLER
+        body = [r"\section{First part}", filler, r"\begin{itemize}", r"\item Opening item " + filler,
+                r"\[ x = y \]", r"\item Uniqueitem words of the second item.", r"\end{itemize}", filler,
+                r"\[ a = \frac{1}{\displaystyle\sum_{k=1}^{n} b_k} \]",  # (formule profonde : interligne \lineskip)
+                r"{\color{blue}\begin{theorem}Uniquecolor words of the statement.\end{theorem}}",
+                filler, filler]
+        notes = ((1, "Uniqueitem words of the second", "Item note after a display"),
+                 (1, "Uniquecolor words of the statement", "Colour note after a display"))
+        self.wide_document("\\documentclass{amsart}\n\\usepackage{xcolor}\n\\newtheorem{theorem}{Theorem}",
+                           twoside=True, body=body, notes=notes)
+        todo = {note: line for line in self.annotated("todo", "main.tex").splitlines() if texexport.MACRO in line
+                for note in ("Item note", "Colour note") if note in line}
+        self.assertTrue(todo["Item note"].startswith("\\arxivreaderPar\\arxivreadertodo["))
+        self.assertTrue(todo["Colour note"].startswith("\\arxivreadertodo["))
 
     def test_todo_defined_in_a_local_package(self):
         """\\todo défini dans un .sty du projet (que l'analyse ne lit pas) : la copie compile, le \\todo du document

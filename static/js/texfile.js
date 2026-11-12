@@ -146,18 +146,30 @@ export async function chooseBibFor(paperId, name, done) {
   try { done(await api.chooseBib(paperId, name, chosen)); } catch (error) { toastError(error); }
 }
 
-// Copie .tex annotée : choix de la forme des notes, bilan de leur placement, puis téléchargement du .zip
+// Copie .tex annotée : choix de la forme des notes (et, pour les notes en marge, de la mise en page : marge des notes
+// agrandie par défaut), bilan de leur placement, puis téléchargement du .zip
 // (un simple lien : l'application Mac affiche son message « Enregistré dans Téléchargements »)
 export function texAnnotatedDialog(paperId) {
   const lang = document.documentElement.lang || "fr";
   let mode = "comments";
+  let layout = "wide";  // wide : texte décalé, page élargie au besoin ; keep : marge du document telle quelle
   let turn = 0;  // une réponse tardive d'un autre choix est ignorée
   const info = h("div", { class: "tex-steps", "aria-live": "polite" });
   const download = h("a", { class: "button primary", download: "", "aria-disabled": "true", tabindex: "-1" }, t("texAnnot.download"));
   const choice = (value, label, hint) => h("label", { class: "texannot-choice" },
     h("input", { type: "radio", name: "texannot-mode", value, checked: value === mode,
-      onchange: (event) => { if (event.target.checked) { mode = value; load(); } } }),
+      onchange: (event) => { if (event.target.checked) { mode = value; wideOption(); load(); } } }),
     h("span", {}, h("span", {}, label), hint && h("span", { class: "muted small" }, hint)));
+  // sous « Notes en marge » : marge des notes agrandie (sans effet sur les commentaires, case alors grisée)
+  const wide = h("input", { type: "checkbox", checked: layout === "wide",
+    onchange: (event) => { layout = event.target.checked ? "wide" : "keep"; load(); } });
+  const wideLabel = h("label", { class: "texannot-choice texannot-option" }, wide,
+    h("span", {}, h("span", {}, t("texAnnot.wide")), h("span", { class: "muted small" }, t("texAnnot.wideHint"))));
+  const wideOption = () => {
+    wide.disabled = mode !== "todo";
+    wideLabel.classList.toggle("disabled", wide.disabled);
+  };
+  wideOption();
   const dialog = h("dialog", { class: "meta-dialog tex-dialog" },
     h("form", { method: "dialog" },
       h("h3", { class: "meta-heading" }, t("texAnnot.title")),
@@ -165,14 +177,15 @@ export function texAnnotatedDialog(paperId) {
       h("fieldset", { class: "texannot-modes" },
         h("legend", {}, t("texAnnot.mode")),
         choice("comments", t("texAnnot.modeComments")),
-        choice("todo", t("texAnnot.modeTodo"), t("texAnnot.modeTodoHint"))),
+        choice("todo", t("texAnnot.modeTodo"), t("texAnnot.modeTodoHint")),
+        wideLabel),
       info,
       h("div", { class: "dialog-actions" },
         h("button", { class: "button", value: "cancel" }, t("texAnnot.cancel")),
         download)));
   const enable = (on) => {
     if (on) {
-      download.href = `/api/papers/${encodeURIComponent(paperId)}/tex-annotated?mode=${encodeURIComponent(mode)}&lang=${encodeURIComponent(lang)}`;
+      download.href = `/api/papers/${encodeURIComponent(paperId)}/tex-annotated?mode=${encodeURIComponent(mode)}&lang=${encodeURIComponent(lang)}&layout=${encodeURIComponent(layout)}`;
       download.removeAttribute("aria-disabled");
       download.removeAttribute("tabindex");
     } else {
@@ -186,7 +199,7 @@ export function texAnnotatedDialog(paperId) {
     enable(false);
     info.replaceChildren(h("div", { class: "tex-step" }, h("span", { class: "spinner" }), t("texAnnot.loading")));
     try {
-      const s = await api.texAnnotatedSummary(paperId, mode, lang);
+      const s = await api.texAnnotatedSummary(paperId, mode, lang, layout);
       if (mine !== turn) return;
       const steps = [];
       if (!s.total) steps.push({ state: "warn", text: t("texAnnot.none") });

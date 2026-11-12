@@ -5,7 +5,9 @@ modifié. Téléchargée en .zip. Aucun appel à l'IA.
 Deux formes, au choix :
 - « comments » : blocs de commentaires « % [arXivReader] … % [/arXivReader] » — le PDF compilé ne change pas ;
 - « todo » : les mêmes blocs, plus une courte note en marge (\\todo du paquet todonotes, ajouté au préambule de la
-  copie) — visible dans le PDF.
+  copie) — visible dans le PDF. Mise en page « wide » (par défaut) : texte décalé vers la gauche et page élargie au
+  besoin pour une colonne de notes d'au moins 4,5 cm, notes en 7 pt, largeur du texte inchangée (lignes coupées comme
+  dans l'original ; WIDE_LAYOUT, WIDE_TODO) ; « keep » : notes dans la marge telle qu'elle est.
 
 Place des notes :
 - énoncés et preuves (notes, états de lecture) : avant leur \\begin{…}, retrouvés par leur identifiant, celui que
@@ -91,6 +93,21 @@ WORDS = {
                           "« [arXivReader] » pour les retrouver ou les retirer (les lignes \\arxivreadertodo et le bloc",
                           "ajouté avant \\begin{document} portent aussi cette marque). Le projet d'origine n'a pas été modifié."],
            "preamble": "marges pour les notes de la copie annotée (à retirer avec elles)",
+           "layout": ["Mise en page des notes en marge : le texte est décalé vers la gauche (marge de gauche ramenée à",
+                      "1,5 cm, jamais agrandie) et la page n'est élargie à droite que si la colonne des notes ferait",
+                      "moins de 4,5 cm (colonne limitée à 6 cm : lignes de notes faciles à lire) ; sur deux colonnes,",
+                      "le texte n'est pas décalé et la page est élargie des deux côtés au besoin. Notes en police de",
+                      "7 pt (\\arxivreaderNoteSize). La largeur du texte ne change pas : les lignes et les pages sont",
+                      "coupées comme dans l'original (rares exceptions : comme tout \\marginpar, une note peut",
+                      "déplacer une coupure de page, par exemple juste avant une formule centrée qui en suit une",
+                      "autre). Après \\twocolumn, \\newgeometry ou \\restoregeometry, la mise en page est refaite.",
+                      "Ce que le document met lui-même dans la marge de gauche (étiquettes, numéros de ligne) y a moins",
+                      "de place. Une page élargie n'a plus le format A4 ou Letter : imprimée « ajustée à la page »,",
+                      "tout y est réduit d'autant (texte et notes) ; à l'écran, zoomer sur la largeur de la page.",
+                      "Valeurs obtenues (largeur des notes, décalage, élargissement de la page) : ligne",
+                      "« arXivReader [mise en page] » du journal de compilation (.log)."],
+           "layoutLog": "arXivReader [mise en page] notes en marge larges de {width} (police 7 pt), texte décalé de {shift} "
+                        "vers la gauche, page élargie de {more}, largeur du texte inchangée",
            "readmeName": "LISEZMOI-arXivReader.txt", "folder": "{name} (annoté)", "zip": "{name} annoté.zip",
            "readme": ["Copie annotée par arXivReader le {date}", "",
                       "Ce dossier est une copie du projet {name} : les notes de l'article y sont insérées dans les",
@@ -131,6 +148,20 @@ WORDS = {
                           "\"[arXivReader]\" to find or remove them (the \\arxivreadertodo lines and the block added",
                           "before \\begin{document} carry this mark too). The original project was not modified."],
            "preamble": "margins for the notes of the annotated copy (remove with them)",
+           "layout": ["Layout of the margin notes: the text is shifted to the left (left margin brought down to 1.5 cm,",
+                      "never enlarged) and the page is widened on the right only if the column of the notes would be",
+                      "narrower than 4.5 cm (column limited to 6 cm: note lines easy to read); on two columns, the text",
+                      "is not shifted and the page is widened on both sides if needed. Notes in a 7 pt font",
+                      "(\\arxivreaderNoteSize). The width of the text does not change: the lines and the pages break as",
+                      "in the original (rare exceptions: like any \\marginpar, a note can move a page break, for",
+                      "instance just before a displayed formula that follows another one). After \\twocolumn,",
+                      "\\newgeometry or \\restoregeometry, the layout is computed again. What the document itself puts",
+                      "in the left margin (labels, line numbers) has less room there. A widened page is no longer A4 or",
+                      "Letter: printed \"fit to page\", everything on it is reduced accordingly (text and notes); on",
+                      "screen, zoom to the width of the page. Values obtained (width of the notes, shift, widening of",
+                      "the page): line \"arXivReader [layout]\" of the compilation log (.log)."],
+           "layoutLog": "arXivReader [layout] margin notes {width} wide (7 pt font), text shifted {shift} to the left, "
+                        "page widened by {more}, text width unchanged",
            "readmeName": "README-arXivReader.txt", "folder": "{name} (annotated)", "zip": "{name} annotated.zip",
            "readme": ["Annotated copy made by arXivReader on {date}", "",
                       "This folder is a copy of the project {name}: the notes of the paper are inserted in its .tex",
@@ -160,13 +191,13 @@ ERRORS = {"fr": {"main": "Fichier principal introuvable : {path}",
                  "unreadable": "Le dossier du projet n'a pas pu être lu : {error}",
                  "unreadableFile": "Ce fichier du projet ne peut pas être lu : {path}",
                  "changed": "Le projet a été modifié pendant la copie : réessayez",
-                 "params": "Forme de copie ou langue inconnue"},
+                 "params": "Forme de copie, mise en page ou langue inconnue"},
           "en": {"main": "Main file not found: {path}",
                  "tooBig": "The project folder is too large: put the .tex file in a folder of its own",
                  "unreadable": "The project folder could not be read: {error}",
                  "unreadableFile": "This file of the project cannot be read: {path}",
                  "changed": "The project was modified during the copy: try again",
-                 "params": "Unknown copy form or language"}}
+                 "params": "Unknown copy form, layout or language"}}
 
 
 class ExportError(ValueError):
@@ -886,8 +917,11 @@ def _page_boxes(pid):
 class Plan:
     """Tout ce que la copie annotée contiendra : notes placées (ou non), fichiers à copier, avertissements."""
 
-    def __init__(self, pid, mode, language):
+    def __init__(self, pid, mode, language, layout="wide"):
         self.pid, self.mode, self.language = pid, mode, language
+        self.layout = layout if mode == "todo" else None  # mise en page des notes en marge (sans effet en commentaires)
+        self.wide = False  # mise en page « wide » ajoutée au préambule de la copie (voir _insertions)
+        self.theorems = None  # environnements d'énoncés déclarés par le projet (voir _ends_paragraph)
         self.words = _words(language)
         self.warnings = []
         self.main = _project(pid, language)
@@ -1527,6 +1561,8 @@ def _header(plan, counts, date):
     lines = [f"% {MARK} {words['headTitle'].format(date=date, mode=words['modes'][mode])}",
              "% " + words["headCounts"].format(**{k: counts[k] for k in ("total", "exact", "approx", "unplaced", "header")})]
     lines += [f"% {line}" for line in words["headRemove"]]
+    if plan.wide:
+        lines += [f"% {line}" for line in words["layout"]]
     lines += [f"% {one_line(line)}" for line in plan.warnings]
     lines.append(f"% {END_MARK}")
     sheet = [e for e in plan.entries if e["kind"] == "general"]
@@ -1573,6 +1609,212 @@ MARGIN_WIDTH = [
 OWN_WIDTH = "\\ifdim\\marginparwidth<\\arxivreaderWidth\\arxivreaderWidth\\marginparwidth\\fi"
 SETS_WIDTH = re.compile(r"marginparwidth|\bmarginpar\s*=")  # \setlength{\marginparwidth}…, geometry marginparwidth=…
 
+# Mise en page « wide » (mode « todo », par défaut) : plus de place pour les notes sans toucher aux coupures de lignes
+# — \textwidth et \textheight ne changent pas, seul le bloc de texte se déplace et la page s'élargit.
+# Calculée tout à la fin de \begin{document} (crochet begindocument/end, après geometry, hyperref et la classe) :
+# - une colonne : texte décalé vers la gauche (marge de gauche WIDE_LEFT, jamais agrandie ; même place sur les pages
+#   paires en recto verso), notes toujours dans la marge de droite (\normalmarginpar, sans alternance) ;
+# - deux colonnes (option twocolumn, ou revtex : \twocolumn@sw) : texte non décalé (LaTeX met les notes de la colonne
+#   de gauche dans la marge de gauche) ;
+# - colonne des notes = marge − \marginparsep − WIDE_EDGE ; sous WIDE_MIN, page élargie (à droite ; à gauche aussi sur
+#   deux colonnes) juste assez : \paperwidth, taille de la page du moteur (\pdfpagewidth de pdfTeX et XeTeX,
+#   \pagewidth de LuaTeX, \special pdf:pagesize en DVI) et \stockwidth de memoir et de crop ; au-delà de WIDE_MAX,
+#   colonne limitée à WIDE_MAX (lignes de notes trop longues à lire), le reste de la marge laissé vide ;
+# - largeur de la page : la plus petite de \paperwidth et de celle du moteur (sans geometry ni hyperref, celle du
+#   moteur peut être plus étroite que celle que LaTeX croit) ; avec crop, la page coupée (\paperwidth) et les marges
+#   mesurées depuis son bord (crop met dans \hoffset la place de la page sur la feuille) ;
+# - refaite après un changement de mise en page dans le texte : \twocolumn (acmart sigconf l'appelle dans \maketitle ;
+#   texte remis à sa place d'origine, notes des deux côtés), \newgeometry, \restoregeometry, \loadgeometry (geometry y
+#   remet ses propres valeurs) ; la page n'y redevient jamais plus étroite (\arxivreaderFloor) ;
+# - valeurs obtenues écrites dans le journal (ligne « arXivReader », une par calcul).
+# Dimensions suivies de \relax : sans lui, TeX développe ce qui suit l'unité (un \ifdim…) en cherchant une espace
+# optionnelle, avant la fin de l'affectation en cours.
+# La police des notes (NOTE_SIZE, 7 pt) : la plus petite taille dessinée telle quelle en Computer Modern, EC et Latin
+# Modern (6,5 pt y est remplacé par 6 pt) ; on élargit la page plutôt que de la réduire encore.
+LAYOUTS = ("wide", "keep")
+WIDE_LEFT, WIDE_MIN, WIDE_MAX, WIDE_EDGE = "1.5cm", "4.5cm", "6cm", "0.4cm"
+NOTE_SIZE = "\\fontsize{7}{8.5}\\selectfont"
+SIZE_MACRO = "\\arxivreaderNoteSize"
+WIDE_LAYOUT = [
+    f"\\newcommand{{{SIZE_MACRO}}}{{{NOTE_SIZE}}}",
+    "\\newdimen\\arxivreaderPageW\\newdimen\\arxivreaderLmin\\newdimen\\arxivreaderLmax\\newdimen\\arxivreaderMoreL"
+    "\\newdimen\\arxivreaderMoreR\\newdimen\\arxivreaderShift\\newdimen\\arxivreaderWidth\\newdimen\\arxivreaderTmp",
+    "\\newdimen\\arxivreaderBase\\newdimen\\arxivreaderRoom\\newdimen\\arxivreaderFloor\\newdimen\\arxivreaderWide"
+    "\\newdimen\\arxivreaderOdd\\newdimen\\arxivreaderEven\\newdimen\\arxivreaderPaper\\newdimen\\arxivreaderStock"
+    "\\newdimen\\arxivreaderEngine\\newif\\ifarxivreaderTwo\\newif\\ifarxivreaderDone\\newif\\ifarxivreaderDviHook",
+    # largeur de la page du moteur → \arxivreaderTmp (inchangé en DVI) ; nouvelle largeur (\arxivreaderTmp) au moteur
+    "\\def\\arxivreaderGetEngine{\\ifdefined\\directlua\\arxivreaderTmp\\pagewidth\\else\\ifdefined\\XeTeXversion"
+    "\\arxivreaderTmp\\pdfpagewidth\\else\\ifdefined\\pdfoutput\\ifnum\\pdfoutput>0 \\arxivreaderTmp\\pdfpagewidth"
+    "\\fi\\fi\\fi\\fi}",
+    "\\def\\arxivreaderSetEngine{\\ifdefined\\directlua\\global\\pagewidth\\arxivreaderTmp\\else\\ifdefined\\XeTeXversion"
+    "\\global\\pdfpagewidth\\arxivreaderTmp\\else\\ifdefined\\pdfoutput\\ifnum\\pdfoutput>0 \\global\\pdfpagewidth"
+    "\\arxivreaderTmp\\else\\arxivreaderDvi\\fi\\else\\arxivreaderDvi\\fi\\fi\\fi}",
+    "\\def\\arxivreaderDvi{\\ifarxivreaderDviHook\\else\\global\\arxivreaderDviHooktrue\\ifdefined\\AddToHook"
+    "\\AddToHook{shipout/before}{\\special{pdf:pagesize width \\the\\arxivreaderPageW\\space height \\the\\paperheight}}"
+    "\\fi\\fi}",
+    # côté des notes : toujours à droite (une colonne) ; côtés d'origine gardés pour \twocolumn
+    # (\\iftrue, \\iffalse cachés dans des macros : dans une branche sautée, ils seraient comptés)
+    "\\def\\arxivreaderRightNotes{\\expandafter\\global\\expandafter\\let\\csname if@mparswitch\\endcsname\\iffalse"
+    "\\expandafter\\global\\expandafter\\let\\csname if@reversemargin\\endcsname\\iffalse}",
+    "\\def\\arxivreaderSaveSides{\\expandafter\\global\\expandafter\\let\\expandafter\\arxivreaderSwitch"
+    "\\csname if@mparswitch\\endcsname\\expandafter\\global\\expandafter\\let\\expandafter\\arxivreaderReverse"
+    "\\csname if@reversemargin\\endcsname}",
+    "\\def\\arxivreaderSides{\\expandafter\\global\\expandafter\\let\\csname if@mparswitch\\endcsname\\arxivreaderSwitch"
+    "\\expandafter\\global\\expandafter\\let\\csname if@reversemargin\\endcsname\\arxivreaderReverse}",
+    "\\def\\arxivreaderMm#1{\\the\\numexpr\\dimexpr#1\\relax/186467\\relax\\space mm}",
+    # deux colonnes : option twocolumn, ou revtex (colonnes de ltxgrid, \\if@twocolumn faux)
+    "\\def\\arxivreaderColumns{\\expandafter\\let\\expandafter\\arxivreaderIf\\csname if@twocolumn\\endcsname"
+    "\\arxivreaderIf\\global\\arxivreaderTwotrue\\fi"
+    "\\ifcsname twocolumn@sw\\endcsname\\csname twocolumn@sw\\endcsname{\\global\\arxivreaderTwotrue}{}\\fi}",
+    # calcul, à partir des marges, de \\paperwidth et des côtés des notes en vigueur
+    "\\def\\arxivreaderCompute{"
+    "\\expandafter\\let\\expandafter\\arxivreaderIfTwoside\\csname if@twoside\\endcsname"
+    "\\arxivreaderBase1in\\relax\\ifcsname ver@crop.sty\\endcsname\\else\\advance\\arxivreaderBase\\hoffset\\fi",
+    # largeur de la page ; plus petite et plus grande marge de gauche (pages impaires, paires en recto verso)
+    "\\arxivreaderPageW\\paperwidth\\ifcsname ver@crop.sty\\endcsname\\else\\arxivreaderTmp0pt\\relax\\arxivreaderGetEngine"
+    "\\ifdim\\arxivreaderTmp>0pt\\relax\\ifdim\\arxivreaderTmp<\\arxivreaderPageW\\arxivreaderPageW\\arxivreaderTmp"
+    "\\fi\\fi\\fi",
+    "\\arxivreaderLmin\\arxivreaderBase\\advance\\arxivreaderLmin\\oddsidemargin\\arxivreaderLmax\\arxivreaderLmin"
+    "\\arxivreaderIfTwoside\\arxivreaderTmp\\arxivreaderBase\\advance\\arxivreaderTmp\\evensidemargin"
+    "\\ifdim\\arxivreaderTmp<\\arxivreaderLmin\\arxivreaderLmin\\arxivreaderTmp\\fi"
+    "\\ifdim\\arxivreaderTmp>\\arxivreaderLmax\\arxivreaderLmax\\arxivreaderTmp\\fi\\fi",
+    "\\arxivreaderMoreL0pt\\relax\\arxivreaderMoreR0pt\\relax\\arxivreaderShift0pt\\relax",
+    # deux colonnes : place à gauche (\\arxivreaderWidth) et à droite (\\arxivreaderRoom), chacune élargie au besoin
+    "\\ifarxivreaderTwo"
+    "\\arxivreaderWidth\\arxivreaderLmin\\advance\\arxivreaderWidth-\\marginparsep\\advance\\arxivreaderWidth-{edge}\\relax"
+    "\\ifdim\\arxivreaderWidth<{min}\\relax\\arxivreaderMoreL{min}\\relax\\advance\\arxivreaderMoreL-\\arxivreaderWidth\\fi",
+    "\\arxivreaderRoom\\arxivreaderPageW\\advance\\arxivreaderRoom-\\arxivreaderLmax\\advance\\arxivreaderRoom-\\textwidth"
+    "\\advance\\arxivreaderRoom-\\marginparsep\\advance\\arxivreaderRoom-{edge}\\relax"
+    "\\ifdim\\arxivreaderRoom<{min}\\relax\\arxivreaderMoreR{min}\\relax\\advance\\arxivreaderMoreR-\\arxivreaderRoom\\fi",
+    "\\global\\advance\\oddsidemargin\\arxivreaderMoreL\\global\\advance\\evensidemargin\\arxivreaderMoreL",
+    # une colonne : marge de gauche ramenée à {left} au plus, la même sur toutes les pages ; notes à droite
+    "\\else\\arxivreaderTmp\\arxivreaderLmin\\ifdim\\arxivreaderTmp>{left}\\relax\\arxivreaderTmp{left}\\relax\\fi"
+    "\\arxivreaderShift\\arxivreaderBase\\advance\\arxivreaderShift\\oddsidemargin\\advance\\arxivreaderShift-\\arxivreaderTmp",
+    "\\global\\oddsidemargin\\arxivreaderTmp\\global\\advance\\oddsidemargin-\\arxivreaderBase"
+    "\\global\\evensidemargin\\oddsidemargin",
+    "\\arxivreaderRoom\\arxivreaderPageW\\advance\\arxivreaderRoom-\\arxivreaderTmp\\advance\\arxivreaderRoom-\\textwidth"
+    "\\advance\\arxivreaderRoom-\\marginparsep\\advance\\arxivreaderRoom-{edge}\\relax"
+    "\\ifdim\\arxivreaderRoom<{min}\\relax\\arxivreaderMoreR{min}\\relax\\advance\\arxivreaderMoreR-\\arxivreaderRoom\\fi",
+    "\\arxivreaderWidth\\maxdimen\\arxivreaderRightNotes\\fi",
+    # page jamais plus étroite qu'au calcul précédent ; colonne = la plus étroite des marges, au plus {max}
+    "\\arxivreaderTmp\\arxivreaderPageW\\advance\\arxivreaderTmp\\arxivreaderMoreL\\advance\\arxivreaderTmp\\arxivreaderMoreR"
+    "\\ifdim\\arxivreaderTmp<\\arxivreaderFloor\\advance\\arxivreaderMoreR\\arxivreaderFloor"
+    "\\advance\\arxivreaderMoreR-\\arxivreaderTmp\\fi",
+    "\\advance\\arxivreaderRoom\\arxivreaderMoreR\\ifarxivreaderTwo\\advance\\arxivreaderWidth\\arxivreaderMoreL\\fi"
+    "\\ifdim\\arxivreaderRoom<\\arxivreaderWidth\\arxivreaderWidth\\arxivreaderRoom\\fi"
+    "\\ifdim\\arxivreaderWidth>{max}\\relax\\arxivreaderWidth{max}\\relax\\fi",
+    # page élargie : LaTeX, memoir et crop, puis le moteur (jamais plus étroit qu'avant)
+    "\\arxivreaderTmp\\arxivreaderMoreL\\advance\\arxivreaderTmp\\arxivreaderMoreR"
+    "\\global\\arxivreaderWide\\arxivreaderPageW\\global\\advance\\arxivreaderWide\\arxivreaderTmp"
+    "\\ifdim\\arxivreaderTmp>0pt\\relax"
+    "\\advance\\arxivreaderPageW\\arxivreaderTmp\\global\\paperwidth\\arxivreaderPageW"
+    "\\ifdefined\\stockwidth\\global\\advance\\stockwidth\\arxivreaderTmp"
+    "\\ifdim\\stockwidth>\\arxivreaderPageW\\arxivreaderPageW\\stockwidth\\fi\\fi",
+    "\\arxivreaderTmp0pt\\relax\\arxivreaderGetEngine\\ifdim\\arxivreaderTmp<\\arxivreaderPageW"
+    "\\arxivreaderTmp\\arxivreaderPageW\\fi\\arxivreaderPageW\\arxivreaderTmp\\arxivreaderSetEngine\\fi",
+    "\\global\\arxivreaderPageW\\arxivreaderPageW\\global\\marginparwidth\\arxivreaderWidth",
+    "\\advance\\arxivreaderMoreR\\arxivreaderMoreL\\typeout{{log}}}",
+    # premier calcul : valeurs d'origine gardées (pour \\twocolumn et les changements de geometry)
+    "\\def\\arxivreaderLayout{\\global\\arxivreaderOdd\\oddsidemargin\\global\\arxivreaderEven\\evensidemargin"
+    "\\global\\arxivreaderPaper\\paperwidth\\global\\arxivreaderStock0pt\\relax"
+    "\\ifdefined\\stockwidth\\global\\arxivreaderStock\\stockwidth\\fi"
+    "\\arxivreaderTmp0pt\\relax\\arxivreaderGetEngine\\global\\arxivreaderEngine\\arxivreaderTmp",
+    "\\arxivreaderSaveSides\\global\\arxivreaderFloor0pt\\relax\\global\\arxivreaderTwofalse\\arxivreaderColumns"
+    "\\arxivreaderCompute\\global\\arxivreaderDonetrue\\arxivreaderSetup}",
+    # nouveau calcul : page et feuille d'origine, moteur compris ; page jamais plus étroite qu'avant
+    "\\def\\arxivreaderAgain{\\global\\arxivreaderFloor\\arxivreaderWide"
+    "\\ifdefined\\stockwidth\\global\\stockwidth\\arxivreaderStock\\fi"
+    "\\ifdim\\arxivreaderEngine>0pt\\relax\\arxivreaderTmp\\arxivreaderEngine\\arxivreaderSetEngine\\fi"
+    "\\arxivreaderCompute}",
+    # \\twocolumn après \\begin{document} (une seule fois) : texte remis à sa place, notes des deux côtés, après la page
+    # en cours (\\clearpage, comme \\twocolumn lui-même)
+    "\\def\\arxivreaderToTwo{\\ifarxivreaderTwo\\else\\clearpage\\global\\arxivreaderTwotrue"
+    "\\global\\oddsidemargin\\arxivreaderOdd\\global\\evensidemargin\\arxivreaderEven\\global\\paperwidth\\arxivreaderPaper"
+    "\\arxivreaderSides\\arxivreaderAgain\\fi}",
+    "\\let\\arxivreaderTwocolumn\\twocolumn",
+    "\\def\\twocolumn{\\ifarxivreaderDone\\expandafter\\arxivreaderToTwo\\fi\\arxivreaderTwocolumn}",
+    # geometry : \\newgeometry, \\restoregeometry, \\loadgeometry remettent ses valeurs (marges, \\paperwidth,
+    # \\marginparwidth) ; nouvelles marges d'origine, puis nouveau calcul
+    "\\def\\arxivreaderGeometry{\\ifarxivreaderDone\\global\\arxivreaderOdd\\oddsidemargin"
+    "\\global\\arxivreaderEven\\evensidemargin\\global\\arxivreaderPaper\\paperwidth\\arxivreaderColumns"
+    "\\arxivreaderAgain\\fi}",
+    "\\ifdefined\\newgeometry\\let\\arxivreaderNewgeometry\\newgeometry"
+    "\\long\\def\\newgeometry#1{\\arxivreaderNewgeometry{#1}\\arxivreaderGeometry}\\fi",
+    "\\ifdefined\\restoregeometry\\let\\arxivreaderRestoregeometry\\restoregeometry"
+    "\\def\\restoregeometry{\\arxivreaderRestoregeometry\\arxivreaderGeometry}\\fi",
+    "\\ifdefined\\loadgeometry\\let\\arxivreaderLoadgeometry\\loadgeometry"
+    "\\def\\loadgeometry#1{\\arxivreaderLoadgeometry{#1}\\arxivreaderGeometry}\\fi",
+    "\\ifdefined\\AddToHook\\AddToHook{begindocument/end}{\\arxivreaderLayout}\\else"
+    "\\AtBeginDocument{\\arxivreaderLayout}\\fi"]
+
+
+# Note en mode vertical (mise en page « wide ») — entre deux paragraphes, après \\maketitle, avant un environnement :
+# todonotes y ouvre un paragraphe vide pour son trait (\\vskip-\\baselineskip\\noindent…), ce qui décale tout le
+# texte qui suit, et le \\marginpar cache le dernier espace vertical (\\lastskip) aux \\addvspace suivants. Ici : la
+# boîte de la note seulement (sans trait ni entrée dans \\listoftodos), le dernier espace retiré puis remis après elle
+# (précédé de \\nobreak : pas de coupure de page de plus). Pas dans une étiquette en attente (\\item, début d'énoncé,
+# titre en ligne) : todonotes y passe en mode horizontal, comme le texte.
+# Note au début d'un paragraphe encore vide (après une formule centrée, après \\noindent) : la boîte seulement aussi —
+# le repère du trait (tikzpicture, baseline=-0.75ex) donnerait 0,75 ex de hauteur à une ligne sans texte. Si la ligne
+# suivante de la source termine de toute façon le paragraphe (ligne vide, \\section, \\item, \\begin{theorem}…, voir
+# _ends_paragraph), \\arxivreaderPar le termine d'abord (sans ligne, comme TeX pour un paragraphe vide) : la note y
+# est entre deux paragraphes ; sinon elle ferait une ligne vide.
+# Sortie de LaTeX pour nos notes (\\@specialoutput, une fois par \\marginpar) : il remet la page en cours puis les notes
+# de bas de page à sa fin (\\@reinserts) — la place qu'elles prennent ne compte alors qu'à partir de là, et la page
+# peut se couper autrement (premières lignes d'un énoncé en bas d'une page qui a une note de bas de page). Ici, pour nos
+# notes seulement (repérées dans l'ordre des \\marginpar, \\arxivreaderMparFlags) : notes de bas de page remises avant
+# la page. (La coupure possible qu'il ajoute après la note, \\interlinepenalty, est gardée : la retirer déplace
+# d'autres coupures, notes entre deux paragraphes.)
+WIDE_TODO = [
+    "\\newcount\\arxivreaderLast\\newskip\\arxivreaderSkip\\newif\\ifarxivreaderV\\newif\\ifarxivreaderH",
+    "\\def\\arxivreaderMarginOnly{\\marginpar[\\csname @todonotes@drawMarginNote\\endcsname]"
+    "{\\csname @todonotes@drawMarginNote\\endcsname}}",
+    "\\def\\arxivreaderVcheck{\\arxivreaderVfalse\\arxivreaderHfalse\\ifvmode\\arxivreaderVtrue\\else"
+    "\\ifnum\\lastnodetype=-1 \\arxivreaderHtrue\\fi\\fi"
+    "\\expandafter\\let\\expandafter\\arxivreaderIf\\csname if@inlabel\\endcsname"
+    "\\arxivreaderIf\\arxivreaderVfalse\\arxivreaderHfalse\\fi"
+    "\\expandafter\\let\\expandafter\\arxivreaderIf\\csname if@noskipsec\\endcsname"
+    "\\arxivreaderIf\\arxivreaderVfalse\\arxivreaderHfalse\\fi}",
+    "\\def\\arxivreaderVtodo#1#2{\\arxivreaderLast\\lastnodetype\\arxivreaderSkip\\lastskip"
+    "\\ifnum\\arxivreaderLast=11 \\vskip-\\arxivreaderSkip\\fi\\begingroup"
+    "\\expandafter\\let\\csname @todonotes@drawMarginNoteWithLine\\endcsname\\arxivreaderMarginOnly"
+    "{call}[nolist,#1]{#2}\\endgroup\\ifnum\\arxivreaderLast=11 \\penalty10000 \\vskip\\arxivreaderSkip\\fi}",
+    "\\def\\arxivreaderHtodo#1#2{\\begingroup"
+    "\\expandafter\\let\\csname @todonotes@drawMarginNoteWithLine\\endcsname\\arxivreaderMarginOnly"
+    "{call}[nolist,#1]{#2}\\endgroup}",
+    "\\newcommand{{macro}}[2][]{{guard}\\global\\arxivreaderOurstrue\\arxivreaderVcheck\\ifarxivreaderV"
+    "\\arxivreaderVtodo{#1}{#2}\\else\\ifarxivreaderH\\arxivreaderHtodo{#1}{#2}\\else{call}[#1]{#2}\\fi\\fi"
+    "\\global\\arxivreaderOursfalse\\fi\\fi}",
+    "\\def{par}{{guard}\\ifhmode\\ifnum\\lastnodetype=-1 {\\csname @@par\\endcsname}\\fi\\fi\\fi\\fi}",
+    # (lignes suivantes avec @ lettre, rendu tel qu'il était)
+    "\\edef\\arxivreaderAt{\\the\\catcode`\\@}\\catcode`\\@=11 ",
+    "\\newif\\ifarxivreaderOurs\\def\\arxivreaderMparFlags{}",
+    "\\def\\arxivreaderMparPush{\\ifnum\\@floatpenalty<\\z@\\xdef\\arxivreaderMparFlags{\\arxivreaderMparFlags"
+    "\\ifarxivreaderOurs1\\else0\\fi}\\fi}",
+    "\\def\\arxivreaderHead\\@elt#1#2\\relax{\\let\\arxivreaderBox#1}",
+    "\\def\\arxivreaderPop#1#2\\relax{\\gdef\\arxivreaderMparFlags{#2}\\if1#1\\arxivreaderFront\\fi}",
+    "\\def\\arxivreaderFront{\\global\\setbox\\@holdpg\\vbox{\\@reinserts\\unvbox\\@holdpg}}",
+    # \\outputpenalty −10002 (note dans un paragraphe) ou −10003 (entre deux) ; en tête de \\@currlist, la boîte d'un
+    # \\marginpar a le compte −1 (celle d'un flottant, un compte positif)
+    "\\def\\arxivreaderSpecial{\\ifnum\\outputpenalty<-\\@Mi\\ifnum\\outputpenalty>-\\@Miv"
+    "\\ifx\\@currlist\\@empty\\else\\expandafter\\arxivreaderHead\\@currlist\\relax\\ifnum\\count\\arxivreaderBox<\\z@"
+    "\\ifx\\arxivreaderMparFlags\\@empty\\else\\expandafter\\arxivreaderPop\\arxivreaderMparFlags\\relax"
+    "\\fi\\fi\\fi\\fi\\fi}",
+    "\\def\\arxivreaderSetup{\\let\\arxivreaderXympar\\@xympar\\def\\@xympar{\\arxivreaderMparPush\\arxivreaderXympar}"
+    "\\let\\arxivreaderSpecialSaved\\@specialoutput\\def\\@specialoutput{\\arxivreaderSpecial\\arxivreaderSpecialSaved}}",
+    "\\catcode`\\@=\\arxivreaderAt\\relax"]
+PAR_MACRO = "\\arxivreaderPar"
+# environnements qui commencent par \\par (listes de LaTeX) : une note juste avant, au début d'un paragraphe vide, y
+# est entre deux paragraphes (avec ceux de l'auteur déclarés par \\newtheorem, \\declaretheorem, \\spnewtheorem)
+PAR_ENVS = {"itemize", "enumerate", "description", "list", "trivlist", "center", "flushleft", "flushright", "quote",
+            "quotation", "verse", "proof", "abstract", "thebibliography", "theorem", "lemma", "proposition",
+            "corollary", "definition", "remark", "example", "conjecture", "claim", "notation", "exercise", "problem",
+            "question", "hypothesis", "assumption", "fact", "observation"}
+PAR_ENDS = {"itemize", "enumerate", "description", "center", "flushleft", "flushright", "quote", "quotation", "verse"}
+THEOREMS = re.compile(r"\\(?:newtheorem|spnewtheorem)\*?\s*\{\s*([^{}\s]+)\s*\}|\\declaretheorem\s*(?:\[[^\]]*\]\s*)?\{([^{}]+)\}")
+PAR_START = re.compile(r"\s*(?:\\(par|item|bibitem|part|chapter|section|subsection|subsubsection|paragraph|subparagraph)"
+                       r"(?![A-Za-z@])|\\(begin|end)\s*\{\s*([^{}]*?)\s*\})")
+
 
 def _preamble(plan):
     """Lignes ajoutées avant \\begin{document} en mode « todo » ; None si rien à ajouter."""
@@ -1587,20 +1829,57 @@ def _preamble(plan):
     lines = [f"% {MARK} {plan.words['preamble']}"]
     if not loaded and not width_set:  # (todonotes le demande à son chargement ; remplacé au début du document)
         lines.append(f"\\setlength{{\\marginparwidth}}{{2cm}}% {MARK}")
-    lines += [line.replace("{own}", OWN_WIDTH if width_set else "") + f"% {MARK}" for line in MARGIN_WIDTH]
+    if plan.layout == "wide":  # largeur choisie par le document ignorée : la colonne des notes est la nôtre
+        log = plan.words["layoutLog"].format(width="\\arxivreaderMm{\\arxivreaderWidth}",
+                                             shift="\\arxivreaderMm{\\arxivreaderShift}", more="\\arxivreaderMm{\\arxivreaderMoreR}")
+        lines += [line.replace("{edge}", WIDE_EDGE).replace("{min}", WIDE_MIN).replace("{max}", WIDE_MAX)
+                  .replace("{left}", WIDE_LEFT).replace("{log}", log) + f"% {MARK}" for line in WIDE_LAYOUT]
+    else:
+        lines += [line.replace("{own}", OWN_WIDTH if width_set else "") + f"% {MARK}" for line in MARGIN_WIDTH]
     lines.append(f"{SPLIT_MACRO}% {MARK}")
     if own and not loaded:
         plan.warnings.append(plan.words["warn"]["ownTodo"])
+    call = "\\todo" if loaded else "\\arxivreaderTodonotes"
     if not loaded:  # \\todo du document (même défini dans un .sty du projet) sauvegardé, puis remis après todonotes
         lines += [f"\\let\\arxivreaderSavedTodo\\todo\\expandafter\\let\\expandafter\\arxivreaderSavedTodoArgs\\csname\\string\\todo\\endcsname% {MARK}",
                   f"\\let\\todo\\relax\\usepackage{{todonotes}}% {MARK}",
                   f"\\expandafter\\let\\expandafter\\arxivreaderTodonotes\\csname\\string\\todo\\endcsname% {MARK}",
-                  f"\\let\\todo\\arxivreaderSavedTodo\\expandafter\\let\\csname\\string\\todo\\endcsname\\arxivreaderSavedTodoArgs% {MARK}",
-                  f"\\newcommand{{{MACRO}}}[2][]{{{GUARD}\\arxivreaderTodonotes[#1]{{#2}}\\fi\\fi}}% {MARK}"]
+                  f"\\let\\todo\\arxivreaderSavedTodo\\expandafter\\let\\csname\\string\\todo\\endcsname\\arxivreaderSavedTodoArgs% {MARK}"]
+    if plan.layout == "wide":  # notes entre deux paragraphes sans décaler le texte (WIDE_TODO)
+        lines += [line.replace("{call}", call).replace("{macro}", MACRO).replace("{guard}", GUARD)
+                  .replace("{par}", PAR_MACRO) + f"% {MARK}" for line in WIDE_TODO]
     else:
-        lines.append(f"\\newcommand{{{MACRO}}}[2][]{{{GUARD}\\todo[#1]{{#2}}\\fi\\fi}}% {MARK}")
+        lines.append(f"\\newcommand{{{MACRO}}}[2][]{{{GUARD}{call}[#1]{{#2}}\\fi\\fi}}% {MARK}")
     lines.append(f"% {END_MARK}")
     return lines
+
+
+def _ends_paragraph(plan, name, line):
+    """La source termine-t-elle le paragraphe juste avant la ligne `line` de `name` (avant tout texte) : ligne vide,
+    \\par, \\item, titre de section, début d'une liste ou d'un énoncé (PAR_ENVS et les \\newtheorem du projet), fin
+    d'une liste (PAR_ENDS) ? Les lignes de commentaires seuls ne comptent pas (rien pour TeX)."""
+    lines = plan.lines.get(name)
+    if lines is None:
+        return False
+    if plan.theorems is None:
+        plan.theorems = {a or b.strip() for text in plan.files.values()
+                         for a, b in THEOREMS.findall(_strip_comments(text))}
+        plan.theorems |= {part.strip() for name_ in list(plan.theorems) if "," in name_ for part in name_.split(",")}
+    for index in range(line, len(lines)):
+        raw = lines.content(index)
+        if not raw.strip():
+            return index + 1 < len(lines)  # ligne vide (pas la fin du fichier, où rien ne suit)
+        text = _strip_comments(raw)
+        if not text.strip():
+            continue
+        match = PAR_START.match(text)
+        if not match:
+            return False
+        if match.group(1):
+            return True
+        names = PAR_ENVS | plan.theorems if match.group(2) == "begin" else PAR_ENDS
+        return match.group(3) in names or match.group(3).rstrip("*") in names
+    return False
 
 
 def _insertions(plan):
@@ -1618,6 +1897,7 @@ def _insertions(plan):
                                    for e in plan.entries):
         if plan.begin_document and plan.copy_name.get(plan.begin_document[0]) and not plan.begin_shared:
             preamble = _preamble(plan)  # (ses avertissements dans l'en-tête)
+            plan.wide = plan.layout == "wide"
         else:  # (\\documentclass sur la ligne de \\begin{document} : rien ne peut être ajouté entre les deux)
             plan.warnings.append(plan.words["warn"]["sharedLine" if plan.begin_shared else "noDocument"])
             for entry in plan.entries:
@@ -1635,12 +1915,15 @@ def _insertions(plan):
                 lines.setdefault(entry["todoLine"], []).append((entry, "todo"))
         for line, items in lines.items():
             new = []
+            # « wide » : paragraphe terminé d'abord s'il est encore vide et que la source le termine juste après
+            par = PAR_MACRO if plan.wide and _ends_paragraph(plan, name, line) else ""
             for entry, part in sorted(items, key=lambda item: (item[0]["rank"], item[0]["id"], item[1] == "todo")):
                 if part == "comment":
                     new += comment_block(entry, plan.words)
                 else:
                     color = COLORS.get(entry.get("color") or "", NOTE_COLOR) if entry["kind"] in ("highlight", "zone") else NOTE_COLOR
-                    new.append(f"{MACRO}[color={color},size=\\scriptsize]{{{entry['short']}}}% {MARK}")
+                    size = SIZE_MACRO if plan.wide else "\\scriptsize"
+                    new.append(f"{par}{MACRO}[color={color},size={size}]{{{entry['short']}}}% {MARK}")
             add(plan.copy_name[name], line, new)
     return out
 
@@ -1669,9 +1952,9 @@ def _texts(plan, insertions):
     return written, latin
 
 
-def summary(pid, mode, language):
+def summary(pid, mode, language, layout="wide"):
     """Ce que contiendra la copie (sans rien écrire) : nombres de notes placées, SyncTeX, taille, avertissements."""
-    plan = Plan(pid, mode, language)
+    plan = Plan(pid, mode, language, layout)
     insertions = _insertions(plan)
     _, latin = _texts(plan, insertions)
     if latin:
@@ -1680,7 +1963,7 @@ def summary(pid, mode, language):
     return {**{k: counts[k] for k in ("total", "exact", "approx", "unplaced", "header", "byKind")},
             "synctex": plan.sync is not None, "files": len(plan.copy), "size": plan.size, "folder": str(plan.root),
             "warnings": plan.warnings,
-            "todoMacro": MACRO if mode == "todo" else None, "mode": mode}
+            "todoMacro": MACRO if mode == "todo" else None, "mode": mode, "layout": plan.layout}
 
 
 def _readme(plan, counts, date):
@@ -1689,6 +1972,8 @@ def _readme(plan, counts, date):
     lines = [line.format(date=date, name=plan.root.name, mode=mode,
                          counts=words["counts"].format(**{k: counts[k] for k in ("total", "exact", "approx", "unplaced", "header")}))
              for line in words["readme"]]
+    if plan.wide:
+        lines += [""] + words["layout"]
     if plan.warnings:
         lines += ["", words["readmeWarnings"]] + [f"- {one_line(w)}" for w in plan.warnings]
     unplaced = sorted((e for e in plan.entries if e["precision"] == "none"), key=lambda e: (e["page"] or 0, e["id"]))
@@ -1721,11 +2006,11 @@ def _purge_stale(now=None):
             continue
 
 
-def build_zip(pid, mode, language):
+def build_zip(pid, mode, language, layout="wide"):
     """Archive .zip de la copie annotée, écrite dans un fichier temporaire : (chemin, nom proposé). L'appelant le
     supprime après l'envoi (et chaque appel supprime celles de plus de 6 h, oubliées)."""
     _purge_stale()
-    plan = Plan(pid, mode, language)
+    plan = Plan(pid, mode, language, layout)
     insertions = _insertions(plan)
     written, latin = _texts(plan, insertions)
     if latin:
@@ -1766,9 +2051,10 @@ def build_zip(pid, mode, language):
     return temporary, plan.words["zip"].format(name=name)
 
 
-def check(mode, language):
-    """Paramètres de la requête : True s'ils sont valides."""
-    return mode in MODES and language in LANGUAGES
+def check(mode, language, layout="wide"):
+    """Paramètres de la requête : True s'ils sont valides (la mise en page aussi en mode commentaires, où elle est
+    sans effet)."""
+    return mode in MODES and language in LANGUAGES and layout in LAYOUTS
 
 
 def params_error(language):
@@ -1776,8 +2062,8 @@ def params_error(language):
     return ERRORS.get(language if language in LANGUAGES else "en", ERRORS["en"])["params"]
 
 
-def plan_json(pid, mode="comments", language="fr"):
+def plan_json(pid, mode="comments", language="fr", layout="wide"):
     """Notes et leur place (tests, diagnostic)."""
-    plan = Plan(pid, mode, language)
+    plan = Plan(pid, mode, language, layout)
     _insertions(plan)
     return json.loads(json.dumps(plan.entries, default=str))

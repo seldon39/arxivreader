@@ -1592,32 +1592,32 @@ def paper_notes(paper_id: str, lang: str = "fr"):
 
 # ---- Copie annotée de la source TeX (texexport.py) ----
 
-def _tex_annotated_args(paper_id, mode, lang):
+def _tex_annotated_args(paper_id, mode, lang, layout):
     _tex_paper(paper_id)
-    if not texexport.check(mode, lang):
+    if not texexport.check(mode, lang, layout):
         raise HTTPException(400, texexport.params_error(lang))
 
 
 @app.get("/api/papers/{paper_id}/tex-annotated/summary")
-def tex_annotated_summary(paper_id: str, mode: str = "comments", lang: str = "fr"):
-    """Ce que contiendra la copie annotée (mode comments|todo) : {total, exact, approx, unplaced, header, byKind,
-    synctex, files, size, folder, warnings, todoMacro, mode} ; 400 avec un message dans la langue demandée sinon. Rien n'est
-    écrit."""
-    _tex_annotated_args(paper_id, mode, lang)
+def tex_annotated_summary(paper_id: str, mode: str = "comments", lang: str = "fr", layout: str = "wide"):
+    """Ce que contiendra la copie annotée (mode comments|todo ; mise en page des notes en marge wide|keep) : {total,
+    exact, approx, unplaced, header, byKind, synctex, files, size, folder, warnings, todoMacro, mode, layout} ; 400 avec
+    un message dans la langue demandée sinon. Rien n'est écrit."""
+    _tex_annotated_args(paper_id, mode, lang, layout)
     try:
-        return texexport.summary(paper_id, mode, lang)
+        return texexport.summary(paper_id, mode, lang, layout)
     except texexport.ExportError as error:
         raise HTTPException(400, str(error))
 
 
 @app.get("/api/papers/{paper_id}/tex-annotated")
-def tex_annotated(paper_id: str, mode: str = "comments", lang: str = "fr"):
+def tex_annotated(paper_id: str, mode: str = "comments", lang: str = "fr", layout: str = "wide"):
     """Copie du dossier du projet TeX avec les notes insérées, en .zip (fichier temporaire supprimé après l'envoi)."""
     from urllib.parse import quote
 
-    _tex_annotated_args(paper_id, mode, lang)
+    _tex_annotated_args(paper_id, mode, lang, layout)
     try:
-        path, name = texexport.build_zip(paper_id, mode, lang)
+        path, name = texexport.build_zip(paper_id, mode, lang, layout)
     except texexport.ExportError as error:
         raise HTTPException(400, str(error))
     try:

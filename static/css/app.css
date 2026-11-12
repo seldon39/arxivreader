@@ -1733,6 +1733,8 @@ body.related-expanded { overflow: hidden; }
 .meta-dialog .texannot-choice { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; color: var(--text); cursor: pointer; }
 .meta-dialog .texannot-choice input { flex: none; margin: 3px 0 0; padding: 0; }
 .texannot-choice > span { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.meta-dialog .texannot-option { margin-left: 24px; }
+.meta-dialog .texannot-option.disabled { opacity: .5; cursor: default; }
 .tex-dialog .button[aria-disabled="true"] { opacity: .5; pointer-events: none; }
 .tex-checks { margin: 0 0 10px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; line-height: 1.7; }
 .tex-checks-head { margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -1,4 +1,4 @@
-# arXivReader 1.14.0-beta.1 — copie .tex annotée
+# arXivReader 1.14.0-beta.2 — copie .tex annotée
 
 Bêta locale, issue de la 1.13.3 : seulement sur cet ordinateur, rien sur GitHub. Elle a sa propre bibliothèque
 (`~/Library/Application Support/arXivReader Beta`) et ne touche pas à l'application habituelle.
@@ -15,6 +15,12 @@ Deux formes au choix :
 - **Commentaires %** : chaque note devient un bloc `% [arXivReader] … % [/arXivReader]`. Le PDF compilé ne change pas.
 - **Notes en marge** : les mêmes commentaires, plus une note en marge courte (paquet todonotes, chargé dans le
   préambule de la copie). Chaque ligne ajoutée porte la marque `[arXivReader]`.
+
+**Nouveau en beta.2 — « Agrandir la marge des notes »** (case cochée par défaut, mode notes en marge) : le texte est
+décalé vers la gauche (marge gauche de 1,5 cm), la colonne des notes fait de 4,5 à 6 cm, et la page est élargie à
+droite si la place manque ; les notes sont en 7 pt. La largeur et la hauteur du texte ne changent pas : les lignes et
+les pages se coupent comme dans l'original. Une page élargie s'imprime en « ajuster à la page ». Décocher la case
+redonne la mise en page de la beta.1.
 
 Où vont les notes :
 - note ou état d'un énoncé, ou d'une preuve : juste avant son `\begin{…}` ;
