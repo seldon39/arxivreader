@@ -167,15 +167,69 @@ PROOF_END = re.compile(r"\\qed\b|\\qedhere\b|\\(?:Box|square|blacksquare|qedsymb
                        r"|\\(?:sub)*section\b|\\begin\s*\{proof\}")
 
 
-def normalize_proofs(body, envs):
+class Shifts:
+    """Positions d'un texte réécrit (morceaux recopiés ou remplacés) ramenées au texte d'avant : `start` pour un début,
+    `end` pour une fin (exclue). Une position dans un morceau remplacé va au début (ou à la fin) du texte qu'il remplace."""
+
+    def __init__(self, pieces, size, source_size):
+        self.pieces = pieces  # (début dans le résultat, longueur, début dans le texte d'avant, longueur, recopié)
+        self.starts = [p[0] for p in pieces]
+        self.size, self.source_size = size, source_size
+
+    def _piece(self, pos):
+        import bisect
+        return self.pieces[bisect.bisect_right(self.starts, pos) - 1]
+
+    def start(self, pos):
+        if not self.pieces or pos >= self.size:
+            return self.source_size
+        out, _, source, _, copied = self._piece(max(0, pos))
+        return source + (pos - out if copied else 0)
+
+    def end(self, pos):
+        if not self.pieces or pos <= 0:
+            return 0
+        out, _, source, length, copied = self._piece(min(pos, self.size) - 1)
+        return source + (min(pos, self.size) - out if copied else length)
+
+
+def _edit(text, edits, shifts=None):
+    """`text` où chaque (début, fin, remplacement) de `edits` (dans l'ordre, sans chevauchement) est remplacé ;
+    `shifts` (liste) : y ajoute la correspondance des positions (Shifts)."""
+    out, pieces, pos, size = [], [], 0, 0
+    for start, end, replacement in edits:
+        if start > pos:
+            out.append(text[pos:start])
+            pieces.append((size, start - pos, pos, start - pos, True))
+            size += start - pos
+        out.append(replacement)
+        pieces.append((size, len(replacement), start, end - start, False))
+        size += len(replacement)
+        pos = end
+    if pos < len(text):
+        out.append(text[pos:])
+        pieces.append((size, len(text) - pos, pos, len(text) - pos, True))
+        size += len(text) - pos
+    if shifts is not None:
+        shifts.append(Shifts(pieces, size, len(text)))
+    return "".join(out)
+
+
+def _sub(pattern, template, text, shifts=None, flags=0):
+    """re.sub(pattern, template, text) (même résultat), avec la correspondance des positions."""
+    return _edit(text, [(m.start(), m.end(), m.expand(template)) for m in re.finditer(pattern, text, flags)], shifts)
+
+
+def normalize_proofs(body, envs, shifts=None):
     """Preuves écrites autrement (\\proof…\\endproof, environnement « pf », titre « \\textbf{Proof of …} »)
-    réécrites en \\begin{proof}[…]…\\end{proof}, la forme que reconnaît l'analyse."""
-    body = re.sub(r"\\proof\b(?![A-Za-z])", r"\\begin{proof}", body)
-    body = re.sub(r"\\endproof\b(?![A-Za-z])", r"\\end{proof}", body)
+    réécrites en \\begin{proof}[…]…\\end{proof}, la forme que reconnaît l'analyse. `shifts` (liste) : y ajoute la
+    correspondance des positions de chaque réécriture (Shifts, dans l'ordre)."""
+    body = _sub(r"\\proof\b(?![A-Za-z])", r"\\begin{proof}", body, shifts)
+    body = _sub(r"\\endproof\b(?![A-Za-z])", r"\\end{proof}", body, shifts)
     names = "|".join(re.escape(n) for n in PROOF_ENVS - {"proof"} if n not in envs)
-    body = re.sub(rf"\\(begin|end)\s*\{{({names})\*?\}}", r"\\\1{proof}", body)
+    body = _sub(rf"\\(begin|end)\s*\{{({names})\*?\}}", r"\\\1{proof}", body, shifts)
     starts = (rf"\\begin\s*\{{(?:{'|'.join(re.escape(e) for e in envs)})\*?\}}" if envs else None)
-    out, pos = [], 0
+    edits, pos = [], 0
     for match in PROOF_HEADER.finditer(body):
         if match.start() < pos:
             continue
@@ -193,11 +247,10 @@ def normalize_proofs(body, envs):
             next_statement = re.compile(starts).search(body, rest)
             if next_statement and next_statement.start() < stop:
                 stop = next_statement.start()
-        out.append(body[pos:match.start()])
-        out.append(f"\\begin{{proof}}[{title}]{body[rest:stop]}\\end{{proof}}")
+        # « \begin{proof}[titre] » à la place du titre, le texte gardé, « \end{proof} » ajouté après
+        edits += [(match.start(), rest, f"\\begin{{proof}}[{title}]"), (stop, stop, "\\end{proof}")]
         pos = stop
-    out.append(body[pos:])
-    return "".join(out)
+    return _edit(body, edits, shifts)
 
 
 # ---------- Analyse ----------
@@ -206,22 +259,23 @@ def _letter(n):
     return chr(ord("A") + n - 1) if 1 <= n <= 26 else str(n)
 
 
-def strip_hidden(text):
+def strip_hidden(text, shifts=None):
     """Passages que LaTeX n'imprime pas : \\begin{comment}…\\end{comment}, \\iffalse…\\fi, argument d'une macro
-    qui ne l'imprime pas (« \\newcommand{\\comment}[1]{} »)."""
-    text = re.sub(r"\\begin\s*\{comment\}.*?\\end\s*\{comment\}", " ", text, flags=re.S)
+    qui ne l'imprime pas (« \\newcommand{\\comment}[1]{} »). `shifts` (liste) : y ajoute la correspondance des
+    positions de chaque étape (Shifts, dans l'ordre)."""
+    text = _sub(r"\\begin\s*\{comment\}.*?\\end\s*\{comment\}", " ", text, shifts, flags=re.S)
     for name in set(re.findall(r"\\(?:re)?newcommand\*?\s*\{?\\([A-Za-z]+)\}?\s*\[1\]\s*\{\s*\}", text)):
-        out, pos = [], 0
+        edits, pos = [], 0
         for match in re.finditer(r"\\" + name + r"\s*(?=\{)", text):
             if match.start() < pos:
                 continue
             group = _group(text, match.end(), "{")
             if group is None:
                 continue
-            out.append(text[pos:match.start()])
+            edits.append((match.start(), group[1], ""))
             pos = group[1]
-        text = "".join(out) + text[pos:]
-    out, pos = [], 0
+        text = _edit(text, edits, shifts)
+    edits, pos = [], 0
     for match in re.finditer(r"\\iffalse\b", text):
         if match.start() < pos:
             continue
@@ -229,24 +283,29 @@ def strip_hidden(text):
         for token in re.finditer(r"\\(if[A-Za-z]*|fi)\b", text[cursor:]):
             depth += -1 if token.group(1) == "fi" else 1
             if depth == 0:
-                out.append(text[pos:match.start()])
+                edits.append((match.start(), cursor + token.end(), ""))
                 pos = cursor + token.end()
                 break
         else:
             break
-    out.append(text[pos:])
-    return "".join(out)
+    return _edit(text, edits, shifts)
 
 
-def extract(text, bbl=""):
-    """Structure (même forme que structure.extract_structure) à partir du texte TeX développé."""
-    text = strip_hidden(text)
+def extract(text, bbl="", positions=None):
+    """Structure (même forme que structure.extract_structure) à partir du texte TeX développé. `positions` (dict) :
+    y met la place des énoncés, preuves et sections dans `text` (positions de caractères, fin exclue) —
+    {"nodes": {id: (début, fin)}, "proofs": {id: (début, fin)}, "sections": {id: début}} (identifiants d'avant
+    texfile.stable_ids) ; la structure rendue est la même avec ou sans."""
+    hidden = [] if positions is not None else None
+    text = strip_hidden(text, hidden)
     envs, within, formats = declarations(text)
     begin = text.find("\\begin{document}")
     body = text[begin + len("\\begin{document}"):] if begin >= 0 else text
     end = body.find("\\end{document}")
     body = body[:end] if end >= 0 else body
-    body = normalize_proofs(body, envs)
+    rewritten = [] if positions is not None else None
+    body = normalize_proofs(body, envs, rewritten)
+    section_starts = {}      # section → position de sa commande dans le texte
 
     toc, nodes, order, proofs = [], {}, [], {}
     counters, sections = {}, [0, 0, 0, 0]
@@ -352,6 +411,7 @@ def extract(text, bbl=""):
                 parts += 1
                 anchors = [f"part.{parts}"]
             toc.append({"id": section_id, "level": level, "kind": command, "title": numbered + plain(title), "anchors": anchors})
+            section_starts[section_id] = match.start()
             section_of_level[level] = section_id
             for deeper in range(level + 1, 4):
                 section_of_level.pop(deeper, None)
@@ -542,6 +602,21 @@ def extract(text, bbl=""):
 
     equations = {key: {"label": "", "owner": found[1]} for key, found in labels.items() if found[0] == "equation"}
     preamble = text[:begin] if begin >= 0 else ""
+    if positions is not None:
+        offset = begin + len("\\begin{document}") if begin >= 0 else 0
+
+        def place(pos, edge):
+            """Position du corps réécrit → position dans le texte reçu (réécritures défaites dans l'ordre inverse)."""
+            for shift in reversed(rewritten):
+                pos = getattr(shift, edge)(pos)
+            pos += offset
+            for shift in reversed(hidden):
+                pos = getattr(shift, edge)(pos)
+            return pos
+
+        positions["nodes"] = {n: (place(spans[n][0], "start"), place(spans[n][1], "end")) for n in order if n in spans}
+        positions["proofs"] = {p["id"]: (place(p["span"][0], "start"), place(p["span"][1], "end")) for p in proofs.values()}
+        positions["sections"] = {s: place(at, "start") for s, at in section_starts.items()}
     return assign_chapters({
         "labels": {key: (found[1] if found[0] == "theorem" else None) for key, found in labels.items()},
         "macros": macros(preamble),

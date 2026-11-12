@@ -96,6 +96,118 @@ def _expand(files, name, depth=0, seen=None):
     return INPUT.sub(replace, text)
 
 
+# ---------- Texte développé avec l'origine de chaque caractère ----------
+
+# fins de ligne de str.splitlines() (celles que _strip_comments coupe), « \r\n » compté comme une seule
+SPLITLINES = re.compile("\r\n|[\n\r\x0b\x0c\x1c\x1d\x1e\x85  ]")
+
+
+def _line_spans(text):
+    """(début, fin) de chaque ligne de `text`, exactement comme text.splitlines() (sans ligne vide finale)."""
+    spans, pos = [], 0
+    for match in SPLITLINES.finditer(text):
+        spans.append((pos, match.start()))
+        pos = match.end()
+    if pos < len(text):
+        spans.append((pos, len(text)))
+    return spans
+
+
+class Origins:
+    """Origine des caractères d'un texte développé : morceaux (début dans le texte développé, fichier, position dans
+    le texte du fichier, longueur), dans l'ordre. Chaque caractère vient d'un caractère d'un fichier (le saut de ligne
+    remis par _strip_comments : la fin de ligne d'origine)."""
+
+    def __init__(self):
+        self.starts, self.names, self.offsets, self.lengths = [], [], [], []
+        self.size = 0
+
+    def add(self, name, offset, length):
+        if length <= 0:
+            return
+        if self.starts and self.names[-1] == name and self.offsets[-1] + self.lengths[-1] == offset \
+                and self.starts[-1] + self.lengths[-1] == self.size:
+            self.lengths[-1] += length  # suite du morceau précédent
+        else:
+            self.starts.append(self.size)
+            self.names.append(name)
+            self.offsets.append(offset)
+            self.lengths.append(length)
+        self.size += length
+
+    def at(self, pos):
+        """(fichier, position dans son texte) du caractère `pos` du texte développé ; None hors du texte."""
+        import bisect
+        if not self.starts or pos < 0 or pos >= self.size:
+            return None
+        index = bisect.bisect_right(self.starts, pos) - 1
+        return self.names[index], self.offsets[index] + pos - self.starts[index]
+
+    def first(self, name):
+        """Position dans le texte développé du premier caractère venu du fichier `name` (None s'il n'y est pas)."""
+        return next((start for start, other in zip(self.starts, self.names) if other == name), None)
+
+
+def _strip_comments_tracked(text):
+    """_strip_comments(text) et ses morceaux [(début dans le résultat, position dans `text`, longueur)]."""
+    parts, pieces, out = [], [], 0
+    spans = _line_spans(text)
+    for index, (start, end) in enumerate(spans):
+        if index:
+            parts.append("\n")
+            pieces.append((out, spans[index - 1][1], 1))  # fin de ligne d'origine (« \r\n » : son « \r »)
+            out += 1
+        line = text[start:end]
+        comment = COMMENT.search(line)
+        kept = line[:comment.start()] if comment else line
+        parts.append(kept)
+        if kept:
+            pieces.append((out, start, len(kept)))
+            out += len(kept)
+    return "".join(parts), pieces
+
+
+def expand_with_origins(files, name):
+    """Même texte que _expand(files, name) (identique, caractère pour caractère) et l'origine de chacun de ses
+    caractères (Origins) : de quel fichier il vient et où."""
+    import bisect
+    out, origins = [], Origins()
+
+    def copy(pieces, starts, file, a, b):
+        """Morceau [a, b) du texte sans commentaires de `file` recopié : ses origines."""
+        index = max(0, bisect.bisect_right(starts, a) - 1)
+        while index < len(pieces) and pieces[index][0] < b:
+            start, offset, length = pieces[index]
+            lo, hi = max(a, start), min(b, start + length)
+            if lo < hi:
+                origins.add(file, offset + lo - start, hi - lo)
+            index += 1
+
+    def expand(file, depth, seen):
+        if depth > 6 or file in seen:
+            return
+        seen.add(file)
+        text, pieces = _strip_comments_tracked(files[file])
+        starts = [p[0] for p in pieces]
+        base = posixpath.dirname(file)
+        pos = 0
+        for match in INPUT.finditer(text):  # comme INPUT.sub : de gauche à droite, chaque inclusion développée aussitôt
+            out.append(text[pos:match.start()])
+            copy(pieces, starts, file, pos, match.start())
+            target = input_target(match)
+            for candidate in (target, target + ".tex", posixpath.join(base, target), posixpath.join(base, target + ".tex")):
+                candidate = posixpath.normpath(candidate)
+                if candidate in files:
+                    expand(candidate, depth + 1, seen)
+                    break
+            pos = match.end()
+        out.append(text[pos:])
+        copy(pieces, starts, file, pos, len(text))
+
+    expand(name, 0, set())
+    return "".join(out), origins
+
+
 def _label_format(option):
     """Gabarit d'étiquette d'enumerate : « (i) » → ("(", "i", ")") ; None si étiquettes par défaut."""
     if option is None:

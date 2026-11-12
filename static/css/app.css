@@ -1727,6 +1727,13 @@ body.related-expanded { overflow: hidden; }
 .tex-step .muted { margin-top: 2px; overflow-wrap: anywhere; }
 .tex-path { font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
 .tex-step-action { margin-top: 6px; }
+/* Copie .tex annotée : choix de la forme des notes */
+.texannot-modes legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.texannot-modes { border: 0; margin: 0; padding: 0; display: grid; gap: 8px; min-width: 0; }
+.meta-dialog .texannot-choice { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; color: var(--text); cursor: pointer; }
+.meta-dialog .texannot-choice input { flex: none; margin: 3px 0 0; padding: 0; }
+.texannot-choice > span { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.tex-dialog .button[aria-disabled="true"] { opacity: .5; pointer-events: none; }
 .tex-checks { margin: 0 0 10px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; line-height: 1.7; }
 .tex-checks-head { margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tex-check { display: flex; gap: 6px; align-items: baseline; overflow-wrap: anywhere; }

@@ -2,7 +2,7 @@
 // .bib introuvable à choisir), vérifications en tête de l'onglet Énoncés du lecteur.
 
 import { api } from "./api.js";
-import { t } from "./i18n.js";
+import { t, tn } from "./i18n.js";
 import { chooseFiles, h, toastError } from "./util.js";
 
 const NEEDS_PROOF = new Set(["theorem", "proposition", "lemma", "corollary", "claim"]);
@@ -144,4 +144,77 @@ export async function chooseBibFor(paperId, name, done) {
   const chosen = await pickBib(name);
   if (!chosen) return;
   try { done(await api.chooseBib(paperId, name, chosen)); } catch (error) { toastError(error); }
+}
+
+// Copie .tex annotée : choix de la forme des notes, bilan de leur placement, puis téléchargement du .zip
+// (un simple lien : l'application Mac affiche son message « Enregistré dans Téléchargements »)
+export function texAnnotatedDialog(paperId) {
+  const lang = document.documentElement.lang || "fr";
+  let mode = "comments";
+  let turn = 0;  // une réponse tardive d'un autre choix est ignorée
+  const info = h("div", { class: "tex-steps", "aria-live": "polite" });
+  const download = h("a", { class: "button primary", download: "", "aria-disabled": "true", tabindex: "-1" }, t("texAnnot.download"));
+  const choice = (value, label, hint) => h("label", { class: "texannot-choice" },
+    h("input", { type: "radio", name: "texannot-mode", value, checked: value === mode,
+      onchange: (event) => { if (event.target.checked) { mode = value; load(); } } }),
+    h("span", {}, h("span", {}, label), hint && h("span", { class: "muted small" }, hint)));
+  const dialog = h("dialog", { class: "meta-dialog tex-dialog" },
+    h("form", { method: "dialog" },
+      h("h3", { class: "meta-heading" }, t("texAnnot.title")),
+      h("p", { class: "muted small meta-note" }, t("texAnnot.intro")),
+      h("fieldset", { class: "texannot-modes" },
+        h("legend", {}, t("texAnnot.mode")),
+        choice("comments", t("texAnnot.modeComments")),
+        choice("todo", t("texAnnot.modeTodo"), t("texAnnot.modeTodoHint"))),
+      info,
+      h("div", { class: "dialog-actions" },
+        h("button", { class: "button", value: "cancel" }, t("texAnnot.cancel")),
+        download)));
+  const enable = (on) => {
+    if (on) {
+      download.href = `/api/papers/${encodeURIComponent(paperId)}/tex-annotated?mode=${encodeURIComponent(mode)}&lang=${encodeURIComponent(lang)}`;
+      download.removeAttribute("aria-disabled");
+      download.removeAttribute("tabindex");
+    } else {
+      download.removeAttribute("href");
+      download.setAttribute("aria-disabled", "true");
+      download.setAttribute("tabindex", "-1");
+    }
+  };
+  async function load() {
+    const mine = ++turn;
+    enable(false);
+    info.replaceChildren(h("div", { class: "tex-step" }, h("span", { class: "spinner" }), t("texAnnot.loading")));
+    try {
+      const s = await api.texAnnotatedSummary(paperId, mode, lang);
+      if (mine !== turn) return;
+      const steps = [];
+      if (!s.total) steps.push({ state: "warn", text: t("texAnnot.none") });
+      else {
+        const parts = [];
+        if (s.exact) parts.push(tn("texAnnot.exact", s.exact));
+        if (s.approx) parts.push(tn("texAnnot.approx", s.approx));
+        if (s.unplaced) parts.push(tn("texAnnot.unplaced", s.unplaced));
+        if (s.header) parts.push(tn("texAnnot.header", s.header));
+        steps.push({ state: s.unplaced ? "warn" : "ok", text: parts.join(" · "),
+          detail: [tn("texAnnot.project", s.files, { size: (s.size / 1048576).toLocaleString(lang, { maximumFractionDigits: 1, minimumFractionDigits: 1 }) }),
+            h("div", { class: "tex-path" }, s.folder)] });
+      }
+      // SyncTeX absent ou périmé, \todo du document, dossier volumineux… : avertissements du serveur
+      for (const warning of s.warnings || []) steps.push({ state: "warn", text: warning });
+      info.replaceChildren(...steps.map(stepElement));
+      enable(s.total > 0);
+    } catch (error) {
+      if (mine !== turn) return;
+      info.replaceChildren(stepElement({ state: "error", text: t("texAnnot.title"), detail: error.message }));
+    }
+  }
+  download.addEventListener("click", (event) => {
+    if (download.getAttribute("aria-disabled") === "true") { event.preventDefault(); return; }
+    setTimeout(() => dialog.close("download"), 0);
+  });
+  dialog.addEventListener("close", () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
+  load();
 }

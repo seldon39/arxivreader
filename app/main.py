@@ -13,6 +13,7 @@ import signal
 import logging
 import threading
 import time
+import unicodedata
 import zipfile
 import zlib
 from pathlib import Path
@@ -28,7 +29,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import (ai, alerts, annotations, bibtex, bookjob, notesync, safety, citations, crossrefs, db, export, feed, feedprune, folders, fulltext, journals, latexml, library, localpdf, onboarding, profile, providers, related, texfile,
-               relevance, search, updates, zotero)
+               relevance, search, texexport, updates, zotero)
 from .arxiv import ArxivError, fetch_metadata, paper_key, parse_arxiv_id, strip_subject_class
 from .config import HOST, PORT, STATIC, TOKEN, TOKEN_FILE
 
@@ -1587,6 +1588,63 @@ def paper_notes(paper_id: str, lang: str = "fr"):
     """Notes de l'article : Markdown, ou archive .zip quand des zones du PDF ont leur image (export.paper_export)."""
     checked_paper(paper_id)
     return _download(*export.paper_export(paper_id, lang))
+
+
+# ---- Copie annotée de la source TeX (texexport.py) ----
+
+def _tex_annotated_args(paper_id, mode, lang):
+    _tex_paper(paper_id)
+    if not texexport.check(mode, lang):
+        raise HTTPException(400, texexport.params_error(lang))
+
+
+@app.get("/api/papers/{paper_id}/tex-annotated/summary")
+def tex_annotated_summary(paper_id: str, mode: str = "comments", lang: str = "fr"):
+    """Ce que contiendra la copie annotée (mode comments|todo) : {total, exact, approx, unplaced, header, byKind,
+    synctex, files, size, folder, warnings, todoMacro, mode} ; 400 avec un message dans la langue demandée sinon. Rien n'est
+    écrit."""
+    _tex_annotated_args(paper_id, mode, lang)
+    try:
+        return texexport.summary(paper_id, mode, lang)
+    except texexport.ExportError as error:
+        raise HTTPException(400, str(error))
+
+
+@app.get("/api/papers/{paper_id}/tex-annotated")
+def tex_annotated(paper_id: str, mode: str = "comments", lang: str = "fr"):
+    """Copie du dossier du projet TeX avec les notes insérées, en .zip (fichier temporaire supprimé après l'envoi)."""
+    from urllib.parse import quote
+
+    _tex_annotated_args(paper_id, mode, lang)
+    try:
+        path, name = texexport.build_zip(paper_id, mode, lang)
+    except texexport.ExportError as error:
+        raise HTTPException(400, str(error))
+    try:
+        fallback = "".join(c for c in unicodedata.normalize("NFKD", name) if 32 <= ord(c) < 127 and c not in "\"\\") or "annotated.zip"
+        return _TemporaryFileResponse(path, media_type="application/zip",
+                                      headers={"Content-Disposition": f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(name)}"})
+    except BaseException:
+        _unlink(path)
+        raise
+
+
+class _TemporaryFileResponse(FileResponse):
+    """Fichier temporaire envoyé puis supprimé dans tous les cas : envoi fini, interrompu (téléchargement annulé) ou en
+    erreur — une tâche d'arrière-plan ne s'exécute pas quand l'envoi échoue."""
+
+    async def __call__(self, scope, receive, send):
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            _unlink(self.path)
+
+
+def _unlink(path):
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
 
 
 # ---------- BibTeX (construit hors ligne, d'après ce qui est enregistré ; voir bibtex.py) ----------

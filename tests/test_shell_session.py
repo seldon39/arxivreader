@@ -35,7 +35,10 @@ class Routes(unittest.TestCase):
 
 class Keys(unittest.TestCase):
     def test_new_keys_in_both_languages(self):
-        for key in ("settings.saveFailed", "onboarding.error.local"):
+        for key in ("settings.saveFailed", "onboarding.error.local", "texAnnot.button", "texAnnot.hint", "texAnnot.title",
+                    "texAnnot.intro", "texAnnot.mode", "texAnnot.modeComments", "texAnnot.modeTodo", "texAnnot.modeTodoHint",
+                    "texAnnot.loading", "texAnnot.none", "texAnnot.exact.one", "texAnnot.exact.other", "texAnnot.approx.one", "texAnnot.approx.other", "texAnnot.unplaced.one", "texAnnot.unplaced.other",
+                    "texAnnot.header.one", "texAnnot.header.other", "texAnnot.project.one", "texAnnot.project.other", "texAnnot.cancel", "texAnnot.download"):
             self.assertEqual(len(re.findall(rf'"{re.escape(key)}":', I18N)), 2, key)
 
 

@@ -224,11 +224,12 @@ def compile_pdf(main, out, engine, biblatex, bib_dirs, force=False):
     target, log = out / f"{main.stem}.pdf", out / f"{main.stem}.log"
     target.unlink(missing_ok=True)
     log.unlink(missing_ok=True)
+    (out / f"{main.stem}.synctex.gz").unlink(missing_ok=True)  # celui d'une compilation précédente : jamais repris
     latexmk, tool = find_tool("latexmk"), None
     if latexmk:
         # BibTeX lancé dans le dossier de travail (sinon il ne peut pas y écrire : openout_any = p)
         command = [latexmk, "-e", "$bibtex_fudge=1", ENGINES[engine], "-f", "-interaction=nonstopmode", "-file-line-error",
-                   f"-outdir={out}", main.name]
+                   "-synctex=1", f"-outdir={out}", main.name]
         if force:  # état gardé par latexmk oublié (il retient qu'un .bib manquait et ne relance pas BibTeX)
             (out / f"{main.stem}.fdb_latexmk").unlink(missing_ok=True)
         _run(command, str(main.parent), _env(latexmk, bib_dirs), COMPILE_TIMEOUT)
@@ -237,7 +238,7 @@ def compile_pdf(main, out, engine, biblatex, bib_dirs, force=False):
         program = find_tool(engine)
         if not program:
             return None, "", None
-        latex = [program, "-interaction=nonstopmode", "-file-line-error", f"-output-directory={out}", main.name]
+        latex = [program, "-interaction=nonstopmode", "-file-line-error", "-synctex=1", f"-output-directory={out}", main.name]
         env = _env(program, [str(main.parent), *bib_dirs])
         started = time.monotonic()
         _run(latex, str(main.parent), env, COMPILE_TIMEOUT)
@@ -663,6 +664,7 @@ def _build(pid, settings):
         if count := track_lost_notes(pid, folder, structure, pdf):
             rep["notesToCheck"] = count
     write_atomic_bytes(folder / "paper.pdf", pdf)
+    _keep_synctex(folder, out / f"{main.stem}.synctex.gz" if rep["pdfFrom"] not in ("chosen", "existing") else None)
     write_atomic(folder / "source.tex", source)
     write_atomic(folder / "structure.json", json.dumps(structure, ensure_ascii=False))
     write_atomic(folder / "texfile.json", json.dumps(settings, ensure_ascii=False))
@@ -678,6 +680,20 @@ def _build(pid, settings):
     if previous and not previous.get("in_library"):
         db.update_paper(pid, in_library=1)
     return {"paper": db.get_paper(pid), "report": rep}
+
+
+SYNCTEX = "paper.synctex.gz"
+
+
+def _keep_synctex(folder, compiled):
+    """SyncTeX de la compilation (lignes de la source ↔ pages du PDF, pour placer les notes dans une copie annotée de
+    la source, texexport.py) gardé à côté du PDF ; supprimé quand le PDF lu n'est pas celui compilé ici (PDF choisi,
+    PDF trouvé à côté du fichier) ou que la compilation n'en a pas écrit."""
+    target = folder / SYNCTEX
+    if compiled is not None and compiled.is_file():
+        write_atomic_bytes(target, compiled.read_bytes())
+    else:
+        target.unlink(missing_ok=True)
 
 
 def _pages(pdf):

@@ -11,6 +11,7 @@ import { api } from "./api.js";
 import { t } from "./i18n.js";
 import { markdownToHtml } from "./markdown.js";
 import { typesetTex } from "./math.js";
+import { texAnnotatedDialog } from "./texfile.js";
 import { copyText, debounce, h, icons, toast, toastError } from "./util.js";
 
 // image d'une zone du PDF, en data URL (gardée avant sa suppression, pour « Annuler »)
@@ -419,8 +420,9 @@ export function noteEditor({ value = "", placeholder = "", onSave, autofocus = f
 // ---------- Annotateur d'un article ----------
 
 export class Annotator {
-  constructor({ paperId, content, nodes, navigate, onChange, aiActions, onAskAI, refs }) {
+  constructor({ paperId, texFile, content, nodes, navigate, onChange, aiActions, onAskAI, refs }) {
     this.paperId = paperId;
+    this.texFile = Boolean(texFile);  // fichier TeX de l'ordinateur : copie .tex annotée possible
     this.content = content;
     this.nodes = nodes;
     this.byId = new Map(nodes.map((n) => [n.id, n]));
@@ -1086,6 +1088,12 @@ export class Annotator {
       body.append(h("div", { class: "panel-section" }, h("a", { class: "button small-button", download: "",
         href: `/api/papers/${encodeURIComponent(this.paperId)}/notes?lang=${document.documentElement.lang || "fr"}` }, t("notes.export")),
         h("p", { class: "hint" }, t("notes.exportHint"))));
+    }
+    // fichier TeX de l'ordinateur : copie du projet avec les notes insérées (commentaires % ou notes en marge)
+    if (this.texFile) {
+      body.append(h("div", { class: "panel-section" },
+        h("button", { class: "button small-button", type: "button", onclick: () => texAnnotatedDialog(this.paperId) }, t("texAnnot.button")),
+        h("p", { class: "hint" }, t("texAnnot.hint"))));
     }
     typesetTex([body]);
   }
