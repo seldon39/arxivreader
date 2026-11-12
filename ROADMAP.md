@@ -42,6 +42,9 @@ finished work or steps not yet made into an issue.
   1.11.0. Memory of each thread (earlier exchanges of the thread sent with each question): done in 1.11.26.
 - Cross-review by two assistants (independent reviews, comparison, tagged synthesis): done in 1.11.11. Next:
   a third assistant to write the synthesis, when there is one.
+- Audit of a proof with the text of the statements and equations it refers to (statements without their proofs,
+  as in block-wise proof verification), so that each is checked against its hypotheses even in a long paper sent
+  in part: done in 1.14.1.
 - Books: summary and review chapter by chapter, with the statements of other chapters the chapter uses and those
   that depend on it (statements only): done in 1.11.18. Statements tab following the chapter being read: 1.11.23.
   All chapters in parallel (two at a time, a background task of the server), then a synthesis that compares the
