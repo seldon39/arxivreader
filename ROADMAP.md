@@ -32,6 +32,12 @@ finished work or steps not yet made into an issue.
   1.9.32; figures, PDF images and lost bibliographies checked on 15 recent arXiv papers in 1.10.4. Books of
   400–500 pages no longer stopped after 10 minutes (time limit following the size of the source; biblatex
   bibliographies in a single pass): 1.11.25. Next: faster or partial conversion of very long documents; line spacing inside multi-line TikZ nodes.
+- Annotated copy of your own TeX files (Notes tab, "Copie .tex annotée…"): a .zip copy of the project folder with
+  all the notes of the paper inserted next to what they concern, the original never modified. Either `%` comment
+  blocks or margin notes (todonotes), with long notes moved to a closing section, formulas and cross-references in
+  the notes turned into LaTeX; highlights, boxed areas and pinned notes are placed with SyncTeX, which compilation
+  now produces: done in 1.14.0. In the same release, a statement containing a list with `\item\label{…}` no longer
+  takes the number of its last item.
 - AI tab as a conversation (Questions, Summary and Review threads, field at the bottom, ↩ Reply, ↑ ↓): done in
   1.11.0. Memory of each thread (earlier exchanges of the thread sent with each question): done in 1.11.26.
 - Cross-review by two assistants (independent reviews, comparison, tagged synthesis): done in 1.11.11. Next:

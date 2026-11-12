@@ -411,6 +411,24 @@ chapter at a time. Without TeX (MacTeX, MiKTeX or TeX Live), the PDF compiled ne
 latexmk in a terminal, the compilation follows the folder's `latexmkrc` if it has one: import only documents you
 trust.
 
+The compilation also produces the SyncTeX file (kept next to the PDF), which links source lines to PDF positions; a
+TeX file imported before needs one **Recompile** to get it.
+
+**Annotated .tex copy** (Notes tab, "Annotated .tex copy…", imported TeX files only): downloads a .zip copy of the
+project folder in which your notes are inserted next to what they concern; the original project is never modified.
+Two forms: **% comments** (each note a `% [arXivReader] … % [/arXivReader]` block, the compiled PDF unchanged) or
+**margin notes** (the same comments plus a short note in the margin, with the todonotes package loaded in the copy's
+preamble). Options for margin notes: a wider margin (text shifted left, page widened on the right if needed; line
+and page breaks stay those of the original) and long notes moved to a final "Review notes (arXivReader)"
+section, with the margin showing the beginning and a pointer (two LaTeX passes needed). Formulas, `amsmath`
+environments and Unicode symbols in notes are typeset as LaTeX; numbers written in a note ("(4.75)", "Lemma 4.2",
+"[2]") become `\eqref`, `\ref` and `\cite` from the last compilation's labels. A note goes before the statement or
+proof it concerns, at its text for a highlighted passage, near its position (via SyncTeX, approximate) for a framed
+region or pinned note; reading sheet, bookmarks and notes that cannot be placed go in a block at the top of the main
+file, so no note is lost. The window says beforehand how many notes are placed exactly, approximately or at the top.
+The archive includes a `README-arXivReader.txt` (summary, warnings, how to remove the notes: search for
+`[arXivReader]`). Files read from outside the project folder are not copied (the window says so).
+
 ## Experimental HTML version (LaTeXML)
 
 A TeX file you imported, or an arXiv paper without an HTML version but with its TeX source, opens in its PDF. The
@@ -698,7 +716,7 @@ app/            Python server (FastAPI)
   arxiv.py      identifiers, metadata (arXiv API), HTML download
   sanitize.py   HTML cleaning
   structure.py  table of contents, statements, proofs, dependencies, bibliography
-  texsource.py  reading the TeX source (class options, font, list labels)
+  texsource.py  reading the TeX source (class options, font, list labels; expansion with the origin of each line)
   feed.py       new arXiv papers (RSS, OAI-PMH), Semantic Scholar recommendations, identifier detection
   journals.py   journal where a paper appeared (arXiv, Semantic Scholar)
   search.py     search across arXiv (Search tab); related.py: related papers (graph); zotero.py: Zotero synchronisation; check.py: check of the external services; onboarding.py: getting-started assistant; export.py: notes export; notesync.py: signed notes export and import between computers
@@ -720,6 +738,8 @@ app/            Python server (FastAPI)
   localpdf.py   PDFs imported from the computer (text, title, arXiv version); arXiv version and zbMATH entry
                 of a bibliography reference
   texfile.py    TeX files from the computer (compilation, bibliography, checks, stable ids)
+  texexport.py  annotated copy of a TeX project (notes as comments or margin notes, .zip)
+  synctex.py    reading the SyncTeX file (source line <-> PDF page and position)
   latexml.py    experimental HTML version made by LaTeXML (TeX files, arXiv papers without HTML)
   library.py    importing a paper, its updates and versions; db.py: SQLite database; main.py: web routes
 macos/          Mac app: main.swift (window, tabs, server), icon.swift, build.sh, release.sh

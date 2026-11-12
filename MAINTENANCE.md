@@ -56,6 +56,7 @@ English.
 | Mac menus (bridge with the page) | — | `commands.js` (`command`, `reportMenu`, `copyFromMenu`, `showKeys`), `reader.js` (`menuCommand`), `macos/main.swift` (`pageCommand`, `validateMenuItem`) |
 | Bibliography and paper links (DOI, MathSciNet, zbMATH, "Look up on arXiv") | `localpdf.py` (`reference_arxiv`, `reference_zbmath`, `zbmath_search`), routes `/api/references/arxiv`, `/api/references/zbmath` | `reader.js` (`findLinks`, `addFindLinks`, `bibActions`, `paperFindLinks`, `zbmathLink`, `lookUpArxiv`), `search.js` (`presetTerms`) |
 | PDF and TeX files from the computer | `localpdf.py` (imported PDFs: text, title, arXiv version), `texfile.py` (TeX files: compilation, bibliography, checks, identifiers taken from the `\label` commands, background jobs) | `library.js` (import), `texfile.js` (import window, reader checks), `reader.js` (Recompile, books: statements and graph by chapter) |
+| Annotated `.tex` copy (imported TeX files, Notes tab: notes inserted in a copy of the project, `.zip`) | `texexport.py` (`Plan`, `scan`, `build_zip`, `summary`, `references`, `short_tex`/`long_tex`, `_end_document`), `synctex.py` (`load`, source line ↔ PDF page and position), `texsource.py` (`expand_with_origins`: positions of the expanded text mapped back to files and lines), `texfile.py` (`_keep_synctex`), routes `/api/papers/{id}/tex-annotated` and `/tex-annotated/summary` | `texfile.js` (dialog « Copie .tex annotée… »: form of the notes, wide margin, end notes) |
 | Experimental HTML version (LaTeXML) | `latexml.py` (on-demand conversion, the paper's `html/` folder, identifiers aligned with the structure of the source) | `latexml.js` ("HTML β" button, warning, waiting), `reader.js` |
 | Library, folders, selection | `library.py`, `folders.py` | `library.js`, `selection.js` |
 | Feed, profile, relevance, alerts, citations | `feed.py`, `profile.py`, `relevance.py` (`same_person`, `follows`: namesakes of followed authors), `alerts.py`, `citations.py`, `journals.py`, `library.new_versions` (new versions of library papers) | `feed.js` (👎 → "not this person"; `loadNewVersions`, `newVersionCard`), `profile.js` (categories kept for an author) |
@@ -607,7 +608,11 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   it, the others from their type and their text (`stable_ids`, also on re-analysis: `stableIds` in
   structure.json). The `.aux` files of the compilation give the printed numbers and the exact anchors of the `\label`s
   (`apply_aux`: statements, equations; `cite.<clé>` for the bibliography, also read from a `.bbl` of biblatex or
-  of amsrefs);
+  of amsrefs); a `\label` inside a list item of a statement (`itemLabels` in structure.json, `texstructure`) is skipped
+  by `apply_aux`: the statement keeps its own number, not the one of the inner `\item\label` (bug of 1.13.3, structure
+  version 17 forces the re-analysis);
+  compilation with `-synctex=1`: `paper.synctex.gz` is kept next to `paper.pdf` (`_keep_synctex`), removed when the PDF
+  read is not the one compiled here (chosen PDF, PDF found next to the file); the one of a previous compilation is never reused;
   log without wrapped lines (`max_print_line`); the highlighted passages of the PDF that have
   moved are found again by their text on the page side (`PdfNotes.inPlace`/`findMoved`, ±3 pages) and their position saved.
 - Notes that lost their place after a recompilation of a TeX file (`texfile.py`, section « Notes après une modification du
@@ -621,6 +626,28 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   line of `texChecks` (`texfile.js`, `onAdaptNotes` → `Assistant.prefill`: question written, not sent), toast after the
   reload through `sessionStorage` (`texNotes:<id>`, `Reader.notesToCheckToast`), report re-read 400 ms after an annotation
   change (`texReportSoon`). The AI side is described under "AI on annotations" below. Tests: `tests/test_texfile.py`.
+
+- Annotated `.tex` copy (`texexport.py`): never writes in the original project; the copy is a `.zip` built in a
+  temporary file (`build_zip`; the route deletes it after sending, and each call purges those older than 6 h,
+  `STALE_AFTER`) with `LISEZMOI-arXivReader.txt` / `README-arXivReader.txt` inside (language of the request). Only lines are added, each one carrying `[arXivReader]`. Files
+  are read as UTF-8, otherwise latin1 (`_decode`), line endings kept. Limits: `MAX_COPY_FILES` (3000), `MAX_COPY_BYTES`
+  (300 MB), files read outside the project folder not copied (reported). `scan` classifies the source (verbatim, math,
+  boxes/floats, lists, comments): comment blocks go before `\begin` of a statement or proof; the `todonotes` margin
+  note (`\arxivreadertodo`, guarded by `\ifmmode\else\ifinner\else`) is never put inside verbatim, boxes, floats or
+  math (the comment stays). Quotes (highlights) are found by their letters in the expanded text (`texsource.expand_with_origins`,
+  `quote_variants`, `tex_letters`); the author's macros are expanded (`user_macros`, up to `MACRO_DEPTH` levels,
+  `MACRO_LETTERS` letters each), so a quote cut by a macro that prints a lot or is too deeply nested is not found: it goes, approximately, to the
+  first statement or section of its page (`_page_start`), otherwise to the header block. Boxes and pinned notes are placed with SyncTeX (`synctex.py`, approximate): `Plan` compares the
+  mtime of the source files with `paper.synctex.gz` and warns (`staleSynctex`) when the source changed since the last
+  compilation; a PDF that is not the compiled one gives no SyncTeX: those notes go after the statement that ends above them on their
+  page when the structure knows it, otherwise to the header. Wide layout: left margin
+  1.5 cm, notes column 4.5 to 6 cm, page widened on the right, text width and height unchanged (breaks identical to the
+  original). Long notes (`is_long`) are shortened in the margin and moved to a last section through `\AtEndDocument`
+  (`_end_document`): two LaTeX passes are needed (page numbers show « ?? » after one). Notes are converted to LaTeX
+  (`inline_tex`, `long_tex`, `short_tex`: formulas, amsmath environments only if the document loads amsmath, Unicode symbols;
+  long formulas become « [...] » in the margin); numbers written in notes become `\eqref`, `\ref`, `\cite` through
+  `references`, from `labels` of structure.json and the `.aux` numbers, only for labels still present in the source.
+  Tests: `tests/test_texexport.py` (`tests/test_synctex.py` for the SyncTeX reader).
 
 - Paper versions (`library.py`, `db.py`): the main row (id without version) always carries the latest installed
   version; an older version is a full paper row `<id>v<k>` (`archive_key`) with `in_library = 0` and `archived_of` = id of

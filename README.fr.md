@@ -432,6 +432,26 @@ un chapitre à la fois. Sans TeX (MacTeX, MiKTeX ou TeX Live), le PDF compilé �
 recompiler). Comme latexmk dans un terminal, la compilation suit le `latexmkrc` du dossier s'il en a un : n'importez
 que des documents de confiance.
 
+La compilation produit aussi le fichier SyncTeX (gardé à côté du PDF), qui relie les lignes de la source aux positions
+du PDF ; un fichier TeX importé avant doit être **recompilé** une fois pour l'avoir.
+
+**Copie .tex annotée** (onglet Notes, « Copie .tex annotée… », fichiers TeX importés seulement) : télécharge une copie
+.zip du dossier du projet où vos notes sont insérées à côté de ce qu'elles concernent ; le projet d'origine n'est
+jamais modifié. Deux formes : **commentaires %** (chaque note un bloc `% [arXivReader] … % [/arXivReader]`, le PDF
+compilé ne change pas) ou **notes en marge** (les mêmes commentaires plus une note courte en marge, avec le paquet
+todonotes chargé dans le préambule de la copie). Options des notes en marge : une marge agrandie (texte décalé à
+gauche, page élargie à droite si besoin ; les coupures de lignes et de pages restent celles de l'original) et les
+notes longues renvoyées dans une dernière section « Notes de relecture (arXivReader) », la marge en montrant le début
+et un renvoi (deux passes de LaTeX nécessaires). Formules, environnements `amsmath` et symboles Unicode des notes sont
+rendus en LaTeX ; les numéros écrits dans une note (« (4.75) », « Lemma 4.2 », « [2] ») deviennent `\eqref`, `\ref`
+et `\cite` d'après les étiquettes de la dernière compilation. Une note va avant l'énoncé ou la preuve qu'elle
+concerne, à son texte pour un passage surligné, près de sa position (grâce à SyncTeX, approchée) pour une zone
+encadrée ou une note épinglée ; fiche de lecture, marque-pages et notes impossibles à placer vont dans un bloc en tête
+du fichier principal : aucune note n'est perdue. La fenêtre indique avant le téléchargement combien de notes sont
+placées exactement, approximativement ou en tête. L'archive contient un `LISEZMOI-arXivReader.txt` (résumé,
+avertissements, comment retirer les notes : chercher `[arXivReader]`). Les fichiers lus hors du dossier du projet ne
+sont pas copiés (la fenêtre le signale).
+
 ## Version HTML expérimentale (LaTeXML)
 
 Un fichier TeX importé, ou un article d'arXiv sans version HTML mais avec sa source TeX, s'ouvre dans son PDF. Le
@@ -734,7 +754,7 @@ app/            serveur Python (FastAPI)
   arxiv.py      identifiants, métadonnées (API arXiv), téléchargement du HTML
   sanitize.py   nettoyage du HTML
   structure.py  sommaire, énoncés, preuves, dépendances, bibliographie
-  texsource.py  lecture de la source TeX (options de classe, police, étiquettes de listes)
+  texsource.py  lecture de la source TeX (options de classe, police, étiquettes de listes ; expansion avec l'origine de chaque ligne)
   feed.py       nouveautés arXiv (RSS, OAI-PMH), recommandations Semantic Scholar, repérage d'identifiants
   journals.py   revue où un article est paru (arXiv, Semantic Scholar)
   search.py     recherche dans tout arXiv (onglet Recherche) ; related.py : papiers liés (graphe) ; zotero.py : synchronisation avec Zotero ; check.py : vérification des services extérieurs ; onboarding.py : assistant de premier lancement ; export.py : export des notes ; notesync.py : export signé et import des notes d'un ordinateur à l'autre
@@ -756,6 +776,8 @@ app/            serveur Python (FastAPI)
   localpdf.py   PDF importés de l'ordinateur (texte, titre, version arXiv) ; version arXiv et notice zbMATH
                 d'une référence de la bibliographie
   texfile.py    fichiers TeX de l'ordinateur (compilation, bibliographie, vérifications, identifiants stables)
+  texexport.py  copie annotée d'un projet TeX (notes en commentaires ou en marge, .zip)
+  synctex.py    lecture du fichier SyncTeX (ligne de la source <-> page et position du PDF)
   latexml.py    version HTML expérimentale faite par LaTeXML (fichiers TeX, articles d'arXiv sans HTML)
   library.py    import d'un article, ses mises à jour et ses versions ; db.py : base SQLite ; main.py : routes web
 macos/          application Mac : main.swift (fenêtre, onglets, serveur), icon.swift, build.sh, release.sh

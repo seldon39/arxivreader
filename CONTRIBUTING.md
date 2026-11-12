@@ -121,6 +121,10 @@ review checked on demand, `tests/test_notes_reliability.py` notes between comput
 `tests/test_trail.py` the reading position and back / forward (the page's pure functions, run with Node), and
 `tests/test_hardening.py` the other fixes.
 
+Since 1.14, `tests/test_texexport.py` covers the annotated `.tex` copy (placement of notes, comment blocks, margin
+notes, the LaTeX of notes, references turned into `\eqref` / `\ref` / `\cite`, the zip) and `tests/test_synctex.py`
+the reader of `.synctex.gz` files.
+
 There are no automated interface tests yet ([#9](https://github.com/seldon39/arxivreader/issues/9)): check
 interface changes by hand in WebKit (Safari or the Mac app), in light and dark mode, below 900 px and on wide
 screens, and on several papers — a fix for one paper's LaTeXML output often breaks another's.
@@ -171,6 +175,8 @@ screens, and on several papers — a fix for one paper's LaTeXML output often br
   integrity check never delete or overwrite a library: a damaged file is set aside, never erased.
 - **Analysis changes**: when `app/structure.py` or `app/texstructure.py` changes what it extracts or marks, bump
   `STRUCTURE_VERSION` so imported papers are re-analysed.
+- **Annotated `.tex` copy** (`app/texexport.py`): it works on a copy and never modifies the user's files, and no note is
+  ever lost: a note that cannot be placed goes to the header of the main file, never dropped.
 - **Reader layout changes**: anything that changes the height of sections away from the screen (text size, width,
   panes, revealed hidden text) goes through `reader.relayout(fn)` or `keepReadingPosition`: those sections are not
   drawn (`static/js/lazypaint.js`) and keep the height measured before they were hidden.
