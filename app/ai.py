@@ -286,7 +286,8 @@ is correct, it does not belong here. If you find none, say so.
 ### Hypotheses
 Which hypotheses of {label} are actually used, and where; any that seem unused or insufficient.
 ### Dependencies
-Which earlier results of the paper the proof relies on.
+Which earlier results of the paper the proof relies on, and for each whether it is applied within its hypotheses \
+(their statements are in <used_statements> when the application found them).
 ### Results taken from the literature
 Each outside result the proof rests on (omit this section if there is none): its exact locator as printed in the paper \
 (e.g. "[11, Lemma 3.5]", or the name of the theorem), how the proof uses it (the hypotheses that must hold here), and ONE \
@@ -411,6 +412,8 @@ SECTION_PROMPTS = {
 
 CHAPTER_STATEMENTS = 40      # énoncés d'autres chapitres joints, au plus, dans chaque sens
 STATEMENT_LIMIT = 2000       # caractères d'un énoncé joint
+USED_STATEMENTS = 15         # énoncés et équations de l'article cités par une preuve auditée, joints au plus
+USED_BUDGET = 20000          # caractères de ces énoncés en tout (au plus un cinquième de la limite de l'article)
 # balises des blocs de données d'un chapitre : neutralisées dans le texte d'un énoncé
 DATA_TAGS = re.compile(r"</?(?=(?:statement|used_statements|dependent_statements|statements_proved_here|cited_statements|contents|paper)\b)", re.I)
 # toutes les balises des blocs de données de l'invite : neutralisées dans ce que le texte de l'article, un énoncé, une
@@ -427,6 +430,42 @@ def _guard(text):
 CITED_STATEMENTS = 30        # énoncés repris de la littérature, joints à une relecture, au plus
 TEX_CHAPTER = re.compile(r"\\chapter\*?(?=\s*[\[{])")  # source sans commentaires ni texte masqué (tex_body)
 TEX_SECTION = re.compile(r"\\section\*?(?=\s*[\[{])")
+
+
+def _used_statements(index, structure, node, budget):
+    """Audit d'une preuve : texte des énoncés de l'article que l'énoncé ou sa preuve cite (renvois), et des équations
+    citées quand la version HTML les donne ; sans leurs preuves (tenus pour acquis, comme dans la vérification par
+    blocs de la recherche récente). Les renvois viennent de l'analyse : liste peut-être incomplète. "" si aucun."""
+    nodes = {n["id"]: n for n in structure.get("nodes", [])}
+    quoted = lambda body: DATA_TAGS.sub(lambda m: m.group(0).replace("<", "&lt;"), body[:STATEMENT_LIMIT])  # ne referme pas le bloc
+    blocks, given = [], {node["id"]}
+    for key in node.get("uses", []):
+        used = nodes.get(key)
+        if used is None or key in given:
+            continue
+        element = (index or {}).get(key)
+        body = element_text(element) if element is not None else used.get("tex") or ""
+        if body.strip():
+            given.add(key)
+            blocks.append(f'<statement label="{html.escape(used["label"], quote=True)}">\n{quoted(body)}\n</statement>')
+    for key in node.get("usesEquations", []):
+        equation, element = structure.get("equations", {}).get(key) or {}, (index or {}).get(key)
+        # équation de l'énoncé audité (déjà dans <focus>) ou d'un énoncé déjà joint : pas répétée
+        if element is not None and equation.get("label") and equation.get("owner") not in given:
+            blocks.append(f'<equation label="{html.escape(equation["label"], quote=True)}">\n{quoted(element_text(element))}\n</equation>')
+    kept = []
+    for block in blocks[:USED_STATEMENTS]:
+        if budget - len(block) < 0:
+            break
+        budget -= len(block)
+        kept.append(block)
+    if not kept:
+        return ""
+    more = f"\n[… {len(blocks) - len(kept)} more not given here: see <paper>]" if len(kept) < len(blocks) else ""
+    return (f"<used_statements>\nStatements and equations of the paper that {node['label']} or its proof refers to, found "
+            "by the application from the cross-references (the list may be incomplete, or contain one that is not really "
+            "used); their proofs are not given. Check that each is applied within its hypotheses; a result used but "
+            "missing here is still in <paper>.\n" + "\n".join(kept) + more + "\n</used_statements>")
 
 
 def _cited_block(structure):
@@ -1490,6 +1529,8 @@ def build_prompt(paper, structure, task, target=None, quote=None, question=None,
     else:
         total = len(text)
     context = _chapter_context(index, structure, chapter, max(20000, limit // 4)) if entry is not None else ""
+    # audit : énoncés cités par la preuve, joints en entier ; l'article envoyé leur laisse la place
+    used = _used_statements(index, structure, node, min(USED_BUDGET, limit // 5)) if task == "audit" and node else ""
     section_total = None
     if by_section:
         room = max(limit // 2, limit - len(context))  # le contexte compte aussi (modèle local)
@@ -1501,7 +1542,7 @@ def build_prompt(paper, structure, task, target=None, quote=None, question=None,
         text = _chapter_text(soup, index, structure, text, chapter)
         if len(text) > limit:
             text = text[:limit] + "\n\n[… the rest of the chapter is cut: too long …]"
-    elif len(text) > limit:  # livre : début et fenêtre autour de la question ; sans repère, le début seul
+    elif len(text) > (room := limit - len(used)):  # livre : début et fenêtre autour de la question ; sans repère, le début seul
         # résumé, relecture : tout le document, pas la page qu'on lit
         page = None if task in ("summary", "review") else (zone or {}).get("page") or page
         position = _focus(text, soup, index or {}, structure, node, quote, page)
@@ -1510,10 +1551,10 @@ def build_prompt(paper, structure, task, target=None, quote=None, question=None,
         section = None if structure.get("chapters") else next((e["target"] for e in history or [] if e["task"] in ("summary", "review")
                                                                and e.get("target") in {s["id"] for s in parts_of(structure)}), None)
         if (position is None or not (node or quote or zone)) and section and _section_span(text, soup, index, structure, section):
-            text = _reduced_to_section(text, soup, index, structure, section, limit)
+            text = _reduced_to_section(text, soup, index, structure, section, room)
         else:
-            text = _window(text, limit, position) if position is not None \
-                else text[:limit] + "\n\n[… the rest of the document is cut: too long …]"
+            text = _window(text, room, position) if position is not None \
+                else text[:room] + "\n\n[… the rest of the document is cut: too long …]"
 
     if task in ("explain", "detail", "audit", "annotate") and node is None:
         raise AIError("Unknown statement")
@@ -1547,6 +1588,8 @@ def build_prompt(paper, structure, task, target=None, quote=None, question=None,
         parts.append(_tex_context(structure))
     if node is not None:
         parts.append(_node_text(soup, index, structure, node))
+    if used:
+        parts.append(used)
     if task == "review" and (entry is None or by_section):  # relecture d'un livre par chapitre : seulement son propre texte
         parts.extend(filter(None, [_cited_block(structure)]))
     if pages:

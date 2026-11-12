@@ -545,7 +545,9 @@ macOS notification opens Script Editor (a limitation of osascript): just close i
   (usage counts towards its limits).
 - **Statement** (Dependencies tab, or margin note): *Explain*. **Proof**: *Detail the proof*
   (numbered steps, added arguments marked **[added]**, doubtful points **⚠**) and *Audit the proof*
-  (verdict, issues with their severity, hypotheses used, dependencies).
+  (verdict, issues with their severity, hypotheses used, dependencies; the text of the statements and equations
+  the proof refers to is attached, so that the assistant checks each is applied within its hypotheses, even in a
+  long paper sent in part).
 - **Passage**: select it, then ✦; you can add a question.
 - **A conversation in three threads**: *Questions* (questions about the paper; *↩ Reply* under an answer asks a
   follow-up, quoted above the field and in the question), *Summary* and *Review* (the structured summary or the

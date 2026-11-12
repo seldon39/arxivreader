@@ -452,7 +452,11 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   attached context (`_chapter_context`) do not fit within the limit (`room = max(limit // 2, limit - len(context))`,
   `_reduced_to_section`). Paper beyond the limit, question asked on the summary or review of a section: that section takes
   priority over the window, unless the question targets a precise passage (`node`, `quote`, `zone`) found in the text; the
-  displayed page, attached to every question in PDF mode, is not one.
+  displayed page, attached to every question in PDF mode, is not one. Audit of a proof: the statements and equations
+  it refers to (`uses`, `usesEquations` of the node; equations only with the HTML version) are attached in
+  `<used_statements>` (`ai._used_statements`: statements without their proofs, at most `USED_STATEMENTS`, within
+  `min(USED_BUDGET, limit // 5)` characters), and the paper window is reduced by as much (`room`). Not the statements that
+  depend on it: no published proof checker uses them (block verification passes the used results only).
 
 - Smoothness of the AI tab (measured on 29/10/2026 in WebKit, 21 long answers, 64 000 px of thread): the thread is
   `contain: strict` (scrolling 23 → 17 ms per frame); the `--ai-scrollbar` variable is set only if it changes

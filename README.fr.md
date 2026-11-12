@@ -575,7 +575,9 @@ il suffit de la fermer et d'aller dans le feed.
   sans clé d'API (l'usage compte dans ses limites).
 - **Énoncé** (onglet Dépendances, ou note en marge) : *Expliquer*. **Preuve** : *Détailler la preuve*
   (étapes numérotées, arguments ajoutés marqués **[added]**, points douteux **⚠**) et *Auditer la preuve*
-  (verdict, problèmes avec leur gravité, hypothèses utilisées, dépendances).
+  (verdict, problèmes avec leur gravité, hypothèses utilisées, dépendances ; le texte des énoncés et équations
+  auxquels la preuve renvoie est joint, pour que l'assistant vérifie que chacun est appliqué dans ses hypothèses, même
+  dans un long article envoyé en partie).
 - **Passage** : le sélectionner, puis ✦ ; on peut ajouter une question.
 - **Une conversation en trois fils** : *Questions* (questions sur l'article ; *↩ Répondre* sous une réponse pose
   une question de suite, rappelée au-dessus du champ et dans la question), *Résumé* et *Relecture* (le résumé
