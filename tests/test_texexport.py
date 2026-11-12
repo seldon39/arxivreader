@@ -160,16 +160,16 @@ class Setup(unittest.TestCase):
     def lemma_id(self):
         return next(n["id"] for n in self.structure()["nodes"] if n["kind"] == "lemma")
 
-    def files_of(self, mode="comments", language="fr", layout="wide"):
-        path, name = texexport.build_zip(self.pid, mode, language, layout)
+    def files_of(self, mode="comments", language="fr", layout="wide", endnotes=True):
+        path, name = texexport.build_zip(self.pid, mode, language, layout, endnotes)
         try:
             with zipfile.ZipFile(path) as archive:
                 return name, {n: archive.read(n) for n in archive.namelist()}
         finally:
             os.unlink(path)
 
-    def annotated(self, mode="comments", name="sec/one.tex", layout="wide"):
-        _, files = self.files_of(mode, layout=layout)
+    def annotated(self, mode="comments", name="sec/one.tex", layout="wide", endnotes=True):
+        _, files = self.files_of(mode, layout=layout, endnotes=endnotes)
         return files[f"my draft (annoté)/{name}"].decode("utf-8")
 
     def snapshot(self):
@@ -448,6 +448,96 @@ class Placement(Setup):
         summary = texexport.summary(pid, "comments", "fr")
         self.assertFalse(summary["synctex"])
         self.assertTrue(any("recompilez" in w for w in summary["warnings"]))
+
+
+class EndNotes(Setup):
+    """Notes longues (mode « todo », option endnotes) : début en marge et renvoi, texte entier dans une section
+    ajoutée juste avant \\end{document} ; rien en mode commentaires ni sans l'option."""
+
+    LONG = ("A long remark about the main theorem. " * 9).strip() + " Lastwords here."
+
+    def test_long_notes_sent_to_the_end(self):
+        pid = self.import_without_tex()
+        annotations.create(pid, "block", {"id": "tex-lbl-thm:main"}, note=self.LONG)
+        annotations.create(pid, "block", {"id": self.lemma_id()}, note="Short lemma note")
+        annotations.create(pid, "highlight", {"pdf": {"page": 1, "start": 0, "endPage": 1, "end": 9}},
+                           quote="Closing paragraph of the paper", note="Two paragraphs.\n\nSecond one.", author="claude")
+        self.assertEqual(texexport.summary(pid, "todo", "fr")["endnotes"], 2)
+        self.assertEqual(texexport.summary(pid, "todo", "fr", "keep")["endnotes"], 2)
+        self.assertEqual(texexport.summary(pid, "todo", "fr", "wide", False)["endnotes"], 0)
+        self.assertEqual(texexport.summary(pid, "comments", "fr")["endnotes"], 0)
+        entries = {e["note"][:10]: e for e in texexport.plan_json(pid, "todo")}
+        # numéros dans l'ordre du document : sec/one.tex (lu par \input) avant la fin de main.tex
+        self.assertEqual((entries["A long rem"]["endnote"], entries["Two paragr"]["endnote"]), (1, 2))
+        self.assertNotIn("endnote", entries["Short lemm"])
+        one, main_tex = self.annotated("todo"), self.annotated("todo", "main.tex")
+        margin = next(line for line in one.splitlines() if is_todo(line) and "A long remark" in line)
+        self.assertTrue(margin.startswith("\\arxivreadertodo[color=orange!30,size=\\arxivreaderNoteSize]{"
+                                          "\\arxivreaderNoteMark{1}Theorem 2.1 (Main): A long remark"), margin)
+        self.assertTrue(margin.endswith(" about~\\dots{} \\arxivreaderEndRef{1}}% [arXivReader]"), margin)
+        self.assertNotIn("Lastwords", margin)
+        self.assertIn("% " + self.LONG, one)  # texte entier aussi dans le bloc de commentaires
+        self.assertIn("{Lemma 2.2: Short lemma note}% [arXivReader]", one)
+        end = main_tex.split("% [arXivReader] Notes de relecture (arXivReader)")[1]
+        self.assertTrue(end.endswith("% [/arXivReader]\n\\end{document}\n"), end[-200:])
+        self.assertIn("\\clearpage% [arXivReader]", end)
+        self.assertIn("{\\raggedright\\noindent\\arxivreaderEndMark{1}\\textbf{Note 1 --- Theorem 2.1 (Main)}\\arxivreaderEndBack{1}\\par}", end)
+        self.assertIn("Lastwords here.\\par% [arXivReader]", end)
+        self.assertIn("\\textbf{Note 2 --- Passage surligné, page 1 --- Claude (proposé, non vérifié)}", end)
+        self.assertIn("Two paragraphs.\\par% [arXivReader]\nSecond one.\\par% [arXivReader]", end)
+        self.assertIn("{\\itshape ``Closing paragraph of the paper''\\par}", end)
+        self.assertNotRegex(end, r"\\(?:sub)*section|\\chapter|\\addcontentsline|\\refstepcounter")
+        self.assertIn("\\DeclareRobustCommand{\\arxivreaderEndRef}", main_tex)
+        self.assertIn("% Notes longues (2) : la marge", main_tex)
+        _, files = self.files_of("todo", "en")
+        readme = files["my draft (annotated)/README-arXivReader.txt"].decode("utf-8")
+        self.assertIn("Long notes (2): the margin shows only their beginning", readme)
+        self.assertIn("Review notes (arXivReader)", files["my draft (annotated)/main.tex"].decode("utf-8"))
+        # sans l'option : tout en marge, comme avant ; en commentaires : rien ne change
+        without = self.annotated("todo", "main.tex", endnotes=False)
+        self.assertNotIn("Notes de relecture", without)
+        self.assertNotIn("arxivreaderEnd", without + self.annotated("todo", endnotes=False))
+        self.assertEqual(self.files_of("comments")[1], self.files_of("comments", endnotes=False)[1])
+        self.assertNotIn("Notes de relecture", self.annotated("comments", "main.tex"))
+        # routes : endnotes=1|0, autre valeur refusée
+        for query, count in (("mode=todo", 2), ("mode=todo&endnotes=1", 2), ("mode=todo&endnotes=0", 0),
+                             ("mode=comments&endnotes=1", 0)):
+            self.assertEqual(self.client.get(f"/api/papers/{pid}/tex-annotated/summary?{query}").json()["endnotes"], count)
+        response = self.client.get(f"/api/papers/{pid}/tex-annotated?mode=todo&lang=fr&endnotes=0")
+        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+            self.assertNotIn("Notes de relecture", archive.read("my draft (annoté)/main.tex").decode("utf-8"))
+        self.assertEqual(self.client.get(f"/api/papers/{pid}/tex-annotated?mode=todo&endnotes=2").status_code, 400)
+
+    def test_threshold_and_markdown(self):
+        title = "Passage surligné, page 1"
+        self.assertFalse(texexport.is_long(title, "x" * 200, "wide"))
+        self.assertTrue(texexport.is_long(title, "x " * 130, "wide"))
+        self.assertTrue(texexport.is_long(title, "x " * 70, "keep"))
+        self.assertFalse(texexport.is_long(title, "x " * 60, "keep"))
+        self.assertTrue(texexport.is_long(title, "- one item", "wide"))
+        self.assertTrue(texexport.is_long(title, "Short.\n\nShort.", "wide"))
+        self.assertTrue(texexport.is_long(title, "See $$x$$", "wide"))
+        self.assertTrue(texexport.is_long(title, "See \\[ x \\]", "wide"))
+        # « \[ \] » cité (formule vide) : pas une formule centrée, note courte
+        self.assertFalse(texexport.is_long(title, "Formule affichée avec \\[ \\] : $p^{-n}$.", "wide"))
+        self.assertFalse(texexport.is_long(title, "Empty $$ $$ here", "wide"))
+        self.assertFalse(texexport.is_long(title, "A\nB (single line break) and **bold** $x$", "wide"))
+        self.assertFalse(texexport.is_long(title, "   ", "wide"))
+        known = {"R"}
+        self.assertEqual(texexport.long_tex(
+            "# Head\nText **bold** *it* `a_b` [link](http://x) $x \\in \\R$ $\\evil{y}$ 50%.\n\n"
+            "- one\n  more\n- two $a$\n\n1. first\n2) second\n\n$$\\frac{1}{2}$$\n\n\\[ \\badone \\]\n\n"
+            "```\ncode {x}\n```\n---\n> quoted", known),
+            ["\\textbf{Head}\\par",
+             "Text \\textbf{bold} \\emph{it} \\texttt{a\\_b} link $x \\in \\R$ \\$\\textbackslash{}evil\\{y\\}\\$ 50\\%.\\par",
+             "\\begin{itemize}" + texexport.LIST_SPACING, "\\item one more", "\\item two $a$", "\\end{itemize}",
+             "\\begin{enumerate}" + texexport.LIST_SPACING, "\\item first", "\\item second", "\\end{enumerate}",
+             "\\[\\frac{1}{2}\\]\\par", "\\textbackslash{}[ \\textbackslash{}badone \\textbackslash{}]\\par",
+             "{\\ttfamily\\noindent code \\{x\\}\\par}", "\\medskip", "quoted\\par"])
+        # début coupé entre deux mots
+        self.assertEqual(texexport.short_tex("alpha beta gamma", set(), limit=13, word=True), "alpha beta\\dots{}")
+        self.assertEqual(texexport.short_tex("alpha beta gamma", set(), limit=13), "alpha beta ga\\dots{}")
+        self.assertEqual(texexport.short_tex("$x$ vient de", set(), limit=6, word=True), "$x$\\dots{}")  # après une formule
 
 
 class TodoText(unittest.TestCase):
@@ -950,11 +1040,12 @@ class Fixes(Setup):
         _, files = self.files_of("comments", "en")
         self.assertIn("% “the second claim holds”", files["my draft (annotated)/sec/one.tex"].decode("utf-8"))
         self.assertIn("% « the second claim holds »", self.annotated())
-        for query, message in (("mode=bad&lang=fr", "Forme de copie, mise en page ou langue inconnue"),
-                               ("mode=bad&lang=en", "Unknown copy form, layout or language"),
-                               ("mode=todo&lang=de", "Unknown copy form, layout or language"),
-                               ("mode=todo&lang=fr&layout=narrow", "Forme de copie, mise en page ou langue inconnue"),
-                               ("mode=comments&lang=en&layout=", "Unknown copy form, layout or language")):
+        fr, en = texexport.ERRORS["fr"]["params"], texexport.ERRORS["en"]["params"]
+        self.assertEqual((fr, en), ("Forme de copie, mise en page, renvoi des notes longues ou langue inconnus",
+                                    "Unknown copy form, layout, long-note option or language"))
+        for query, message in (("mode=bad&lang=fr", fr), ("mode=bad&lang=en", en), ("mode=todo&lang=de", en),
+                               ("mode=todo&lang=fr&layout=narrow", fr), ("mode=comments&lang=en&layout=", en),
+                               ("mode=todo&lang=fr&endnotes=yes", fr), ("mode=comments&lang=en&endnotes=", en)):
             for route in ("tex-annotated/summary", "tex-annotated"):
                 response = self.client.get(f"/api/papers/{pid}/{route}?{query}")
                 self.assertEqual((response.status_code, response.json()["detail"]), (400, message))
@@ -1089,11 +1180,12 @@ class Compiled(Setup):
         import pypdf
         return [page.extract_text() for page in pypdf.PdfReader(str(path)).pages]
 
-    def compile_copy(self, mode, patch=None, with_log=False, layout="wide"):
+    def compile_copy(self, mode, patch=None, with_log=False, layout="wide", endnotes=True):
         """Copie annotée compilée : texte de chaque page (et le journal) ; `patch` change le texte du fichier principal
         de la copie avant la compilation."""
-        _, files = self.files_of(mode, layout=layout)
+        _, files = self.files_of(mode, layout=layout, endnotes=endnotes)
         folder = self.tmp / f"copy-{mode}"
+        shutil.rmtree(folder, ignore_errors=True)
         for name, data in files.items():
             target = folder / name
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -1189,7 +1281,12 @@ class Compiled(Setup):
         """Marges étroites (geometry margin=2.6cm) : notes dans la page, mots longs coupés ; repli sur une page qui
         commence par une section : la note sur cette page ; origine IA et « approximatif » visibles dans le PDF."""
         cm = 72.27 / 2.54
-        (first, second), width, room, log = self.margin_document("a4paper,margin=2.6cm")
+        (first, second, end), width, room, log = self.margin_document("a4paper,margin=2.6cm")
+        # note de Claude longue : son début en marge, son texte entier sur une dernière page (notes longues)
+        self.assertIn(texexport.plain_letters("Notes de relecture (arXivReader)"), end)
+        self.assertIn(texexport.plain_letters("Wohlgeformtheitsbedingungen"), end)
+        self.assertNotIn(texexport.plain_letters("Wohlgeformtheitsbedingungen"), first)
+        self.assertIn(texexport.plain_letters("note 1, p. 3"), first)
         self.assertIn(texexport.plain_letters("Omicron fallback note"), second)
         self.assertNotIn(texexport.plain_letters("Omicron"), first)
         self.assertIn(texexport.plain_letters("emplacement approximatif"), second)
@@ -1455,6 +1552,175 @@ class Compiled(Setup):
         _, width, room, _ = self.margin_document("a4paper,left=2cm,right=7cm,marginparwidth=5cm")
         self.assertGreater(room - 0.3 * cm, 5 * cm)
         self.assertAlmostEqual(width, 5 * cm, delta=0.1)
+
+    # --- Notes longues : début en marge, texte entier en fin de document ---
+
+    LONG_NOTES = (
+        (1, "Uniquealpha opening words", None,
+         "Upsilon long note. " + "This remark goes on about the estimate and the constants involved in it. " * 5
+         + "Finalwordupsilon."),
+        (1, "Middle uniquegamma words", None,
+         "Phi structured note.\n\nSecond paragraph with **bold words** and $x^2 \\geq 0$ and unsafe $\\foo{x}$.\n\n"
+         "- first item of the list\n- second item of the list\n\n$$\\sum_{k=1}^{n} k = \\frac{n(n+1)}{2}$$\n\n"
+         "Last paragraph finalwordphi."),
+        (1, "Uniquedelta closing words", None, "Psi short note"),
+        (2, "Uniquebeta words", "claude",
+         "Chi note proposed by the assistant. " + "It checks every step of the argument once more. " * 6
+         + "Finalwordchi."))
+
+    def endnote_document(self, head, layout="wide", bibliography=False, chapter=False):
+        """Document de deux pages (`head` : préambule), trois notes longues (longueur ; paragraphes, liste et formules ;
+        note de Claude) et une courte, compilé avec et sans renvoi des notes longues (latexmk). Vérifie : compilation
+        sans erreur ni débordement, renvois résolus (aucun « ?? »), pages d'avant les notes de fin identiques (corps du
+        texte : tout sauf les notes en 7 pt), notes longues courtes en marge et terminées par leur renvoi, texte entier
+        sur les dernières pages. Rend (pages avec, pages sans, source du fichier principal)."""
+        filler = self.FILLER
+        body = [r"\chapter{First part}" if chapter else r"\section{First part}",
+                r"Uniquealpha opening words of the first page.", filler, filler,
+                r"Middle uniquegamma words of the paragraph.", filler, "", filler,
+                r"Uniquedelta closing words of the page.", "", r"\newpage",
+                r"\section{Second part}", r"Uniquebeta words of the second page.", filler, filler]
+        if bibliography:
+            body += [r"\begin{thebibliography}{9}", r"\bibitem{a} A. Author, \emph{Uniquebib title}, 2020.",
+                     r"\end{thebibliography}"]
+        (self.project / "main.tex").write_text("\n".join([*head.splitlines(), r"\begin{document}", *body,
+                                                          r"\end{document}", ""]), encoding="utf-8")
+        self.pid = pid = texfile.import_tex(self.project / "main.tex")["paper"]["id"]
+        for page, quote_, author, note in self.LONG_NOTES:
+            annotations.create(pid, "highlight", {"pdf": {"page": page, "start": 0, "endPage": page, "end": 9}},
+                               quote=quote_, note=note, author=author)
+        summary = texexport.summary(pid, "todo", "fr", layout)
+        self.assertEqual(summary["endnotes"], 3)
+        self.assertEqual(texexport.summary(pid, "todo", "fr", layout, False)["endnotes"], 0)
+        source = self.annotated("todo", "main.tex", layout=layout)
+        pages = []
+        for endnotes in (False, True):  # (copie avec renvois compilée en dernier : self.pdf)
+            texts, log = self.compile_copy("todo", with_log=True, layout=layout, endnotes=endnotes)
+            self.assertNotRegex(log, r"Overfull \\[hv]box")
+            self.assertNotRegex(log, r"(?i)undefined references|Reference `arxivreader")
+            self.assertFalse(any("??" in text for text in texts))
+            pages.append((texts, self.chunks(self.pdf)))
+        (texts0, chunks0), (texts, chunks) = pages
+        count = len(texts0)
+        self.assertGreater(len(texts), count)
+        notes = lambda page: [c for c in page[1] if 6.8 <= c[2] <= 7.2]
+
+        def body_of(page):  # corps du texte, dans l'ordre de la page (notes en 7 pt, leurs indices et exposants retirés ;
+            # pypdf regroupe parfois deux lignes en un morceau : texte comparé, pas les lignes)
+            kept = sorted((round(y), x, re.sub(r"\s+", "", words)) for x, y, size, words in page[1] if size > 7.3)
+            return "".join(words for _, _, words in kept)
+        for number in range(count):  # pages d'avant : corps du texte inchangé
+            self.assertEqual(body_of(chunks[number]), body_of(chunks0[number]), number + 1)
+        before, end = " ".join(texts[:count]), " ".join(texts[count:])
+        margin = " ".join(c[3] for page in chunks[:count] for c in notes(page))
+        letters = texexport.plain_letters
+        self.assertIn(letters("Notes de relecture (arXivReader)"), letters(end))
+        for word in ("Finalwordupsilon", "finalwordphi", "Finalwordchi"):
+            self.assertNotIn(letters(word), letters(before), word)
+            self.assertIn(letters(word), letters(end), word)
+        self.assertIn(letters("Psi short note"), letters(margin))
+        self.assertNotIn(letters("Psi short note"), letters(end))
+        # renvois : « → note N, p. X » en marge, « Note N — titre (page Y) » à la fin, dans l'ordre du document
+        refs = re.findall(r"note\s*(\d)\s*,\s*p\.\s*(\d+)", margin)
+        self.assertEqual(sorted(refs), [("1", str(count + 1)), ("2", str(count + 1)), ("3", str(count + 1))])
+        flat = " ".join(end.split())
+        self.assertRegex(flat, r"Note 1 — Passage surlign[^()]*, page 1[^()]*\s?\(en marge, page 1\)")
+        self.assertRegex(flat, r"Note 3 — Passage surlign[^()]*, page 2[^()]* — Claude \([^()]*\)\s?\(en marge, page 2\)")
+        self.assertLess(flat.index("Upsilon long note"), flat.index("Phi structured note"))
+        self.assertLess(flat.index("Phi structured note"), flat.index("Chi note proposed"))
+        self.assertIn(letters("Claude (proposé, non vérifié)"), letters(margin))
+        # texte entier : paragraphes, liste, gras, formule sûre gardée, formule inconnue montrée en texte
+        self.assertIn("\\begin{itemize}" + texexport.LIST_SPACING + "% [arXivReader]", source)
+        self.assertIn("\\item first item of the list% [arXivReader]", source)
+        self.assertIn("\\[\\sum_{k=1}^{n} k = \\frac{n(n+1)}{2}\\]", source)
+        self.assertIn("\\textbf{bold words} and $x^2 \\geq 0$ and unsafe \\$\\textbackslash{}foo\\{x\\}\\$", source)
+        self.assertIn("\\foo{x}", flat.replace(" ", ""))
+        self.assertIn(letters("first item of the list"), letters(end))
+        # en marge : début court (≈ 60 % du seuil) terminé par le renvoi
+        for line in source.splitlines():
+            if is_todo(line) and "arxivreaderEndRef" in line:
+                text = re.sub(r"\\arxivreaderNoteMark\{\d\}|\\arxivreaderBreak\{\}|\\allowbreak\{\}", "", line.split("]{", 1)[1])
+                self.assertRegex(text, r"~\\dots\{\}\}? \\arxivreaderEndRef\{\d\}\}% \[arXivReader\]$")
+                fit = re.match(r"\\arxivreaderFit\{(.*?~\\dots\{\})\}\{(.*)\}( \\arxivreaderEndRef.*)$", text)
+                if fit:  # « keep » : début plus court choisi à la compilation dans une colonne étroite
+                    self.assertEqual(layout, "keep")
+                    narrow, text = fit.group(1) + fit.group(3), fit.group(2) + fit.group(3)
+                    self.assertLess(len(narrow), texexport.NARROW["chars"] * 0.6 + 70, narrow)
+                    self.assertLess(len(narrow), len(text))
+                self.assertLess(len(text), texexport.LONG_CHARS[layout] * 0.6 + 70, text)
+        # passage cité (s'écrit sans « ? ») repris au-dessus du texte entier
+        self.assertIn(letters("Uniquealpha opening words"), letters(end))
+        return texts, texts0, source
+
+    def test_endnotes_article(self):
+        """Article, mise en page « wide » : section des notes longues juste avant \\end{document}."""
+        _, _, source = self.endnote_document("\\documentclass{article}")
+        self.assertRegex(source, r"\n\\AtEndDocument\{% \[arXivReader\]\n\\clearpage% \[arXivReader\]\n(?:.*\n)*"
+                                 r"\\endgroup% \[arXivReader\]\n\}% \[arXivReader\]\n% \[/arXivReader\]\n\\end\{document\}\n$")
+        self.assertIn("% Notes longues (3)", source)
+
+    def test_end_section_quote(self):
+        """Section de fin : passage cité gardé s'il s'écrit sans « ? », omis sinon (formules extraites du PDF)."""
+        from types import SimpleNamespace
+        entries = [{"endnote": 1, "title": "Passage surligné, page 3", "quote": "p^{-n} κ_p(Z) = ∑ F_r(√p Z)",
+                    "note": "Note one."},
+                   {"endnote": 2, "title": "Passage surligné, page 4", "quote": "Café « déjà » – clean quote?",
+                    "note": "Note two."}]
+        plan = SimpleNamespace(words=texexport.WORDS["fr"], known=set(), long_entries=entries,
+                               _margin_title=lambda entry: entry["title"])
+        text = "\n".join(texexport._end_section(plan))
+        self.assertNotIn("Z) =", text)
+        self.assertIn("clean quote?", text)
+        self.assertFalse(texexport._text_only("κ ∑"))
+        self.assertTrue(texexport._text_only("Café « déjà » – x? → y"))
+
+    def test_endnotes_keep_narrow(self):
+        """« keep » dans une colonne de moins de 2,5 cm (geometry, marges de 2,4 cm) : début plus court en marge,
+        choisi à la compilation (\\arxivreaderFit)."""
+        texts, texts0, source = self.endnote_document("\\documentclass{article}\n\\usepackage[margin=2.4cm]{geometry}",
+                                                      layout="keep")
+        self.assertIn("\\arxivreaderFit{", source)
+        margin = texexport.plain_letters(" ".join(c[3] for page in self.chunks(self.pdf)[:len(texts0)]
+                                                  for c in page[1] if 6.8 <= c[2] <= 7.2))
+        self.assertIn(texexport.plain_letters("Upsilon long note"), margin)
+        self.assertNotIn(texexport.plain_letters("the estimate and the"), margin)  # coupé avant (normal : gardé)
+
+    def test_endnotes_amsart_keep(self):
+        """amsart (recto verso, en-têtes en 7 pt), mise en page « keep » (notes en \\scriptsize) ; adresse de l'auteur
+        (imprimée par \\end{document}) toujours sur la dernière page du texte, avant les notes longues."""
+        texts, texts0, _ = self.endnote_document("\\documentclass{amsart}\n\\address{Uniqueaddress Street}", layout="keep")
+        self.assertIn("Uniqueaddress", texts0[-1])
+        self.assertIn("Uniqueaddress", texts[len(texts0) - 1])
+        margin = texexport.plain_letters(" ".join(c[3] for page in self.chunks(self.pdf)[:len(texts0)]
+                                                  for c in page[1] if 6.8 <= c[2] <= 7.2))
+        self.assertIn(texexport.plain_letters("the estimate and the"), margin)  # colonne large : début normal
+
+    def test_endnotes_book_twoside_hyperref(self):
+        """book recto verso avec hyperref : renvois en liens (\\hyperlink, \\pageref*), compteurs et table des matières
+        du document intacts."""
+        texts, _, source = self.endnote_document("\\documentclass[twoside]{book}\n\\usepackage{hyperref}", chapter=True)
+        import pypdf
+        links = [annot.get_object().get("/A", {}).get("/D") for page in pypdf.PdfReader(str(self.pdf)).pages
+                 for annot in page.get("/Annots") or []]
+        self.assertIn("arxivreader-end-1", [str(link) for link in links])
+        self.assertIn("arxivreader-note-3", [str(link) for link in links])
+        self.assertNotIn("\\section", source.split("% [arXivReader] Notes de relecture")[1])
+
+    def test_endnotes_after_bibliography(self):
+        """\\end{document} juste après la bibliographie : notes longues après elle ; \\end{document} sur la ligne d'un
+        autre texte : section ajoutée depuis le préambule (\\AtEndDocument), même résultat."""
+        texts, texts0, _ = self.endnote_document("\\documentclass{article}", bibliography=True)
+        self.assertIn("Uniquebib", texts0[-1])
+        self.assertNotIn("Uniquebib", " ".join(texts[len(texts0):]))
+        main_tex = (self.project / "main.tex").read_text(encoding="utf-8")
+        (self.project / "main.tex").write_text(main_tex.replace("\\end{thebibliography}\n\\end{document}",
+                                                                "\\end{thebibliography}\\end{document}"), encoding="utf-8")
+        self.pid = texfile.import_tex(self.project / "main.tex")["paper"]["id"]
+        source = self.annotated("todo", "main.tex")
+        self.assertIn("\\AtEndDocument{% [arXivReader]", source.split("\n\\begin{document}\n")[0])
+        texts1 = self.compile_copy("todo")
+        self.assertEqual(len(texts1), len(texts))
+        self.assertIn(texexport.plain_letters("Finalwordchi"), texexport.plain_letters(texts1[-1]))
 
     def test_lists_math_macros_and_top_lines(self):
         """Note sur le premier \\item d'une liste ou le premier \\bibitem, formule entre \\be et \\ee (macros de

@@ -130,7 +130,7 @@ export const api = {
   authorCategories: (id, paper) => request("GET", `/api/profile/items/${id}/categories${paper ? `?paper=${encodeURIComponent(paper)}` : ""}`),
   notesDevice: () => request("GET", "/api/notes/device"),
   setNotesFolder: (path) => request("PUT", "/api/notes/folder", { path }),
-  texAnnotatedSummary: (id, mode, lang, layout = "wide") => request("GET", `/api/papers/${encodeURIComponent(id)}/tex-annotated/summary?mode=${encodeURIComponent(mode)}&lang=${encodeURIComponent(lang)}&layout=${encodeURIComponent(layout)}`),
+  texAnnotatedSummary: (id, mode, lang, layout = "wide", endnotes = true) => request("GET", `/api/papers/${encodeURIComponent(id)}/tex-annotated/summary?mode=${encodeURIComponent(mode)}&lang=${encodeURIComponent(lang)}&layout=${encodeURIComponent(layout)}&endnotes=${endnotes ? 1 : 0}`),
   exportNotesToFolder: (lang) => request("POST", `/api/notes/export-folder?lang=${encodeURIComponent(lang)}`, {}),
   figures: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/figures`),
   annotations: (id) => request("GET", `/api/papers/${encodeURIComponent(id)}/annotations`),

@@ -1592,32 +1592,34 @@ def paper_notes(paper_id: str, lang: str = "fr"):
 
 # ---- Copie annotée de la source TeX (texexport.py) ----
 
-def _tex_annotated_args(paper_id, mode, lang, layout):
+def _tex_annotated_args(paper_id, mode, lang, layout, endnotes):
     _tex_paper(paper_id)
-    if not texexport.check(mode, lang, layout):
+    if not texexport.check(mode, lang, layout, endnotes):
         raise HTTPException(400, texexport.params_error(lang))
 
 
 @app.get("/api/papers/{paper_id}/tex-annotated/summary")
-def tex_annotated_summary(paper_id: str, mode: str = "comments", lang: str = "fr", layout: str = "wide"):
-    """Ce que contiendra la copie annotée (mode comments|todo ; mise en page des notes en marge wide|keep) : {total,
-    exact, approx, unplaced, header, byKind, synctex, files, size, folder, warnings, todoMacro, mode, layout} ; 400 avec
-    un message dans la langue demandée sinon. Rien n'est écrit."""
-    _tex_annotated_args(paper_id, mode, lang, layout)
+def tex_annotated_summary(paper_id: str, mode: str = "comments", lang: str = "fr", layout: str = "wide",
+                          endnotes: str = "1"):
+    """Ce que contiendra la copie annotée (mode comments|todo ; mise en page des notes en marge wide|keep ; notes
+    longues renvoyées en fin de document endnotes=1|0) : {total, exact, approx, unplaced, header, byKind, synctex,
+    files, size, folder, warnings, todoMacro, mode, layout, endnotes} ; 400 avec un message dans la langue demandée
+    sinon. Rien n'est écrit."""
+    _tex_annotated_args(paper_id, mode, lang, layout, endnotes)
     try:
-        return texexport.summary(paper_id, mode, lang, layout)
+        return texexport.summary(paper_id, mode, lang, layout, endnotes == "1")
     except texexport.ExportError as error:
         raise HTTPException(400, str(error))
 
 
 @app.get("/api/papers/{paper_id}/tex-annotated")
-def tex_annotated(paper_id: str, mode: str = "comments", lang: str = "fr", layout: str = "wide"):
+def tex_annotated(paper_id: str, mode: str = "comments", lang: str = "fr", layout: str = "wide", endnotes: str = "1"):
     """Copie du dossier du projet TeX avec les notes insérées, en .zip (fichier temporaire supprimé après l'envoi)."""
     from urllib.parse import quote
 
-    _tex_annotated_args(paper_id, mode, lang, layout)
+    _tex_annotated_args(paper_id, mode, lang, layout, endnotes)
     try:
-        path, name = texexport.build_zip(paper_id, mode, lang, layout)
+        path, name = texexport.build_zip(paper_id, mode, lang, layout, endnotes == "1")
     except texexport.ExportError as error:
         raise HTTPException(400, str(error))
     try:

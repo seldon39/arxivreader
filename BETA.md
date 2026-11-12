@@ -1,4 +1,4 @@
-# arXivReader 1.14.0-beta.2 — copie .tex annotée
+# arXivReader 1.14.0-beta.3 — copie .tex annotée
 
 Bêta locale, issue de la 1.13.3 : seulement sur cet ordinateur, rien sur GitHub. Elle a sa propre bibliothèque
 (`~/Library/Application Support/arXivReader Beta`) et ne touche pas à l'application habituelle.
@@ -21,6 +21,12 @@ décalé vers la gauche (marge gauche de 1,5 cm), la colonne des notes fait de 4
 droite si la place manque ; les notes sont en 7 pt. La largeur et la hauteur du texte ne changent pas : les lignes et
 les pages se coupent comme dans l'original. Une page élargie s'imprime en « ajuster à la page ». Décocher la case
 redonne la mise en page de la beta.1.
+
+**Nouveau en beta.3 — « Renvoyer les notes longues en fin de document »** (case cochée par défaut, mode notes en
+marge) : une note trop longue pour la marge y montre son début suivi de « … → note N, p. X » ; son texte entier est
+sur une dernière page « Notes de relecture (arXivReader) », en taille normale (paragraphes, listes, formules), avec un
+renvoi vers la page de la note (liens cliquables si le document charge hyperref). Les pages d'avant ne changent pas.
+Il faut deux passes de LaTeX (latexmk les fait) : après une seule, les numéros de page affichent « ?? ».
 
 Où vont les notes :
 - note ou état d'un énoncé, ou d'une preuve : juste avant son `\begin{…}` ;

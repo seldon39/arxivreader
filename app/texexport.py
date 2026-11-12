@@ -7,7 +7,9 @@ Deux formes, au choix :
 - « todo » : les mêmes blocs, plus une courte note en marge (\\todo du paquet todonotes, ajouté au préambule de la
   copie) — visible dans le PDF. Mise en page « wide » (par défaut) : texte décalé vers la gauche et page élargie au
   besoin pour une colonne de notes d'au moins 4,5 cm, notes en 7 pt, largeur du texte inchangée (lignes coupées comme
-  dans l'original ; WIDE_LAYOUT, WIDE_TODO) ; « keep » : notes dans la marge telle qu'elle est.
+  dans l'original ; WIDE_LAYOUT, WIDE_TODO) ; « keep » : notes dans la marge telle qu'elle est. Notes longues
+  (option « endnotes », par défaut) : la marge n'en montre que le début et un renvoi « → note N, p. X » ; leur texte
+  entier est dans une section « Notes de relecture (arXivReader) » ajoutée juste avant \\end{document} (ENDNOTES).
 
 Place des notes :
 - énoncés et preuves (notes, états de lecture) : avant leur \\begin{…}, retrouvés par leur identifiant, celui que
@@ -118,6 +120,14 @@ WORDS = {
                       "et finit par « % [/arXivReader] » ; en mode notes en marge, les lignes \\arxivreadertodo et le",
                       "bloc ajouté juste avant \\begin{{document}} portent aussi la marque « [arXivReader] ». Cherchez",
                       "« [arXivReader] » dans les fichiers .tex."],
+           "endTitle": "Notes de relecture (arXivReader)", "endPage": "en marge, page",
+           "endnotes": ["Notes longues ({n}) : la marge n'en montre que le début, suivi d'un renvoi « → note N, p. X » ;",
+                        "leur texte entier est dans « Notes de relecture (arXivReader) », sur les dernières pages (ajoutées",
+                        "juste avant \\end{document}, après la bibliographie : les pages d'avant ne changent pas). Les",
+                        "numéros de page des renvois demandent deux compilations (latexmk les fait) : après une seule, ils",
+                        "s'affichent « ?? ». Pour tout garder en marge : décocher « Renvoyer les notes longues en fin de",
+                        "document » dans arXivReader."],
+           "endComment": "notes longues en entier (renvois « → note N » des notes en marge)",
            "readmeWarnings": "Avertissements :", "readmeUnplaced": "Notes non localisées (en tête de {main}) :",
            "counts": "{total} notes : {exact} placées exactement, {approx} approximativement, {unplaced} non localisées, {header} en tête du fichier principal (fiche de lecture, marque-pages).",
            "warn": {"noSynctex": "Pas de données SyncTeX pour ce PDF : recompilez l'article dans arXivReader pour placer plus précisément les zones et notes épinglées du PDF.",
@@ -172,6 +182,13 @@ WORDS = {
                       "with \"% [/arXivReader]\"; in margin-note mode, the \\arxivreadertodo lines and the block added",
                       "just before \\begin{{document}} carry the mark \"[arXivReader]\" too. Search for \"[arXivReader]\"",
                       "in the .tex files."],
+           "endTitle": "Review notes (arXivReader)", "endPage": "in the margin, page",
+           "endnotes": ["Long notes ({n}): the margin shows only their beginning, followed by a reference \"→ note N, p. X\";",
+                        "their full text is in \"Review notes (arXivReader)\", on the last pages (added just before",
+                        "\\end{document}, after the bibliography: the pages before do not change). The page numbers of the",
+                        "references need two compilations (latexmk runs them): after a single one, they show \"??\". To keep",
+                        "everything in the margin: untick \"Continue long notes at the end of the document\" in arXivReader."],
+           "endComment": "long notes in full (references \"→ note N\" of the margin notes)",
            "readmeWarnings": "Warnings:", "readmeUnplaced": "Notes not located (at the top of {main}):",
            "counts": "{total} notes: {exact} placed exactly, {approx} approximately, {unplaced} not located, {header} at the top of the main file (reading notes, bookmarks).",
            "warn": {"noSynctex": "No SyncTeX data for this PDF: recompile the paper in arXivReader to place the PDF regions and pinned notes more precisely.",
@@ -191,13 +208,13 @@ ERRORS = {"fr": {"main": "Fichier principal introuvable : {path}",
                  "unreadable": "Le dossier du projet n'a pas pu être lu : {error}",
                  "unreadableFile": "Ce fichier du projet ne peut pas être lu : {path}",
                  "changed": "Le projet a été modifié pendant la copie : réessayez",
-                 "params": "Forme de copie, mise en page ou langue inconnue"},
+                 "params": "Forme de copie, mise en page, renvoi des notes longues ou langue inconnus"},
           "en": {"main": "Main file not found: {path}",
                  "tooBig": "The project folder is too large: put the .tex file in a folder of its own",
                  "unreadable": "The project folder could not be read: {error}",
                  "unreadableFile": "This file of the project cannot be read: {path}",
                  "changed": "The project was modified during the copy: try again",
-                 "params": "Unknown copy form, layout or language"}}
+                 "params": "Unknown copy form, layout, long-note option or language"}}
 
 
 class ExportError(ValueError):
@@ -573,9 +590,9 @@ MARKDOWN = [(re.compile(r"!\[([^\]]*)\]\([^)]*\)"), r"\1"), (re.compile(r"\[([^\
 MATH_PIECE = re.compile(r"(\\\$)|(\$\$[\s\S]+?\$\$)|\$([^$]+?)\$")
 
 
-def short_tex(text, known, limit=MAX_SHORT):
+def short_tex(text, known, limit=MAX_SHORT, word=False):
     """Texte d'une note en marge : Markdown retiré, paragraphes joints, LaTeX échappé, formules $…$ gardées quand
-    elles sont sûres ; au plus `limit` caractères (« … » si coupé)."""
+    elles sont sûres ; au plus `limit` caractères (« … » si coupé ; `word` : coupé entre deux mots)."""
     pieces, pos = [], 0  # (texte, formule gardée ?)
     for match in MATH_PIECE.finditer(text or ""):
         pieces.append((text[pos:match.start()], False))
@@ -605,13 +622,186 @@ def short_tex(text, known, limit=MAX_SHORT):
         if out and out[-1].endswith(" ") and part.startswith(" "):
             part = part[1:]
         if used + len(part) > limit:
-            part, cut = part[:max(0, limit - used)].rstrip(), True
+            room = max(0, limit - used)
+            kept = part[:room]
+            if word and part[room:room + 1].strip() and kept.rfind(" ") >= 0:  # coupé au milieu d'un mot : avant lui
+                kept = kept[:kept.rfind(" ")]
+            part, cut = kept.rstrip(), True
         out.append(_breakable(part))
         used += len(part)
         if cut:
             break
     result = "".join(out).strip()
     return result + ("\\dots{}" if cut else "")
+
+
+# ---------- Notes longues : début en marge, texte entier en fin de document ----------
+
+# Note « longue » (mode « todo », option endnotes) : texte de la note en marge (titre compris, Markdown retiré) de
+# plus de LONG_CHARS caractères, ou note de plusieurs paragraphes, avec une liste, une formule centrée ou du code.
+# Seuil : environ 7 lignes de la colonne des notes (au-delà, la note recouvre la suivante ou descend sous le bas de la
+# page). Police de 7 pt (Computer Modern, Latin Modern) : environ 7,5 caractères par cm, espaces comprises.
+# - « wide » : colonne de 4,5 à 6 cm, 5 cm en moyenne (moins le cadre de todonotes) → 7 × 5 × 7,5 ≈ 260 ;
+# - « keep » : colonne du document, souvent 2 à 4 cm (marge libre moins 0,3 cm), \scriptsize (7 pt dans un document
+#   en 10 pt) ; 3 cm → 7 × 3 × 7,5 ≈ 160.
+# Le choix (note longue ou non) fixe la numérotation et la section de fin : fait ici, avec ces largeurs supposées.
+# En marge : son début, coupé entre deux mots vers 60 % du seuil (4 lignes environ, de quoi reconnaître la note), au
+# moins 40 caractères de la note après son titre, puis le renvoi. « keep » : la largeur réelle de la colonne n'est
+# connue qu'à la compilation (marge libre du document) ; colonne de moins de 2,5 cm (marges de 2 à 3 cm, fréquentes
+# avec geometry) : début plus court, choisi à la compilation (\arxivreaderFit) : seuil d'une colonne de 2 cm
+# (7 × 2 × 7,5 ≈ 105, coupé vers 63) et au moins 20 caractères après le titre (titre jamais coupé : il porte la
+# mention de l'assistant et l'emplacement approximatif).
+LONG_CHARS = {"wide": 260, "keep": 160}
+LONG_CUT = 0.6
+LONG_MIN_NOTE = 40
+NARROW = {"width": "2.5cm", "chars": 105, "min": 20}
+# formule centrée non vide ($$…$$, \[…\]) : « \[ \] » cité dans une phrase n'en est pas une
+DISPLAY = re.compile(r"\$\$(.*?)\$\$|\\\[(.*?)\\\]", re.S)
+LIST_LINE = re.compile(r"(?m)^\s*(?:[-*+]|\d{1,3}[.)])\s+\S")
+FENCE = re.compile(r"^\s*(`{3,}|~{3,})")
+HEADING = re.compile(r"^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$")
+RULE = re.compile(r"^\s*(?:-{3,}|\*{3,}|_{3,})\s*$")
+ITEM = re.compile(r"^\s*(?:([-*+])|(\d{1,3})[.)])\s+(.*)$")
+
+
+def plain_length(text):
+    """Longueur du texte d'une note en marge (Markdown retiré, espaces réduites)."""
+    for pattern, replacement in MARKDOWN:
+        text = pattern.sub(replacement, text)
+    return len(" ".join(text.split()))
+
+
+def is_long(title, note, layout):
+    """La note doit-elle être renvoyée en fin de document (voir LONG_CHARS) ?"""
+    note = (note or "").strip()
+    if not note:
+        return False
+    display = any((m.group(1) or m.group(2) or "").strip() for m in DISPLAY.finditer(note))
+    if re.search(r"\n\s*\n", note) or LIST_LINE.search(note) or display or re.search(r"(?m)^\s*(?:`{3,}|~{3,})", note):
+        return True
+    return plain_length(f"{title}: {note}") > LONG_CHARS.get(layout, LONG_CHARS["keep"])
+
+
+INLINE = re.compile(r"(\\\$)|(`+)(.+?)\2|\$\$(.+?)\$\$|\\\[(.+?)\\\]|\\\((.+?)\\\)|\$([^$]+?)\$"
+                    r"|!\[([^\]]*)\]\([^)]*\)|\[([^\]]+)\]\([^)]*\)|\*\*(.+?)\*\*"
+                    r"|(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])", re.S)
+
+
+def _formula(raw, known):
+    """Formule (sans ses délimiteurs) gardée telle quelle si elle est sûre (_safe_math), sinon None."""
+    if re.search(r"\n\s*\n", raw):
+        return None
+    formula = " ".join(raw.split())
+    return formula if _safe_math(formula, known) else None
+
+
+def inline_tex(text, known):
+    """Texte d'un paragraphe en LaTeX : **gras** → \\textbf, *italique* → \\emph, `code` → \\texttt, liens → leur
+    texte, formules $…$, \\(…\\) et centrées $$…$$, \\[…\\] gardées si elles sont sûres (sinon montrées en texte),
+    le reste échappé."""
+    out, pos = [], 0
+    for match in INLINE.finditer(text):
+        out.append(_breakable(text[pos:match.start()]))
+        pos = match.end()
+        groups = match.groups()
+        if groups[0]:
+            out.append("\\$")
+        elif groups[2] is not None:
+            out.append("\\texttt{" + _breakable(groups[2]) + "}")
+        elif groups[3] is not None or groups[4] is not None:
+            formula = _formula(groups[3] if groups[3] is not None else groups[4], known)
+            out.append(f"\\[{formula}\\]" if formula else _breakable(match.group(0)))
+        elif groups[5] is not None or groups[6] is not None:
+            formula = _formula(groups[5] if groups[5] is not None else groups[6], known)
+            out.append(f"${formula}$" if formula else _breakable(match.group(0)))
+        elif groups[7] is not None or groups[8] is not None:
+            out.append(inline_tex(groups[7] if groups[7] is not None else groups[8], known))
+        elif groups[9] is not None:
+            out.append("\\textbf{" + inline_tex(groups[9], known) + "}")
+        else:
+            out.append("\\emph{" + inline_tex(groups[10], known) + "}")
+    out.append(_breakable(text[pos:]))
+    return re.sub(r" {2,}", " ", "".join(out)).strip()
+
+
+# listes des notes de fin : items serrés (sinon \\parsep, \\itemsep du document : enumitem, parskip… les espacent
+# parfois d'une ligne entière)
+LIST_SPACING = "\\setlength{\\itemsep}{0.25\\baselineskip}\\setlength{\\parskip}{0pt}"
+
+
+def long_tex(text, known):
+    """Texte entier d'une note en LaTeX, en lignes (chacune complète : paragraphe terminé par \\par, \\item, début
+    ou fin de liste) : paragraphes, listes « - » / « 1. » (itemize, enumerate), titres en gras, code en
+    \\texttt, formules gardées quand elles sont sûres (inline_tex)."""
+    out, para, items, kind = [], [], [], None
+    blank = False
+
+    def flush_para():
+        if para:
+            converted = inline_tex(" ".join(para), known)
+            if converted:
+                out.append(converted + "\\par")
+            para.clear()
+
+    def flush_list():
+        nonlocal kind
+        if kind:
+            out.append(f"\\begin{{{kind}}}{LIST_SPACING}")
+            out.extend("\\item " + inline_tex(item, known) for item in items)
+            out.append(f"\\end{{{kind}}}")
+            items.clear()
+            kind = None
+
+    lines = (text or "").strip("\n").splitlines()
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        index += 1
+        fence = FENCE.match(line)
+        if fence:  # bloc de code : lignes en \texttt, jusqu'à la clôture
+            flush_para()
+            flush_list()
+            code = []
+            while index < len(lines) and not lines[index].strip().startswith(fence.group(1)):
+                code.append(lines[index])
+                index += 1
+            index += 1
+            if code:
+                out.append("{\\ttfamily\\noindent " + "\\newline ".join(_breakable(c) or "\\mbox{}" for c in code)
+                           + "\\par}")
+            blank = False
+            continue
+        if not line.strip():
+            flush_para()
+            blank = True
+            continue
+        line = re.sub(r"^\s{0,3}>\s?", "", line)  # citation : son texte
+        item = ITEM.match(line)
+        heading = HEADING.match(line)
+        if RULE.match(line):
+            flush_para()
+            flush_list()
+            out.append("\\medskip")
+        elif heading:
+            flush_para()
+            flush_list()
+            out.append("\\textbf{" + inline_tex(heading.group(1), known) + "}\\par")
+        elif item:
+            flush_para()
+            wanted = "itemize" if item.group(1) else "enumerate"
+            if kind != wanted:
+                flush_list()
+                kind = wanted
+            items.append(item.group(3))
+        elif kind and not blank:  # suite de l'élément de liste
+            items[-1] += " " + line.strip()
+        else:
+            flush_list()
+            para.append(line.strip())
+        blank = False
+    flush_para()
+    flush_list()
+    return out
 
 
 # ---------- Recherche d'un passage dans la source ----------
@@ -917,9 +1107,11 @@ def _page_boxes(pid):
 class Plan:
     """Tout ce que la copie annotée contiendra : notes placées (ou non), fichiers à copier, avertissements."""
 
-    def __init__(self, pid, mode, language, layout="wide"):
+    def __init__(self, pid, mode, language, layout="wide", endnotes=True):
         self.pid, self.mode, self.language = pid, mode, language
         self.layout = layout if mode == "todo" else None  # mise en page des notes en marge (sans effet en commentaires)
+        self.endnotes = bool(endnotes) and mode == "todo"  # notes longues renvoyées en fin de document
+        self.long_entries = []  # notes longues numérotées (voir number_long)
         self.wide = False  # mise en page « wide » ajoutée au préambule de la copie (voir _insertions)
         self.theorems = None  # environnements d'énoncés déclarés par le projet (voir _ends_paragraph)
         self.words = _words(language)
@@ -1406,8 +1598,9 @@ class Plan:
                 entry["line"] = line  # note en marge remontée avant la formule, la boîte… : le commentaire avec elle
             entry["todoLine"] = line
             if known is None:
-                known = _known_words(self.located["text"]) if self.located else set()
+                known = self.known = _known_words(self.located["text"]) if self.located else set()
             entry["short"] = self._short(entry, known)
+            entry["long"] = self.endnotes and is_long(self._margin_title(entry), entry.get("note"), self.layout)
 
     def _unplace(self, entry, reason):
         """Note placée qui ne peut finalement pas l'être (fichier non copié, aucune ligne sûre) : non localisée, sans
@@ -1417,13 +1610,51 @@ class Plan:
             entry["title"] = entry["title"][:-len(suffix)]
         entry.update(precision="none", reason=reason, todoLine=None, statement=False)
 
-    def _short(self, entry, known):
-        """Texte de la note en marge : titre (état, assistant qui l'a proposée), puis la note."""
+    def _margin_title(self, entry):
+        """Titre de la note (état, assistant qui l'a proposée ; « emplacement approximatif » déjà dans le titre)."""
         title = entry["title"] + (f" — {entry['state']}" if entry.get("state") else "")
         if entry.get("who"):
             title += " — " + self.words["ai"].format(who=entry["who"])
+        return title
+
+    def _short(self, entry, known, number=None):
+        """Texte de la note en marge : titre (état, assistant qui l'a proposée), puis la note ; note longue numérotée
+        `number` : son début (coupé entre deux mots), puis le renvoi « → note N, p. X » (ENDNOTE_MACROS)."""
+        title = self._margin_title(entry)
         note = (entry.get("note") or "").strip()
-        return short_tex(f"{title}: {note}" if note else title, known)
+        if number is None:
+            return short_tex(f"{title}: {note}" if note else title, known)
+
+        def start(chars, least):
+            text = short_tex(f"{title}: {note}", known, limit=max(int(chars * LONG_CUT), len(title) + 2 + least), word=True)
+            return text[:-len("\\dots{}")] + "~\\dots{}" if text.endswith("\\dots{}") else text
+        text = start(LONG_CHARS.get(self.layout, LONG_CHARS["keep"]), LONG_MIN_NOTE)
+        if self.layout == "keep":  # colonne étroite (largeur connue à la compilation) : début plus court
+            narrow = start(NARROW["chars"], NARROW["min"])
+            if narrow != text:
+                text = f"\\arxivreaderFit{{{narrow}}}{{{text}}}"
+        return f"\\arxivreaderNoteMark{{{number}}}{text} \\arxivreaderEndRef{{{number}}}"
+
+    def number_long(self):
+        """Notes longues qui auront une note en marge : numérotées dans l'ordre du document (place de leur ligne dans
+        le texte développé, \\input suivis), leur texte en marge raccourci."""
+        origins = (self.located or {}).get("origins")
+
+        def order(entry):
+            name, line = entry["file"], entry["todoLine"]
+            pos = self.lines[name].starts[min(line, len(self.lines[name]) - 1)]
+            found = None
+            if origins:  # premier morceau venu de ce fichier qui finit après la ligne (commentaires retirés)
+                found = next((start + max(0, pos - offset) for start, other, offset, length
+                              in zip(origins.starts, origins.names, origins.offsets, origins.lengths)
+                              if other == name and offset + length > pos), None)
+            return (found if found is not None else 0, line, entry["rank"], entry["id"])
+        found = sorted((e for e in self.entries if e.get("long") and e.get("todoLine") is not None
+                        and e["precision"] in ("exact", "approx")), key=order)
+        for number, entry in enumerate(found, 1):
+            entry["endnote"] = number
+            entry["short"] = self._short(entry, getattr(self, "known", set()), number)
+        self.long_entries = found
 
     def counts(self):
         return _counts_for(self.entries)
@@ -1563,6 +1794,8 @@ def _header(plan, counts, date):
     lines += [f"% {line}" for line in words["headRemove"]]
     if plan.wide:
         lines += [f"% {line}" for line in words["layout"]]
+    if plan.long_entries:
+        lines += [f"% {line}".replace("({n})", f"({len(plan.long_entries)})") for line in words["endnotes"]]
     lines += [f"% {one_line(line)}" for line in plan.warnings]
     lines.append(f"% {END_MARK}")
     sheet = [e for e in plan.entries if e["kind"] == "general"]
@@ -1804,6 +2037,32 @@ WIDE_TODO = [
     "\\let\\arxivreaderSpecialSaved\\@specialoutput\\def\\@specialoutput{\\arxivreaderSpecial\\arxivreaderSpecialSaved}}",
     "\\catcode`\\@=\\arxivreaderAt\\relax"]
 PAR_MACRO = "\\arxivreaderPar"
+
+# Notes longues (Plan.number_long) : repère de la note en marge et de son texte en fin de document — numéro de page
+# écrit dans le .aux (\arxivreaderPageIs, relu au début de la compilation suivante : comme \label, sans \label ni
+# \pageref, que d'autres paquets redéfinissent : refcheck, cleveref, showkeys…) et, avec hyperref, cible de lien ;
+# renvoi « → note N, p. X » (lien avec hyperref) et « (page Y) » vers la note en marge (omis si elle n'a pas été
+# composée : note sautée dans une boîte ou une formule, \ifinner, \ifmmode). Page encore inconnue (première
+# compilation) : « ?? » et l'avertissement des renvois indéfinis de LaTeX. hyperref cherché à la compilation (chargé
+# avant ou après nous). Commandes robustes : jamais développées dans un argument mobile.
+ENDNOTE_MACROS = [
+    "\\edef\\arxivreaderAt{\\the\\catcode`\\@}\\catcode`\\@=11 ",  # (lignes suivantes avec @ lettre)
+    "\\newcommand{\\arxivreaderPageIs}[2]{\\expandafter\\gdef\\csname arxivreaderP@#1\\endcsname{#2}}",
+    "\\newcommand{\\arxivreaderPageOf}[1]{\\ifcsname arxivreaderP@#1\\endcsname\\csname arxivreaderP@#1\\endcsname"
+    "\\else\\textbf{??}\\G@refundefinedtrue\\fi}",
+    "\\DeclareRobustCommand{\\arxivreaderMark}[1]{\\protected@write\\@auxout{}{\\string\\arxivreaderPageIs{#1}{\\thepage}}"
+    "\\ifcsname ver@hyperref.sty\\endcsname\\hypertarget{arxivreader-#1}{}\\fi}",
+    "\\catcode`\\@=\\arxivreaderAt\\relax",
+    "\\DeclareRobustCommand{\\arxivreaderNoteMark}[1]{\\arxivreaderMark{note-#1}}",
+    "\\DeclareRobustCommand{\\arxivreaderEndMark}[1]{\\arxivreaderMark{end-#1}}",
+    "\\DeclareRobustCommand{\\arxivreaderFit}[2]{\\ifdim\\marginparwidth<{narrow}#1\\else#2\\fi}",
+    "\\DeclareRobustCommand{\\arxivreaderEndRef}[1]{\\ifcsname ver@hyperref.sty\\endcsname"
+    "\\hyperlink{arxivreader-end-#1}{$\\rightarrow$ note #1, p.~\\arxivreaderPageOf{end-#1}}"
+    "\\else$\\rightarrow$ note #1, p.~\\arxivreaderPageOf{end-#1}\\fi}",
+    "\\DeclareRobustCommand{\\arxivreaderEndBack}[1]{\\ifcsname arxivreaderP@note-#1\\endcsname\\space("
+    "\\ifcsname ver@hyperref.sty\\endcsname\\hyperlink{arxivreader-note-#1}{{page}~\\arxivreaderPageOf{note-#1}}"
+    "\\else {page}~\\arxivreaderPageOf{note-#1}\\fi)\\fi}"]
+
 # environnements qui commencent par \\par (listes de LaTeX) : une note juste avant, au début d'un paragraphe vide, y
 # est entre deux paragraphes (avec ceux de l'auteur déclarés par \\newtheorem, \\declaretheorem, \\spnewtheorem)
 PAR_ENVS = {"itemize", "enumerate", "description", "list", "trivlist", "center", "flushleft", "flushright", "quote",
@@ -1850,8 +2109,69 @@ def _preamble(plan):
                   .replace("{par}", PAR_MACRO) + f"% {MARK}" for line in WIDE_TODO]
     else:
         lines.append(f"\\newcommand{{{MACRO}}}[2][]{{{GUARD}{call}[#1]{{#2}}\\fi\\fi}}% {MARK}")
+    if plan.long_entries:
+        lines += [line.replace("{page}", plan.words["endPage"]).replace("{narrow}", NARROW["width"]) + f"% {MARK}"
+                  for line in ENDNOTE_MACROS]
+        if plan.end_document is None:  # \\end{document} partagé avec du texte : section ajoutée d'ici
+            lines += _end_hook(plan)
     lines.append(f"% {END_MARK}")
     return lines
+
+
+def _end_document(plan):
+    """(fichier de la copie, ligne) de \\end{document}, seul sur sa ligne (espaces et commentaire mis à part), dans le
+    corps du document hors de tout environnement ou groupe ; None sinon (la section des notes longues est alors
+    ajoutée depuis le préambule)."""
+    names = sorted(plan.files, key=lambda n: (plan.begin_document is None or n != plan.begin_document[0], n != plan.main.name, n))
+    for name in names:
+        lines = plan.lines[name]
+        if "\\end" not in plan.files[name]:
+            continue
+        for index in range(len(lines)):
+            content = lines.content(index)
+            match = re.search(r"\\end\s*\{document\}", content)
+            if not match or re.search(r"(?<!\\)%", content[:match.start()]):
+                continue
+            states = plan.states_of(name)
+            if not states[index][0]:  # dans un verbatim
+                continue
+            if content[:match.start()].strip() or not states[index][1] or not plan.copy_name.get(name):
+                return None
+            return plan.copy_name[name], index
+    return None
+
+
+def _end_hook(plan):
+    """Section des notes longues confiée à \\AtEndDocument : composée après tout ce que \\end{document} compose
+    encore (adresses des auteurs d'amsart, flottants d'endfloat…), dont les pages ne changent donc pas."""
+    return [f"\\AtEndDocument{{% {MARK}"] + _end_section(plan) + [f"}}% {MARK}"]
+
+
+def _end_section(plan):
+    """Lignes LaTeX de la section des notes longues (chacune marquée « % [arXivReader] ») : nouvelle page, titre sans
+    numéro (ni compteur de section ni table des matières touchés), puis chaque note : « Note N — titre (page Y) », le
+    passage cité, son texte entier en taille normale (long_tex)."""
+    words, known = plan.words, getattr(plan, "known", set())
+    lines = ["\\clearpage",
+             "\\begingroup\\normalsize\\parindent0pt\\parskip0.5\\baselineskip\\relax\\partopsep0pt\\relax"
+             "\\emergencystretch3em\\relax",
+             "\\noindent{\\large\\bfseries " + _text_chars(words["endTitle"]) + "}\\par\\medskip"]
+    for entry in plan.long_entries:
+        number = entry["endnote"]
+        title = _breakable(one_line(plan._margin_title(entry)))
+        lines.append(f"\\par\\medskip{{\\raggedright\\noindent\\arxivreaderEndMark{{{number}}}"
+                     f"\\textbf{{Note {number} --- {title}}}\\arxivreaderEndBack{{{number}}}\\par}}\\nobreak")
+        if entry.get("quote") and _text_only(entry["quote"]):  # passage cité, en italique entre guillemets anglais
+            # (présents dans tous les codages) ; omis s'il a des caractères sans équivalent (« ? » : formules du PDF)
+            lines.append("{\\itshape ``" + _breakable(one_line(entry["quote"], MAX_QUOTE)) + "''\\par}\\nobreak")
+        lines += long_tex(entry.get("note") or "", known)
+    lines.append("\\endgroup")
+    return [f"{line}% {MARK}" for line in lines]
+
+
+def _text_only(text):
+    """Le texte s'écrit-il sans « ? » de remplacement (_text_chars) ?"""
+    return "?" not in _text_chars((text or "").replace("?", ""))
 
 
 def _ends_paragraph(plan, name, line):
@@ -1893,9 +2213,13 @@ def _insertions(plan):
         out.setdefault(name, {}).setdefault(line, []).extend(new)
 
     preamble = None
+    plan.end_document = None
     if plan.mode == "todo" and any(e.get("todoLine") is not None and e["precision"] in ("exact", "approx")
                                    for e in plan.entries):
         if plan.begin_document and plan.copy_name.get(plan.begin_document[0]) and not plan.begin_shared:
+            if plan.endnotes:
+                plan.number_long()
+                plan.end_document = _end_document(plan) if plan.long_entries else None
             preamble = _preamble(plan)  # (ses avertissements dans l'en-tête)
             plan.wide = plan.layout == "wide"
         else:  # (\\documentclass sur la ligne de \\begin{document} : rien ne peut être ajouté entre les deux)
@@ -1925,7 +2249,14 @@ def _insertions(plan):
                     size = SIZE_MACRO if plan.wide else "\\scriptsize"
                     new.append(f"{par}{MACRO}[color={color},size={size}]{{{entry['short']}}}% {MARK}")
             add(plan.copy_name[name], line, new)
+    if plan.long_entries and plan.end_document:  # après tout ce qui précède \\end{document}
+        add(plan.end_document[0], plan.end_document[1],
+            [f"% {MARK} {words_end(plan)}"] + _end_hook(plan) + [f"% {END_MARK}"])
     return out
+
+
+def words_end(plan):
+    return f"{plan.words['endTitle']} — {plan.words['endComment']}"
 
 
 def _texts(plan, insertions):
@@ -1952,9 +2283,10 @@ def _texts(plan, insertions):
     return written, latin
 
 
-def summary(pid, mode, language, layout="wide"):
-    """Ce que contiendra la copie (sans rien écrire) : nombres de notes placées, SyncTeX, taille, avertissements."""
-    plan = Plan(pid, mode, language, layout)
+def summary(pid, mode, language, layout="wide", endnotes=True):
+    """Ce que contiendra la copie (sans rien écrire) : nombres de notes placées, SyncTeX, taille, avertissements,
+    notes longues renvoyées en fin de document."""
+    plan = Plan(pid, mode, language, layout, endnotes)
     insertions = _insertions(plan)
     _, latin = _texts(plan, insertions)
     if latin:
@@ -1963,7 +2295,8 @@ def summary(pid, mode, language, layout="wide"):
     return {**{k: counts[k] for k in ("total", "exact", "approx", "unplaced", "header", "byKind")},
             "synctex": plan.sync is not None, "files": len(plan.copy), "size": plan.size, "folder": str(plan.root),
             "warnings": plan.warnings,
-            "todoMacro": MACRO if mode == "todo" else None, "mode": mode, "layout": plan.layout}
+            "todoMacro": MACRO if mode == "todo" else None, "mode": mode, "layout": plan.layout,
+            "endnotes": len(plan.long_entries)}
 
 
 def _readme(plan, counts, date):
@@ -1974,6 +2307,8 @@ def _readme(plan, counts, date):
              for line in words["readme"]]
     if plan.wide:
         lines += [""] + words["layout"]
+    if plan.long_entries:
+        lines += [""] + [line.replace("({n})", f"({len(plan.long_entries)})") for line in words["endnotes"]]
     if plan.warnings:
         lines += ["", words["readmeWarnings"]] + [f"- {one_line(w)}" for w in plan.warnings]
     unplaced = sorted((e for e in plan.entries if e["precision"] == "none"), key=lambda e: (e["page"] or 0, e["id"]))
@@ -2006,11 +2341,11 @@ def _purge_stale(now=None):
             continue
 
 
-def build_zip(pid, mode, language, layout="wide"):
+def build_zip(pid, mode, language, layout="wide", endnotes=True):
     """Archive .zip de la copie annotée, écrite dans un fichier temporaire : (chemin, nom proposé). L'appelant le
     supprime après l'envoi (et chaque appel supprime celles de plus de 6 h, oubliées)."""
     _purge_stale()
-    plan = Plan(pid, mode, language, layout)
+    plan = Plan(pid, mode, language, layout, endnotes)
     insertions = _insertions(plan)
     written, latin = _texts(plan, insertions)
     if latin:
@@ -2051,10 +2386,13 @@ def build_zip(pid, mode, language, layout="wide"):
     return temporary, plan.words["zip"].format(name=name)
 
 
-def check(mode, language, layout="wide"):
-    """Paramètres de la requête : True s'ils sont valides (la mise en page aussi en mode commentaires, où elle est
-    sans effet)."""
-    return mode in MODES and language in LANGUAGES and layout in LAYOUTS
+ENDNOTES = ("1", "0")  # notes longues renvoyées en fin de document (mode « todo ») : oui (par défaut) ou non
+
+
+def check(mode, language, layout="wide", endnotes="1"):
+    """Paramètres de la requête : True s'ils sont valides (la mise en page et le renvoi des notes longues aussi en
+    mode commentaires, où ils sont sans effet)."""
+    return mode in MODES and language in LANGUAGES and layout in LAYOUTS and endnotes in ENDNOTES
 
 
 def params_error(language):
@@ -2062,8 +2400,8 @@ def params_error(language):
     return ERRORS.get(language if language in LANGUAGES else "en", ERRORS["en"])["params"]
 
 
-def plan_json(pid, mode="comments", language="fr", layout="wide"):
+def plan_json(pid, mode="comments", language="fr", layout="wide", endnotes=True):
     """Notes et leur place (tests, diagnostic)."""
-    plan = Plan(pid, mode, language, layout)
+    plan = Plan(pid, mode, language, layout, endnotes)
     _insertions(plan)
     return json.loads(json.dumps(plan.entries, default=str))

@@ -147,12 +147,14 @@ export async function chooseBibFor(paperId, name, done) {
 }
 
 // Copie .tex annotée : choix de la forme des notes (et, pour les notes en marge, de la mise en page : marge des notes
-// agrandie par défaut), bilan de leur placement, puis téléchargement du .zip
+// agrandie par défaut ; notes longues renvoyées en fin de document par défaut), bilan de leur placement, puis
+// téléchargement du .zip
 // (un simple lien : l'application Mac affiche son message « Enregistré dans Téléchargements »)
 export function texAnnotatedDialog(paperId) {
   const lang = document.documentElement.lang || "fr";
   let mode = "comments";
   let layout = "wide";  // wide : texte décalé, page élargie au besoin ; keep : marge du document telle quelle
+  let endnotes = true;  // notes longues : début en marge et renvoi, texte entier sur une dernière page
   let turn = 0;  // une réponse tardive d'un autre choix est ignorée
   const info = h("div", { class: "tex-steps", "aria-live": "polite" });
   const download = h("a", { class: "button primary", download: "", "aria-disabled": "true", tabindex: "-1" }, t("texAnnot.download"));
@@ -165,9 +167,15 @@ export function texAnnotatedDialog(paperId) {
     onchange: (event) => { layout = event.target.checked ? "wide" : "keep"; load(); } });
   const wideLabel = h("label", { class: "texannot-choice texannot-option" }, wide,
     h("span", {}, h("span", {}, t("texAnnot.wide")), h("span", { class: "muted small" }, t("texAnnot.wideHint"))));
+  // notes longues renvoyées en fin de document (notes en marge seulement, case alors grisée sinon)
+  const ends = h("input", { type: "checkbox", checked: endnotes,
+    onchange: (event) => { endnotes = event.target.checked; load(); } });
+  const endsLabel = h("label", { class: "texannot-choice texannot-option" }, ends,
+    h("span", {}, h("span", {}, t("texAnnot.endnotesOption")), h("span", { class: "muted small" }, t("texAnnot.endnotesHint"))));
   const wideOption = () => {
-    wide.disabled = mode !== "todo";
+    wide.disabled = ends.disabled = mode !== "todo";
     wideLabel.classList.toggle("disabled", wide.disabled);
+    endsLabel.classList.toggle("disabled", ends.disabled);
   };
   wideOption();
   const dialog = h("dialog", { class: "meta-dialog tex-dialog" },
@@ -178,14 +186,14 @@ export function texAnnotatedDialog(paperId) {
         h("legend", {}, t("texAnnot.mode")),
         choice("comments", t("texAnnot.modeComments")),
         choice("todo", t("texAnnot.modeTodo"), t("texAnnot.modeTodoHint")),
-        wideLabel),
+        wideLabel, endsLabel),
       info,
       h("div", { class: "dialog-actions" },
         h("button", { class: "button", value: "cancel" }, t("texAnnot.cancel")),
         download)));
   const enable = (on) => {
     if (on) {
-      download.href = `/api/papers/${encodeURIComponent(paperId)}/tex-annotated?mode=${encodeURIComponent(mode)}&lang=${encodeURIComponent(lang)}&layout=${encodeURIComponent(layout)}`;
+      download.href = `/api/papers/${encodeURIComponent(paperId)}/tex-annotated?mode=${encodeURIComponent(mode)}&lang=${encodeURIComponent(lang)}&layout=${encodeURIComponent(layout)}&endnotes=${endnotes ? 1 : 0}`;
       download.removeAttribute("aria-disabled");
       download.removeAttribute("tabindex");
     } else {
@@ -199,7 +207,7 @@ export function texAnnotatedDialog(paperId) {
     enable(false);
     info.replaceChildren(h("div", { class: "tex-step" }, h("span", { class: "spinner" }), t("texAnnot.loading")));
     try {
-      const s = await api.texAnnotatedSummary(paperId, mode, lang, layout);
+      const s = await api.texAnnotatedSummary(paperId, mode, lang, layout, endnotes);
       if (mine !== turn) return;
       const steps = [];
       if (!s.total) steps.push({ state: "warn", text: t("texAnnot.none") });
@@ -209,6 +217,7 @@ export function texAnnotatedDialog(paperId) {
         if (s.approx) parts.push(tn("texAnnot.approx", s.approx));
         if (s.unplaced) parts.push(tn("texAnnot.unplaced", s.unplaced));
         if (s.header) parts.push(tn("texAnnot.header", s.header));
+        if (s.endnotes > 0) parts.push(tn("texAnnot.endnotes", s.endnotes));
         steps.push({ state: s.unplaced ? "warn" : "ok", text: parts.join(" · "),
           detail: [tn("texAnnot.project", s.files, { size: (s.size / 1048576).toLocaleString(lang, { maximumFractionDigits: 1, minimumFractionDigits: 1 }) }),
             h("div", { class: "tex-path" }, s.folder)] });
