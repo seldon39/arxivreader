@@ -490,6 +490,8 @@ def _text_chars(text):
     for char in text:
         if char in ESCAPES:
             out.append(ESCAPES[char])
+        elif char in TEXT_MATH:
+            out.append(f"\\ensuremath{{{TEXT_MATH[char]}}}")
         elif char in TEXT_CHARS:
             out.append(TEXT_CHARS[char])
         elif 32 <= ord(char) < 127 or char in LATIN:
@@ -555,12 +557,66 @@ def _breakable(text):
     return "".join(out)
 
 
-def _safe_math(formula, known):
-    """La formule (sans ses $) peut-elle être recopiée telle quelle dans une note en marge ? Vérifications prudentes :
-    accolades équilibrées, rien qui change la structure, commandes connues de LaTeX ou employées par la source."""
-    if not formula.strip() or len(formula) > MAX_MATH or any(ord(c) < 32 and c != " " or ord(c) > 126 for c in formula):
+# Environnements permis dans une formule d'une note de fin de document (ceux d'amsmath s'il est chargé, voir
+# _known_words ; array : noyau de LaTeX), seuls endroits où & et \\ sont permis
+MATH_ENVS = {"matrix", "pmatrix", "bmatrix", "Bmatrix", "vmatrix", "Vmatrix", "smallmatrix", "cases", "aligned",
+             "alignedat", "gathered", "split", "array", "subarray"}
+KERNEL_ENVS = {"array"}
+MAX_LONG_MATH = 2000     # formule gardée telle quelle dans une note de fin de document
+# Caractères Unicode des formules → commandes (Claude écrit parfois « λ ≤ ‖x‖ » dans une formule)
+MATH_UNICODE = {"≤": "\\le ", "≥": "\\ge ", "≠": "\\ne ", "∈": "\\in ", "∉": "\\notin ", "⊂": "\\subset ",
+                "⊆": "\\subseteq ", "⊃": "\\supset ", "⊇": "\\supseteq ", "∩": "\\cap ", "∪": "\\cup ", "→": "\\to ",
+                "←": "\\leftarrow ", "↦": "\\mapsto ", "⇒": "\\Rightarrow ", "⇐": "\\Leftarrow ",
+                "⇔": "\\Leftrightarrow ", "↔": "\\leftrightarrow ", "∞": "\\infty ", "∑": "\\sum ", "∏": "\\prod ",
+                "∫": "\\int ", "∂": "\\partial ", "∇": "\\nabla ", "×": "\\times ", "·": "\\cdot ", "⋅": "\\cdot ",
+                "±": "\\pm ", "∓": "\\mp ", "∘": "\\circ ", "⊗": "\\otimes ", "⊕": "\\oplus ", "≈": "\\approx ",
+                "∼": "\\sim ", "≃": "\\simeq ", "≅": "\\cong ", "≡": "\\equiv ", "∝": "\\propto ", "≪": "\\ll ",
+                "≫": "\\gg ", "∀": "\\forall ", "∃": "\\exists ", "∅": "\\emptyset ", "⟨": "\\langle ",
+                "⟩": "\\rangle ", "‖": "\\| ", "−": "-", "…": "\\dots ", "⋯": "\\cdots ", "′": "'", "″": "''",
+                "ℓ": "\\ell ", "ℏ": "\\hbar ", "⊥": "\\perp ", "∥": "\\parallel ", "¬": "\\neg ", "∧": "\\wedge ",
+                "∨": "\\vee ", "⌊": "\\lfloor ", "⌋": "\\rfloor ", "⌈": "\\lceil ", "⌉": "\\rceil ", "√": "\\sqrt ",
+                "∖": "\\setminus ", "⋆": "\\star ", "†": "\\dagger "}
+MATH_UNICODE.update({chr(0x3b1 + i): f"\\{name} " for i, name in enumerate(
+    "alpha beta gamma delta varepsilon zeta eta theta iota kappa lambda mu nu xi o pi rho varsigma sigma tau upsilon "
+    "varphi chi psi omega".split()) if name != "o"})
+MATH_UNICODE.update({"ϕ": "\\phi ", "ϵ": "\\epsilon ", "ϑ": "\\vartheta ", "ϱ": "\\varrho ", "ϖ": "\\varpi "})
+MATH_UNICODE.update({char: f"\\{name} " for char, name in zip("ΓΔΘΛΞΠΣΥΦΨΩ", "Gamma Delta Theta Lambda Xi Pi Sigma "
+                                                                         "Upsilon Phi Psi Omega".split())})
+DOUBLE_STRUCK = {"ℝ": "R", "ℂ": "C", "ℕ": "N", "ℤ": "Z", "ℚ": "Q", "ℍ": "H", "ℙ": "P"}
+SUPERSCRIPTS = dict(zip("⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁿⁱ", "0123456789+-=()ni"))
+SUBSCRIPTS = dict(zip("₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₙᵢⱼₖ", "0123456789+-=()nijk"))
+# en dehors des formules : lettres grecques et symboles des commandes du noyau de LaTeX (\ensuremath)
+TEXT_MATH = {char: command.strip() for char, command in MATH_UNICODE.items()
+             if command.startswith("\\") and char not in "…−′″√"}
+
+
+def _math_unicode(formula, known):
+    """Formule avec ses caractères Unicode mathématiques remplacés par des commandes (ℝ : \\mathbb{R} si la source
+    emploie \\mathbb, ² : ^{2}…) ; les autres restent (et _safe_math refuse alors la formule)."""
+    formula = re.sub("[" + "".join(SUPERSCRIPTS) + "]+", lambda m: "^{" + "".join(SUPERSCRIPTS[c] for c in m.group(0)) + "}", formula)
+    formula = re.sub("[" + "".join(SUBSCRIPTS) + "]+", lambda m: "_{" + "".join(SUBSCRIPTS[c] for c in m.group(0)) + "}", formula)
+    out = []
+    for char in formula:
+        if char in MATH_UNICODE:  # (espace après la commande seulement devant une lettre)
+            out.append(MATH_UNICODE[char].replace(" ", "\0"))
+        elif char in DOUBLE_STRUCK and "mathbb" in known:
+            out.append(f"\\mathbb{{{DOUBLE_STRUCK[char]}}}")
+        elif char in "\u00a0\u202f\u2009":
+            out.append(" ")
+        else:
+            out.append(char)
+    return re.sub("\0(?![A-Za-z])", "", "".join(out)).replace("\0", " ").strip()
+
+
+def _safe_math(formula, known, envs=False):
+    """La formule (sans ses $) peut-elle être recopiée telle quelle dans une note ? Vérifications prudentes :
+    accolades équilibrées, rien qui change la structure, commandes connues de LaTeX ou employées par la source ;
+    `envs` (notes de fin de document) : environnements de MATH_ENVS disponibles (_known_words), bien imbriqués,
+    seuls endroits où & et \\\\ sont permis."""
+    limit = MAX_LONG_MATH if envs else MAX_MATH
+    if not formula.strip() or len(formula) > limit or any(ord(c) < 32 and c != " " or ord(c) > 126 for c in formula):
         return False
-    if re.search(r"[#%&]|\\\\|\^\^|\\$|[\^_]\s*(?:$|\})", formula):
+    if re.search(r"[#%]|\^\^|\\$|[\^_]\s*(?:$|\})", formula):
         return False
     depth = 0
     for match in re.finditer(r"\\[{}]|[{}]", formula):
@@ -572,14 +628,27 @@ def _safe_math(formula, known):
         return False
     if len(re.findall(r"\\left\b", formula)) != len(re.findall(r"\\right\b", formula)):
         return False
-    for match in re.finditer(r"\\([A-Za-z]+|.)", formula):
-        word = match.group(1)
-        if not word.isalpha():
-            if word not in ",;:!{}| ":
+    stack = []
+    for match in re.finditer(r"\\(begin|end)\s*\{([^{}]*)\}|\\\\|&|\\([A-Za-z]+|.)", formula):
+        if match.group(1):
+            name = match.group(2)
+            if not envs or (name not in KERNEL_ENVS and f"env:{name}" not in known):
                 return False
-        elif word in FORBIDDEN_WORDS or (word not in MATH_WORDS and word not in known):
-            return False
-    return True
+            if match.group(1) == "begin":
+                stack.append(name)
+            elif not stack or stack.pop() != name:
+                return False
+        elif match.group(0) in ("\\\\", "&"):
+            if not stack:
+                return False
+        else:
+            word = match.group(3)
+            if not word.isalpha():
+                if word not in ",;:!{}| ":
+                    return False
+            elif word in FORBIDDEN_WORDS or (word not in MATH_WORDS and word not in known):
+                return False
+    return not stack
 
 
 MARKDOWN = [(re.compile(r"!\[([^\]]*)\]\([^)]*\)"), r"\1"), (re.compile(r"\[([^\]]*)\]\([^)]*\)"), r"\1"),
@@ -596,8 +665,11 @@ def short_tex(text, known, limit=MAX_SHORT, word=False):
     pieces, pos = [], 0  # (texte, formule gardée ?)
     for match in MATH_PIECE.finditer(text or ""):
         pieces.append((text[pos:match.start()], False))
-        if match.group(3) is not None and _safe_math(match.group(3), known) and not re.search(r"\n\s*\n", match.group(3)):
-            pieces.append((match.group(3), True))
+        formula = _math_unicode(match.group(3), known) if match.group(3) is not None else None
+        if formula is not None and _safe_math(formula, known) and not re.search(r"\n\s*\n", formula):
+            pieces.append((formula, True))
+        elif formula is not None and len(formula) > 30:  # longue formule refusée : pas de code illisible en marge
+            pieces.append(("[…]", False))
         else:
             pieces.append((match.group(0).replace("\\$", "$"), False))
         pos = match.end()
@@ -691,8 +763,8 @@ def _formula(raw, known):
     """Formule (sans ses délimiteurs) gardée telle quelle si elle est sûre (_safe_math), sinon None."""
     if re.search(r"\n\s*\n", raw):
         return None
-    formula = " ".join(raw.split())
-    return formula if _safe_math(formula, known) else None
+    formula = _math_unicode(" ".join(raw.split()), known)
+    return formula if _safe_math(formula, known, envs=True) else None
 
 
 def inline_tex(text, known):
@@ -1061,7 +1133,14 @@ def _locate(files, main_name):
 
 
 def _known_words(text):
-    return set(re.findall(r"\\([A-Za-z]+)", text))
+    """Commandes employées par la source, et environnements de formules disponibles (« env:pmatrix ») : ceux qu'elle
+    emploie, et ceux d'amsmath s'il est chargé (amsart, amsbook… le chargent)."""
+    known = set(re.findall(r"\\([A-Za-z]+)", text))
+    known |= {"env:" + name for name in re.findall(r"\\begin\s*\{([A-Za-z]+)\}", text) if name in MATH_ENVS}
+    if re.search(r"\\(?:usepackage|RequirePackage)\s*(?:\[[^\]]*\])?\s*\{[^}]*\b(?:amsmath|mathtools)\b"
+                 r"|\\documentclass\s*(?:\[[^\]]*\])?\s*\{ams(?:art|book|proc)\}", text):
+        known |= {"env:" + name for name in MATH_ENVS}
+    return known
 
 
 def _todo_setup(text):
@@ -2163,7 +2242,7 @@ def _end_section(plan):
                      f"\\textbf{{Note {number} --- {title}}}\\arxivreaderEndBack{{{number}}}\\par}}\\nobreak")
         if entry.get("quote") and _text_only(entry["quote"]):  # passage cité, en italique entre guillemets anglais
             # (présents dans tous les codages) ; omis s'il a des caractères sans équivalent (« ? » : formules du PDF)
-            lines.append("{\\itshape ``" + _breakable(one_line(entry["quote"], MAX_QUOTE)) + "''\\par}\\nobreak")
+            lines.append("{\\itshape ``" + inline_tex(one_line(entry["quote"], MAX_QUOTE), known) + "''\\par}\\nobreak")
         lines += long_tex(entry.get("note") or "", known)
     lines.append("\\endgroup")
     return [f"{line}% {MARK}" for line in lines]

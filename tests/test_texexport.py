@@ -547,11 +547,21 @@ class TodoText(unittest.TestCase):
                          "Bold and it code link 50\\% \\#1 a\\_b \\textasciitilde{} \\textasciicircum{} \\& \\{x\\} \\textbackslash{}cmd")
         self.assertEqual(texexport.short_tex("# Title\n\nPara one.\n\nPara two.", known), "Title Para one. Para two.")
         self.assertEqual(texexport.short_tex("Kept $x \\in \\R^n$ and $\\ker f$", known), "Kept $x \\in \\R^n$ and $\\ker f$")
+        self.assertEqual(texexport.short_tex("$x ∈ ℝ², ‖f‖ ≤ ε$ and λ", known | {"mathbb"}),
+                         "$x \\in \\mathbb{R}^{2}, \\| f\\| \\le \\varepsilon$ and \\ensuremath{\\lambda}")
+        long_formula = "$" + "+".join(f"a_{{{i}}}" for i in range(20)) + "\\unknownmacro$"
+        self.assertEqual(texexport.short_tex(long_formula, known), "[...]")  # longue formule refusée : abrégée
+        ams = texexport._known_words("\\documentclass{amsart}")
+        matrix = "$A=\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}$"
+        self.assertEqual(texexport.inline_tex(matrix, ams), matrix)  # notes de fin : environnements d'amsmath
+        self.assertTrue(texexport.inline_tex(matrix, set()).startswith("\\$A"))  # sans amsmath : montrée en texte
+        for bad in ("$a & b$", "$\\begin{pmatrix}a\\end{bmatrix}$", "$\\begin{align}a\\end{align}$"):
+            self.assertNotRegex(texexport.inline_tex(bad, ams).replace("\\$", ""), r"\$", bad)
         for bad in ("$\\unknownmacro x$", "$a # b$", "$\\begin{matrix}a\\end{matrix}$", "${a$", "$a^$", "$\\left( a$",
-                    "$a \\\\ b$", "$\\section{x}$", "$α$", "$a % b$", "$$display$$"):
+                    "$a \\\\ b$", "$\\section{x}$", "$⨁$", "$a % b$", "$$display$$"):
             out = texexport.short_tex(bad, known)
             self.assertNotRegex(out.replace("\\$", ""), r"\$", bad)  # formule échappée, jamais recopiée
-        self.assertEqual(texexport.short_tex("Café « déjà » – ∑ → x", known), "Café \" déjà \" -- ? -> x")
+        self.assertEqual(texexport.short_tex("Café « déjà » – ∑ → x", known), "Café \" déjà \" -- \\ensuremath{\\sum} \\ensuremath{\\to} x")
         long = texexport.short_tex("word " * 200, known)
         self.assertTrue(long.endswith("\\dots{}") and len(long) < 320)
         cut = texexport.short_tex("x" * 290 + " $\\alpha + \\beta + \\gamma$", known)
@@ -1671,7 +1681,7 @@ class Compiled(Setup):
         text = "\n".join(texexport._end_section(plan))
         self.assertNotIn("Z) =", text)
         self.assertIn("clean quote?", text)
-        self.assertFalse(texexport._text_only("κ ∑"))
+        self.assertFalse(texexport._text_only("κ ⨁"))
         self.assertTrue(texexport._text_only("Café « déjà » – x? → y"))
 
     def test_endnotes_keep_narrow(self):

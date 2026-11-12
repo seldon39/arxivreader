@@ -1,4 +1,4 @@
-# arXivReader 1.14.0-beta.3 — copie .tex annotée
+# arXivReader 1.14.0-beta.4 — copie .tex annotée
 
 Bêta locale, issue de la 1.13.3 : seulement sur cet ordinateur, rien sur GitHub. Elle a sa propre bibliothèque
 (`~/Library/Application Support/arXivReader Beta`) et ne touche pas à l'application habituelle.
@@ -28,6 +28,11 @@ sur une dernière page « Notes de relecture (arXivReader) », en taille normale
 renvoi vers la page de la note (liens cliquables si le document charge hyperref). Les pages d'avant ne changent pas.
 Il faut deux passes de LaTeX (latexmk les fait) : après une seule, les numéros de page affichent « ?? ».
 
+**Nouveau en beta.4 — formules des notes** : dans les notes de fin de document, les formules sont rendues en LaTeX,
+y compris les matrices et systèmes (`pmatrix`, `cases`, `aligned`… si le document charge amsmath), et le passage
+cité aussi (il était recopié en code brut). Les lettres grecques et symboles tapés en Unicode (λ, ≤, ℝ, ²…) deviennent
+des symboles. En marge, une longue formule impossible à recopier devient « [...] » au lieu de son code.
+
 Où vont les notes :
 - note ou état d'un énoncé, ou d'une preuve : juste avant son `\begin{…}` ;
 - passage surligné : retrouvé par son texte (avec l'aide de SyncTeX quand le même texte revient plusieurs fois) ;
@@ -54,7 +59,7 @@ une fois sur **Recompiler** pour que les zones et notes épinglées soient bien 
   dans les marges ou près du pied de page.
 - Un passage surligné qui contient surtout des formules peut ne pas être retrouvé : il va alors en tête du fichier.
 - Les notes en marge sont omises dans les boîtes, les flottants et les formules (le commentaire reste) ; un texte
-  très mathématique y est simplifié, et les émojis y deviennent « ? » (le commentaire garde tout).
+  très mathématique y est simplifié (« [...] »), et les émojis y deviennent « ? » (le commentaire garde tout).
 - Une note sur un tableau ou une figure `[H]` déplacé à la page suivante peut apparaître en bas de la page d'avant.
 - Les passages et zones placés approximativement le disent (« emplacement approximatif »), dans le commentaire comme
   dans la note en marge ; les notes proposées par l'IA gardent la mention « Claude (proposé, non vérifié) ».
