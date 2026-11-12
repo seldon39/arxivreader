@@ -447,108 +447,6 @@ class Gemini(unittest.TestCase):
                          "gemini-2.5-pro")
 
 
-class Mistral(unittest.TestCase):
-    """API de Mistral (serveur simulé) : clé dans l'en-tête, aucun outil, réponse au fil de l'eau (réflexion non
-    affichée), images, erreurs, liste des modèles."""
-
-    def setUp(self):
-        class Handler(BaseHTTPRequestHandler):
-            def log_message(self, *args):
-                pass
-
-            def reply(self, status, payload):
-                self.send_response(status)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps(payload).encode())
-
-            def do_GET(self):
-                if self.headers.get("Authorization") != "Bearer good":
-                    return self.reply(401, {"detail": "Unauthorized"})
-                chat = {"completion_chat": True, "vision": False}
-                self.reply(200, {"object": "list", "data": [
-                    {"id": "mistral-large-latest", "capabilities": {**chat, "vision": True}, "deprecation": None},
-                    {"id": "mistral-large-2512", "capabilities": {**chat, "vision": True}, "deprecation": None},
-                    {"id": "codestral-latest", "capabilities": chat, "deprecation": None},
-                    {"id": "open-mistral-7b", "capabilities": chat, "deprecation": "2025-03-30T12:00:00Z"},
-                    {"id": "mistral-embed", "capabilities": {"completion_chat": False}, "deprecation": None},
-                    {"id": "../x", "capabilities": chat}]})
-
-            def do_POST(self):
-                Handler.path_seen, Handler.key = self.path, self.headers.get("Authorization")
-                Handler.body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-                if Handler.key == "Bearer tired":
-                    return self.reply(429, {"message": "Requests rate limit exceeded", "type": "rate_limited"})
-                if Handler.key != "Bearer good":
-                    return self.reply(401, {"message": "Unauthorized", "type": "invalid_request_error"})
-                self.send_response(200)
-                self.send_header("Content-Type", "text/event-stream")
-                self.end_headers()
-                deltas = [{"role": "assistant", "content": [{"type": "thinking", "thinking": [{"type": "text", "text": "pensée"}]}]},
-                          {"content": [{"type": "thinking", "thinking": []}, {"type": "text", "text": "La "}]},
-                          {"content": "réponse."}]
-                finish = "length" if Handler.body["model"] == "short" else "stop"
-                for number, delta in enumerate(deltas):
-                    chunk = {"choices": [{"index": 0, "delta": delta, "finish_reason": finish if number == 2 else None}]}
-                    self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
-                self.wfile.write(b"data: [DONE]\n\n")
-
-        self.handler = Handler
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
-        self.saved = providers.MISTRAL_API
-        providers.MISTRAL_API = f"http://127.0.0.1:{self.server.server_port}/v1"
-        providers._mistral_vision.clear()
-
-    def tearDown(self):
-        providers.MISTRAL_API = self.saved
-        providers._mistral_vision.clear()
-        self.server.shutdown()
-        self.server.server_close()
-
-    def test_stream(self):
-        chunks = asyncio.run(collect(providers.stream_mistral("SYSTEM", "PROMPT", "mistral-large-latest", "good")))
-        self.assertEqual("".join(chunks), "La réponse.")  # réflexion non affichée
-        self.assertEqual(self.handler.key, "Bearer good")  # clé dans l'en-tête, pas dans l'adresse
-        self.assertEqual(self.handler.path_seen, "/v1/chat/completions")
-        self.assertEqual(self.handler.body["messages"], [{"role": "system", "content": "SYSTEM"}, {"role": "user", "content": "PROMPT"}])
-        self.assertTrue(self.handler.body["stream"])
-        self.assertNotIn("tools", self.handler.body)  # aucun outil
-        cut = asyncio.run(collect(providers.stream_mistral("S", "P", "short", "good")))
-        self.assertIsInstance(cut[-1], providers.Cut)  # longueur maximale : réponse incomplète
-
-    def test_images(self):
-        asyncio.run(collect(providers.stream_mistral("S", "P", "mistral-large-latest", "good", [("image/png", b"PNG")])))
-        content = self.handler.body["messages"][1]["content"]
-        self.assertEqual(content[0], {"type": "image_url", "image_url": "data:image/png;base64,UE5H"})
-        self.assertEqual(content[-1], {"type": "text", "text": "P"})
-
-    def test_errors(self):
-        for key, code in (("tired", "limit"), ("bad", "login"), ("", "missing")):
-            with self.assertRaises(providers.ProviderError) as caught:
-                asyncio.run(collect(providers.stream_mistral("S", "P", "mistral-large-latest", key)))
-            self.assertEqual(caught.exception.code, code, key)
-        with self.assertRaises(providers.ProviderError):  # nom de modèle refusé
-            asyncio.run(collect(providers.stream_mistral("S", "P", "../x", "good")))
-
-    def test_status(self):
-        self.assertEqual(providers.status("mistral", {})["available"], False)  # pas de clé
-        bad = providers.status("mistral", {"mistralApiKey": "bad"})
-        self.assertEqual((bad["available"], bad["loggedIn"], bad["inconclusive"]), (True, False, False))
-        good = providers.status("mistral", {"mistralApiKey": "good"})
-        # alias « -latest » seulement ; ni modèle retiré, ni embedding, ni nom refusé
-        self.assertEqual((good["loggedIn"], good["models"], good["mistralModel"], good["vision"]),
-                         (True, ["codestral-latest", "mistral-large-latest"], "mistral-large-latest", True))
-        chosen = providers.status("mistral", {"mistralApiKey": "good", "aiMistralModel": "codestral-latest"})
-        self.assertEqual((chosen["chosen"], chosen["vision"]), ("codestral-latest", False))  # ce modèle ne lit pas les images
-        with unittest.mock.patch.object(ai.db, "get_settings", return_value={"aiMistralModel": "codestral-latest"}):
-            self.assertFalse(ai.reads_images("mistral"))
-        with unittest.mock.patch.object(ai.db, "get_settings", return_value={"aiMistralModel": "mistral-large-latest"}):
-            self.assertTrue(ai.reads_images("mistral"))
-        self.assertEqual((providers.provider_of("mistral"), ai.assistant_name("mistral"),
-                          ai.model_of("mistral", {"aiModel": "mistral"})), ("mistral", "Mistral", "mistral"))
-
-
 class Settings(unittest.TestCase):
     def setUp(self):
         self.saved = (db.DB_PATH, db.LIBRARY)
@@ -595,10 +493,6 @@ class Settings(unittest.TestCase):
         self.assertEqual(put({"geminiApiKey": "AIzaSyExample_123", "aiGeminiModel": "gemini-2.5-flash"}), 200)
         self.assertEqual(put({"geminiApiKey": "a b"}), 400)
         self.assertEqual(put({"aiGeminiModel": "../../x"}), 400)
-        self.assertEqual(put({"mistralApiKey": "AbCdEf0123456789", "aiMistralModel": "mistral-large-latest", "aiProvider": "mistral"}), 200)
-        self.assertEqual(put({"mistralApiKey": "a b"}), 400)
-        self.assertEqual(put({"aiMistralModel": "../../x"}), 400)
-        self.assertEqual(put({"aiModel": "mistral"}), 400)
         self.assertEqual(put({"aiModel": "fable", "aiClaudeEffort": "xhigh", "aiCodexModel": "gpt-6-luna", "aiCodexEffort": "ultra",
                               "aiGeminiEffort": ""}), 200)
         self.assertEqual(put({"aiModel": "codex"}), 400)

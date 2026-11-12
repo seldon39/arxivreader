@@ -1,4 +1,4 @@
-# arXivReader 1.14.0-beta.6 — copie .tex annotée
+# arXivReader 1.14.0-beta.7 — copie .tex annotée
 
 Bêta locale, issue de la 1.13.3 : seulement sur cet ordinateur, rien sur GitHub. Elle a sa propre bibliothèque
 (`~/Library/Application Support/arXivReader Beta`) et ne touche pas à l'application habituelle.
@@ -45,12 +45,6 @@ pointerait vers le vôtre.
 **Corrigé en beta.5** (existe aussi en 1.13.3) : un énoncé qui contient une liste avec des `\item\label{…}` prenait
 le numéro du dernier point (« Theorem 2 » au lieu de « Theorem 1.3 »). Les fichiers TeX importés sont ré-analysés à
 l'ouverture ; si le numéro reste faux, cliquer sur **Recompiler**.
-
-**Nouveau en beta.6 — Mistral** : Réglages → Assistant IA → **Mistral**, avec une clé d'API de Mistral AI (bouton
-« Créer une clé (console Mistral) », à coller dans le champ). Comme Gemini : une simple requête sans outil, liste des
-modèles lue avec la clé (les « -latest », Mistral Large par défaut), zones du PDF seulement avec les modèles qui lisent
-les images, relecture croisée, « Envoyer à Le Chat ». Offre gratuite (Experiment) : vos échanges servent par défaut à
-entraîner les modèles de Mistral, refusable dans sa console (menu Privacy) ; c'est rappelé dans les réglages.
 
 Où vont les notes :
 - note ou état d'un énoncé, ou d'une preuve : juste avant son `\begin{…}` ;

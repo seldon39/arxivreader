@@ -25,7 +25,7 @@ WORDS = {"fr": {"sheet": "Fiche de lecture", "statements": "Énoncés et preuves
          "en": {"sheet": "Reading notes", "statements": "Statements and proofs", "highlights": "Highlighted passages",
                 "proof": "Proof of {label}", "exported": "Notes exported from arXivReader on {date}", "other": "Other passages", "pdfPage": "PDF, page {page}", "zone": "Region of the page (image)", "bookmarks": "Bookmarks", "library": "Library", "folders": "Folders", "localPdf": "Imported PDF", "texFile": "TeX file",
                 "empty": "No notes on this paper.", "ai": "suggested by {who}, accepted", "local": "a local model"}}
-AUTHORS = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini", "mistral": "Mistral"}
+AUTHORS = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini"}
 
 
 def _order(paper_id):

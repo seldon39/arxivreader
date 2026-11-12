@@ -11,14 +11,13 @@ import { hasText, t, tn } from "./i18n.js";
 import { DEFAULT_AI_FONT_SIZE, saveSettings, settings } from "./settings.js";
 import { escapeHtml, escapeRegExp, h, icons, plainTitle, toast, toastError } from "./util.js";
 
-// « Envoyer à… » : nouvelle conversation dans l'application (Claude) ou le site (ChatGPT, Gemini, Le Chat) de
-// l'assistant choisi, pré-remplie avec les références de l'article ; Gemini et Le Chat (Mistral) : rien par leur
-// adresse, tout est à coller. Modèle local : pas d'application.
+// « Envoyer à… » : nouvelle conversation dans l'application (Claude) ou le site (ChatGPT, Gemini) de
+// l'assistant choisi, pré-remplie avec les références de l'article ; Gemini ne sait pas recevoir de texte par
+// son adresse : tout est à coller. Modèle local : pas d'application.
 const SHARE = {
   claude: (message) => `claude://claude.ai/new?q=${encodeURIComponent(message)}`,
   codex: (message) => `https://chatgpt.com/?q=${encodeURIComponent(message)}`,
   gemini: () => "https://gemini.google.com/app",
-  mistral: () => "https://chat.mistral.ai/chat",
 };
 
 // Mots qui précèdent un numéro d'énoncé dans les réponses (anglais et français)

@@ -1,4 +1,4 @@
-"""Autres assistants que Claude : Codex (OpenAI), Gemini (Google), Mistral, modèle local (Ollama, LM Studio…).
+"""Autres assistants que Claude : Codex (OpenAI), Gemini (Google), modèle local (Ollama, LM Studio…).
 
 Comme pour Claude, chacun ne reçoit que le texte de l'article et la demande, et répond en texte :
 - Codex : son outil en ligne de commande, avec le compte ChatGPT de l'utilisateur, sans clé d'API. C'est
@@ -6,7 +6,6 @@ Comme pour Claude, chacun ne reçoit que le texte de l'article et la demande, et
   de travail vide, sans session enregistrée.
 - Gemini : l'API Gemini de Google, avec la clé de l'utilisateur (Google AI Studio) ; une simple requête,
   sans aucun outil. (Gemini CLI n'accepte plus les comptes Google gratuits depuis juin 2026.)
-- Mistral : l'API de Mistral AI (La Plateforme), avec la clé de l'utilisateur ; une simple requête, sans aucun outil.
 - Modèle local : serveur compatible OpenAI sur cet ordinateur (127.0.0.1) ; rien ne sort de la machine.
 """
 
@@ -33,10 +32,9 @@ import httpx
 
 from .config import LIBRARY
 
-PROVIDERS = ("claude", "codex", "gemini", "mistral", "local")
+PROVIDERS = ("claude", "codex", "gemini", "local")
 WINDOWS = sys.platform == "win32"
-NAMES = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini", "mistral": "Mistral"}
-KEY_PROVIDERS = ("codex", "gemini", "mistral")  # modèle enregistré avec l'échange : le nom de l'assistant
+NAMES = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini"}
 LOCAL_URL = "http://127.0.0.1:11434/v1"  # Ollama ; LM Studio : http://127.0.0.1:1234/v1
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 # caractères d'article : le contexte qu'on conseille pour Ollama est de 32 768 jetons (~115 000 caractères), où il faut
@@ -74,7 +72,7 @@ class ProviderError(Exception):
 
 def provider_of(model):
     """Assistant d'un échange, d'après son modèle enregistré (opus, sonnet, codex, gemini, local:<nom>)."""
-    if model in KEY_PROVIDERS:
+    if model in ("codex", "gemini"):
         return model
     if (model or "").startswith("local:"):
         return "local"
@@ -357,20 +355,6 @@ def status(provider, settings):
         choices = [{"value": m, "label": m, "levels": list(GEMINI_EFFORTS)} for m in models]
         return {"available": True, "loggedIn": bool(models), "models": models, "geminiModel": gemini_model(settings, models),
                 "choices": choices, "chosen": gemini_model(settings, models), "effort": _effort(settings, "aiGeminiEffort", choices)}
-    if provider == "mistral":
-        key = settings.get("mistralApiKey") or ""
-        if not key:
-            return {"available": False, "loggedIn": False, "models": []}  # « missing » : pas de clé
-        try:
-            models = mistral_models(key)
-        except ProviderError as error:  # seule une clé refusée est une réponse claire (quota, panne : on ne sait pas)
-            return {"available": True, "loggedIn": False, "models": [], "error": str(error), "inconclusive": error.code != "login"}
-        except (httpx.HTTPError, ValueError):
-            return {"available": True, "loggedIn": False, "models": [], "error": "network", "inconclusive": True}
-        chosen = mistral_model(settings, models)
-        return {"available": True, "loggedIn": bool(models), "models": models, "mistralModel": chosen,
-                "choices": [{"value": m, "label": m, "levels": []} for m in models], "chosen": chosen,
-                "vision": mistral_vision(chosen)}
     if provider == "local":
         url = settings.get("aiLocalUrl") or LOCAL_URL
         try:
@@ -651,132 +635,6 @@ async def _gemini_request(model, key, body):
                     yield CUT
     except httpx.ConnectError:
         raise ProviderError("Google's Gemini API cannot be reached (network?)", "offline")
-    except (httpx.HTTPError, httpx.InvalidURL) as error:
-        raise ProviderError(f"{type(error).__name__}: {error}")
-
-
-# ---------- Mistral (API de La Plateforme, compatible OpenAI pour les réponses) ----------
-
-MISTRAL_API = "https://api.mistral.ai/v1"
-MISTRAL_DEFAULT = ("mistral-large-latest", "mistral-medium-latest", "mistral-small-latest")  # préférés, s'ils sont proposés
-_mistral_vision = {}  # modèle → lit les images (d'après la dernière liste des modèles de la clé)
-
-
-def valid_mistral_key(key):
-    return isinstance(key, str) and len(key) <= 200 and key.isascii() and key.isprintable() and " " not in key
-
-
-def _mistral_error(status, body):
-    """Message et nature d'une erreur de l'API Mistral (clé refusée, quota, autre)."""
-    try:
-        data = json.loads(body)
-    except ValueError:
-        data = {}
-    message = data.get("message") if isinstance(data, dict) else None
-    if isinstance(data, dict) and isinstance(data.get("error"), dict):
-        message = data["error"].get("message") or message
-    if not isinstance(message, str):  # (détail d'une erreur de validation : liste)
-        message = json.dumps(message)[:500] if message else f"HTTP {status}"
-    if status == 429:
-        return ProviderError(message, "limit")
-    if status in (401, 403):
-        return ProviderError(message, "login")
-    return ProviderError(message)
-
-
-def mistral_models(key):
-    """Modèles de conversation que la clé peut utiliser : les alias « -latest » (dernière version de chaque famille)
-    quand il y en a, sinon tous ; ni les modèles retirés, ni ceux d'embedding, d'OCR, de modération."""
-    with httpx.Client(timeout=10) as client:
-        response = client.get(f"{MISTRAL_API}/models", headers={"Authorization": f"Bearer {key}"})
-    if response.status_code != 200:
-        raise _mistral_error(response.status_code, response.text)
-    data = response.json()
-    listed = data.get("data") if isinstance(data, dict) else None
-    found = {}
-    for model in (listed if isinstance(listed, list) else []):
-        if not isinstance(model, dict):
-            continue
-        name, capabilities = model.get("id"), model.get("capabilities")
-        if not isinstance(name, str) or not valid_model_name(name) or model.get("deprecation"):
-            continue
-        if not isinstance(capabilities, dict) or not capabilities.get("completion_chat"):
-            continue
-        found[name] = bool(capabilities.get("vision"))
-    latest = sorted(name for name in found if name.endswith("-latest"))
-    _mistral_vision.update(found)
-    return latest or sorted(found)
-
-
-def mistral_model(settings, models):
-    """Modèle choisi (onglet IA) s'il est proposé, sinon le préféré, sinon le premier."""
-    chosen = settings.get("aiMistralModel")
-    if chosen in models:
-        return chosen
-    return next((m for m in MISTRAL_DEFAULT if m in models), None) or (models[0] if models else MISTRAL_DEFAULT[0])
-
-
-def mistral_vision(model):
-    """Le modèle lit-il les images (zone du PDF, pages d'un scan) ? D'après la liste des modèles ; pas encore lue :
-    les familles qui les lisent (Large 3, Medium 3, Small 3.1 et suivants, Pixtral)."""
-    if model in _mistral_vision:
-        return _mistral_vision[model]
-    return bool(re.match(r"(?:mistral-(?:large|medium|small)|pixtral)-latest$", model or ""))
-
-
-async def stream_mistral(system, prompt, model, key, images=()):
-    if not key:
-        raise ProviderError("No Mistral API key (Settings → AI)", "missing")
-    if not valid_model_name(model):
-        raise ProviderError("Unknown Mistral model")
-    content = prompt
-    if images:  # images jointes avant la question
-        content = [{"type": "image_url", "image_url": f"data:{media};base64,{base64.b64encode(data).decode()}"}
-                   for media, data in images] + [{"type": "text", "text": prompt}]
-    # aucun outil déclaré : Mistral ne peut que répondre par du texte
-    body = {"model": model, "stream": True,
-            "messages": [{"role": "system", "content": system}, {"role": "user", "content": content}]}
-    produced, cut = False, False
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(900, connect=10)) as client:
-            async with client.stream("POST", f"{MISTRAL_API}/chat/completions", json=body,
-                                     headers={"Authorization": f"Bearer {key}", "Accept": "text/event-stream"}) as response:
-                if response.status_code != 200:
-                    raise _mistral_error(response.status_code, (await response.aread()).decode(errors="replace"))
-                async for line in response.aiter_lines():
-                    if not line.startswith("data:"):
-                        continue
-                    data = line[5:].strip()
-                    if data == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data)
-                    except ValueError:
-                        continue
-                    if not isinstance(chunk, dict):
-                        continue
-                    if chunk.get("error") or chunk.get("object") == "error":
-                        raise _mistral_error(200, data)
-                    choices = chunk.get("choices")
-                    choice = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
-                    if choice.get("finish_reason") in ("length", "model_length"):
-                        cut = True
-                    delta = choice.get("delta") if isinstance(choice.get("delta"), dict) else {}
-                    parts = delta.get("content")
-                    # réponse : texte ; modèles qui raisonnent : liste de morceaux, la réflexion (« thinking ») non affichée
-                    texts = [parts] if isinstance(parts, str) else [
-                        p["text"] for p in (parts if isinstance(parts, list) else [])
-                        if isinstance(p, dict) and p.get("type") == "text" and isinstance(p.get("text"), str)]
-                    for text in texts:
-                        if text:
-                            produced = True
-                            yield text
-                if not produced:
-                    raise ProviderError("Mistral gave an empty answer")
-                if cut:
-                    yield CUT
-    except httpx.ConnectError:
-        raise ProviderError("Mistral's API cannot be reached (network?)", "offline")
     except (httpx.HTTPError, httpx.InvalidURL) as error:
         raise ProviderError(f"{type(error).__name__}: {error}")
 

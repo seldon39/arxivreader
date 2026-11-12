@@ -1,4 +1,4 @@
-"""Clés d'API de l'utilisateur (Gemini, Mistral, Semantic Scholar, Zotero) dans le trousseau du système : trousseau de session
+"""Clés d'API de l'utilisateur (Gemini, Semantic Scholar, Zotero) dans le trousseau du système : trousseau de session
 de macOS (outil `security`), gestionnaire d'identifiants de Windows. Ailleurs, ou sans ARXIVREADER_KEYCHAIN=1 (essais,
 tests), elles restent dans la base comme les autres réglages.
 
@@ -15,7 +15,7 @@ import sys
 
 from .config import LIBRARY
 
-SECRET_KEYS = ("geminiApiKey", "mistralApiKey", "s2ApiKey", "zoteroApiKey")
+SECRET_KEYS = ("geminiApiKey", "s2ApiKey", "zoteroApiKey")
 SERVICE = "arXivReader"
 ENABLED = os.environ.get("ARXIVREADER_KEYCHAIN") == "1" and sys.platform in ("darwin", "win32")
 

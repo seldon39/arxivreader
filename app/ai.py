@@ -2,7 +2,7 @@
 
 Par défaut Claude, appelé par le SDK Claude Agent avec la connexion Claude de l'utilisateur (pas de clé
 d'API). Il ne reçoit que le texte de l'article et n'a aucun outil : ni fichiers, ni réseau, ni commandes.
-Autres assistants possibles (réglages) : Codex, Gemini, Mistral, modèle local, voir providers.py.
+Autres assistants possibles (réglages) : Codex, Gemini, modèle local, voir providers.py.
 """
 
 import asyncio
@@ -869,18 +869,8 @@ def without_text(paper):
     return sum(len(page.strip()) for page in pages) < 100 * max(1, len(pages))  # moins de 100 caractères par page
 
 
-def reads_images(model, settings=None):
-    """L'assistant lit-il les images ? Mistral : selon le modèle choisi (tous ne les lisent pas)."""
-    provider = providers.provider_of(model)
-    if provider == "mistral":
-        settings = db.get_settings() if settings is None else settings
-        return providers.mistral_vision(_mistral_model(settings))
-    return provider in IMAGE_PROVIDERS
-
-
-def _mistral_model(settings):
-    chosen = settings.get("aiMistralModel")
-    return chosen if providers.valid_model_name(chosen) else providers.MISTRAL_DEFAULT[0]
+def reads_images(model):
+    return providers.provider_of(model) in IMAGE_PROVIDERS
 
 
 # ---------- Adapter à la version lue les notes d'une autre version (simple question du fil) ----------
@@ -1933,19 +1923,19 @@ def _read_claude_models():
 
 
 def current_model(settings):
-    """Modèle enregistré avec chaque échange : opus, fable, sonnet… (Claude), codex, gemini, mistral, local:<nom>."""
+    """Modèle enregistré avec chaque échange : opus, fable, sonnet… (Claude), codex, gemini, local:<nom>."""
     provider = settings.get("aiProvider")
     return model_of(provider if provider in providers.PROVIDERS else "claude", settings)
 
 
 def model_of(provider, settings):
     """Modèle demandé à un assistant donné, d'après ses réglages enregistrés (choisi ou non)."""
-    if provider in providers.KEY_PROVIDERS:
+    if provider in ("codex", "gemini"):
         return provider
     if provider == "local":
         return f"local:{settings.get('aiLocalModel') or ''}"
     model = settings.get("aiModel")
-    return model if providers.valid_model_name(model) and model not in providers.KEY_PROVIDERS else "opus"
+    return model if providers.valid_model_name(model) and model not in ("codex", "gemini") else "opus"
 
 
 def verifier(model, settings):
@@ -1981,8 +1971,7 @@ def status(settings, provider=None):
     if provider == "claude" and info.get("loggedIn"):
         choices = claude_models()
         info.update(choices=choices, chosen=model, effort=providers._effort(settings, "aiClaudeEffort", choices, model))
-    images = info.get("vision", False) if provider == "mistral" else provider in IMAGE_PROVIDERS
-    return {**info, "provider": provider, "model": model, "images": images}
+    return {**info, "provider": provider, "model": model, "images": provider in IMAGE_PROVIDERS}
 
 
 def partners(settings):
@@ -2013,7 +2002,7 @@ def _claude_status():
 
 
 def logout(provider):
-    """Déconnexion de Claude ou de Codex (réglages). Gemini, Mistral : leur clé est retirée dans les réglages ; modèle local :
+    """Déconnexion de Claude ou de Codex (réglages). Gemini : sa clé est retirée dans les réglages ; modèle local :
     sans compte."""
     if provider == "claude":
         cli, argv, env = cli_path(), ["auth", "logout"], _environment()
@@ -2040,9 +2029,9 @@ async def stream_answer(system, prompt, model, image=None, pages=(), flags=None,
     `effort` : niveau de réflexion demandé à la place de celui des réglages (vérificateur d'une relecture vérifiée)."""
     provider = providers.provider_of(model)
     images = [("image/jpeg", page) for page in pages] + ([("image/png", image)] if image else [])
-    settings = db.get_settings()
-    if images and not reads_images(model, settings):
+    if images and provider not in IMAGE_PROVIDERS:
         raise AIError("This assistant cannot read images")
+    settings = db.get_settings()
     # modèle et niveau : ceux que la page affiche (un niveau que le modèle ne propose pas : celui par défaut)
     if provider == "claude":
         effort = providers._effort({**settings, "aiClaudeEffort": effort if effort is not None else settings.get("aiClaudeEffort")},
@@ -2057,8 +2046,6 @@ async def stream_answer(system, prompt, model, image=None, pages=(), flags=None,
             else providers.GEMINI_DEFAULT[0]
         effort = settings.get("aiGeminiEffort") if settings.get("aiGeminiEffort") in providers.GEMINI_EFFORTS else ""
         stream = providers.stream_gemini(system, prompt, model_name, key, effort, images)
-    elif provider == "mistral":
-        stream = providers.stream_mistral(system, prompt, _mistral_model(settings), settings.get("mistralApiKey") or "", images)
     else:
         url = settings.get("aiLocalUrl") or providers.LOCAL_URL
         stream = providers.stream_local(system, prompt, model.split(":", 1)[1], url)

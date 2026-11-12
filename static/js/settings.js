@@ -169,8 +169,6 @@ async function renderDefaultChoice() {
         shown.map((p) => h("option", { value: p, selected: p === chosen }, ready.includes(p) ? authorName(p) : t("settings.aiDefault.notReady", { name: authorName(p) }))))),
     h("p", { class: "hint" }, t("settings.aiDefaultHint")));
 }
-// Assistants qui se règlent par une clé d'API (son réglage)
-const KEY_SETTING = { gemini: "geminiApiKey", mistral: "mistralApiKey" };
 async function renderAISettings(holder, keepFocus = null) {
   const provider = configuring;
   const check = ++aiCheck;
@@ -183,16 +181,13 @@ async function renderAISettings(holder, keepFocus = null) {
   if (provider === "gemini" && status.geminiModel && status.geminiModel !== settings.aiGeminiModel) {
     await saveSettings({ aiGeminiModel: status.geminiModel });
   }
-  if (provider === "mistral" && status.mistralModel && status.mistralModel !== settings.aiMistralModel) {
-    await saveSettings({ aiMistralModel: status.mistralModel });
-  }
-  // clé d'API (Gemini, Mistral) ; texte masqué plutôt que « password » : Safari ne propose pas d'enregistrer un mot de passe
-  const keyField = (name) => [
-    h("label", { class: "row" }, h("span", {}, t(`settings.${provider}Key`)),
-      h("input", { class: "text-input secret-input", type: "text", name, value: settings[name] || "",
-        autocomplete: "off", spellcheck: "false", placeholder: t(`settings.${provider}KeyPlaceholder`) })),
+  const geminiFields = [
+    h("label", { class: "row" }, h("span", {}, t("settings.geminiKey")),
+      // texte masqué plutôt que « password » : Safari ne propose pas d'enregistrer un mot de passe
+      h("input", { class: "text-input secret-input", type: "text", name: "geminiApiKey", value: settings.geminiApiKey || "",
+        autocomplete: "off", spellcheck: "false", placeholder: t("settings.geminiKeyPlaceholder") })),
   ];
-  const fields = KEY_SETTING[provider] ? keyField(KEY_SETTING[provider]) : provider !== "local" ? [] : [
+  const fields = provider === "gemini" ? geminiFields : provider !== "local" ? [] : [
     h("label", { class: "row" }, h("span", {}, t("settings.aiLocalUrl")),
       h("input", { class: "text-input", type: "text", name: "aiLocalUrl", value: settings.aiLocalUrl || "", placeholder: LOCAL_URL,
         spellcheck: "false", autocomplete: "off" })),
@@ -204,15 +199,15 @@ async function renderAISettings(holder, keepFocus = null) {
 }
 
 // Assistant prêt : le compte connecté, et en changer ou s'en déconnecter (Claude, Codex : commandes de leur outil ;
-// Gemini, Mistral : la clé, celle d'un autre compte la remplace ; modèle local : sans compte)
+// Gemini : la clé, celle d'un autre compte Google la remplace ; modèle local : sans compte)
 function accountControls(provider, status, again) {
   const account = provider === "claude" ? [status.email, status.subscription && t("settings.aiPlan", { plan: status.subscription[0].toUpperCase() + status.subscription.slice(1) })].filter(Boolean).join(" · ")
     : provider === "codex" ? t("settings.aiAccount.chatgpt") : "";
   const ready = h("p", { class: "hint ai-ready" }, `✓ ${t("settings.aiReady")}`, account && h("span", { class: "muted" }, ` · ${account}`));
-  if (KEY_SETTING[provider]) {
+  if (provider === "gemini") {
     const remove = h("button", { class: "button small-button", type: "button",
-      onclick: () => saveSettings({ [KEY_SETTING[provider]]: "" }).then(again) }, t("settings.geminiRemove"));
-    return [ready, h("p", { class: "hint" }, t(`settings.${provider}Other`)), h("div", { class: "ai-setup-actions" }, remove)];
+      onclick: () => saveSettings({ geminiApiKey: "" }).then(again) }, t("settings.geminiRemove"));
+    return [ready, h("p", { class: "hint" }, t("settings.geminiOther")), h("div", { class: "ai-setup-actions" }, remove)];
   }
   if (provider === "local") return [ready];
   const check = h("button", { class: "button small-button", type: "button", hidden: true, onclick: again }, t("ai.login.check"));
@@ -321,7 +316,7 @@ export function openSettingsDialog({ section = null } = {}) {
     ["ai", t("settings.ai"), [
       h("div", { class: "ai-default" }),
       h("div", { class: "row" }, h("span", { id: "setting-aiConfigure" }, t("settings.aiProvider")),
-        segmented("aiConfigure", PROVIDERS.map((p) => [p, p === "local" ? t("settings.aiProvider.local") : { claude: "Claude", codex: "Codex", gemini: "Gemini", mistral: "Mistral" }[p]]),
+        segmented("aiConfigure", PROVIDERS.map((p) => [p, p === "local" ? t("settings.aiProvider.local") : { claude: "Claude", codex: "Codex", gemini: "Gemini" }[p]]),
           configuring)),
       h("p", { class: "hint" }, t("settings.aiChooseHint")),
       h("div", { class: "ai-settings" }),
@@ -419,7 +414,7 @@ export function openSettingsDialog({ section = null } = {}) {
       return;
     }
     if (name === "zoteroApiKey") zoteroBox.redraw();
-    if (name === "feedCategories" || name === "s2ApiKey" || name === "aiLocalUrl" || name === "geminiApiKey" || name === "mistralApiKey" || name === "zoteroApiKey"
+    if (name === "feedCategories" || name === "s2ApiKey" || name === "aiLocalUrl" || name === "geminiApiKey" || name === "zoteroApiKey"
       || name === "aiProfile") return; // enregistrés à la sortie du champ
     const parsed = type === "checkbox" ? checked : name === "fontSize" ? Number(value) : value;
     if (name === "fontSize") form.querySelector("#setting-fontSize").textContent = t("settings.fontSize", { n: value });
@@ -447,11 +442,11 @@ export function openSettingsDialog({ section = null } = {}) {
         return;
       }
       saveSettings({ zoteroApiKey: key }).then(() => zoteroBox.refresh());
-    } else if (name === "geminiApiKey" || name === "mistralApiKey") {
+    } else if (name === "geminiApiKey") {
       // focus rendu au champ seulement s'il l'a encore (sortie par Tab ou clic : il va ailleurs, et la clé resterait affichée)
-      const keep = document.activeElement === event.target ? name : null;
+      const keep = document.activeElement === event.target ? "geminiApiKey" : null;
       aiTouched = true;
-      saveSettings({ [name]: value.trim() }).then(() => recheck(name === "geminiApiKey" ? "gemini" : "mistral", keep));
+      saveSettings({ geminiApiKey: value.trim() }).then(() => recheck("gemini", keep));
     } else if (name === "aiProfile") {
       saveSettings({ aiProfile: value.trim() }).then(() => form.querySelector(".ai-profile-preview")?.refresh());
     } else if (name === "aiLocalUrl") {
