@@ -108,8 +108,11 @@ def check(api_key=None, force=False):
 
 def notify(items):
     if len(items) > 3:
-        messages = [("arXivReader", f"{len(items)} nouveaux articles citent les vôtres", ", ".join(sorted({i["cites"][0] for i in items}))[:200])]
+        messages = [("arXivReader", f"{len(items)} nouveaux articles citent les vôtres", ", ".join(sorted({i["cites"][0] for i in items}))[:200],
+                     "#/feed")]
     else:
-        messages = [("arXivReader", f"{(i['authors'] or ['?'])[0]} cite « {i['cites'][0][:60]} »", i["title"]) for i in items]
-    for title, subtitle, body in messages:
-        alerts.display(title, subtitle, body)
+        # article citant hors d'arXiv (clé « s2:… ») : le feed, où il figure avec son lien
+        messages = [("arXivReader", f"{(i['authors'] or ['?'])[0]} cite « {i['cites'][0][:60]} »", i["title"],
+                     "#/feed" if i["key"].startswith("s2:") else f"#/arxiv/{i['key']}") for i in items]
+    for title, subtitle, body, route in messages:
+        alerts.display(title, subtitle, body, route)

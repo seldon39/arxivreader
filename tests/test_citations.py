@@ -42,6 +42,7 @@ class Citations(unittest.TestCase):
         new = citations.check(force=True)
         self.assertEqual([n["key"] for n in new], ["2610.00009"])
         self.assertEqual(len(self.notified), 1)
+        self.assertEqual(self.notified[0][3], "#/arxiv/2610.00009")  # un clic : l'article citant
         self.assertIn("2610.00009", alerts.unseen())  # pastille du feed
         db.save_settings({"notifyCitations": False})
         self.citing["ArXiv:2601.00002"].append(paper("d", "Another one"))

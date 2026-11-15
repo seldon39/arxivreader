@@ -15,7 +15,7 @@ finished work or steps not yet made into an issue.
 
 - ~~[#3](https://github.com/seldon39/arxivreader/issues/3) Windows version~~: done in 1.9.15–1.9.22 (downloaded
   from each [release](https://github.com/seldon39/arxivreader/releases/latest)); a signed Windows build would be the
-  next step. Linux runs from source; a packaged Linux app (AppImage) could follow.
+  next step, with clickable notifications (on the Mac, a click opens the paper since 1.14.2). Linux runs from source; a packaged Linux app (AppImage) could follow.
 - [#5](https://github.com/seldon39/arxivreader/issues/5) Sync the library, notes and highlights across devices.
   First step done in 1.9.31: signed export and import of the library and notes (a synced folder can carry it);
   automatic sync remains.

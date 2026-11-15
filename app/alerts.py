@@ -17,7 +17,7 @@ import time
 from fastapi.concurrency import run_in_threadpool
 
 from . import db, feed, profile
-from .config import FEED_CATEGORIES
+from .config import FEED_CATEGORIES, LIBRARY
 from .relevance import followed_author, follows
 
 CHECK_EVERY = 3 * 3600
@@ -95,17 +95,22 @@ def _quote(text):
     return '"' + str(text).replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
+def route_of(item):
+    """Page ouverte d'un clic sur la notification : l'article (« #/arxiv/<id> » l'importe puis l'ouvre), sinon le feed."""
+    return f"#/arxiv/{item['arxiv_id']}" if item.get("arxiv_id") else "#/feed"
+
+
 def notify(items):
-    """Notification macOS (Centre de notifications) ; au-delà de trois articles, un seul résumé."""
+    """Notification macOS (Centre de notifications) ; au-delà de trois articles, un seul résumé (un clic : le feed)."""
     names = _followed_names()
     who = lambda item: _who(item, names) or (item.get("authors") or ["?"])[0]  # noqa: E731
     if len(items) > 3:
         messages = [("arXivReader", f"{len(items)} nouveaux articles de vos auteurs suivis",
-                     ", ".join(sorted({who(i) for i in items})))]
+                     ", ".join(sorted({who(i) for i in items})), "#/feed")]
     else:
-        messages = [("arXivReader", f"{who(i)} — nouvel article", i["title"]) for i in items]
-    for title, subtitle, body in messages:
-        display(title, subtitle, body)
+        messages = [("arXivReader", f"{who(i)} — nouvel article", i["title"], route_of(i)) for i in items]
+    for title, subtitle, body, route in messages:
+        display(title, subtitle, body, route)
 
 
 # Notification Windows (centre de notifications), par Windows PowerShell : textes passés par une variable
@@ -133,10 +138,32 @@ def _display_windows(title, subtitle, body):
         log.warning("notification Windows impossible")
 
 
-def display(title, subtitle, body):
-    """Notification macOS (Centre de notifications), ou Windows."""
+# Notifications confiées à l'application Mac : elle les affiche à son nom (un clic ouvre `route` dans un onglet),
+# alors qu'AppleScript les attribuerait à l'Éditeur de script. Le dossier est créé par l'application à son lancement ;
+# une notification écrite pendant qu'elle est fermée s'affiche à son prochain lancement.
+OUTBOX = LIBRARY / "notifications"
+
+
+def _post(title, subtitle, body, route):
+    data = {"title": title, "subtitle": subtitle, "body": body[:240], "route": route}
+    name = f"{time.time_ns()}-{os.getpid()}-{threading.get_ident()}"
+    temporary = OUTBOX / f"{name}.tmp"
+    try:
+        temporary.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        temporary.replace(OUTBOX / f"{name}.json")  # entière ou absente : l'application ne lit que les .json
+        return True
+    except OSError:
+        log.warning("notification non transmise à l'application")
+        return False
+
+
+def display(title, subtitle, body, route=""):
+    """Notification macOS (par l'application si elle a créé son dossier, sinon AppleScript), ou Windows.
+    `route` : page à ouvrir d'un clic (application Mac seulement)."""
     if sys.platform == "win32":
         return _display_windows(title, subtitle, body)
+    if sys.platform == "darwin" and OUTBOX.is_dir() and _post(title, subtitle, body, route):
+        return
     script = f"display notification {_quote(body[:240])} with title {_quote(title)} subtitle {_quote(subtitle)}"
     try:
         subprocess.run(["osascript", "-e", script], timeout=10, check=False, capture_output=True)

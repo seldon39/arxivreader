@@ -447,14 +447,16 @@ few steps (Perl, then LaTeXML), see [its guide](https://math.nist.gov/~BMiller/L
 
 Once a day, Semantic Scholar gives the papers citing those of your profile ("My papers"); new ones appear
 under "Citing your papers" in the feed, count in the badge and, if the setting allows, trigger a macOS
-notification.
+notification (a click opens the citing paper).
 
 ## Followed authors: alerts
 
 While arXivReader is running, it checks every 3 hours (and one minute after launch) for new papers by the
 followed authors of your profile: a macOS notification for each one (setting "Notify me when a followed
-author posts"), a badge on "Feed", and an "Unseen" label on the card until it has been shown. Clicking the
-macOS notification opens Script Editor (a limitation of osascript): just close it and go to the feed.
+author posts"), a badge on "Feed", and a red dot before the card's title ("Unseen" on hover) until it has
+been shown. Clicking the notification opens the paper in a new tab; beyond three papers, a single notification
+opens the feed. At the first notification, macOS asks to allow arXivReader's notifications. On Windows the
+notification is shown under PowerShell's name and a click does not open the app yet.
 
 ## Notes and annotations
 

@@ -7,6 +7,7 @@
 
 import AppKit
 import UniformTypeIdentifiers
+import UserNotifications
 import WebKit
 
 let french = Locale.preferredLanguages.first?.hasPrefix("fr") ?? true
@@ -14,7 +15,7 @@ func tr(_ fr: String, _ en: String) -> String { french ? fr : en }
 // Version d'essai (macos/build-beta.sh) : bibliothèque, port et réglages à part de la version stable
 let isBeta = Bundle.main.bundleIdentifier == "local.arxivreader.beta"
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     var tabs: [Tab] = []
     var serverReady = false
     var server: Process?
@@ -37,9 +38,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // ---------- Démarrage et arrêt ----------
 
+    // avant la fin du lancement : un clic sur une notification qui lance l'application doit encore lui parvenir
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        UNUserNotificationCenter.current().delegate = self
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
         try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        startOutbox()
         // premier onglet (essais : ARXIVREADER_START=#/paper/…,#/feed ouvre ces pages, les suivantes en onglets)
         let routes = (ProcessInfo.processInfo.environment["ARXIVREADER_START"] ?? "").split(separator: ",").map(String.init)
         if !routes.isEmpty || !sessionEnabled || !restoreSession() {
@@ -295,6 +302,79 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             done.informativeText = tr("L'ancienne bibliothèque est mise de côté dans : ", "The previous library is set aside in: ") + aside.path
         }
         done.runModal()
+    }
+
+    // ---------- Notifications ----------
+
+    // Le serveur (et la vérification hebdomadaire) déposent leurs notifications dans « notifications/ » de la
+    // bibliothèque (app/alerts.py) ; l'application les affiche à son nom, et un clic ouvre leur page dans un onglet.
+    // (AppleScript les attribuerait à l'Éditeur de script, qui s'ouvrirait au clic.)
+    var outbox: URL { support.appendingPathComponent("notifications", isDirectory: true) }
+    var outboxTimer: Timer?
+    var postingNotifications = false  // réponse de macOS attendue : pas de second passage sur les mêmes fichiers
+
+    func startOutbox() {
+        try? FileManager.default.createDirectory(at: outbox, withIntermediateDirectories: true)
+        postNotifications()
+        outboxTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.postNotifications() }
+    }
+
+    func postNotifications() {
+        guard !postingNotifications, let files = try? FileManager.default.contentsOfDirectory(at: outbox, includingPropertiesForKeys: nil)
+            .filter({ $0.pathExtension == "json" }).sorted(by: { $0.lastPathComponent < $1.lastPathComponent }), !files.isEmpty else { return }
+        postingNotifications = true
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            DispatchQueue.main.async {
+                switch settings.authorizationStatus {
+                case .notDetermined:
+                    // première notification : macOS demande l'autorisation (une seule fois) ; refusée, les suivantes sont jetées
+                    center.requestAuthorization(options: [.alert, .sound]) { _, _ in
+                        DispatchQueue.main.async { self.postingNotifications = false; self.postNotifications() }
+                    }
+                    return
+                case .denied:
+                    files.forEach { try? FileManager.default.removeItem(at: $0) }
+                default:
+                    for file in files {
+                        defer { try? FileManager.default.removeItem(at: file) }
+                        guard let data = try? Data(contentsOf: file),
+                              let message = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { continue }
+                        let content = UNMutableNotificationContent()
+                        content.title = message["title"] as? String ?? "arXivReader"
+                        content.subtitle = message["subtitle"] as? String ?? ""
+                        content.body = message["body"] as? String ?? ""
+                        content.userInfo = ["route": message["route"] as? String ?? ""]
+                        center.add(UNNotificationRequest(identifier: file.deletingPathExtension().lastPathComponent, content: content, trigger: nil))
+                    }
+                }
+                self.postingNotifications = false
+            }
+        }
+    }
+
+    // Application au premier plan : la notification s'affiche quand même
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .list])
+    }
+
+    // Clic : sa page dans un nouvel onglet (« #/arxiv/<id> » : l'article, importé s'il le faut ; « #/feed ») ;
+    // sans page (vérification hebdomadaire), l'application passe seulement au premier plan
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        let route = response.notification.request.content.userInfo["route"] as? String ?? ""
+        DispatchQueue.main.async {
+            NSApp.activate(ignoringOtherApps: true)
+            if route.count > 2, AppDelegate.validRoute(route) {
+                self.openTab(route, beside: self.keyTab?.window)
+            } else if let tab = self.keyTab {
+                tab.window.makeKeyAndOrderFront(nil)
+            } else {
+                self.openTab("", beside: nil)
+            }
+            completionHandler()
+        }
     }
 
     // ---------- Onglets et fenêtres ----------

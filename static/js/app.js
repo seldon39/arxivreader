@@ -31,6 +31,23 @@ async function route() {
   cleanup?.();
   cleanup = null;
   scrollTo({ top: 0, behavior: "instant" });
+  // « #/arxiv/<id> » (clic sur une notification) : l'article, ouvert comme d'un clic dans le feed (lu sans être ajouté
+  // à la bibliothèque) et compté comme vu ; remplacé dans l'historique par sa page
+  const arxivMatch = location.hash.match(/^#\/arxiv\/(.+)$/);
+  if (arxivMatch) {
+    const arxivId = decodeURIComponent(arxivMatch[1]);
+    view.replaceChildren(h("div", { class: "library" }, h("div", { class: "busy" }, h("span", { class: "spinner" }), t("feed.importing"))));
+    api.alertsSeen([arxivId]).then(() => dispatchEvent(new Event("arxivreader:alerts"))).catch(() => {});
+    try {
+      const paper = await api.importPaper(arxivId, false);
+      if (token === routeToken) location.replace(`#/paper/${encodeURIComponent(paper.id)}`);
+    } catch (error) {
+      if (token !== routeToken) return;
+      toastError(error);
+      location.replace("#/feed");
+    }
+    return;
+  }
   const match = location.hash.match(/^#\/paper\/(.+)$/);
   const feedMatch = location.hash.match(/^#\/feed(?:\/(recommended|import|profile))?$/);
   const searchMatch = location.hash.match(/^#\/search(?:\?(.*))?$/);  // « ?terms=… » : recherche préremplie, lancée

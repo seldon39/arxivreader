@@ -1210,8 +1210,6 @@ button.ai-book-name:disabled { cursor: default; color: inherit; }
 /* Nouveaux articles d'auteurs suivis */
 .nav-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 6px;
   border-radius: 999px; background: #fff; color: var(--topbar); font: 700 11.5px var(--font-ui); vertical-align: 2px; }
-.feed-card.fresh { box-shadow: inset 3px 0 0 var(--accent); }
-.followed-section .feed-card.fresh { border-left-color: var(--accent); box-shadow: none; }
 .fresh-badge { display: inline-block; margin-right: 8px; padding: 1px 7px; border-radius: 999px; background: var(--button-primary); color: #fff;
   font: 600 12px var(--font-ui); vertical-align: 3px; }
 
@@ -1287,8 +1285,9 @@ dialog.figure-viewer::backdrop { background: rgba(20, 20, 24, .6); -webkit-backd
 .abstract-more { display: block; margin: 2px 0 0; font: 13px var(--font-ui); color: var(--link); text-decoration: none; }
 .abstract-more:hover { text-decoration: underline; }
 .feed-card.compact .abstract-more { display: none; }
-/* nouveauté : un point rouge dans la marge au lieu de l'étiquette */
-.fresh-badge { font-size: 0; width: 7px; height: 7px; padding: 0; border-radius: 50%; margin: 0 9px 3px -16px; vertical-align: middle; }
+/* article pas encore vu : un point rouge en tête du titre, à la place de l'étiquette (texte gardé pour les lecteurs d'écran) */
+.fresh-badge { font-size: inherit; width: .38em; height: .38em; padding: 0; margin: 0 .5em 0 0; border-radius: 50%; overflow: hidden; text-indent: 1em;
+  white-space: nowrap; vertical-align: .1em; background: var(--accent); }  /* centré sur les minuscules, à la taille du titre */
 /* raisons : une phrase en italique */
 .reasons { display: block; margin: 4px 0 0; font: italic 13.5px/1.5 var(--font-read); color: var(--muted); }
 .reason { display: inline; background: none; border: 0; padding: 0; font: inherit; color: inherit; }

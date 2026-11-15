@@ -4,7 +4,7 @@ import { setFindHandler } from "./find.js";
 import { api } from "./api.js";
 import { copyBibtex, saveBibtex } from "./bibtex.js";
 import { t, tn } from "./i18n.js";
-import { chooseFiles, debounce, draggablePaper, droppedFilePaths, droppedPapers, formatDate, h, icons, journalChip, localDrag, mayBePaper, metaDialog, tidyTitle, timeAgo, toast, toastError, withMath } from "./util.js";
+import { chooseFiles, debounce, draggablePaper, droppedFilePaths, droppedPapers, formatDate, h, icons, journalChip, localDrag, mayBePaper, metaDialog, openRoute, tidyTitle, timeAgo, toast, toastError, withMath } from "./util.js";
 import { importTexFile, unquote } from "./texfile.js";
 import { typesetTex } from "./math.js";
 import { addToLibrary, dragEnded, dragGroup, fileInFolder, forgetSelected, selectButton, selectionDropped, syncSelection, useSelectionBar } from "./selection.js";
@@ -18,7 +18,10 @@ export async function updatePaper({ id, version }, { expectNew = false } = {}) {
   if (expectNew && now?.version === version) { toast(t("feed.newVersionFailed"), { error: true, duration: 6000 }); return; } // réseau coupé, arXiv indisponible
   const before = now && now.version !== version && (await api.versions(id)).versions.find((v) => v.version === version);
   const marked = before && (before.notes || before.answers);
-  toast(marked ? t("library.updatedMarks", { v: now.version, old: version }) : t("library.updated"), marked ? { duration: 12000 } : {});
+  // notes restées sur l'ancienne version : un clic l'ouvre
+  const open = marked && before.id && { label: t("library.openVersion", { v: version }), icon: icons.chevronRight,
+    onClick: () => openRoute(`#/paper/${encodeURIComponent(before.id)}`) };
+  toast(marked ? t("library.updatedMarks", { v: now.version, old: version }) : t("library.updated"), marked ? { duration: 12000, action: open || null } : {});
 }
 
 // Recherche et filtres, gardés d'une visite à l'autre (le temps de la session)

@@ -177,7 +177,9 @@ pre-releases `windows-v1.9.15`… `windows-v1.9.21` and `windows-latest` remain 
   Windows "job" that stops it together with the window, and reads its port from `server.port`. Launched alone, `launcher.py` still opens
   an Edge window (fallback).
 - Test run: `windows/smoke.ps1` also launches the window on two tabs and captures the screen (`shots/window.png`).
-- Server-side differences, all under `sys.platform == "win32"`: notification through PowerShell (`alerts.py`),
+- Server-side differences, all under `sys.platform == "win32"`: notification through PowerShell (`alerts.py`;
+  shown under PowerShell's name, a click does not open the app: an `arxivreader://` protocol and a `launch` attribute
+  would be needed),
   sign-in of the assistants in `cmd.exe` (`providers.py`), the SDK's `claude.exe` (`ai.py`), the `.zip` of the latest release
   (`updates.py`). MIME types fixed in `main.py` (the Windows registry sometimes serves `.js` as `text/plain`).
 - Interface: `MAC` / `WINDOWS` in `static/js/i18n.js`; outside the Mac, ⌘ ⌥ ⇧ become Ctrl Alt Shift on display.
@@ -243,6 +245,15 @@ a restart is enough.
 WebKit changes with macOS (especially the major version, in September). `check.py` reports the change; re-check by
 hand, in the installed app:
 - (`WEBKIT_POINTS` in `app/check.py`, the text of the notification, summarises this list: add any new WebKit-specific point to it)
+- notifications: `alerts.display` writes `<library>/notifications/<time>.json` (title, subtitle, body, route);
+  the Mac shell (`postNotifications` in `main.swift`, every 5 s and at launch) posts them through
+  `UNUserNotificationCenter` and deletes the files. A click opens `route` in a new tab: `#/arxiv/<id>` (`app.js`
+  imports the paper as a click in the feed does, marks it seen, then replaces the route by `#/paper/<id>`) or
+  `#/feed`; without a route (weekly check) the app only comes forward. The folder is created by the app, so the
+  weekly check writes there too (shown at the next launch if the app is closed); without it (development server)
+  `osascript` is used, which macOS attributes to Script Editor (a click opens it). macOS asks for permission at
+  the first notification (bundle id `local.arxivreader`, ad-hoc signed); refused, the files are dropped. To recheck:
+  a notification appears and a click opens the paper;
 - drag a paper from one window to the other, onto a tab (opens after 0.6 s), onto "Library" and
   "Related papers"; drag types: `application/x-arxivreader-paper` and `text/uri-list`
   (`util.js`, `selection.js`, `TabWindow` in `main.swift`, which locates tabs through the `NSTabButton` views of

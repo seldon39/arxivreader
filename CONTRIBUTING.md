@@ -166,6 +166,9 @@ screens, and on several papers — a fix for one paper's LaTeXML output often br
   start of the text, do not move.
 - **Routes with parameters** (`#/search?terms=…`): the parameters are fully percent-encoded, because the Mac and
   Windows shells only open routes that match the pattern in `macos/main.swift` and `windows/shell/MainForm.cs`.
+- **System notifications** go through `alerts.display(title, subtitle, body, route)`: give the route a click should
+  open (`#/arxiv/<id>` for a paper, imported if needed, or `#/feed`); the Mac app shows the notification and opens
+  that route in a new tab (`MAINTENANCE.md`, section 7).
 - **Mac menu commands** go through `static/js/commands.js`: the menu item (`macos/main.swift`) carries a fixed command
   name, the shell sends it to the page (`app:command`), and `commands.js` or `Reader.menuCommand` maps it to an action.
   A command name never comes from the page, and the shell only accepts letters, digits and dots in it; the page

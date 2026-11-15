@@ -471,15 +471,17 @@ latexml` sur Mac, `apt install latexml` sous Linux ; sous Windows, quelques éta
 
 Une fois par jour, Semantic Scholar donne les articles qui citent ceux du profil (« Mes articles ») ; les
 nouveaux apparaissent dans « Citent vos articles » sur le feed, comptent dans la pastille et, si le réglage
-le permet, déclenchent une notification macOS.
+le permet, déclenchent une notification macOS (un clic ouvre l'article citant).
 
 ## Auteurs suivis : alertes
 
 Tant qu'arXivReader est lancé, il vérifie toutes les 3 heures (et une minute après le lancement) les
 nouveaux articles des auteurs suivis du profil : notification macOS pour chacun (réglage « Me notifier
-quand un auteur suivi publie »), pastille sur « Feed », et mention « Non vu » sur la carte jusqu'à ce
-qu'elle ait été affichée. Un clic sur la notification macOS ouvre l'Éditeur de script (limite d'osascript) :
-il suffit de la fermer et d'aller dans le feed.
+quand un auteur suivi publie »), pastille sur « Feed », et point rouge devant le titre de la carte
+(« Non vu » au survol) jusqu'à ce qu'elle ait été affichée. Un clic sur la notification ouvre l'article dans un
+nouvel onglet ; au-delà de trois articles, une seule notification, qui ouvre le feed. À la première
+notification, macOS demande d'autoriser celles d'arXivReader. Sous Windows, la notification s'affiche au nom
+de PowerShell et un clic n'ouvre pas encore l'application.
 
 ## Notes et annotations (étape 3)
 

@@ -597,7 +597,7 @@ export function feedCard(item, onChange = () => {}, { compact = false, fresh = f
 
   const linker = item.arxiv_id ? null : arxivLinker(item, () => card, (next) => feedCard(next, onChange, { fresh }));
   const card = h("article", { class: `feed-card${compact ? " compact" : ""}${fresh ? " fresh" : ""}`, dataset: { key: item.key } },
-    h("div", { class: "feed-title-row" }, h("h3", { class: "feed-title" }, fresh && h("span", { class: "fresh-badge" }, t("alerts.new")), title), meter),
+    h("div", { class: "feed-title-row" }, h("h3", { class: "feed-title" }, fresh && h("span", { class: "fresh-badge", title: t("alerts.new") }, t("alerts.new")), title), meter),
     h("div", { class: "feed-authors" }, authors.join(", ")),
     h("div", { class: "card-meta" },
       item.primary_category && h("span", { class: "chip category" }, item.primary_category),

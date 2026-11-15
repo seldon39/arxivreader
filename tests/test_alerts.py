@@ -88,16 +88,31 @@ class Alerts(unittest.TestCase):
 
     @mock.patch.object(alerts.sys, "platform", "darwin")
     def test_notification_text(self):
-        with mock.patch.object(alerts.subprocess, "run") as run:
+        with mock.patch.object(alerts, "OUTBOX", db.LIBRARY / "absent"), mock.patch.object(alerts.subprocess, "run") as run:
             alerts.notify([paper("1"), paper("2"), paper("3"), paper("4")])
         script = run.call_args[0][0][2]
         self.assertIn("4 nouveaux articles", script)
         self.assertIn("Xiaonan Ma", script)
-        with mock.patch.object(alerts.subprocess, "run") as run:
+        with mock.patch.object(alerts, "OUTBOX", db.LIBRARY / "absent"), mock.patch.object(alerts.subprocess, "run") as run:
             alerts.notify([{**paper("5"), "title": 'Quote " and \\ ' + "x" * 400}])
         script = run.call_args[0][0][2]
         self.assertIn('\\"', script)
         self.assertLess(len(script), 420)  # titre coupé
+
+    @mock.patch.object(alerts.sys, "platform", "darwin")
+    def test_notification_through_the_app(self):
+        outbox = db.LIBRARY / "notifications"
+        outbox.mkdir()
+        with mock.patch.object(alerts, "OUTBOX", outbox), mock.patch.object(alerts.subprocess, "run") as run:
+            alerts.notify([paper("2601.00011")])
+            alerts.notify([paper("1"), paper("2"), paper("3"), paper("4")])
+        run.assert_not_called()  # pas d'AppleScript : l'application les affiche à son nom
+        files = sorted(outbox.iterdir())
+        self.assertEqual([f.suffix for f in files], [".json", ".json"])  # rien de partiel (.tmp)
+        first, summary = (json.loads(f.read_text(encoding="utf-8")) for f in files)
+        self.assertEqual((first["subtitle"], first["body"], first["route"]),
+                         ("Xiaonan Ma — nouvel article", "Paper 2601.00011", "#/arxiv/2601.00011"))
+        self.assertEqual(summary["route"], "#/feed")  # résumé : le feed
 
     @mock.patch.object(alerts.sys, "platform", "win32")
     def test_windows_notification(self):
