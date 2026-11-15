@@ -169,7 +169,7 @@ pas, avec `.venv` comme lien vers lui. L'adresse est http://127.0.0.1:8710/ ; le
   (utilise / utilisé par / cite, chaîne complète), **graphe** des dépendances (plein écran possible).
 - Signalement du **texte invisible** (blanc, minuscule, masqué) éventuellement présent dans l'article.
 - Reprise de la lecture à l'endroit quitté ; réglages : langue FR/EN, thème clair/sombre/système,
-  taille du texte, largeur de lecture (de « Étroite » à « Pleine » pour les grands écrans), preuves repliées par
+  taille du texte (jusqu'à 178 %, avec une colonne plus large sur grand écran), largeur de lecture (de « Étroite » à « Pleine » pour les grands écrans), preuves repliées par
   défaut ; taille et largeur du texte aussi dans la barre du lecteur (A−/A+ et deux boutons de largeur).
 - Mise en page adaptée à la largeur : 3 colonnes (≥ 1280 px), 2 (≥ 900 px), 1 colonne avec tiroirs.
 - **Longs articles légers** : les sections à plus d'un écran de la fenêtre ne sont pas dessinées, et le sont de

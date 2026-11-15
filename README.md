@@ -163,7 +163,7 @@ sync, with `.venv` as a link to it. The address is http://127.0.0.1:8710/; the s
   (uses / used by / cites, full chain), dependency **graph** (can be shown full screen).
 - Flags any **invisible text** (white, tiny, hidden) the paper may contain.
 - Resumes reading where you left off; settings: French/English, light/dark/system theme,
-  text size, reading width (from "Narrow" to "Full" for large screens), proofs collapsed by default; text
+  text size (up to 178 %, with a wider column on a large screen), reading width (from "Narrow" to "Full" for large screens), proofs collapsed by default; text
   size and width also in the reader's toolbar (A−/A+ and two width buttons).
 - Layout adapted to the window width: 3 columns (≥ 1280 px), 2 (≥ 900 px), 1 column with drawers.
 - **Long papers stay light**: sections more than one screen away from the window are not drawn, and drawn again

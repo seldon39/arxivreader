@@ -20,7 +20,7 @@ import { defineMacros, statementElement, statementsContainer } from "./texview.j
 import { typesetFragment, typesetMath, typesetTex, undefinedFonts } from "./math.js";
 
 import { t, tn } from "./i18n.js";
-import { DEFAULT_FONT_SIZE, READING_WIDTHS, onSettingsChange, saveSettings, settings } from "./settings.js";
+import { DEFAULT_FONT_SIZE, MAX_FONT_SIZE, MIN_FONT_SIZE, READING_WIDTHS, onSettingsChange, saveSettings, settings } from "./settings.js";
 import { Trail, neighbourStatement, proofOwnerOf, readingKey, trailKey } from "./trail.js";
 import { decodePosition, encodePdfPosition, encodePosition, positionSaver } from "./position.js";
 import { debounce, escapeRegExp, formatDate, h, icons, metaDialog, nativeBridge, navigation, openRoute, plainTitle, titleTex, toast, toastError, toggleIcon, wantsNewTab, withMath } from "./util.js";
@@ -1250,7 +1250,7 @@ class Reader {
   }
 
   changeFont(delta) {
-    const size = Math.min(24, Math.max(14, settings.fontSize + delta));
+    const size = Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, settings.fontSize + delta));
     saveSettings({ fontSize: size });
   }
 

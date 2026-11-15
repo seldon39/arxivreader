@@ -8,6 +8,7 @@ import { ZOTERO_KEY, zoteroSection } from "./zotero.js";
 import { chooseFolder, h, icons, toast, toastError } from "./util.js";
 
 export const DEFAULT_FONT_SIZE = 18;
+export const MIN_FONT_SIZE = 14, MAX_FONT_SIZE = 32; // texte des articles : 78 % à 178 % (grands moniteurs)
 export const DEFAULT_AI_FONT_SIZE = 15; // réponses de l'IA
 
 const DEFAULTS = {
@@ -97,7 +98,7 @@ document.addEventListener("app:zoom", (event) => {
     return;
   }
   const next = event.detail === "reset" ? DEFAULT_FONT_SIZE
-    : Math.min(24, Math.max(14, (Number(settings.fontSize) || DEFAULT_FONT_SIZE) + (event.detail === "in" ? 1 : -1)));
+    : Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, (Number(settings.fontSize) || DEFAULT_FONT_SIZE) + (event.detail === "in" ? 1 : -1)));
   if (next === settings.fontSize) return;
   const range = document.querySelector('dialog[open] input[name="fontSize"]'); // réglages ouverts : curseur et libellé suivent
   if (range) {
@@ -271,7 +272,7 @@ export function openSettingsDialog({ section = null } = {}) {
         segmented("theme", [["auto", t("settings.theme.auto")], ["light", t("settings.theme.light")], ["dark", t("settings.theme.dark")]], settings.theme)),
       h("div", { class: "row" }, h("span", { id: "setting-fontSize" }, t("settings.fontSize", { n: settings.fontSize })),
         h("div", { class: "range-row" },
-          h("input", { type: "range", name: "fontSize", min: 14, max: 24, step: 1, value: settings.fontSize, "aria-labelledby": "setting-fontSize" }),
+          h("input", { type: "range", name: "fontSize", min: MIN_FONT_SIZE, max: MAX_FONT_SIZE, step: 1, value: settings.fontSize, "aria-labelledby": "setting-fontSize" }),
           h("button", { class: "button small-button", type: "button", name: "resetFontSize", onclick: (event) => {
             const range = dialog.querySelector('input[name="fontSize"]');
             range.value = DEFAULT_FONT_SIZE;
