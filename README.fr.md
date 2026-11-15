@@ -101,8 +101,11 @@ augmenté `VERSION` dans `app/version.py`) : étiquette Git, envoi sur GitHub, i
 - Quitter (⌘Q) arrête aussi le serveur.
 - Onglets : la barre d'onglets du Mac est toujours affichée, son « + » (ou ⌘T) ouvre la bibliothèque dans
   un nouvel onglet ; ⌘-clic (ou clic du milieu) sur un article, dans la bibliothèque, le feed ou un renvoi,
-  l'ouvre dans un nouvel onglet en arrière-plan (⇧⌘-clic : au premier plan). Un onglet glissé hors de la
-  barre devient une fenêtre (deux articles côte à côte) ; ⌘N ouvre une nouvelle fenêtre.
+  l'ouvre dans un nouvel onglet en arrière-plan (⇧⌘-clic : au premier plan). De même pour un renvoi interne à
+  l'article (théorème, équation, citation ; dans le HTML, le PDF, une réponse de l'IA, une note ou le bouton « Aller
+  à l'endroit » d'un aperçu) : le même article, à cet endroit, dans un nouvel onglet, l'onglet courant ne bougeant
+  pas. Un onglet glissé hors de la barre devient une fenêtre (deux articles côte à côte) ; ⌘N ouvre une nouvelle
+  fenêtre.
 - **Menus** refaits d'après les fonctions de l'app ; ce qui ne s'applique pas est grisé, et les libellés suivent l'état
   (« Afficher le HTML », « Masquer le sommaire », « Zoom avant » dans le PDF…). **Fichier** : importer depuis arXiv (⌘O) ou
   un PDF / TeX (⇧⌘O), ajouter l'article lu à la bibliothèque, copier son BibTeX, l'ouvrir sur arXiv, montrer son PDF dans

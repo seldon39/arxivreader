@@ -97,8 +97,10 @@ that bundles Python and its packages. `macos/release.sh` publishes it as a new v
 - Quitting (⌘Q) also stops the server.
 - Tabs: the Mac tab bar is always shown; its "+" (or ⌘T) opens the library in a new tab.
   ⌘-click (or middle-click) on a paper, in the library, the feed or a cross-reference, opens it in a new
-  background tab (⇧⌘-click: in front). A tab dragged out of the bar becomes a window (two papers side by
-  side); ⌘N opens a new window.
+  background tab (⇧⌘-click: in front). The same for a cross-reference inside the paper (theorem, equation,
+  citation; in the HTML, the PDF, an AI answer, a note or the "Go to location" button of a preview): the same paper,
+  at that place, in a new tab, while the current tab stays where it is. A tab dragged out of the bar becomes a
+  window (two papers side by side); ⌘N opens a new window.
 - **Menus** built from the app's functions; what does not apply is greyed out, and labels follow the state ("Show HTML",
   "Hide Contents", "Zoom In" in the PDF…). **File**: import from arXiv (⌘O) or a PDF / TeX file (⇧⌘O), add the paper being
   read to the library, copy its BibTeX, open it on arXiv, show its PDF in the Finder, export the whole library as .bib

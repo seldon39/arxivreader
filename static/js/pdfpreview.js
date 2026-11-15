@@ -7,7 +7,7 @@
 // getPageIndex, getTextContent, render — à revérifier à chaque mise à jour de pdf.js (MAINTENANCE, section 7).
 
 import { t } from "./i18n.js";
-import { h } from "./util.js";
+import { h, wantsNewTab } from "./util.js";
 
 const SHOW_DELAY = 220;  // ms, comme dans le HTML : un passage de la souris ne l'ouvre pas
 const HIDE_DELAY = 250;
@@ -200,12 +200,17 @@ export function linkPreviews(view, app) {
     return annotations.get(page);
   };
 
-  const show = async (link) => {
-    const mine = ++token;
+  // données du lien chez pdf.js (dest, url, overlaidText), d'après son annotation
+  const linkData = async (link) => {
     const section = link.closest("section[data-annotation-id]");
     const pageNumber = Number(link.closest(".page[data-page-number]")?.dataset.pageNumber);
-    if (!section || !pageNumber) return;
-    const data = (await pageAnnotations(pageNumber)).find((a) => a.id === section.dataset.annotationId);
+    if (!section || !pageNumber) return null;
+    return (await pageAnnotations(pageNumber)).find((a) => a.id === section.dataset.annotationId) || null;
+  };
+
+  const show = async (link) => {
+    const mine = ++token;
+    const data = await linkData(link);
     if (mine !== token || !data) return;
     let body, footer = null;
     if (data.url) {
@@ -219,7 +224,11 @@ export function linkPreviews(view, app) {
       const label = viewer.getPageView(target.page - 1)?.pageLabel || String(target.page);
       footer = h("div", { class: "preview-footer" },
         h("span", {}, t("pdf.previewPage", { n: label })),
-        h("button", { type: "button", onclick: () => { hide(); app.pdfLinkService?.goToDestination(data.dest); } }, t("reader.goTo")));
+        h("button", { type: "button", onclick: (event) => {
+          hide();
+          if (wantsNewTab(event) && view.onOpenTab) view.onOpenTab(target, event.shiftKey);  // ⌘-clic : nouvel onglet
+          else app.pdfLinkService?.goToDestination(data.dest);
+        } }, t("reader.goTo")));
     } else return;
     if (!view.frame.isConnected || !view.frame.offsetParent || !link.isConnected) return;
     hide();
@@ -257,6 +266,21 @@ export function linkPreviews(view, app) {
     token++;  // aperçu en cours de dessin : abandonné
     if (box) scheduleHide();
   });
+  // ⌘-clic (ou clic du milieu) sur un lien interne du PDF : le même article à cet endroit dans un nouvel onglet
+  // (view.onOpenTab, posé par le lecteur) ; capture : passe avant le saut de pdf.js. Liens vers l'extérieur : inchangés.
+  const openTab = (event) => {
+    if (!view.onOpenTab || !wantsNewTab(event) || (event.type === "auxclick" && event.button !== 1)) return;
+    const link = event.target.closest?.(LINK);
+    const href = link?.getAttribute("href") || "";
+    if (!link || !href.startsWith("#") || href.length < 2) return;
+    event.preventDefault();
+    event.stopPropagation();
+    hide();
+    const front = event.shiftKey;
+    linkData(link).then((data) => (data?.dest ? resolve(data.dest) : null)).then((target) => target && view.onOpenTab(target, front)).catch(() => {});
+  };
+  container.addEventListener("click", openTab, true);
+  container.addEventListener("auxclick", openTab, true);
   // l'extrait ne suit pas le défilement ni le zoom : il se ferme. Échap dans le PDF : aussi les aperçus du lecteur
   // (renvois de l'IA), dont l'écoute est dans la page de l'application (view.onEscape, posé par le lecteur)
   container.addEventListener("scroll", hide, { passive: true });

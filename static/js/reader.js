@@ -87,7 +87,9 @@ class Reader {
     // « annotation-12 » (résultat de recherche sur une note) : cette annotation, montrée dans sa vue après le chargement
     const pinned = /^annotation-(\d+)$/.exec(at || "");
     this.startAnnotation = pinned ? Number(pinned[1]) : null;
-    this.startAt = pinned ? null : at;
+    // « pdf:page:hauteur » : un endroit du PDF (lien du PDF ouvert dans un nouvel onglet) ; l'article s'ouvre dans le PDF
+    this.startPdf = (!pinned && decodePosition(at || "")?.pdf) || null;
+    this.startAt = pinned || this.startPdf ? null : at;
     // version HTML expérimentale possible (LaTeXML, à la demande) : fichier TeX importé, article d'arXiv lu depuis sa source
     this.experimental = ["tex", "local-tex"].includes(paper.source);
     // pas de version HTML : toujours dans le PDF
@@ -113,7 +115,7 @@ class Reader {
 
     this.build(view, html);
     // version HTML expérimentale : le PDF d'abord, sauf si on vient de la choisir (ou de la faire)
-    if (!this.texOnly && this.viewSwitch && (this.experimental ? !wantsHtml(paper.id) : settings.readerView === "pdf")) this.setView("pdf", { save: false });
+    if (!this.texOnly && this.viewSwitch && (this.startPdf || (this.experimental ? !wantsHtml(paper.id) : settings.readerView === "pdf"))) this.setView("pdf", { save: false });
     this.enhanceContent();
     this.renderToc();
     this.renderPanel();
@@ -323,6 +325,8 @@ class Reader {
       scrollTo({ top: 0, behavior: "instant" });
       await this.loadPages();
       if (!current()) return;
+      // ouverture sur un endroit du PDF (nouvel onglet) : cet endroit, sans passer par le texte du HTML
+      if (!save && this.startPdf) { this.pdf.goTo(this.startPdf.page, this.startPdf.top); return; }
       // d'abord l'estimation des ancres (immédiate), puis l'endroit exact, retrouvé par le texte
       const spot = anchorId ? this.pdfSpot(anchorId) : null;
       this.pdf.goTo(spot?.page || 1, spot?.top ?? null);
@@ -390,6 +394,7 @@ class Reader {
   createPdf() {
     this.pdf = new PdfView(this.pdfUrl(), this.paper.title);
     this.pdf.onEscape = () => this.hidePreview();  // Échap dans le PDF : aperçus du lecteur aussi
+    this.pdf.onOpenTab = (target, front) => this.openTabAt(encodePdfPosition(target.page, target.top), front);
     // à l'ouverture (vue PDF gardée), l'annotateur n'existe pas encore : PdfNotes créé juste après lui
     if (this.annotator) this.pdfNotes = this.makePdfNotes();
     this.pdf.onJump(() => this.rememberPlace());  // lien interne du PDF ([12], Theorem 3.4) : l'endroit quitté est gardé
@@ -606,11 +611,12 @@ class Reader {
       // Fichier TeX : PDF de la dernière compilation (adresse changée à chaque fois : jamais l'ancien gardé en cache)
       this.pdf = new PdfView(this.pdfUrl(), paper.title);
       this.pdf.onEscape = () => this.hidePreview();  // Échap dans le PDF : aperçus du lecteur aussi
+      this.pdf.onOpenTab = (target, front) => this.openTabAt(encodePdfPosition(target.page, target.top), front);
       this.pdf.onJump(() => this.rememberPlace());  // lien interne du PDF : l'endroit quitté est gardé (comme avec une version HTML)
-      const spot = this.startAt ? this.pdfSpot(this.startAt) : null;
+      const spot = this.startPdf || (this.startAt ? this.pdfSpot(this.startAt) : null);
       const recompiled = this.recompiledPage();  // toujours lue : pas gardée pour une ouverture suivante
       // sinon la dernière page lue (position « pdf:page:hauteur »), pas après une recompilation (sa page l'emporte)
-      const saved = !this.startAt && recompiled === 1 ? decodePosition(paper.position)?.pdf : null;
+      const saved = !this.startAt && !this.startPdf && recompiled === 1 ? decodePosition(paper.position)?.pdf : null;
       this.pdf.load(spot?.page || saved?.page || recompiled, spot ? spot.top ?? null : saved?.top ?? null);
       if (saved?.page > 1) toast(t("reader.resumedPdf", { page: saved.page }));
       this.followPdfPlace(spot?.page || saved?.page || recompiled);
@@ -1815,7 +1821,7 @@ class Reader {
     this.hidePreview();
     const footer = h("div", { class: "preview-footer" },
       preview.extra || h("span", {}, preview.label || ""),
-      preview.id && h("button", { type: "button", onclick: () => { this.hidePreview(); this.navigate(preview.id); } }, t("reader.goTo")));
+      preview.id && h("button", { type: "button", dataset: { goto: preview.id }, onclick: () => { this.hidePreview(); this.navigate(preview.id); } }, t("reader.goTo")));
     // renvoi d'une bulle de note : l'aperçu passe au-dessus de la bulle
     const box = h("div", { class: `preview${preview.pdf ? " pdf-preview" : ""}${link.closest(".note-popover") ? " over-popover" : ""}`, role: "tooltip" }, preview.body, footer);
     box.addEventListener("mouseenter", () => clearTimeout(this.hideTimer));
@@ -1852,6 +1858,11 @@ class Reader {
     box.style.top = `${below ? rect.bottom + 8 : Math.max(8, rect.top - height - 8)}px`;
     this.previewBox = box;
     this.previewLink = link;
+  }
+
+  // le même article, à un endroit (identifiant d'énoncé, d'équation… ou « pdf:page:hauteur »), dans un nouvel onglet
+  openTabAt(at, front = false) {
+    openRoute(`#/paper/${encodeURIComponent(this.paper.id)}/${encodeURIComponent(at)}`, true, front);
   }
 
   scheduleHide() {
@@ -2314,6 +2325,24 @@ class Reader {
   // ---------- Événements ----------
 
   bindEvents() {
+    // ⌘-clic (ou clic du milieu) sur un renvoi de l'article, d'une réponse de l'IA, d'une note ou d'un aperçu (bouton
+    // « Aller à l'endroit ») : le même article à cet endroit dans un nouvel onglet (⇧ : au premier plan), l'onglet
+    // courant ne bouge pas. Écoute en capture : passe avant la navigation de chaque lien. Liens du PDF : pdfpreview.js.
+    const newTabRef = (event) => {
+      if (!wantsNewTab(event) || (event.type === "auxclick" && event.button !== 1)) return;
+      const link = event.target.closest?.('a.ai-ref[data-ref], a[href^="#"]:not([href^="#/"]), button[data-goto]');
+      if (!link || link.matches("a[data-arxiv], a.cross-open") || link.closest(".tabs")) return;
+      if (!this.root.contains(link) && !link.closest(".preview, .note-popover")) return;
+      let id = link.dataset.ref || link.dataset.goto;
+      try { id ||= decodeURIComponent(link.getAttribute("href").slice(1)); } catch { return; }
+      if (!id || id.includes("/")) return;  // pas une adresse de l'application : saut ordinaire
+      event.preventDefault();
+      event.stopPropagation();
+      this.hidePreview();
+      this.openTabAt(id, event.shiftKey);
+    };
+    for (const type of ["click", "auxclick"]) document.addEventListener(type, newTabRef, true);
+    this.cleanups.push(() => { for (const type of ["click", "auxclick"]) document.removeEventListener(type, newTabRef, true); });
     // la position en attente est envoyée à la fermeture de l'onglet (un seul envoi, qui se termine même page fermée)
     this.positionSaver = positionSaver((place) => api.savePosition(this.paper.id, place, { keepalive: true }).catch(() => {}));
     this.savePosition = this.positionSaver.save;

@@ -269,6 +269,9 @@ hand, in the installed app:
   frame then copied; the crop starts on the line holding the link's number, because hyperref puts the target above
   the line by a varying amount (about 8 pt for a statement, more than one line in a bibliography): to be rechecked at
   every pdf.js update;
+  ⌘-click / middle-click on an internal reference opens the same paper at that place in a new tab
+  (`Reader.openTabAt`, capture listener in `bindEvents`; PDF links: capture listener in `pdfpreview.js`, route
+  `#/paper/<id>/pdf:<page>:<top>` read as `startPdf`, which forces the PDF view);
   the selection is drawn by `pdfnotes.js` (`enableSelectionRendering: false` in `pdfview.js`); the regions
   (⌥ + drag, button `#arxZoneButton` added to `#toolbarViewerMiddle`) are rendered as images by `page.render`;
   images kept in `papers/<id>/zones/` (notes) and `papers/<id>/ai-images/` (questions), sent only to the
