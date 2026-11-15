@@ -47,6 +47,9 @@ export async function renderReader(view, paperId, at, isCurrent = () => true) {
     view.replaceChildren(h("div", { class: "library" }, h("div", { class: "busy" }, h("span", { class: "spinner" }), t("reader.preparing"))));
     ({ paper, structure } = await api.paper(paperId));
   }
+  // déposé sur arXiv en PDF seul : lu dans son PDF, qu'arXiv peut ne pas donner (article retiré, hors ligne) ; dans ce
+  // cas, titre et résumé comme avant (le serveur le télécharge ici s'il manque : réponse attendue, corps abandonné)
+  if (paper.source === "none" && !(await pdfAvailable(paperId))) paper = { ...paper, pdfMissing: true };
   setReadingVersion(paper.id, paper.version);
   // lu dans le PDF faute de HTML, sauf version HTML faite par LaTeXML (paper.html « ready »)
   const html = ["none", "tex", "local-pdf", "local-tex"].includes(paper.source) && paper.html !== "ready" ? "" : await api.content(paperId);
@@ -56,6 +59,17 @@ export async function renderReader(view, paperId, at, isCurrent = () => true) {
   setMenuReader(reader);  // menus de l'application Mac (commands.js)
   reader.reportMenuState();
   return () => reader.destroy();
+}
+
+async function pdfAvailable(paperId) {
+  const stop = new AbortController();
+  try {
+    return (await fetch(`/api/papers/${encodeURIComponent(paperId)}/pdf`, { signal: stop.signal })).ok;
+  } catch {
+    return false;
+  } finally {
+    stop.abort();
+  }
 }
 
 // Énoncé visé par la note d'une citation : « [12, Theorem 4.3] », « [12, Thm. 4.3(2)] », « [12, Lemma 2.1] »
@@ -92,8 +106,8 @@ class Reader {
     this.startAt = pinned || this.startPdf ? null : at;
     // version HTML expérimentale possible (LaTeXML, à la demande) : fichier TeX importé, article d'arXiv lu depuis sa source
     this.experimental = ["tex", "local-tex"].includes(paper.source);
-    // pas de version HTML : toujours dans le PDF
-    this.texOnly = ["tex", "local-pdf", "local-tex"].includes(paper.source) && !(this.experimental && paper.html === "ready");
+    // pas de version HTML : toujours dans le PDF (« none » : article d'arXiv déposé en PDF seul, sans source TeX)
+    this.texOnly = ["tex", "local-pdf", "local-tex", "none"].includes(paper.source) && !(this.experimental && paper.html === "ready") && !paper.pdfMissing;
     this.texFile = paper.source === "local-tex";  // fichier TeX de l'ordinateur : recompilé à la demande
     this.onlyIds = null;  // vérifications du fichier TeX : seulement ces énoncés dans la liste
     this.pdfMode = this.texOnly;
@@ -561,7 +575,7 @@ class Reader {
       (paper.updated || paper.published) && h("span", { class: "chip" }, formatDate(paper.updated || paper.published)),
       paper.source === "local-pdf" && paper.comment && h("span", { class: "chip", title: t("reader.localPdf") }, paper.comment),
       (paper.source === "local-pdf" || this.texFile) && h("button", { class: "chip chip-button", type: "button", onclick: () => this.editMeta() }, t("reader.editMeta")),
-      paper.source !== "none" && h("span", { class: "chip" }, t(`reader.source.${paper.source}`)),
+      h("span", { class: "chip" }, t(`reader.source.${paper.source}`)),
       paper.doi && h("a", { class: "chip", href: `https://doi.org/${paper.doi}`, target: "_blank", rel: "noopener noreferrer" }, `DOI ${paper.doi}`),
       ...this.paperFindLinks(paper),
     );
@@ -624,9 +638,9 @@ class Reader {
       this.article.append(this.pdf.frame);
       this.content = statementsContainer(this.structure);
       this.article.append(this.content);
-    } else if (paper.source === "none") {
+    } else if (paper.source === "none") {  // déposé en PDF seul, PDF introuvable (pdfMissing) : titre et résumé
       this.article.append(
-        h("div", { class: "notice" }, t("reader.noHtml")),
+        h("div", { class: "notice" }, t("reader.noPdf")),
         this.paperTitle = h("h1", { class: "ltx_title_document" }, titleTex(paper.title)),
         h("div", { class: "ltx_authors" }, paper.authors.join(", ")),
         h("div", { class: "ltx_abstract" }, h("h6", { class: "ltx_title_abstract" }, t("reader.abstract")), h("p", {}, paper.abstract)),

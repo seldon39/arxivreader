@@ -380,6 +380,8 @@ environments, simulated numbering, `\ref`/`\eqref`/`\cref`); choosing a statemen
 PDF (hyperref anchors, otherwise a text search). Compared with the HTML version on 42 papers: 99 % of the
 statements and 97 % of the links are found. For a paper imported before this feature: "Update from arXiv"
 button on its card in the library.
+A paper deposited on arXiv as a PDF only, without TeX source ("PDF only"), is read in its PDF too, with highlights,
+notes and Claude on its extracted text, like a PDF from your computer, but without statements or dependencies.
 
 ## PDFs from your computer
 

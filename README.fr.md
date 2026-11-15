@@ -400,6 +400,8 @@ lecture est gardée aussi en lisant le PDF. Les scripts contenus dans les PDF ne
 (ancres de hyperref, sinon recherche du texte). Comparé à la version HTML sur 42 articles : 99 % des
 énoncés et 97 % des liens retrouvés. Un article importé avant cette version : bouton « Mettre à jour
 depuis arXiv » de sa carte dans la bibliothèque.
+Un article déposé sur arXiv en PDF seul, sans source TeX (« PDF seulement »), se lit aussi dans son PDF, avec
+surlignages, notes et Claude sur son texte extrait, comme un PDF de l'ordinateur, mais sans énoncés ni dépendances.
 
 ## PDF de l'ordinateur
 

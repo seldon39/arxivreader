@@ -1324,16 +1324,19 @@ class PreviousVersion(unittest.TestCase):
         self.assertIn(ai.SAME_VERSION_PROMPT, self.ask("Réessaie", history=history)[1])
 
     def test_view_change_on_a_single_view(self):
-        """Article à une seule vue : « mets mes notes HTML sur le PDF » n'est pas une adaptation d'une autre version."""
+        """Article à une seule vue, son PDF (source TeX, ou déposé en PDF seul : « none ») : « mets mes notes HTML sur
+        le PDF » n'est pas une adaptation d'une autre version ; les notes d'une autre version vont dans le PDF."""
         self.archive(1)
-        for paper in ({**self.main, "source": "none"}, {**self.main, "source": "tex"}):
-            if paper["source"] == "tex":
-                (library.paper_dir(self.KEY) / "content.html").unlink()
+        (library.paper_dir(self.KEY) / "content.html").unlink()  # lu dans le PDF : pas de HTML
+        for source in ("none", "tex"):
+            paper = {**self.main, "source": source}
             _, prompt = self.ask("Mets mes notes HTML sur le PDF", paper)
-            self.assertNotIn("<previous_version", prompt, paper["source"])
+            self.assertNotIn("<previous_version", prompt, source)
             self.assertNotIn(ai.SAME_VERSION_PROMPT, prompt)
-        self.assertIn('<previous_version version="1">', self.ask("Mets mes notes de la v1 sur le PDF", {**self.main, "source": "tex"})[1])
-        self.assertNotIn("<previous_version", self.ask("adapte mes notes de la v1", {**self.main, "source": "none"})[1])  # rien où les mettre
+            self.assertIn('<previous_version version="1">', self.ask("Mets mes notes de la v1 sur le PDF", paper)[1])
+            prompt = self.ask("adapte mes notes de la v1", paper)[1]
+            self.assertIn('<previous_version version="1">', prompt, source)
+            self.assertIn("The version being read only has its PDF", prompt, source)
 
     def test_deletion(self):
         """« Supprime mes notes jaunes » : liste des annotations de la version lue, sous leurs numéros, et DELETE_PROMPT."""

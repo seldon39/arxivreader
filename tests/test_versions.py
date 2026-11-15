@@ -2,6 +2,7 @@
 aucune requête réelle)."""
 
 import io
+import json
 import pathlib
 import shutil
 import sqlite3
@@ -933,3 +934,59 @@ class AbsorbedArchive(Base):
                 mock.patch.object(library, "fetch_html", side_effect=html), mock.patch.object(library, "fetch_source", return_value=None):
             library._reimport_installed(paper)
         self.assertEqual((assets / "kept.png").read_bytes(), PNG)
+
+
+class PdfOnly(Base):
+    """Article déposé sur arXiv en PDF seul (ni HTML ni source TeX) : lu dans son PDF, texte extrait comme un PDF importé."""
+
+    def imported(self, pdf):
+        from tests.test_localpdf import make_pdf
+        data = make_pdf(["Mass gap for a model", "A sentence with the word xyzzy."])
+        fetch = mock.patch.object(library, "fetch_pdf", side_effect=pdf(data) if callable(pdf) else lambda *_: data)
+        with mock.patch.object(library, "fetch_metadata", return_value=metadata(1)), \
+             mock.patch.object(library, "fetch_html", return_value=None), \
+             mock.patch.object(library, "fetch_source", return_value=None), fetch:
+            return library.import_paper(ID), data
+
+    def test_pdf_and_its_text_at_import(self):
+        paper, _ = self.imported(None)
+        self.assertEqual(paper["source"], "none")
+        folder = library.paper_dir(ID)
+        self.assertTrue((folder / "paper.pdf").exists())
+        self.assertIn("xyzzy", ai.paper_text(ID))
+        self.assertIn("pdf", ai._views(paper))
+        self.assertTrue(fulltext.search("xyzzy")["results"])
+
+    def test_pdf_missed_at_import_then_fetched_on_opening(self):
+        def offline(_data):
+            def fail(*_):
+                raise arxiv.httpx.ConnectError("offline")
+            return fail
+        paper, data = self.imported(offline)
+        self.assertEqual(paper["source"], "none")  # import réussi malgré le PDF manqué
+        self.assertFalse((library.paper_dir(ID) / "paper.pdf").exists())
+        with mock.patch.object(library, "fetch_pdf", return_value=data):
+            path = library.ensure_pdf(db.get_paper(ID))
+        self.assertTrue(path.exists())
+        self.assertIn("xyzzy", ai.paper_text(ID))
+
+    def test_text_extracted_for_a_paper_imported_before(self):
+        self.imported(None)
+        (library.paper_dir(ID) / "text.json").unlink()  # importé avant l'extraction
+        with mock.patch.object(library, "fetch_pdf") as fetch:
+            library.ensure_pdf(db.get_paper(ID))
+        fetch.assert_not_called()
+        self.assertIn("xyzzy", ai.paper_text(ID))
+
+    def test_unreadable_or_scanned_pdf(self):
+        """PDF illisible : text.json vide gardé (pas relu à chaque ouverture) ; l'assistant reçoit alors les pages en images."""
+        self.imported(None)
+        folder = library.paper_dir(ID)
+        (folder / "text.json").unlink()
+        (folder / "paper.pdf").write_bytes(b"%PDF-1.4 broken")
+        library.ensure_pdf(db.get_paper(ID))
+        self.assertEqual(json.loads((folder / "text.json").read_text(encoding="utf-8")), {"pages": []})
+        self.assertTrue(ai.without_text(db.get_paper(ID)))
+        with mock.patch("app.localpdf.read_pdf") as read:
+            library.ensure_pdf(db.get_paper(ID))
+        read.assert_not_called()

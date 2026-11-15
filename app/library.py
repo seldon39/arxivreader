@@ -257,10 +257,31 @@ def _fill(staging, arxiv_id, meta, pending_source, overrides, ar5iv=True):
             if pdf:
                 (staging / "paper.pdf").write_bytes(pdf)
                 texstructure.locate_pages(structure, pdf)
+    if source == "none":
+        # ni HTML ni source TeX (article déposé en PDF seul) : lu dans son PDF, comme un PDF importé ; texte de chaque
+        # page pour l'assistant et la recherche. Téléchargement manqué : ensure_pdf le refera à l'ouverture
+        try:
+            pdf = fetch_pdf(arxiv_id, meta.version)
+        except Exception:
+            pdf = None
+        if pdf:
+            (staging / "paper.pdf").write_bytes(pdf)
+            _write_pdf_text(staging, pdf)
     structure["source"] = source
     structure["tex"] = tex_options
     (staging / "structure.json").write_text(json.dumps(structure, ensure_ascii=False), encoding="utf-8")
     return source
+
+
+def _write_pdf_text(folder, data):
+    """text.json (texte de chaque page) d'un article d'arXiv déposé en PDF seul, comme pour un PDF importé ;
+    PDF illisible : aucune page de texte."""
+    from .localpdf import PdfError, read_pdf  # localpdf importe ce module
+    try:
+        pages = read_pdf(data)["pages"]
+    except PdfError:
+        pages = []  # gardé quand même : pas relu à chaque ouverture ; l'assistant reçoit les pages en images (ai.without_text)
+    write_atomic(folder / "text.json", json.dumps({"pages": pages}, ensure_ascii=False))
 
 
 
@@ -760,6 +781,9 @@ def ensure_pdf(paper):
             if not data:
                 return None
             write_atomic_bytes(path, data)
+        # déposé en PDF seul, importé avant que son texte soit extrait (ou PDF manqué à l'import) : extrait maintenant
+        if paper.get("source") == "none" and not (path.parent / "text.json").exists():
+            _write_pdf_text(path.parent, path.read_bytes())
     return path
 
 

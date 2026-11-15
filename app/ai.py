@@ -899,7 +899,7 @@ def context_pages(items, center=None):
 
 def without_text(paper):
     """PDF importé presque sans texte (scan) : l'assistant n'en a pas le texte, la page joint les pages en images."""
-    if paper.get("source") != localpdf.SOURCE:
+    if paper.get("source") not in (localpdf.SOURCE, "none"):  # « none » : article d'arXiv déposé en PDF seul (scan)
         return False
     try:
         pages = json.loads((library.paper_dir(paper["id"]) / "text.json").read_text(encoding="utf-8"))["pages"]
@@ -1093,7 +1093,7 @@ def _views(paper):
     TeX) et/ou « pdf » ; comme le lecteur (texOnly, viewSwitch dans reader.js)."""
     html = (library.paper_dir(paper["id"]) / "content.html").exists() \
         or (paper.get("source") in latexml.SOURCES and latexml.state(paper) == "ready")
-    pdf = paper.get("source") not in (None, "none", library.PENDING)
+    pdf = paper.get("source") not in (None, library.PENDING)  # « none » : déposé en PDF seul, lu dans son PDF
     return tuple(view for view, present in (("html", html), ("pdf", pdf)) if present)
 
 
