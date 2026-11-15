@@ -164,6 +164,9 @@ pas, avec `.venv` comme lien vers lui. L'adresse est http://127.0.0.1:8710/ ; le
   copier le texte, ou demander à l'assistant IA (ailleurs, le menu du système reste).
 - **Aperçu au survol** de tout renvoi (théorème, équation, référence, note) ; clic = aller à l'endroit,
   avec un bouton « Retour ».
+- **Dans le PDF aussi** : au survol d'un lien du PDF (renvoi, citation), un extrait de la page visée, à partir de la
+  ligne visée ; de même pour les renvois des réponses de l'IA quand on lit le PDF. Il faut un PDF avec des liens
+  (hyperref) : c'est le cas de la plupart des PDF d'arXiv et des fichiers TeX compilés par l'application.
 - **Preuves repliables** ; les preuves écrites à la main (« *Proof.* … □ ») sont repérées automatiquement.
 - **Panneau Structure** : liste des énoncés (filtres par type), dépendances d'un énoncé
   (utilise / utilisé par / cite, chaîne complète), **graphe** des dépendances (plein écran possible).

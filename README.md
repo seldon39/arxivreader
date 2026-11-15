@@ -158,6 +158,9 @@ sync, with `.venv` as a link to it. The address is http://127.0.0.1:8710/; the s
   text, or ask the AI assistant (elsewhere, the system menu stays).
 - **Hover preview** of any cross-reference (theorem, equation, citation, footnote); click to go there,
   with a "Back" button.
+- **In the PDF too**: hovering a link of the PDF (cross-reference, citation) shows an extract of the target page,
+  starting at the target line; likewise for the cross-references of AI answers while reading the PDF. The PDF needs
+  links (hyperref): most arXiv PDFs and the TeX files compiled by the app have them.
 - **Collapsible proofs**; handwritten proofs ("*Proof.* … □") are detected automatically.
 - **Structure panel**: list of statements (filtered by type), dependencies of a statement
   (uses / used by / cites, full chain), dependency **graph** (can be shown full screen).

@@ -43,7 +43,7 @@ English.
 
 | Area | Server (`app/`) | Page (`static/js/`) |
 |---|---|---|
-| Import, cleaned HTML, PDF | `library.py`, `arxiv.py`, `sanitize.py` | `reader.js`, `pdfview.js`, `pdfsync.js`, `lazypaint.js` (sections far from the screen not drawn) |
+| Import, cleaned HTML, PDF | `library.py`, `arxiv.py`, `sanitize.py` | `reader.js`, `pdfview.js`, `pdfpreview.js` (hover previews from the PDF), `pdfsync.js`, `lazypaint.js` (sections far from the screen not drawn) |
 | Structure (statements, proofs, dependencies) | `structure.py` (LaTeXML HTML), `texstructure.py`, `texsource.py` (TeX source) | `reader.js`, `graph.js`, `texview.js` |
 | Paper versions (each arXiv version with its own notes, Version menu) | `library.py` (`archive_key`, `versions_of`, `open_version`, `ensure_version`, `_replace_version`, `recover_interrupted`), `db.py` (`archived_of`, `archives_of`), `notesync.py` (`_version_of_notes`), `main.py` (`_same_version`) | `reader.js` (`versionChip`), `library.js` (`updatePaper`, shared with the feed), `api.js` (`setReadingVersion`) |
 | Notes, highlights, reading state, export | `annotations.py`, `export.py` (`paper_export`: `.md`, or `.zip` with the images of the regions), `notesync.py` (signed export, import from one computer to another) | `annotations.js` (Notes tab: sections "In the HTML" / "In the PDF", `notesGroup`, `cardTools`, `removeMany`, `restore`), `markdown.js`, `bookmarks.js` (bookmarks, right-click menu), `pdfnotes.js` (passages, regions and notes in the PDF; passages found again after recompilation; `readingHeights`, `placeOf`, `addZone`, `addPin`) |
@@ -264,6 +264,11 @@ hand, in the installed app:
   the pdf.js viewer forbids styles written by script (CSP `style-src 'self'`): our additions go through
   `static/css/pdfjs-extra.css` (hidden buttons, highlights); the PDF highlights (`pdfnotes.js`) locate themselves
   in the text layer (`.textLayer`, `textlayerrendered` event): to be rechecked at every pdf.js update;
+  link previews (`pdfpreview.js`): the bubble lives in the app page above the frame; targets from `getAnnotations`
+  (`dest`, `overlaidText`), `getDestination` and `getPageIndex`, the extract drawn by `page.render` into a canvas of the
+  frame then copied; the crop starts on the line holding the link's number, because hyperref puts the target above
+  the line by a varying amount (about 8 pt for a statement, more than one line in a bibliography): to be rechecked at
+  every pdf.js update;
   the selection is drawn by `pdfnotes.js` (`enableSelectionRendering: false` in `pdfview.js`); the regions
   (⌥ + drag, button `#arxZoneButton` added to `#toolbarViewerMiddle`) are rendered as images by `page.render`;
   images kept in `papers/<id>/zones/` (notes) and `papers/<id>/ai-images/` (questions), sent only to the

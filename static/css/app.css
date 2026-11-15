@@ -508,6 +508,12 @@ a.button.primary { text-decoration: none; }
 .preview-footer { display: flex; justify-content: space-between; gap: 12px; margin-top: 8px; font: 13px var(--font-ui); color: var(--muted); }
 .preview-footer button { border: 0; background: transparent; color: var(--link); cursor: pointer; padding: 0; font: inherit; }
 .preview-footer a { color: var(--link); }
+/* aperçu d'un lien du PDF : extrait de la page (blanc, comme la page), légende en dessous */
+.preview.pdf-preview { padding: 0; max-height: none; overflow: hidden; max-width: calc(100vw - 24px); }
+.pdf-preview canvas { display: block; max-width: 100%; background: #fff; }
+.pdf-preview .preview-footer { margin: 0; padding: 6px 14px 8px; border-top: 1px solid var(--border); }
+.pdf-preview > .busy, .pdf-preview > .pdf-preview-none { margin: 0; padding: 14px 20px; box-sizing: border-box; max-width: 100%; }
+.preview.pdf-preview.url { padding: 8px 12px; font: 13px var(--font-ui); text-align: left; overflow-wrap: anywhere; }
 .bib-actions { display: flex; flex-wrap: wrap; gap: 2px 12px; }
 
 /* ---------- Panneau latéral ---------- */

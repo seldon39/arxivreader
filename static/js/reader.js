@@ -301,6 +301,7 @@ class Reader {
     if (save && this.experimental) rememberView(this.paper.id, view === "html");  // réglage général inchangé
     else if (save) saveSettings({ readerView: view });
     this.viewSwitch?.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === view)));
+    this.hidePreview();  // aperçu ouvert (HTML ou lien du PDF) : il ne reste pas sur l'autre vue
     if (view === "pdf") {
       // page où l'on en était dans le HTML (pas à l'ouverture : rien n'est encore lu)
       if (save) this.htmlScroll = scrollY;
@@ -388,6 +389,7 @@ class Reader {
   // l'assistant doit y placer des notes
   createPdf() {
     this.pdf = new PdfView(this.pdfUrl(), this.paper.title);
+    this.pdf.onEscape = () => this.hidePreview();  // Échap dans le PDF : aperçus du lecteur aussi
     // à l'ouverture (vue PDF gardée), l'annotateur n'existe pas encore : PdfNotes créé juste après lui
     if (this.annotator) this.pdfNotes = this.makePdfNotes();
     this.pdf.onJump(() => this.rememberPlace());  // lien interne du PDF ([12], Theorem 3.4) : l'endroit quitté est gardé
@@ -603,6 +605,7 @@ class Reader {
       // Pas de version HTML : lecture dans le PDF ; énoncés (rendus depuis la source TeX, aucun pour un PDF importé).
       // Fichier TeX : PDF de la dernière compilation (adresse changée à chaque fois : jamais l'ancien gardé en cache)
       this.pdf = new PdfView(this.pdfUrl(), paper.title);
+      this.pdf.onEscape = () => this.hidePreview();  // Échap dans le PDF : aperçus du lecteur aussi
       this.pdf.onJump(() => this.rememberPlace());  // lien interne du PDF : l'endroit quitté est gardé (comme avec une version HTML)
       const spot = this.startAt ? this.pdfSpot(this.startAt) : null;
       const recompiled = this.recompiledPage();  // toujours lue : pas gardée pour une ouverture suivante
@@ -1510,6 +1513,23 @@ class Reader {
       return note ? { body: this.clean(note) } : null;
     }
     const id = link.dataset.ref || link.getAttribute("href")?.slice(1);  // renvoi d'une réponse de l'IA : son identifiant
+    // lecture dans le PDF : l'extrait du PDF à l'endroit de l'énoncé (pdfpreview.js), comme pour les liens du PDF
+    // seulement pour un endroit exact (énoncé, section ; fichier TeX : aussi équations et références) : sinon
+    // pdfSpot donne la section qui contient l'élément, et l'aperçu du HTML (équation, référence et ses liens) vaut mieux
+    const exact = this.pdfMode && this.pdf && id && (this.texOnly || this.pages?.[id] || !this.find(id));
+    const spot = exact ? this.pdfSpot(id) : null;
+    if (spot) {
+      const holder = h("div", { class: "busy small" }, h("span", { class: "spinner" }));
+      holder.style.width = `${Math.min(560, innerWidth - 24)}px`;  // largeur de l'extrait dès l'attente : bulle placée une fois
+      const label = this.byId.get(id)?.label || link.textContent;
+      return {
+        body: holder, id, pdf: true, label: t("pdf.previewPage", { n: spot.page }),
+        load: async () => {
+          const canvas = await this.pdf.previewCanvas(spot, label).catch(() => null);
+          holder.replaceWith(canvas || h("p", { class: "muted small pdf-preview-none" }, t("reader.noPdfPage")));
+        },
+      };
+    }
     const target = this.find(id);
     if (!target) return null;
     const theorem = target.closest(".ltx_theorem");
@@ -1797,7 +1817,7 @@ class Reader {
       preview.extra || h("span", {}, preview.label || ""),
       preview.id && h("button", { type: "button", onclick: () => { this.hidePreview(); this.navigate(preview.id); } }, t("reader.goTo")));
     // renvoi d'une bulle de note : l'aperçu passe au-dessus de la bulle
-    const box = h("div", { class: `preview${link.closest(".note-popover") ? " over-popover" : ""}`, role: "tooltip" }, preview.body, footer);
+    const box = h("div", { class: `preview${preview.pdf ? " pdf-preview" : ""}${link.closest(".note-popover") ? " over-popover" : ""}`, role: "tooltip" }, preview.body, footer);
     box.addEventListener("mouseenter", () => clearTimeout(this.hideTimer));
     box.addEventListener("click", this.interceptLinks);
     box.addEventListener("mouseleave", () => this.scheduleHide());
@@ -1821,6 +1841,7 @@ class Reader {
       const rect = link.getBoundingClientRect();
       const below = rect.bottom + 8 + height < innerHeight;
       box.style.top = `${below ? rect.bottom + 8 : Math.max(8, rect.top - height - 8)}px`;
+      box.style.left = `${Math.min(parseFloat(box.style.left) || 12, innerWidth - box.offsetWidth - 12)}px`;  // contenu plus large (extrait du PDF)
     }).catch(() => box.querySelector(".cross-statement")?.replaceChildren(h("p", { class: "muted small" }, t("reader.crossUnavailable"))));
     const rect = link.getBoundingClientRect();
     const width = box.offsetWidth;
@@ -1842,6 +1863,7 @@ class Reader {
     clearTimeout(this.showTimer);
     this.previewBox?.remove();
     this.previewBox = null;
+    this.pdf?.hideLinkPreview?.();  // bulle d'un lien du PDF (pdfpreview.js) : article quitté, vue changée
   }
 
   // ---------- Panneau : énoncés, dépendances, graphe ----------

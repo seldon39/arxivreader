@@ -2,6 +2,7 @@
 // Contrairement au lecteur PDF du système, il dit quelle page on lit et à quelle hauteur : le retour
 // au HTML se fait au même endroit, et la position de lecture est gardée même en lisant le PDF.
 
+import { linkPreviews, previewCanvas } from "./pdfpreview.js";
 import { pdfWords } from "./pdfsync.js";
 import { onSettingsChange } from "./settings.js";
 
@@ -40,6 +41,8 @@ export class PdfView {
       const doc = this.frame.contentDocument;
       if (!doc) return;
       doc.head.append(Object.assign(doc.createElement("link"), { rel: "stylesheet", href: EXTRA_CSS }));
+      // aperçu des liens au survol, une fois pdf.js prêt (chaque chargement du cadre a son propre document)
+      this.ready().then((app) => { if (app && app.pdfViewer.container.ownerDocument === doc) linkPreviews(this, app); });
     });
     // thème changé (réglages) pendant la lecture : barre et panneau de pdf.js le suivent ; cadre retiré : on se désabonne
     const stop = onSettingsChange(() => {
@@ -134,6 +137,13 @@ export class PdfView {
     this.words ??= this.ready().then((app) => (app ? pdfWords(app) : null)).catch(() => null)
       .then((words) => { if (!words) this.words = null; return words; });
     return this.words;
+  }
+
+  // extrait du PDF à un endroit connu (aperçu d'un renvoi de l'IA quand on lit le PDF) : canevas, ou null
+  // PDF pas encore ouvert (ou qui ne s'ouvre pas) : 8 s au plus, puis null (la bulle le dit, sans attendre ready())
+  async previewCanvas(target, hint) {
+    const app = await Promise.race([this.ready(), new Promise((resolve) => setTimeout(resolve, 8000, null))]);
+    return app ? previewCanvas(this, app, target, hint) : null;
   }
 
   find() {
