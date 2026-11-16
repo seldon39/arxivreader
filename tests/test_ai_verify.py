@@ -155,6 +155,16 @@ class Verify(unittest.TestCase):
         self.assertTrue(next(e["step"] for e in events if e.get("step", {}).get("kind") == "verify")["cut"])
         self.assertIn("was cut off", prompts[-1])
 
+    def test_checker_reasoning_error_keeps_its_code(self):
+        """Vérificateur à court de réserve même après la relance : le message qui conseille de baisser la réflexion."""
+        async def answer(system, prompt, model, image=None, pages=(), flags=None, effort=None):
+            if "try to refute each of its" in prompt:
+                raise ai.AIError("reasoning", "reasoning")
+            yield "text"
+        ai.stream_answer = answer
+        events = self.events({"task": "review", "check": review("p1")["id"]})
+        self.assertEqual(next(e for e in events if "error" in e)["code"], "reasoning")
+
     def test_lowered_level_is_kept(self):
         """Relance un niveau plus bas : marquée sur l'étape de vérification et sur la relecture finale."""
         async def answer(system, prompt, model, image=None, pages=(), flags=None, effort=None):
