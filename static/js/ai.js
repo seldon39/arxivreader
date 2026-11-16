@@ -30,6 +30,11 @@ const KIND_WORDS = {
 const KIND_OF_WORD = Object.entries(KIND_WORDS).map(([kind, words]) => [new RegExp(`^(?:${words})$`, "i"), kind]);
 // « 4.18 », « 2a », et en annexe « B.2 », « A.1.3 », « A1 » (lettre de l'annexe devant ; revtex : sans point)
 const NUMBER = "(?:[A-Z]\\.?)?\\d+(?:\\.\\d+)*[a-z]?";
+// énoncé numéroté par une lettre seule : « Theorem A », « Theorems A and B » (pas les équations : « (A) » est une condition)
+const STATEMENT_NUMBER = `(?:${NUMBER}|[A-Z])`;
+const LETTER = /^[A-Z]$/;
+// étiquette d'un tel énoncé : des mots puis la lettre (« Main Theorem B » ; pas « Example 9.F.3. (…, [Mil82, E » tronqué)
+const LETTER_LABEL = /^\p{L}[\p{L} .'’-]*\s([A-Z])\s*$/u;
 const NUMBER_END = "(?![\\p{L}\\p{N}]|\\.\\d)";  // « 2.3 » ne se relit pas « 2 » suivi de « .3 »
 const GAP = "(?:\\s|&nbsp;)";
 // Énumération après un mot au pluriel : « 3.6, 1.2, 1.3 », « 3.5–3.8 », « 2.1 to 2.4 ». Un « and » la ferme : dans
@@ -269,7 +274,7 @@ export class Assistant {
     const byKind = new Map();
     const byNumber = new Map();
     for (const node of this.structure.nodes) {
-      const number = node.label.match(new RegExp(`(${NUMBER})\\s*$`))?.[1];
+      const number = node.label.match(new RegExp(`(${NUMBER})\\s*$`))?.[1] || node.label.match(LETTER_LABEL)?.[1];
       if (!number) continue;
       byKind.set(`${node.kind}:${number}`, node.id);
       byNumber.set(number, byNumber.has(number) ? null : node.id); // ambigu si deux énoncés ont le même numéro
@@ -302,8 +307,8 @@ export class Assistant {
     const words = Object.values(KIND_WORDS).join("|");
     const notCited = "(?<!\\[[^\\[\\]\\n]{0,80})";
     // pas de \b : il ne connaît que les lettres ASCII (« étape 3 » ne serait jamais repéré)
-    const statement = new RegExp(`${notCited}(?<![\\p{L}\\p{N}])(${words})${GAP}+(${NUMBER})${NUMBER_END}`, "giu");
-    const statementItem = new RegExp(`${NUMBER}${LIST_ITEM_END}`, "iuy");
+    const statement = new RegExp(`${notCited}(?<![\\p{L}\\p{N}])(${words})${GAP}+(${STATEMENT_NUMBER})${NUMBER_END}`, "giu");
+    const statementItem = new RegExp(`${STATEMENT_NUMBER}${LIST_ITEM_END}`, "iuy");
     // mot-clé sans casse, numéro avec (« la section a été… » n'est pas l'annexe A) ; espace obligatoire sauf après §
     const anyCase = (word) => word.replace(/\p{L}/gu, (c) => `[${c.toLowerCase()}${c.toUpperCase()}]`);
     const sectionWords = ["sections?", "sects?\\.", "secs?\\.", "appendix", "appendices", "annexes?", "chapters?", "chapitres?"].map(anyCase).join("|");
@@ -316,7 +321,9 @@ export class Assistant {
     // énoncés : aussi « Theorems 2 and B.2 » (corps et annexe) ; une minuscule (« p.3 », « v2 ») n'est pas un numéro
     // (le drapeau i de statementItem laisse passer la lettre en minuscule)
     const appendixFree = (n) => n.replace(/^[A-Z]\.?(?=\d)/, "");
-    const sameStatements = (a, b) => !/^[a-z]/.test(b) && (sameDepth(a, b) || sameDepth(appendixFree(a), appendixFree(b)));
+    // « Theorems A and B », « Theorems A and 2.1 » ; une lettre seule ne suit pas un numéro (« Theorems 1 and A proof » : ce A est un mot)
+    const sameStatements = (a, b) => !/^[a-z]/.test(b) && (LETTER.test(b) ? LETTER.test(a)
+      : LETTER.test(a) || sameDepth(a, b) || sameDepth(appendixFree(a), appendixFree(b)));
     const equation = new RegExp(`\\((${NUMBER})\\)`, "g");
     const bracket = /\[([^\[\]\n]{1,80})\]/g;
     const link = (id, text) => `<a href="#${encodeURIComponent(id)}" class="ai-ref" data-ref="${id.replace(/"/g, "&quot;")}">${text}</a>`;

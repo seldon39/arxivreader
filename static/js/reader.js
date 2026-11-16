@@ -82,19 +82,23 @@ const CITE_KINDS = [
   [/^(?:examples?|ex|exemples?)$/i, "example"], [/^(?:claims?)$/i, "claim"], [/^(?:conjectures?|conj)$/i, "conjecture"],
 ];
 
+// « Theorem A », « Main Theorem B » : des mots puis une lettre seule (pas « Example 9.F.3. (…, [Mil82, E » tronqué)
+const LETTER_LABEL = /^\p{L}[\p{L} .'’-]*\s([A-Z])\s*$/u;
+
 function citedStatement(link, nodes) {
   let note = "";
   for (let next = link.nextSibling; next && !(next.nodeType === 1 && next.matches("a")); next = next.nextSibling) {
     note += next.textContent;
     if (note.includes("]") || note.includes(";")) break;
   }
-  // « Theorem 4.3 », « Lemma B.2a » (annexe) ; un mot d'au moins deux lettres : dans « [12, B.2] », B n'est pas le mot
-  const match = note.match(/^\s*,?\s*([A-Za-zÀ-ÿ]{2,})\.?\s*((?:[A-Z]\.?)?\d+(?:\.\d+)*[a-z]?)/);
+  // « Theorem 4.3 », « Lemma B.2a » (annexe), « Theorem A » ; un mot d'au moins deux lettres : dans « [12, B.2] », B n'est pas le mot
+  const match = note.match(/^\s*,?\s*([A-Za-zÀ-ÿ]{2,})\.?\s*((?:[A-Z]\.?)?\d+(?:\.\d+)*[a-z]?|[A-Z](?![A-Za-zÀ-ÿ0-9]|\.\d))/);
   if (!match) return null;
   const kind = CITE_KINDS.find(([pattern]) => pattern.test(match[1]))?.[1];
   const number = match[2];
-  const numbered = nodes.filter((n) => (n.label.match(/((?:[A-Z]\.?)?\d+(?:\.\d+)*[a-z]?)\s*$/) || [])[1] === number);
+  const numbered = nodes.filter((n) => (n.label.match(/((?:[A-Z]\.?)?\d+(?:\.\d+)*[a-z]?)\s*$/) || n.label.match(LETTER_LABEL) || [])[1] === number);
   if (kind) return numbered.find((n) => n.kind === kind) || null;
+  if (/^[A-Z]$/.test(number)) return null;  // « [12, Appendix A] » : une lettre seule sans mot d'énoncé n'en désigne pas un
   return numbered.length === 1 ? numbered[0] : null; // « [12, 4.3] » : seulement si le numéro est sans ambiguïté
 }
 

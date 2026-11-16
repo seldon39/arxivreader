@@ -16,8 +16,11 @@ const ABBREVIATIONS = {
     claim: "Claim", remark: "Rem", example: "Ex", notation: "Not", problem: "Q", other: "" },
 };
 
+const LETTER_LABEL = /^\p{L}[\p{L} .'’-]*\s([A-Z])\s*$/u;  // « Theorem A » : des mots puis une lettre seule
+
 function shortLabel(node) {
-  const number = node.label.match(/((?:[A-Z]\.?)?\d+(?:\.\d+)*[a-z]?)\s*$/);  // « 2.3 », « B.2 », « A1 » (annexe)
+  // « 2.3 », « B.2 », « A1 » (annexe), « A » (lettre seule : « Theorem A »)
+  const number = node.label.match(/((?:[A-Z]\.?)?\d+(?:\.\d+)*[a-z]?)\s*$/) || node.label.match(LETTER_LABEL);
   if (!number) return node.label.length > 12 ? `${node.label.slice(0, 11)}…` : node.label;
   const abbreviation = ABBREVIATIONS[getLanguage()][node.kind] ?? "";
   return `${abbreviation} ${number[1]}`.trim();

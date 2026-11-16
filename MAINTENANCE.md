@@ -416,7 +416,12 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   pattern in `ai.js` (`NUMBER`), `texexport.py` (`NUMBER`), `graph.js` and `reader.js` (`citedStatement`), to keep in
   step — a label read only from its digits ("Theorem B.2" → "2") links "Theorem 2" to the appendix (bug before 1.14.7).
   The letter is uppercase only, checked in the list (`sameStatements`: the `i` flag would let "p.3" through); a body
-  number and an appendix one can share a list ("Theorems 2 and B.2"). LaTeXML numbers a whole `align` group once
+  number and an appendix one can share a list ("Theorems 2 and B.2"). A statement may also be numbered by a letter
+  alone ("Theorem A", `STATEMENT_NUMBER` in `ai.js`, `LETTER` in `texexport.py`; never for equations, where "(A)" is
+  a condition): in a list it follows only a letter ("Theorems A and B", "Theorems A and 2.1", not "Theorems 1 and A
+  proof"); a cross-paper citation needs the statement word ("[12, Appendix A]" stays plain); the .tex export links it
+  only when an anchor carries the letter (`lettered`: a `\newtheorem*` has none, and its `\ref` would print the
+  section number). LaTeXML numbers a whole `align` group once
   (`ltx_tag_equationgroup` on the group table): `structure.EQUATION_TAGS`, `reader.js` `EQUATION_TAGS`.
 
 - Files dragged from the computer (import bar, library list: `library.importDropped`): paths requested from the

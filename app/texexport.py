@@ -1165,10 +1165,11 @@ class Known(set):
 
 
 NUMBER = r"(?:[A-Z]\.?)?\d+(?:\.\d+)*[a-z]?"  # « 4.18 », « 2a », en annexe « B.2 », « A1 » (revtex)
+LETTER = r"[A-Z](?![^\W\d_])"  # énoncé numéroté par une lettre seule : « Theorem A » (pas les équations)
 REF_TEXT = re.compile(r"\\(cite[tp]?|ref|eqref|cref|Cref|autoref|pageref)\s*(\[[^\[\]{}]*\])?\s*\{([^{}]*)\}"
                       r"|(?<![\w\\^_\]])\[([^\[\]]{1,80})\](?!\()"
                       rf"|(?<![\w^_])\(({NUMBER})\)(?!\w)"
-                      rf"|\b([^\W\d_]{{2,}})(\.?)(?:\s+|~)({NUMBER})(?!\.?\d)")
+                      rf"|\b([^\W\d_]{{2,}})(\.?)(?:\s+|~)({NUMBER}|{LETTER})(?!\.?\d)")
 # noms d'énoncés écrits en français dans une note, pour un document en anglais (le mot écrit est gardé)
 KIND_NAMES = {"théorème": "theorem", "lemme": "lemma", "corollaire": "corollary", "définition": "definition",
               "remarque": "remark", "remarques": "remarks", "exemple": "example", "hypothèse": "assumption",
@@ -1203,16 +1204,29 @@ def references(structure, text, eqref):
             return shown
         return shown[:number.start()] + numbers.pop() + shown[number.end():] if number and len(numbers) == 1 else ""
 
+    def lettered(node):
+        """« Theorem A » : seulement si une ancre de hyperref confirme la lettre (« thmx.A ») ; sans ancre, c'est un
+        \\newtheorem* sans compteur, dont \\ref imprimerait le numéro d'autre chose (la section)."""
+        label = " ".join((node.get("label") or "").split())
+        return bool(re.fullmatch(r"[^\W\d_]{2,}\.? [A-Z]", label)) and any(
+            (anchor or "").endswith("." + label[-1]) for anchor in node.get("anchors") or [])
+
     def agrees(shown, anchors):
         return anchored(shown, anchors) == " ".join((shown or "").split())
     equations = unique(((value or {}).get("label") or "", key) for key, value in (structure.get("equations") or {}).items()
                        if key in labels and re.fullmatch(rf"\({NUMBER}\)", (value or {}).get("label") or "")
                        and agrees((value or {}).get("label") or "", (value or {}).get("anchors")))
     names = structure.get("labels") or {}
-    nodes = unique((anchored(node.get("label"), node.get("anchors")).lower(), node["id"][len("tex-lbl-"):])
+    def shown(node):
+        """Nom de l'énoncé tel qu'un renvoi l'écrit (« lemma 4.2 », « theorem a »), ou "" s'il n'est pas sûr."""
+        if lettered(node):
+            return " ".join(node["label"].split()).lower()
+        name = anchored(node.get("label"), node.get("anchors"))
+        return name.lower() if re.fullmatch(rf"[^\W\d_]{{2,}}\.? {NUMBER}", name) else ""
+    nodes = unique((shown(node), node["id"][len("tex-lbl-"):])
                    for node in structure.get("nodes") or [] if node.get("id", "").startswith("tex-lbl-")
                    and node["id"][len("tex-lbl-"):] in labels and names.get(node["id"][len("tex-lbl-"):]) == node["id"]
-                   and re.fullmatch(rf"[^\W\d_]{{2,}}\.? {NUMBER}", anchored(node.get("label"), node.get("anchors"))))
+                   and shown(node))
     keys = {item["id"][4:] for item in structure.get("bibliography") or []
             if item.get("id", "").startswith("bib.") and re.fullmatch(r"[^\s{},%#\\~]+", item["id"][4:])}
     bib = unique((name.lower(), item["id"][4:]) for item in structure.get("bibliography") or [] if item["id"][4:] in keys

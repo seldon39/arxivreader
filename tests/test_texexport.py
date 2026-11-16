@@ -616,6 +616,14 @@ class TodoText(unittest.TestCase):
         known_appendix.refs = texexport.references(appendix, "\\label{eqB12} \\label{eqA1} \\label{thmB2} \\label{lemA1}", True)
         self.assertEqual(texexport.short_tex("Theorem B.2, Lemma A1, (B.12) and (A1); not Theorem 2 nor (B.9)", known_appendix),
                          "Theorem~\\ref{thmB2}, Lemma~\\ref{lemA1}, \\eqref{eqB12} and \\eqref{eqA1}; not Theorem 2 nor (B.9)")
+        # « Theorem A » (compteur \\Alph : ancres) ; « Theorem Z » de \\newtheorem* (aucune ancre) : \\ref imprimerait la section
+        lettered = {"equations": {}, "bibliography": [], "labels": {"thmA": "tex-lbl-thmA", "thmZ": "tex-lbl-thmZ"},
+                    "nodes": [{"id": "tex-lbl-thmA", "label": "Theorem A", "anchors": ["thmx.1", "thmx.A"]},
+                              {"id": "tex-lbl-thmZ", "label": "Theorem Z", "anchors": []}]}
+        known_lettered = texexport.Known({"mathbb"})
+        known_lettered.refs = texexport.references(lettered, "\\label{thmA} \\label{thmZ}", True)
+        self.assertEqual(texexport.short_tex("By Theorem A, Theorem Z, Theorem Ab and Let A be", known_lettered),
+                         "By Theorem~\\ref{thmA}, Theorem Z, Theorem Ab and Let A be")
         block = texexport.comment_block({"title": "T", "note": "See (1.2) and $x_{(1.3)}$."}, texexport.WORDS["fr"], known)
         self.assertIn("% Renvois : (1.2) = \\eqref{eqA}", block)
         self.assertNotIn("eqB", "\n".join(block))
