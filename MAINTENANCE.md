@@ -575,9 +575,10 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   point is dropped, typos included; a Critical or Serious point keeps all its parts; completeness wins over the
   ceiling. In a book synthesis, carried-over serious points keep their full paragraph and the chapters' Minor points
   are only counted (its own format). The ceilings are for concision; they do not prevent the error below (the
-  thinking, not the text, fills the cap). The Claude CLI caps each answer, thinking included, at 32,000 output tokens
-  by default: `_stream_claude` raises it to `MAX_OUTPUT_TOKENS` (64,000, through `CLAUDE_CODE_MAX_OUTPUT_TOKENS`, or
-  the user's own value if higher; the CLI lowers a value above the model's maximum). Reached anyway (`OUTPUT_LIMITS`:
+  thinking, not the text, fills the cap). The Claude CLI caps each answer, thinking included, at 32,000, 64,000 or
+  128,000 output tokens depending on the model: `_stream_claude` sets `MAX_OUTPUT_TOKENS` (128,000, through
+  `CLAUDE_CODE_MAX_OUTPUT_TOKENS`, or the user's own value if higher), which lowers no model's default; the CLI brings
+  it down to each model's maximum. Never a smaller value: it would lower the cap of the models whose default is higher. Reached anyway (`OUTPUT_LIMITS`:
   "output token maximum", or "context window limit"): text received is kept and marked cut; no text at all (the
   thinking took everything; the CLI then sends its error, "API Error: …", as the answer text) is an error, never an
   empty answer. A cut intermediate step (review A or B, comparison, verification) is announced to the next one by a

@@ -2129,10 +2129,11 @@ async def _image_prompt(prompt, images):
         {"type": "text", "text": prompt}]}}
 
 
-# Plafond de sortie de la CLI Claude, réflexion comprise : 32 000 jetons par défaut (~128 000 caractères), qu'une
-# relecture croisée à haut niveau de réflexion peut dépasser (la réflexion, pas le texte : les relectures font moins
-# de 4 000 mots). La CLI ramène une valeur trop haute au maximum du modèle. La longueur du texte : REVIEW_WORDS.
-MAX_OUTPUT_TOKENS = "64000"  # le double du défaut
+# Plafond de sortie de la CLI Claude, réflexion comprise : par défaut 32 000, 64 000 ou 128 000 jetons selon le modèle
+# (CLI 2.1.321), qu'une relecture croisée à haut niveau de réflexion peut dépasser (la réflexion, pas le texte : les
+# relectures font moins de 4 000 mots). 128 000 n'abaisse le plafond d'aucun modèle (au moins son défaut) ; la CLI
+# ramène une valeur trop haute au maximum du modèle. La longueur du texte : REVIEW_WORDS.
+MAX_OUTPUT_TOKENS = "128000"
 # messages de la CLI quand la réponse s'arrête faute de place : plafond de sortie, ou contexte du modèle plein
 OUTPUT_LIMITS = ("output token maximum", "context window limit")
 

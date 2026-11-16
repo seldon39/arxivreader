@@ -1553,7 +1553,7 @@ class OutputLimit(unittest.TestCase):
     def test_cap_raised(self):
         seen, parts = self.run_stream("API Error: Claude's response exceeded the 32000 output token maximum. To configure "
                                       "this behavior, set the CLAUDE_CODE_MAX_OUTPUT_TOKENS environment variable.")
-        self.assertEqual(seen["env"], {"CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000"})
+        self.assertEqual(seen["env"], {"CLAUDE_CODE_MAX_OUTPUT_TOKENS": "128000"})
         self.assertEqual(parts[0], "Début")
         self.assertIsInstance(parts[1], ai.providers.Cut)  # gardé, marqué coupé
 
@@ -1574,8 +1574,8 @@ class OutputLimit(unittest.TestCase):
         self.assertIsInstance(parts[1], ai.providers.Cut)
 
     def test_user_cap_kept_if_higher(self):
-        with unittest.mock.patch.dict("os.environ", {"CLAUDE_CODE_MAX_OUTPUT_TOKENS": "100000"}):
-            self.assertEqual(ai._output_tokens(), "100000")
+        with unittest.mock.patch.dict("os.environ", {"CLAUDE_CODE_MAX_OUTPUT_TOKENS": "200000"}):
+            self.assertEqual(ai._output_tokens(), "200000")
         with unittest.mock.patch.dict("os.environ", {"CLAUDE_CODE_MAX_OUTPUT_TOKENS": "8000"}):
             self.assertEqual(ai._output_tokens(), ai.MAX_OUTPUT_TOKENS)
 
