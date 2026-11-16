@@ -608,6 +608,14 @@ class TodoText(unittest.TestCase):
                        "nodes": [{"id": "tex-lbl-thmA", "label": "Theorem 2", "anchors": ["Item.4", "thm.1.3"]}]}
         refs = texexport.references(mislabelled, "\\label{thmA}", True)
         self.assertEqual(refs["node"], {"theorem 1.3": "thmA"})  # numéro de l'ancre de hyperref, pas celui d'un \item
+        appendix = {"equations": {"eqB12": {"label": "(B.12)"}, "eqA1": {"label": "(A1)"}}, "bibliography": [],
+                    "labels": {"thmB2": "tex-lbl-thmB2", "lemA1": "tex-lbl-lemA1"},
+                    "nodes": [{"id": "tex-lbl-thmB2", "label": "Theorem B.2", "anchors": ["thm.B.2"]},
+                              {"id": "tex-lbl-lemA1", "label": "Lemma A1"}]}
+        known_appendix = texexport.Known({"mathbb"})
+        known_appendix.refs = texexport.references(appendix, "\\label{eqB12} \\label{eqA1} \\label{thmB2} \\label{lemA1}", True)
+        self.assertEqual(texexport.short_tex("Theorem B.2, Lemma A1, (B.12) and (A1); not Theorem 2 nor (B.9)", known_appendix),
+                         "Theorem~\\ref{thmB2}, Lemma~\\ref{lemA1}, \\eqref{eqB12} and \\eqref{eqA1}; not Theorem 2 nor (B.9)")
         block = texexport.comment_block({"title": "T", "note": "See (1.2) and $x_{(1.3)}$."}, texexport.WORDS["fr"], known)
         self.assertIn("% Renvois : (1.2) = \\eqref{eqA}", block)
         self.assertNotIn("eqB", "\n".join(block))

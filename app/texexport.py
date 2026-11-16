@@ -1164,7 +1164,7 @@ class Known(set):
     refs = None
 
 
-NUMBER = r"\d+(?:\.\d+)*[a-z]?"
+NUMBER = r"(?:[A-Z]\.?)?\d+(?:\.\d+)*[a-z]?"  # « 4.18 », « 2a », en annexe « B.2 », « A1 » (revtex)
 REF_TEXT = re.compile(r"\\(cite[tp]?|ref|eqref|cref|Cref|autoref|pageref)\s*(\[[^\[\]{}]*\])?\s*\{([^{}]*)\}"
                       r"|(?<![\w\\^_\]])\[([^\[\]]{1,80})\](?!\()"
                       rf"|(?<![\w^_])\(({NUMBER})\)(?!\w)"
@@ -1197,7 +1197,7 @@ def references(structure, text, eqref):
         """Nom affiché, son numéro confirmé par les ancres de hyperref (« thm.1.3 ») quand il y en a : la structure peut
         se tromper (numéro d'un \\item étiqueté dans l'énoncé) ; numéro de l'ancre s'il n'y en a qu'un, sinon ""."""
         shown = " ".join((shown or "").split())
-        numbers = {m.group(1) for a in anchors or [] for m in [re.fullmatch(r"(?!Item\.)[A-Za-z*]+\.(\d+(?:\.\d+)*)", a)] if m}
+        numbers = {m.group(1) for a in anchors or [] for m in [re.fullmatch(r"(?!Item\.)[A-Za-z*]+\.((?:[A-Z]\.?)?\d+(?:\.\d+)*)", a)] if m}
         number = re.search(rf"{NUMBER}", shown)
         if not numbers or (number and number.group(0) in numbers):
             return shown
@@ -1248,8 +1248,8 @@ def _ref_tex(match, known):
     if match.group(5):
         key = refs["eq"].get(f"({match.group(5)})")
         return None if not key else (f"\\eqref{{{key}}}" if refs["eqref"] else f"(\\ref{{{key}}})")
-    word = match.group(6).lower()
-    key = refs["node"].get(f"{word} {match.group(8)}") or refs["node"].get(f"{KIND_NAMES.get(word, word)} {match.group(8)}")
+    word, number = match.group(6).lower(), match.group(8).lower()  # clés en minuscules : « theorem b.2 »
+    key = refs["node"].get(f"{word} {number}") or refs["node"].get(f"{KIND_NAMES.get(word, word)} {number}")
     return None if not key else f"{_text_chars(match.group(6) + match.group(7))}~\\ref{{{key}}}"
 
 

@@ -412,6 +412,12 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   ("Theorems 3.6, 1.2", "Lemmas 3.5–3.8", "§§2–3"): one link per known number (`listAfter`, `linkRefs`).
   The list closes after "and", keeps the depth of the first number (appendices: letters in order), and the
   "of [5]" test comes after it: "Theorems 1 and 2, 3 divides n" does not link the 3, "Theorems 1 and 2 of [5]" links nothing.
+  Statement and equation numbers may start with an appendix letter ("Theorem B.2", "(B.12)", revtex "(A1)"): same
+  pattern in `ai.js` (`NUMBER`), `texexport.py` (`NUMBER`), `graph.js` and `reader.js` (`citedStatement`), to keep in
+  step — a label read only from its digits ("Theorem B.2" → "2") links "Theorem 2" to the appendix (bug before 1.14.7).
+  The letter is uppercase only, checked in the list (`sameStatements`: the `i` flag would let "p.3" through); a body
+  number and an appendix one can share a list ("Theorems 2 and B.2"). LaTeXML numbers a whole `align` group once
+  (`ltx_tag_equationgroup` on the group table): `structure.EQUATION_TAGS`, `reader.js` `EQUATION_TAGS`.
 
 - Files dragged from the computer (import bar, library list: `library.importDropped`): paths requested from the
   window (`util.droppedFilePaths`) — Mac: `DropWebView` (main.swift) retains the PDF/TeX paths of the

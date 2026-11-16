@@ -28,7 +28,8 @@ const KIND_WORDS = {
   notation: "notations?|assumptions?|hypothès(?:e|es)|conventions?", problem: "problems?|problèmes?|questions?",
 };
 const KIND_OF_WORD = Object.entries(KIND_WORDS).map(([kind, words]) => [new RegExp(`^(?:${words})$`, "i"), kind]);
-const NUMBER = "\\d+(?:\\.\\d+)*[a-z]?";
+// « 4.18 », « 2a », et en annexe « B.2 », « A.1.3 », « A1 » (lettre de l'annexe devant ; revtex : sans point)
+const NUMBER = "(?:[A-Z]\\.?)?\\d+(?:\\.\\d+)*[a-z]?";
 const NUMBER_END = "(?![\\p{L}\\p{N}]|\\.\\d)";  // « 2.3 » ne se relit pas « 2 » suivi de « .3 »
 const GAP = "(?:\\s|&nbsp;)";
 // Énumération après un mot au pluriel : « 3.6, 1.2, 1.3 », « 3.5–3.8 », « 2.1 to 2.4 ». Un « and » la ferme : dans
@@ -312,6 +313,10 @@ export class Assistant {
     const sameDepth = (a, b) => a.split(".").length === b.split(".").length;  // « Theorems 1.2, 7 cases » : le 7 n'en est pas
     // chiffres avec chiffres ; lettres dans l'ordre (« Appendices B, A proof… » : ce A est un mot)
     const sameSections = (a, b) => sameDepth(a, b) && (/^\d/.test(a) ? /^\d/.test(b) : b > a);
+    // énoncés : aussi « Theorems 2 and B.2 » (corps et annexe) ; une minuscule (« p.3 », « v2 ») n'est pas un numéro
+    // (le drapeau i de statementItem laisse passer la lettre en minuscule)
+    const appendixFree = (n) => n.replace(/^[A-Z]\.?(?=\d)/, "");
+    const sameStatements = (a, b) => !/^[a-z]/.test(b) && (sameDepth(a, b) || sameDepth(appendixFree(a), appendixFree(b)));
     const equation = new RegExp(`\\((${NUMBER})\\)`, "g");
     const bracket = /\[([^\[\]\n]{1,80})\]/g;
     const link = (id, text) => `<a href="#${encodeURIComponent(id)}" class="ai-ref" data-ref="${id.replace(/"/g, "&quot;")}">${text}</a>`;
@@ -353,7 +358,7 @@ export class Assistant {
       (text) => linkRefs(text, statement, ([, word, number]) => {
         const kind = KIND_OF_WORD.find(([re]) => re.test(word))?.[1];
         return { word, number, idOf: (n) => byKind.get(`${kind}:${n}`) || byNumber.get(n) };
-      }, statementItem, sameDepth),
+      }, statementItem, sameStatements),
       (text) => linkRefs(text, section, ([, word, mark, number]) => ({ word: word || mark, number, idOf: (n) => sections.get(n) }), sectionItem, sameSections),
       (text) => text.replace(equation, (match, number) => {
         const id = equationId(`(${number})`);
