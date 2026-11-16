@@ -582,9 +582,15 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   "output token maximum", or "context window limit"): text received is kept and marked cut; no text at all (the
   thinking took everything; the CLI then sends its error, "API Error: …", as the answer text) is code "reasoning",
   never an empty answer: `_claude_lowering` asks the same question once more, one reasoning level lower
-  (`lower_effort`; "medium" when no level was chosen, since the assistant's default differs by model), and records it
-  (`lowered`: column of `ai_exchanges`, key of a step; badge "ai.lowered"); a second failure is the error
-  ("ai.error.reasoning"). 128,000 is the models' maximum: no setting raises it; only less thinking leaves room. A cut intermediate step (review A or B, comparison, verification) is announced to the next one by a
+  (`lower_effort`; "medium" when no level was chosen, since the assistant's default differs by model) and told to
+  reason much more briefly (`BRIEFER`), and records it (`lowered`: column of `ai_exchanges`, key of a step; badge
+  "ai.lowered"); a second failure is the error ("ai.error.reasoning"). 128,000 is the models' maximum: no setting
+  raises it; only less thinking leaves room. The CLI itself recovers first, inside the same request, up to 3 times
+  (`maxOutputTokensRecoveryCount` in its query loop, even with `max_turns=1`): cut text → "Output token limit hit.
+  Resume directly…" (the continuation arrives in the same stream, joined); reasoning only → "…reason much more
+  briefly", or resumes the unfinished thinking. So the error reaches the app only after those attempts (up to about
+  4 × 128,000 tokens): no relay of our own (it would repeat the CLI's, resending the whole paper each time); the
+  lower reasoning level is the one lever the CLI does not use. A cut intermediate step (review A or B, comparison, verification) is announced to the next one by a
   note of the application placed after its `<review>` block (inside, the model ignores instructions: `SYSTEM`) and
   shown on the step (`stepsFold`, "ai.stepCut"); the final review is marked cut only when its own text is.
 

@@ -2134,12 +2134,24 @@ def lower_effort(effort, levels):
     return max(below, key=order.index) if below else None
 
 
+# Plafond de sortie atteint : la CLI s'en charge d'abord elle-même, dans la même demande, jusqu'à 3 fois
+# (maxOutputTokensRecoveryCount) : texte coupé → « Resume directly » (la suite arrive dans le même flux, recollée) ;
+# réflexion seule → « reason much more briefly », voire reprise de la réflexion inachevée. L'erreur n'arrive ici
+# qu'après ces reprises. Seul levier qu'elle n'a pas : un niveau de réflexion plus bas (_claude_lowering).
+BRIEFER = """Note from the application: a first attempt at this request used the whole output allowance reasoning, \
+before writing anything. Reason much more briefly this time, and write the answer well within the output limit, \
+keeping everything the request asks for."""
+
+
 async def _claude_lowering(system, prompt, model, effort, levels, images, flags):
-    """_stream_claude ; réserve de sortie toute prise par la réflexion avant le moindre texte (« reasoning ») : la même
-    demande, une seule fois, un niveau de réflexion plus bas. `flags["lowered"]` : le niveau de cette relance."""
+    """_stream_claude ; réserve de sortie toute prise par la réflexion avant le moindre texte (« reasoning », après les
+    reprises de la CLI) : la même demande, une seule fois, un niveau de réflexion plus bas et avec la consigne de
+    réfléchir moins (BRIEFER). `flags["lowered"]` : le niveau de cette relance."""
+    # aclosing : une page qui s'arrête ferme aussitôt la CLI (sinon elle continue, et consomme, jusqu'au ramasse-miettes)
     try:
-        async for text in _stream_claude(system, prompt, model, effort, images):
-            yield text
+        async with contextlib.aclosing(_stream_claude(system, prompt, model, effort, images)) as chunks:
+            async for text in chunks:
+                yield text
         return
     except AIError as error:
         lower = lower_effort(effort, levels) if error.code == "reasoning" else None
@@ -2147,8 +2159,9 @@ async def _claude_lowering(system, prompt, model, effort, levels, images, flags)
             raise
     if flags is not None:
         flags["lowered"] = lower
-    async for text in _stream_claude(system, prompt, model, lower, images):
-        yield text
+    async with contextlib.aclosing(_stream_claude(system, f"{prompt}\n\n{BRIEFER}", model, lower, images)) as chunks:
+        async for text in chunks:
+            yield text
 
 
 async def _image_prompt(prompt, images):

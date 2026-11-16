@@ -1640,3 +1640,24 @@ class LowerEffort(unittest.TestCase):
     def test_lowest_level_not_retried(self):
         with self.assertRaises(ai.AIError):
             self.run_lowering([ai.AIError("reasoning", "reasoning"), "never"], effort="low")
+
+
+class Briefer(unittest.TestCase):
+    def test_lowered_retry_says_reason_briefly(self):
+        import asyncio
+        prompts = []
+
+        async def fake(system, prompt, model, effort="", images=()):
+            prompts.append((prompt, effort, images))
+            if len(prompts) == 1:
+                raise ai.AIError("reasoning", "reasoning")
+            yield "Réponse"
+        flags = {}
+
+        async def collect():
+            return [t async for t in ai._claude_lowering("s", "Q", "opus", "", ["low", "medium", "high"], ("img",), flags)]
+        with unittest.mock.patch.object(ai, "_stream_claude", fake):
+            parts = asyncio.run(collect())
+        self.assertEqual((parts, flags), (["Réponse"], {"lowered": "medium"}))
+        self.assertIn("Reason much more briefly", prompts[1][0])
+        self.assertEqual(prompts[1][1:], ("medium", ("img",)))
