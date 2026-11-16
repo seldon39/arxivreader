@@ -172,6 +172,8 @@ def init():
             db.execute("ALTER TABLE ai_exchanges ADD COLUMN coverage TEXT")
         if "cut" not in columns:  # réponse arrêtée par l'assistant lui-même (longueur maximale, filtre)
             db.execute("ALTER TABLE ai_exchanges ADD COLUMN cut INTEGER DEFAULT 0")
+        if "lowered" not in columns:  # réponse refaite à ce niveau de réflexion (la première avait tout pris en réflexion)
+            db.execute("ALTER TABLE ai_exchanges ADD COLUMN lowered TEXT")
         db.execute(f"PRAGMA user_version = {safety.DB_VERSION}")
     _move_secrets()
 

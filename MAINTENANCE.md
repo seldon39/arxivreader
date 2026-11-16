@@ -580,8 +580,11 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   `CLAUDE_CODE_MAX_OUTPUT_TOKENS`, or the user's own value if higher), which lowers no model's default; the CLI brings
   it down to each model's maximum. Never a smaller value: it would lower the cap of the models whose default is higher. Reached anyway (`OUTPUT_LIMITS`:
   "output token maximum", or "context window limit"): text received is kept and marked cut; no text at all (the
-  thinking took everything; the CLI then sends its error, "API Error: …", as the answer text) is an error, never an
-  empty answer. A cut intermediate step (review A or B, comparison, verification) is announced to the next one by a
+  thinking took everything; the CLI then sends its error, "API Error: …", as the answer text) is code "reasoning",
+  never an empty answer: `_claude_lowering` asks the same question once more, one reasoning level lower
+  (`lower_effort`; "medium" when no level was chosen, since the assistant's default differs by model), and records it
+  (`lowered`: column of `ai_exchanges`, key of a step; badge "ai.lowered"); a second failure is the error
+  ("ai.error.reasoning"). 128,000 is the models' maximum: no setting raises it; only less thinking leaves room. A cut intermediate step (review A or B, comparison, verification) is announced to the next one by a
   note of the application placed after its `<review>` block (inside, the model ignores instructions: `SYSTEM`) and
   shown on the step (`stepsFold`, "ai.stepCut"); the final review is marked cut only when its own text is.
 

@@ -487,6 +487,7 @@ export class Assistant {
         if (event.step) { local.steps.push(event.step); this.onChange(); }
         if (event.coverage) local.coverage = event.coverage;
         if (event.cut) local.cut = true;
+        if (event.lowered) local.lowered = event.lowered;
         if (event.error) { local.error = event.error; local.errorCode = event.code; }
         if (event.done) { ended = true; Object.assign(local, event.exchange, { answer: event.exchange.answer || local.answer }); }
       }, controller.signal);
@@ -1342,7 +1343,8 @@ export class Assistant {
       exchange.steps.map((step, i) => {
         const body = h("div", { class: "markdown ai-answer" });
         const item = h("details", { class: "ai-step" }, h("summary", {}, `${i + 1}. ${t(`ai.step.${step.kind}`, { name: modelLabel(step.model) })}`,
-          step.cut ? cutBadge() : null), body);
+          step.cut ? cutBadge() : null,
+          step.lowered ? h("span", { class: "badge warn", title: t("ai.loweredHint") }, t("ai.lowered", { level: step.lowered })) : null), body);
         item.addEventListener("toggle", () => new LiveAnswer(body, this.refs).update(step.answer || "", true), { once: true });
         return item;
       }));
@@ -1374,6 +1376,7 @@ export class Assistant {
     } else {
       if (exchange.status === "stopped") parts.push(h("span", { class: "badge warn" }, t("ai.stopped")));
       if (exchange.cut) parts.push(h("span", { class: "badge warn" }, t("ai.cut")));
+      if (exchange.lowered) parts.push(h("span", { class: "badge warn", title: t("ai.loweredHint") }, t("ai.lowered", { level: exchange.lowered })));
       const covered = exchange.coverage;
       if (covered?.partial && covered.total) {
         const percent = Math.min(99, Math.round(100 * covered.sent / covered.total));
@@ -1884,7 +1887,8 @@ async function copyLater(textPromise) {
     return false;
   }
 }
-const ERROR_KEYS = { login: "ai.error.login", missing: "ai.error.login", limit: "ai.error.limit", offline: "ai.error.offline" };
+const ERROR_KEYS = { login: "ai.error.login", missing: "ai.error.login", limit: "ai.error.limit", offline: "ai.error.offline",
+  reasoning: "ai.error.reasoning" };
 
 // Rendu progressif : les paragraphes terminés sont mis en forme (MathJax) une seule fois,
 // seul le dernier, encore en cours d'écriture, est redessiné.

@@ -2094,9 +2094,11 @@ async def stream_answer(system, prompt, model, image=None, pages=(), flags=None,
     settings = db.get_settings()
     # modèle et niveau : ceux que la page affiche (un niveau que le modèle ne propose pas : celui par défaut)
     if provider == "claude":
+        choices = await asyncio.to_thread(claude_models)
         effort = providers._effort({**settings, "aiClaudeEffort": effort if effort is not None else settings.get("aiClaudeEffort")},
-                                   "aiClaudeEffort", await asyncio.to_thread(claude_models), model)
-        stream = _stream_claude(system, prompt, model, effort, images)
+                                   "aiClaudeEffort", choices, model)
+        levels = next((c["levels"] for c in choices if c["value"] == model), None) or []
+        stream = _claude_lowering(system, prompt, model, effort, levels, images, flags)
     elif provider == "codex":
         _, codex_model, effort = await asyncio.to_thread(providers.codex_choice, settings)
         stream = providers.stream_codex(system, prompt, codex_model or None, effort, images)
@@ -2119,6 +2121,34 @@ async def stream_answer(system, prompt, model, image=None, pages=(), flags=None,
                 yield text
     except providers.ProviderError as error:
         raise AIError(str(error), error.code)
+
+
+def lower_effort(effort, levels):
+    """Niveau de réflexion juste en dessous de `effort` parmi ceux du modèle (`levels`), ou None. Sans niveau choisi
+    (celui de l'assistant, qui varie selon le modèle : high, medium, xhigh…) : « medium »."""
+    order = list(providers.EFFORTS)
+    offered = [level for level in levels if level in order] or ["low", "medium", "high"]
+    if effort not in order:
+        return "medium" if "medium" in offered else None
+    below = [level for level in offered if order.index(level) < order.index(effort)]
+    return max(below, key=order.index) if below else None
+
+
+async def _claude_lowering(system, prompt, model, effort, levels, images, flags):
+    """_stream_claude ; réserve de sortie toute prise par la réflexion avant le moindre texte (« reasoning ») : la même
+    demande, une seule fois, un niveau de réflexion plus bas. `flags["lowered"]` : le niveau de cette relance."""
+    try:
+        async for text in _stream_claude(system, prompt, model, effort, images):
+            yield text
+        return
+    except AIError as error:
+        lower = lower_effort(effort, levels) if error.code == "reasoning" else None
+        if not lower:
+            raise
+    if flags is not None:
+        flags["lowered"] = lower
+    async for text in _stream_claude(system, prompt, model, lower, images):
+        yield text
 
 
 async def _image_prompt(prompt, images):
@@ -2191,8 +2221,8 @@ async def _stream_claude(system, prompt, model, effort="", images=()):
                                 yield text
                             yield providers.CUT
                             return
-                        raise AIError("Claude reached its output limit while reasoning, before writing the answer: "
-                                      "try a lower reasoning level", "other")
+                        raise AIError("Claude reached its output limit while reasoning, before writing the answer",
+                                      "reasoning")
                     if message.is_error:
                         raise AIError(message.result or message.subtype or "Claude error", _code(message.result or ""))
                     for text in pending:
@@ -2321,6 +2351,7 @@ async def cross_review(paper, structure, first, second, language="fr", pages=(),
                             pages=numbers if reads_images(model) else (), profile=profile, chapter=chapter, **options)
 
     cuts = set()  # étapes dont la réponse a été coupée (« review », « blind », « compare »)
+    lowered = {}  # étape -> niveau de réflexion de sa relance (la première tentative avait tout pris en réflexion)
     flags = {}  # {"cut": True} : la synthèse seule (celle qu'on affiche) a été coupée ; les étapes ont les leurs
 
     async def step(model, built, second_role=False, kind=None):
@@ -2331,6 +2362,8 @@ async def cross_review(paper, structure, first, second, language="fr", pages=(),
             answer = "".join([text async for text in stream_answer(*built, model, None, images(model), mine)])
             if mine.get("cut"):
                 cuts.add(kind)
+            if mine.get("lowered"):
+                lowered[kind] = mine["lowered"]
             return answer
         except AIError as error:
             if not second_role:
@@ -2357,14 +2390,15 @@ async def cross_review(paper, structure, first, second, language="fr", pages=(),
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         raise
-    yield {"step": {"kind": "review", "model": first, "answer": review_a, **({"cut": True} if "review" in cuts else {})}}
-    yield {"step": {"kind": "blind", "model": second, "answer": review_b, **({"cut": True} if "blind" in cuts else {})}}
+    mark = lambda kind: {**({"cut": True} if kind in cuts else {}), **({"lowered": lowered[kind]} if kind in lowered else {})}  # noqa: E731
+    yield {"step": {"kind": "review", "model": first, "answer": review_a, **mark("review")}}
+    yield {"step": {"kind": "blind", "model": second, "answer": review_b, **mark("blind")}}
 
     yield {"phase": "compare"}
     extra = (_review_block("A", review_a, cut="review" in cuts), _review_block("B", review_b, yours=True, cut="blind" in cuts))
     built = await asyncio.to_thread(prompt, second, instruction=COMPARE_PROMPT + scope, extra=extra)
     comparison = await step(second, built, second_role=True, kind="compare")
-    yield {"step": {"kind": "compare", "model": second, "answer": comparison, **({"cut": True} if "compare" in cuts else {})}}
+    yield {"step": {"kind": "compare", "model": second, "answer": comparison, **mark("compare")}}
 
     yield {"phase": "synthesis"}
     synthesis = SYNTHESIS_PROMPT + ("" if not chapter else CHAPTER_SYNTHESIS if structure.get("chapters") else _to_sections(CHAPTER_SYNTHESIS)) + scope
@@ -2375,6 +2409,8 @@ async def cross_review(paper, structure, first, second, language="fr", pages=(),
         yield {"delta": delta}
     if flags.get("cut"):  # une étape coupée garde sa marque à elle (la page la montre) ; la synthèse en a été prévenue
         yield {"cut": True}
+    if flags.get("lowered"):
+        yield {"lowered": flags["lowered"]}
 
 
 async def verify_review(paper, structure, review, first, checker, language="fr", pages=(), chapter=None, effort=None):
@@ -2412,7 +2448,8 @@ async def verify_review(paper, structure, review, first, checker, language="fr",
         raise AIError(f"{assistant_name(checker)}: {error}", error.code if error.code in ("limit", "offline") else "other")
     if not check.strip():
         raise AIError(f"{assistant_name(checker)}: empty answer", "other")
-    yield {"step": {"kind": "verify", "model": checker, "answer": check, **({"cut": True} if mine.get("cut") else {})}}
+    yield {"step": {"kind": "verify", "model": checker, "answer": check, **({"cut": True} if mine.get("cut") else {}),
+                    **({"lowered": mine["lowered"]} if mine.get("lowered") else {})}}
 
     yield {"phase": "conclude"}
     chapter_part = CHAPTER_SYNTHESIS.replace("from both reviews and the comparison", "from the review and the verification").replace(
@@ -2427,6 +2464,8 @@ async def verify_review(paper, structure, review, first, checker, language="fr",
         yield {"delta": delta}
     if flags.get("cut"):
         yield {"cut": True}
+    if flags.get("lowered"):
+        yield {"lowered": flags["lowered"]}
 
 
 # ---------- Historique ----------
@@ -2472,14 +2511,15 @@ def create(paper_id, task, target, quote, question, parent_id, model, image=None
     return exchange
 
 
-def finish(exchange_id, answer, status, steps=None, card=False, coverage=None, cut=False):
+def finish(exchange_id, answer, status, steps=None, card=False, coverage=None, cut=False, lowered=None):
     """`steps` : étapes d'une relecture croisée ([{kind, model, answer}]), gardées sous la synthèse. `card` : relecture
     d'un chapitre, terminée par la fiche du chapitre (CHAPTER_RECORD). `coverage` : ce que l'assistant a lu (coverage_of),
-    `cut` : réponse arrêtée par l'assistant lui-même."""
+    `cut` : réponse arrêtée par l'assistant lui-même. `lowered` : niveau de réflexion de la relance (stream_answer)."""
     with db.connect() as connection:
-        connection.execute("UPDATE ai_exchanges SET answer = ?, status = ?, steps = ?, card = ?, coverage = ?, cut = ? WHERE id = ?",
+        connection.execute("UPDATE ai_exchanges SET answer = ?, status = ?, steps = ?, card = ?, coverage = ?, cut = ?, lowered = ? "
+                           "WHERE id = ?",
                            (answer, status, json.dumps(steps) if steps else None, 1 if card else 0,
-                            json.dumps(coverage) if coverage else None, 1 if cut else 0, exchange_id))
+                            json.dumps(coverage) if coverage else None, 1 if cut else 0, lowered or None, exchange_id))
     return get(exchange_id)
 
 

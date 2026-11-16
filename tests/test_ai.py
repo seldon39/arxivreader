@@ -1595,3 +1595,48 @@ class OutputLimit(unittest.TestCase):
     def test_other_errors_unchanged(self):
         with self.assertRaises(ai.AIError):
             self.run_stream("Usage limit reached")
+
+
+class LowerEffort(unittest.TestCase):
+    """Réserve de sortie toute prise par la réflexion : la même demande, une fois, un niveau plus bas, signalé."""
+
+    def test_levels(self):
+        levels = ["low", "medium", "high", "xhigh", "max"]
+        self.assertEqual(ai.lower_effort("max", levels), "xhigh")
+        self.assertEqual(ai.lower_effort("high", ["low", "high"]), "low")
+        self.assertIsNone(ai.lower_effort("low", levels))
+        self.assertEqual(ai.lower_effort("", levels), "medium")  # niveau de l'assistant (inconnu) : medium
+
+    def run_lowering(self, outcomes, effort="max"):
+        import asyncio
+        calls = []
+
+        async def fake(system, prompt, model, effort="", images=()):
+            calls.append(effort)
+            outcome = outcomes[len(calls) - 1]
+            if isinstance(outcome, Exception):
+                raise outcome
+            yield outcome
+        flags = {}
+
+        async def collect():
+            return [t async for t in ai._claude_lowering("s", "p", "opus", effort, ["low", "medium", "high", "xhigh", "max"], (), flags)]
+        with unittest.mock.patch.object(ai, "_stream_claude", fake):
+            return calls, flags, asyncio.run(collect())
+
+    def test_retry_once_lower(self):
+        calls, flags, parts = self.run_lowering([ai.AIError("reasoning", "reasoning"), "Réponse"])
+        self.assertEqual((calls, flags, parts), (["max", "xhigh"], {"lowered": "xhigh"}, ["Réponse"]))
+
+    def test_second_failure_is_the_error(self):
+        with self.assertRaises(ai.AIError) as caught:
+            self.run_lowering([ai.AIError("reasoning", "reasoning"), ai.AIError("reasoning", "reasoning")])
+        self.assertEqual(caught.exception.code, "reasoning")
+
+    def test_other_errors_not_retried(self):
+        with self.assertRaises(ai.AIError):
+            self.run_lowering([ai.AIError("Usage limit", "limit"), "never"])
+
+    def test_lowest_level_not_retried(self):
+        with self.assertRaises(ai.AIError):
+            self.run_lowering([ai.AIError("reasoning", "reasoning"), "never"], effort="low")

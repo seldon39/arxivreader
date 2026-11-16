@@ -107,6 +107,7 @@ class Job:
                         seen = event.get("coverage") or seen
                         if event.get("cut"):
                             flags["cut"] = True
+                        flags["lowered"] = event.get("lowered") or flags.get("lowered")
                 else:
                     system, prompt = await asyncio.to_thread(
                         ai.build_prompt, self.paper, self.structure, self.task, language=self.language,
@@ -120,7 +121,7 @@ class Job:
                 raise
             text = "".join(answer)
             ai.finish(exchange["id"], text, "done", steps or None, card=self.task == "review" and not flags.get("cut"), coverage=seen or None,
-                      cut=bool(flags.get("cut")))
+                      cut=bool(flags.get("cut")), lowered=flags.get("lowered"))
             self.open.discard(exchange["id"])
             self.answers[entry["id"]] = text
             entry["state"], entry["seconds"] = "done", round(time.time() - entry["started"])
@@ -135,7 +136,7 @@ class Job:
         flags = {}
         async for text in ai.stream_answer(system, prompt, self.model, flags=flags):
             self.synthesis["answer"] += text
-        ai.finish(exchange["id"], self.synthesis["answer"], "done", cut=bool(flags.get("cut")))
+        ai.finish(exchange["id"], self.synthesis["answer"], "done", cut=bool(flags.get("cut")), lowered=flags.get("lowered"))
         self.open.discard(exchange["id"])
 
     def close_open(self):

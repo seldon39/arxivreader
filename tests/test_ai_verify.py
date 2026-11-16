@@ -155,6 +155,17 @@ class Verify(unittest.TestCase):
         self.assertTrue(next(e["step"] for e in events if e.get("step", {}).get("kind") == "verify")["cut"])
         self.assertIn("was cut off", prompts[-1])
 
+    def test_lowered_level_is_kept(self):
+        """Relance un niveau plus bas : marquée sur l'étape de vérification et sur la relecture finale."""
+        async def answer(system, prompt, model, image=None, pages=(), flags=None, effort=None):
+            if flags is not None:
+                flags["lowered"] = "xhigh"
+            yield "text"
+        ai.stream_answer = answer
+        events = self.events({"task": "review", "check": review("p1")["id"]})
+        self.assertEqual(events[-1]["exchange"]["lowered"], "xhigh")
+        self.assertEqual(next(e["step"] for e in events if e.get("step", {}).get("kind") == "verify")["lowered"], "xhigh")
+
     def test_cut_cross_step_is_announced_and_flagged(self):
         """Relecture croisée dont la relecture B est coupée : la comparaison et la synthèse le savent."""
         import asyncio

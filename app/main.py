@@ -931,13 +931,15 @@ async def ask_ai(paper_id: str, body: AIRequest):
                     yield {"delta": text}
                 if flags.get("cut"):
                     yield {"cut": True}
+                if flags.get("lowered"):
+                    yield {"lowered": flags["lowered"]}
             events = single()
     except ai.AIError as error:
         return JSONResponse({"error": str(error)}, status_code=400)
     exchange = ai.create(paper_id, body.task, target, quote, question, parent["id"] if parent else None, model, image)
 
     async def lines():
-        answer, steps, coverage, cut = [], [], None, False
+        answer, steps, coverage, cut, lowered = [], [], None, False, None
         status = "stopped"  # si la page interrompt la réponse
         saved = time.monotonic()
         try:
@@ -950,6 +952,7 @@ async def ask_ai(paper_id: str, body: AIRequest):
                         steps.append(event["step"])
                     coverage = event.get("coverage") or coverage
                     cut = cut or bool(event.get("cut"))
+                    lowered = event.get("lowered") or lowered
                     if time.monotonic() - saved >= PARTIAL_EVERY:  # un plantage ou une fenêtre fermée garde ce qui est reçu
                         saved = time.monotonic()
                         try:  # simple point de reprise : un verrou SQLite ne doit pas faire perdre la réponse
@@ -967,7 +970,7 @@ async def ask_ai(paper_id: str, body: AIRequest):
             yield json.dumps({"error": str(error) or type(error).__name__, "code": "other"}) + "\n"
         finally:
             final = ai.finish(exchange["id"], "".join(answer), status, steps, card=bool(chapter) and body.task == "review" and not cut,
-                              coverage=coverage, cut=cut)
+                              coverage=coverage, cut=cut, lowered=lowered)
         yield json.dumps({"done": True, "exchange": final}) + "\n"
 
     return StreamingResponse(lines(), media_type="application/x-ndjson", headers={"Cache-Control": "no-store"})
