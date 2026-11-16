@@ -880,7 +880,7 @@ def align_ids(fragment, tex):
         renamed.update({element["id"]: entry["id"] for element, entry in zip(items, bibliography)})
     # équations numérotées : par leur numéro imprimé (connu par le .aux pour un fichier TeX)
     by_number = {eq["label"]: key for key, eq in tex.get("equations", {}).items() if eq.get("label")}
-    for tag in fragment.select(".ltx_tag_equation"):
+    for tag in fragment.select(".ltx_tag_equation, .ltx_tag_equationgroup"):  # numéro d'une ligne ou d'un groupe
         holder = tag.find_parent(id=True)
         key = by_number.get(tag.get_text(strip=True))
         if holder is not None and key and key not in renamed.values():

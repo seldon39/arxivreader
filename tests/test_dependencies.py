@@ -61,3 +61,29 @@ class Dependencies(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+GROUP_PAGE = f"""<article><section id="S4" class="ltx_section"><h2 class="ltx_title">4. Reduction</h2>
+{theorem("L4", "lemma", "Lemma 4.1")}
+<div id="p7" class="ltx_para"><p class="ltx_p">From the above lemma, we get</p>
+<table id="S4.E21" class="ltx_equationgroup ltx_eqn_table"><tbody>
+<tr id="S4.E21X" class="ltx_equation ltx_eqn_row"><td>a</td></tr>
+<tr class="ltx_equation ltx_eqn_row"><td>b</td><td class="ltx_eqn_eqno"><span class="ltx_tag ltx_tag_equationgroup">(4.21)</span></td></tr>
+</tbody></table></div>
+{theorem("P4", "proposition", "Proposition 4.2", 'By <a class="ltx_ref" href="#S4.E21">(4.21)</a>.')}
+</section></article>"""
+
+
+class EquationGroup(unittest.TestCase):
+    """Équation numérotée une seule fois pour tout un tableau (\\begin{equation} autour d'un array, split…) :
+    « ltx_tag_equationgroup » ; même traitement qu'une équation d'une ligne (renvois, dépendances, texte pour l'IA)."""
+
+    def test_group_number_is_an_equation(self):
+        structure = extract_structure(BeautifulSoup(GROUP_PAGE, "html.parser"))
+        self.assertEqual(structure["equations"]["S4.E21"]["label"], "(4.21)")
+        nodes = {n["label"]: n for n in structure["nodes"]}
+        self.assertIn("L4", nodes["Proposition 4.2"]["uses"])  # (4.21) obtenue « from the above lemma »
+
+    def test_group_number_in_the_text_for_the_assistant(self):
+        from app.ai import element_text
+        self.assertIn("(4.21)", element_text(BeautifulSoup(GROUP_PAGE, "html.parser")))

@@ -7,7 +7,7 @@ from bs4 import NavigableString, Tag
 
 from .arxiv import ID_RE, extract_ids
 
-STRUCTURE_VERSION = 17  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
+STRUCTURE_VERSION = 18  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
 
 SECTION_LEVELS = {
     "ltx_part": 0, "ltx_chapter": 0, "ltx_section": 1, "ltx_appendix": 1,
@@ -641,7 +641,7 @@ def extract_structure(fragment, overrides=None):
         if target_id.startswith("bib."):
             return ("bib", target_id)
         theorem = target if has_class(target, "ltx_theorem") else enclosing(target, lambda e: has_class(e, "ltx_theorem"))
-        equation_tag = target.find(class_="ltx_tag_equation") if _is_equation(target) else None
+        equation_tag = target.find(class_=EQUATION_TAGS) if _is_equation(target) else None
         if equation_tag is not None:
             if theorem is None:
                 proof = enclosing(target, lambda e: e.get("data-proof-of"))
@@ -702,7 +702,7 @@ def extract_structure(fragment, overrides=None):
         if following is not None and has_class(following, "ltx_para") and _is_equation(following.find(True) or following):
             blocks.append(following)
         for equation in (e for block in blocks for e in block.find_all(_is_equation)):
-            if not equation.get("id") or equation.find(class_="ltx_tag_equation") is None:
+            if not equation.get("id") or equation.find(class_=EQUATION_TAGS) is None:
                 continue
             here = position[id(equation)]
             derived[equation["id"]] = [n for at, n in sources if at < here and statement_position[n] < here]
@@ -922,6 +922,9 @@ def assign_chapters(structure, proof_place=None):
 
 
 EQUATION_CLASSES = {"ltx_equation", "ltx_equationgroup", "ltx_eqn_row", "ltx_eqn_table"}
+# numéro imprimé d'une équation : d'une ligne, ou d'un groupe numéroté une seule fois (\begin{equation} autour d'un
+# tableau, split, gathered… : « ltx_tag_equationgroup » sur la table du groupe)
+EQUATION_TAGS = ["ltx_tag_equation", "ltx_tag_equationgroup"]
 
 
 def _is_equation(element):

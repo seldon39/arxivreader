@@ -70,7 +70,7 @@ def _render(element, out):
             _render(child, out)
         out.append("] ")
         return
-    if "ltx_tag_equation" in classes:
+    if "ltx_tag_equation" in classes or "ltx_tag_equationgroup" in classes:  # numéro d'une ligne ou d'un groupe
         out.append(f"   {element.get_text(' ', strip=True)}")
         return
     if element.name in ("h1", "h2", "h3", "h4", "h5", "h6"):

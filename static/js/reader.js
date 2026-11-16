@@ -30,6 +30,8 @@ import { htmlFlow, rememberView, wantsHtml } from "./latexml.js";
 const NEEDS_PROOF = new Set(["theorem", "proposition", "lemma", "corollary", "claim"]);
 const WIDE = 1280;
 // Blocs qu'on peut désigner comme passage de preuve (mêmes classes que PASSAGE_BLOCKS dans app/structure.py)
+// numéro imprimé d'une équation : d'une ligne, ou d'un groupe numéroté une seule fois (equation autour d'un tableau)
+const EQUATION_TAGS = ".ltx_tag_equation, .ltx_tag_equationgroup";
 const PICKABLE = [".ltx_para", ".ltx_theorem", ".ltx_proof", ".ltx_equation", ".ltx_equationgroup", ".ltx_figure", ".ltx_table"]
   .map((c) => `${c}[id]`).join(", ");
 const MEDIUM = 900;
@@ -182,8 +184,9 @@ class Reader {
       contextPages: (center, signal) => this.contextPages(center, signal),
       currentPage: () => this.pdf?.frame.contentWindow?.PDFViewerApplication?.pdfViewer?.currentPageNumber || null,
       readingChapter: () => this.readingChapter(),
-      equationIds: () => [...this.content.querySelectorAll(".ltx_tag_equation")].map((tag) => {
-        const row = tag.closest("tr[id], table[id], .ltx_equation[id]");
+      equationIds: () => [...this.content.querySelectorAll(EQUATION_TAGS)].map((tag) => {
+        // numéro d'un groupe (une seule fois pour tout un tableau) : la table du groupe, pas la ligne qui le porte
+        const row = tag.closest(tag.matches(".ltx_tag_equationgroup") ? ".ltx_equationgroup[id]" : "tr[id], table[id], .ltx_equation[id]");
         return row ? [tag.textContent.trim(), row.id] : null;
       }).filter(Boolean),
     });
@@ -1558,7 +1561,7 @@ class Reader {
     if (bibitem && link.dataset.crossPaper) return this.crossPreview(link, bibitem);
     if (bibitem) return { body: this.clean(bibitem), id: bibitem.id, extra: this.bibActions(this.bib.get(bibitem.id)) };
     const equation = target.closest(".eq-scroll") || target.closest("table");
-    if (equation && equation.querySelector(".ltx_tag_equation")) {
+    if (equation && equation.querySelector(EQUATION_TAGS)) {
       const row = target.matches("tbody, tr") ? target : null;
       const body = row ? h("table", { class: "ltx_eqn_table" }, this.clean(row)) : this.clean(equation);
       return { body, id };
