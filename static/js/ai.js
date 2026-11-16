@@ -1334,11 +1334,15 @@ export class Assistant {
 
   // Étapes d'une relecture croisée (relectures, comparaison), chacune dépliable ; rendues à la première ouverture
   stepsFold(exchange) {
+    const cutBadge = () => h("span", { class: "badge warn", title: t("ai.stepCutHint") }, t("ai.stepCut"));
     const fold = h("details", { class: "ai-steps", open: exchange.stepsOpen },
-      h("summary", {}, tn(exchange.steps.some((step) => step.kind === "verify") ? "ai.stepsVerified" : "ai.steps", exchange.steps.length, { a: modelLabel(exchange.model) })),
+      // étape coupée (longueur maximale) : marquée ici, la synthèse seule porte sa propre marque
+      h("summary", {}, tn(exchange.steps.some((step) => step.kind === "verify") ? "ai.stepsVerified" : "ai.steps", exchange.steps.length, { a: modelLabel(exchange.model) }),
+        exchange.steps.some((step) => step.cut) ? cutBadge() : null),
       exchange.steps.map((step, i) => {
         const body = h("div", { class: "markdown ai-answer" });
-        const item = h("details", { class: "ai-step" }, h("summary", {}, `${i + 1}. ${t(`ai.step.${step.kind}`, { name: modelLabel(step.model) })}`), body);
+        const item = h("details", { class: "ai-step" }, h("summary", {}, `${i + 1}. ${t(`ai.step.${step.kind}`, { name: modelLabel(step.model) })}`,
+          step.cut ? cutBadge() : null), body);
         item.addEventListener("toggle", () => new LiveAnswer(body, this.refs).update(step.answer || "", true), { once: true });
         return item;
       }));

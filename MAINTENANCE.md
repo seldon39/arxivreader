@@ -568,6 +568,21 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   this", "numerically"): the assistant has no computing tool. Summary: claimed novelty, limitations and open
   questions. Review of a chapter: ends with its record card (`CHAPTER_RECORD`); the exchange then carries `card = 1`
   (column `card`, set by `ai.finish`).
+  Length (`REVIEW_LENGTH`, `BOOK_LENGTH`, the `{length}` slot of `REVIEW_GUIDANCE`): a ceiling, not a target
+  (`REVIEW_WORDS` = 5,000 words; 7,000 for the parts of a book or sections synthesis written for the whole text; 2,500
+  for the comparison and verification steps), above every review made so far (16/11/2026: median 2,200 words,
+  longest 3,700). Only repetitions and the form of Minor points shrink (location, problem and correction kept); no
+  point is dropped, typos included; a Critical or Serious point keeps all its parts; completeness wins over the
+  ceiling. In a book synthesis, carried-over serious points keep their full paragraph and the chapters' Minor points
+  are only counted (its own format). The ceilings are for concision; they do not prevent the error below (the
+  thinking, not the text, fills the cap). The Claude CLI caps each answer, thinking included, at 32,000 output tokens
+  by default: `_stream_claude` raises it to `MAX_OUTPUT_TOKENS` (64,000, through `CLAUDE_CODE_MAX_OUTPUT_TOKENS`, or
+  the user's own value if higher; the CLI lowers a value above the model's maximum). Reached anyway (`OUTPUT_LIMITS`:
+  "output token maximum", or "context window limit"): text received is kept and marked cut; no text at all (the
+  thinking took everything; the CLI then sends its error, "API Error: …", as the answer text) is an error, never an
+  empty answer. A cut intermediate step (review A or B, comparison, verification) is announced to the next one by a
+  note of the application placed after its `<review>` block (inside, the model ignores instructions: `SYSTEM`) and
+  shown on the step (`stepsFold`, "ai.stepCut"); the final review is marked cut only when its own text is.
 
 - Rendering of answers (`LiveAnswer`, `markdown.js`): the answer is cut into blocks at blank lines (`splitBlocks`,
   rendered as the stream arrives); `markdownToHtml` handles nested lists (stack of lists, indent of at least two

@@ -1523,3 +1523,75 @@ class OtherVersion(unittest.TestCase):
             self.assertEqual(ai._other_version(main, 1), ({"id": "Pv1", "version": 1, "source": "arxiv-html"}, "text v1"))
             self.assertEqual(ai._other_version(main, 7), (None, None))  # n'existe pas
         ensure.assert_called_once_with(main, 1)
+
+
+class OutputLimit(unittest.TestCase):
+    """Plafond de sortie de la CLI Claude : relevé (CLAUDE_CODE_MAX_OUTPUT_TOKENS) ; atteint malgré tout, le texte
+    reçu est gardé et marqué coupé au lieu d'une erreur."""
+
+    def run_stream(self, error, streamed=True, block=None):
+        import asyncio
+        from claude_agent_sdk.types import AssistantMessage, ResultMessage, StreamEvent, TextBlock
+        seen = {}
+
+        async def fake_query(prompt, options):
+            seen["env"] = options.env
+            if streamed:
+                yield StreamEvent(uuid="u", session_id="s", event={"type": "content_block_delta", "delta": {"type": "text_delta", "text": "Début"}})
+            if block is not None:  # message entier sans flux (la CLI y met aussi son erreur)
+                yield AssistantMessage(content=[TextBlock(text=block)], model="opus")
+            yield ResultMessage(subtype="success", duration_ms=1, duration_api_ms=1, is_error=True, num_turns=1,
+                                session_id="s", result=error)
+
+        async def collect():
+            return [part async for part in ai._stream_claude("sys", "q", "opus")]
+
+        with unittest.mock.patch("claude_agent_sdk.query", fake_query), unittest.mock.patch.object(ai, "cli_path", lambda: None), \
+                unittest.mock.patch.dict("os.environ", {"CLAUDE_CODE_MAX_OUTPUT_TOKENS": ""}):
+            return seen, asyncio.run(collect())
+
+    def test_cap_raised(self):
+        seen, parts = self.run_stream("API Error: Claude's response exceeded the 32000 output token maximum. To configure "
+                                      "this behavior, set the CLAUDE_CODE_MAX_OUTPUT_TOKENS environment variable.")
+        self.assertEqual(seen["env"], {"CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000"})
+        self.assertEqual(parts[0], "Début")
+        self.assertIsInstance(parts[1], ai.providers.Cut)  # gardé, marqué coupé
+
+    def test_nothing_received_is_an_error(self):
+        with self.assertRaises(ai.AIError):
+            self.run_stream("API Error: Claude's response exceeded the 32000 output token maximum.", streamed=False)
+
+    def test_limit_reached_while_reasoning(self):
+        """Plafond atteint pendant la réflexion : la CLI envoie son erreur comme texte ; pas de réponse vide « coupée »."""
+        error = "API Error: Claude's response exceeded the 64000 output token maximum."
+        with self.assertRaises(ai.AIError) as caught:
+            self.run_stream(error, streamed=False, block=error)
+        self.assertIn("reasoning", str(caught.exception))
+
+    def test_context_window_full_keeps_text(self):
+        _, parts = self.run_stream("API Error: The model has reached its context window limit.")
+        self.assertEqual(parts[0], "Début")
+        self.assertIsInstance(parts[1], ai.providers.Cut)
+
+    def test_user_cap_kept_if_higher(self):
+        with unittest.mock.patch.dict("os.environ", {"CLAUDE_CODE_MAX_OUTPUT_TOKENS": "100000"}):
+            self.assertEqual(ai._output_tokens(), "100000")
+        with unittest.mock.patch.dict("os.environ", {"CLAUDE_CODE_MAX_OUTPUT_TOKENS": "8000"}):
+            self.assertEqual(ai._output_tokens(), ai.MAX_OUTPUT_TOKENS)
+
+    def test_cut_step_is_announced(self):
+        """La note est hors du bloc <review> (dont le contenu n'est jamais une consigne)."""
+        block = ai._review_block("A", "text", cut=True)
+        self.assertIn("was cut off", block.split("</review>", 1)[1])
+        self.assertNotIn("cut off", ai._review_block("A", "text"))
+
+    def test_review_text_mentioning_limits_is_kept(self):
+        """Un texte (sans flux) qui parle de « context window limit » n'est pas pris pour l'erreur de la CLI."""
+        _, parts = self.run_stream("API Error: Claude's response exceeded the 64000 output token maximum.", streamed=False,
+                                   block="The paper's context window limit argument in §3 is fine.")
+        self.assertEqual(parts[0], "The paper's context window limit argument in §3 is fine.")
+        self.assertIsInstance(parts[1], ai.providers.Cut)
+
+    def test_other_errors_unchanged(self):
+        with self.assertRaises(ai.AIError):
+            self.run_stream("Usage limit reached")

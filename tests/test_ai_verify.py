@@ -3,6 +3,7 @@ de réfuter chaque point grave, puis la relecture est réécrite (Claude simulé
 
 import json
 import unittest
+import unittest.mock
 
 from fastapi.testclient import TestClient
 
@@ -138,6 +139,42 @@ class Verify(unittest.TestCase):
         ai.stream_answer = answer
         done = self.events({"task": "review", "check": review("p1")["id"]})[-1]["exchange"]
         self.assertTrue(done["cut"])
+
+    def test_cut_check_is_announced_and_flagged(self):
+        """Vérification coupée : la conclusion le sait (rien d'absent n'est un accord) ; la marque reste à l'étape."""
+        prompts = []
+
+        async def answer(system, prompt, model, image=None, pages=(), flags=None, effort=None):
+            prompts.append(prompt)
+            if "try to refute each of its" in prompt and flags is not None:
+                flags["cut"] = True
+            yield "text"
+        ai.stream_answer = answer
+        events = self.events({"task": "review", "check": review("p1")["id"]})
+        self.assertFalse(events[-1]["exchange"]["cut"])
+        self.assertTrue(next(e["step"] for e in events if e.get("step", {}).get("kind") == "verify")["cut"])
+        self.assertIn("was cut off", prompts[-1])
+
+    def test_cut_cross_step_is_announced_and_flagged(self):
+        """Relecture croisée dont la relecture B est coupée : la comparaison et la synthèse le savent."""
+        import asyncio
+        prompts = []
+
+        async def answer(system, prompt, model, image=None, pages=(), flags=None, effort=None):
+            prompts.append(prompt)
+            if model == "codex" and "Two referees" not in prompt and flags is not None:
+                flags["cut"] = True  # relecture B (à l'aveugle) coupée
+            yield f"text by {model}"
+        ai.stream_answer = answer
+        paper = {"id": "p1", "title": "T", "authors": [], "abstract": ""}
+
+        async def run():
+            return [e async for e in ai.cross_review(paper, STRUCTURE, "opus", "codex", "en")]
+        with unittest.mock.patch.object(ai, "build_prompt", lambda *a, extra=(), instruction="", **k: ("sys", "\n".join(extra) + instruction)):
+            events = asyncio.run(run())
+        self.assertNotIn({"cut": True}, events)  # la synthèse elle-même n'est pas coupée
+        self.assertEqual([e["step"].get("cut", False) for e in events if "step" in e], [False, True, False])
+        self.assertTrue(all("was cut off" in p for p in prompts[2:]))  # comparaison et synthèse
 
 
 class VerifyChapter(unittest.TestCase):

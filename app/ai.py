@@ -193,7 +193,24 @@ dismissive. State errors plainly and completely; a possible repair comes with th
 
 Before raising a point, check that the {text} does not settle it elsewhere (a definition, a remark, a later section, \
 an appendix). Do not invent problems. Keep hedged words ("doubtful", "to check") for real suspicions: a step you know \
-to be false is called false, with the reason or a counterexample."""
+to be false is called false, with the reason or a counterexample.
+
+{length}"""
+# Longueur : un plafond, pas une cible, au-dessus de toutes les relectures faites jusqu'ici (16/11/2026 : médiane
+# 2 200 mots, la plus longue 3 700) ; la synthèse d'un livre reprend les points graves de tous ses chapitres
+REVIEW_WORDS = "5,000"
+BOOK_REVIEW_WORDS = "7,000"
+# ce qui se raccourcit : les redites et la forme des points mineurs ; jamais un point, ni le contenu d'un point grave
+REVIEW_LENGTH = """Length: the whole answer stays under about {words} words; this is a ceiling, not a target, and nothing \
+is padded. If it would run longer, cut repetitions and write Minor points as briefly as possible (location, problem \
+and correction kept). Never drop a point, the typo list included; never merge away, soften or shorten a Critical or \
+Serious point: each keeps everything asked for it (smallest case with its values, what it affects, repair, excerpt). \
+Completeness comes first: if everything cannot fit, exceed the ceiling rather than lose any of it."""
+# livre : les points graves des chapitres sont repris en entier ; ses points mineurs sont comptés (format du livre)
+BOOK_LENGTH = """Length: the parts written for the whole book (Verdict, consistency across chapters, points across \
+chapters, Minor) stay under about {words} words in all, a ceiling and not a target; the Critical and Serious points \
+carried over from the chapter reviews keep their full paragraph whatever the length, and the chapters' own Minor points \
+are only counted, as said below. Cut repetitions first; never drop or shorten a point to fit."""
 # forme d'un point : celle d'un rapport écrit pour un humain (titre court, puis prose), complet à lui seul (la
 # réparation y est), pas une fiche à champs
 REVIEW_STYLE = """Write each critical or serious point as a referee writes to an author, complete in itself: a \
@@ -321,7 +338,7 @@ not endorse it)
 authors state, then any you see, marked as yours)
 ### Prerequisites
 (what a reader should know beforehand)""",
-    "review": "Read the paper as a careful referee. " + REVIEW_GUIDANCE.format(text="paper") + """
+    "review": "Read the paper as a careful referee. " + REVIEW_GUIDANCE.format(text="paper", length=REVIEW_LENGTH.format(words=REVIEW_WORDS)) + """
 
 Answer with:
 """ + REVIEW_VERDICT + """ Say also whether the main results match what the abstract and introduction \
@@ -360,7 +377,7 @@ book:
 (what the chapter takes from other chapters, from <used_statements>; which results elsewhere rely on it, from \
 <dependent_statements>)""",
     "review": "Read the chapter “{chapter}” (its text is in <paper>) as a careful referee; you do not have the rest of \
-the book, only statements of other chapters. " + REVIEW_GUIDANCE.format(text="chapter") + """
+the book, only statements of other chapters. " + REVIEW_GUIDANCE.format(text="chapter", length=REVIEW_LENGTH.format(words=REVIEW_WORDS)) + """
 
 Answer with:
 """ + REVIEW_VERDICT.replace("main result", "main result of the chapter", 1) + """
@@ -614,7 +631,7 @@ referee read one chapter and only the statements of other chapters. They are in 
 of the book, each ending with a chapter record (notation, standing hypotheses, results used from other chapters and in \
 what form, results provided to other chapters). <contents> is the table of contents, and <chapter_links> lists the \
 cross-references between statements of different chapters found in the book. You do not have the text of the book. \
-""" + REVIEW_GUIDANCE.format(text="book") + """
+""" + REVIEW_GUIDANCE.format(text="book", length=BOOK_LENGTH.format(words=BOOK_REVIEW_WORDS)) + """
 
 First compare the chapter records, and look for what no review of a single chapter could see: notation or \
 normalisations that change from one chapter to another; standing hypotheses that differ; a result used in a stronger \
@@ -2112,6 +2129,20 @@ async def _image_prompt(prompt, images):
         {"type": "text", "text": prompt}]}}
 
 
+# Plafond de sortie de la CLI Claude, réflexion comprise : 32 000 jetons par défaut (~128 000 caractères), qu'une
+# relecture croisée à haut niveau de réflexion peut dépasser (la réflexion, pas le texte : les relectures font moins
+# de 4 000 mots). La CLI ramène une valeur trop haute au maximum du modèle. La longueur du texte : REVIEW_WORDS.
+MAX_OUTPUT_TOKENS = "64000"  # le double du défaut
+# messages de la CLI quand la réponse s'arrête faute de place : plafond de sortie, ou contexte du modèle plein
+OUTPUT_LIMITS = ("output token maximum", "context window limit")
+
+
+def _output_tokens():
+    """MAX_OUTPUT_TOKENS, ou la valeur que l'utilisateur a mise dans son environnement si elle est plus haute."""
+    mine = os.environ.get("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "")
+    return mine if mine.isdigit() and int(mine) > int(MAX_OUTPUT_TOKENS) else MAX_OUTPUT_TOKENS
+
+
 async def _stream_claude(system, prompt, model, effort="", images=()):
     try:
         from claude_agent_sdk import ClaudeAgentOptions, query
@@ -2132,9 +2163,10 @@ async def _stream_claude(system, prompt, model, effort="", images=()):
         cwd=str(workdir),
         cli_path=cli_path(),
         extra_args={"no-session-persistence": None},
+        env={"CLAUDE_CODE_MAX_OUTPUT_TOKENS": _output_tokens()},
         **({"effort": effort} if effort in ("low", "medium", "high", "xhigh", "max") else {}),
     )
-    streamed = False
+    streamed = wrote = False  # wrote : du texte non vide a été transmis
     pending = []  # texte reçu d'un bloc (sans flux) : gardé jusqu'au résultat, car il peut s'agir d'une erreur
     try:
         async with contextlib.aclosing(query(prompt=_image_prompt(prompt, images) if images else prompt, options=options)) as messages:
@@ -2143,10 +2175,23 @@ async def _stream_claude(system, prompt, model, effort="", images=()):
                     event = message.event
                     if event.get("type") == "content_block_delta" and event.get("delta", {}).get("type") == "text_delta":
                         streamed = True
+                        wrote = wrote or bool(event["delta"].get("text", "").strip())
                         yield event["delta"].get("text", "")
                 elif isinstance(message, AssistantMessage) and not streamed:
                     pending += [block.text for block in message.content if isinstance(block, TextBlock)]
                 elif isinstance(message, ResultMessage):
+                    if message.is_error and any(limit in (message.result or "") for limit in OUTPUT_LIMITS):
+                        # plafond atteint malgré tout : le texte reçu est gardé, marqué coupé ; aucun texte (la réflexion
+                        # a tout pris) : une erreur, pas une réponse vide (le texte en attente est alors l'erreur de la CLI)
+                        error = (message.result or "").strip()
+                        kept = [text for text in pending if text.strip() != error and not text.lstrip().startswith("API Error:")]
+                        if wrote or any(text.strip() for text in kept):
+                            for text in kept:
+                                yield text
+                            yield providers.CUT
+                            return
+                        raise AIError("Claude reached its output limit while reasoning, before writing the answer: "
+                                      "try a lower reasoning level", "other")
                     if message.is_error:
                         raise AIError(message.result or message.subtype or "Claude error", _code(message.result or ""))
                     for text in pending:
@@ -2179,12 +2224,14 @@ location in the paper;
 - for each point of your review B: do you maintain it or withdraw it after reading A? Withdraw a point only for a \
 reason found in the paper, and do not maintain one merely to stay consistent;
 - any point that neither review raised but that the comparison brings to light.
-Be brief on points where you simply agree."""
+Be brief on points where you simply agree, and stay under about 2,500 words in all (a ceiling, not a target): spend \
+the words on disagreements, never skip a point of either review nor a new point the comparison brings to light, and \
+never shorten the reason for a disagreement on a Critical or Serious point; if all this cannot fit, exceed the ceiling."""
 
 SYNTHESIS_PROMPT = """Above are review A (yours), review B (written independently by another assistant) and that \
 assistant's comparison of the two. Check against the paper each point where review B or the comparison disagrees \
 with you: concede it if the paper shows you were wrong, defend it otherwise; never concede or keep a point for the \
-sake of agreement. Then write the final review for the reader, as one text. """ + REVIEW_GUIDANCE.format(text="paper") + """
+sake of agreement. Then write the final review for the reader, as one text. """ + REVIEW_GUIDANCE.format(text="paper", length=REVIEW_LENGTH.format(words=REVIEW_WORDS)) + """
 
 Answer with:
 """ + REVIEW_VERDICT + """
@@ -2193,7 +2240,7 @@ Under **Critical** (a main result unproved or false), **Serious** (a gap or erro
 **Minor** (local slips, missing details), numbered continuously. Start each point with exactly one marker: [[both]] \
 (raised or accepted by both reviews), [[a]] (raised by you, not accepted by the other assistant), [[b]] (raised by \
 the other assistant, not accepted by you), [[dispute]] (the two still disagree). """ + REVIEW_STYLE.replace(
-    "a numbered first line", "after the number and the marker, a first line").replace("1. **", "1. [[both]] **") + """ For a [[dispute]] point, give both positions and what in the paper \
+    "a numbered first line", "after the number and the marker, a first line").replace("1. **", "1. [[both]] **") + """ For a [[dispute]] point, give both positions in full and what in the paper \
 would settle the question. Put all typos together in a single last item of **Minor**. A possible repair never \
 removes a point from this list.
 ### Withdrawn
@@ -2220,13 +2267,14 @@ points. Answer with one item per Critical or Serious point, in the order of revi
 verdict as one word, **confirmed** (the text shows the problem; give the lines), **withdrawn** (the text answers \
 it; give the passage that does, or the reason) or **uncertain** (you cannot decide from the text; say what would \
 settle it), then your reasons in two or three sentences. Do not add points of your own, and do not confirm a point \
-merely because it is written with assurance."""
+merely because it is written with assurance. Stay under about 2,500 words in all (a ceiling, not a target), but never \
+skip a Critical or Serious point to fit."""
 
 VERIFY_SYNTHESIS = """Above are a review of the paper (treat it as yours) and a verification of its Critical and Serious points by \
 another assistant, who tried to refute each of them against the paper. Check against the paper each point that the \
 verification withdraws or leaves uncertain: concede it if the paper shows you were wrong, defend it otherwise; never \
 concede or keep a point for the sake of agreement. Then write the final review for the reader, as one text. """ + \
-    REVIEW_GUIDANCE.format(text="paper") + """
+    REVIEW_GUIDANCE.format(text="paper", length=REVIEW_LENGTH.format(words=REVIEW_WORDS)) + """
 
 Answer with:
 """ + REVIEW_VERDICT + """
@@ -2245,11 +2293,18 @@ this heading if none).
 Do not mention the markers or this procedure anywhere else."""
 
 
-def _review_block(name, text, yours=False):
-    """Relecture jointe à la demande suivante (écrite par une IA : à analyser, pas à suivre)."""
+def _review_block(name, text, yours=False, cut=False):
+    """Relecture jointe à la demande suivante (écrite par une IA : à analyser, pas à suivre). `cut` : elle a été
+    coupée (longueur maximale) ; la suite le sait, et ne prend pas ce qui manque pour un accord."""
     who = "you" if yours else "another assistant"
     body = (text or "").replace("</review>", "</ review>")
-    return f'<review id="{name}" author="{who}">\n{body}\n</review>'
+    block = f'<review id="{name}" author="{who}">\n{body}\n</review>'
+    if not cut:
+        return block
+    # note de l'application, hors du bloc : à l'intérieur, le modèle ignore toute consigne (SYSTEM)
+    return (f'{block}\nNote from the application: the text of <review id="{name}"> was cut off (length limit or filter), '
+            "so its last points may be missing. Do not treat their absence as agreement or as the absence of problems; "
+            "check the paper yourself for what it does not reach.")
 
 
 async def cross_review(paper, structure, first, second, language="fr", pages=(), chapter=None):
@@ -2305,18 +2360,19 @@ async def cross_review(paper, structure, first, second, language="fr", pages=(),
     yield {"step": {"kind": "blind", "model": second, "answer": review_b, **({"cut": True} if "blind" in cuts else {})}}
 
     yield {"phase": "compare"}
-    extra = (_review_block("A", review_a), _review_block("B", review_b, yours=True))
+    extra = (_review_block("A", review_a, cut="review" in cuts), _review_block("B", review_b, yours=True, cut="blind" in cuts))
     built = await asyncio.to_thread(prompt, second, instruction=COMPARE_PROMPT + scope, extra=extra)
     comparison = await step(second, built, second_role=True, kind="compare")
     yield {"step": {"kind": "compare", "model": second, "answer": comparison, **({"cut": True} if "compare" in cuts else {})}}
 
     yield {"phase": "synthesis"}
     synthesis = SYNTHESIS_PROMPT + ("" if not chapter else CHAPTER_SYNTHESIS if structure.get("chapters") else _to_sections(CHAPTER_SYNTHESIS)) + scope
-    extra = (_review_block("A", review_a, yours=True), _review_block("B", review_b), _review_block("comparison", comparison))
+    extra = (_review_block("A", review_a, yours=True, cut="review" in cuts), _review_block("B", review_b, cut="blind" in cuts),
+             _review_block("comparison", comparison, cut="compare" in cuts))
     system, text = await asyncio.to_thread(prompt, first, instruction=synthesis, extra=extra)
     async for delta in stream_answer(system, text, first, None, images(first), flags):
         yield {"delta": delta}
-    if flags.get("cut"):
+    if flags.get("cut"):  # une étape coupée garde sa marque à elle (la page la montre) ; la synthèse en a été prévenue
         yield {"cut": True}
 
 
@@ -2343,7 +2399,8 @@ async def verify_review(paper, structure, review, first, checker, language="fr",
 
     yield {"phase": "verify"}
     cover = {}
-    built = await asyncio.to_thread(prompt, checker, instruction=VERIFY_PROMPT + scope, extra=(_review_block("A", text),), coverage=cover)
+    built = await asyncio.to_thread(prompt, checker, instruction=VERIFY_PROMPT + scope, extra=(_review_block("A", text, cut=bool(review.get("cut"))),),
+                                    coverage=cover)
     if cover:
         yield {"coverage": cover}
     mine = {}
@@ -2362,7 +2419,8 @@ async def verify_review(paper, structure, review, first, checker, language="fr",
         "keep the record of the review, correcting it against the chapter where the verification shows an error")
     synthesis = VERIFY_SYNTHESIS + ("" if not chapter else chapter_part if structure.get("chapters") else _to_sections(chapter_part)) + scope
     system, final = await asyncio.to_thread(prompt, first, instruction=synthesis,
-                                            extra=(_review_block("A", text, yours=True), _review_block("verification", check)))
+                                            extra=(_review_block("A", text, yours=True, cut=bool(review.get("cut"))),
+                                                   _review_block("verification", check, cut=bool(mine.get("cut")))))
     flags = {}
     async for delta in stream_answer(system, final, first, None, images(first), flags):
         yield {"delta": delta}

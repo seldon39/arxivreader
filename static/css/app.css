@@ -1149,6 +1149,7 @@ button.ai-book-name:disabled { cursor: default; color: inherit; }
 .ai-verify-row .button { height: 32px; }
 .ai-steps { margin: 2px 0 8px; font-size: 13px; color: var(--muted); }
 .ai-steps summary { cursor: pointer; }
+.ai-steps summary .badge { margin-left: 8px; }  /* étape coupée */
 .ai-step { margin: 6px 0 0 16px; }
 .ai-step > summary { color: var(--text); }
 .ai-step > .ai-answer { margin: 6px 0 10px; padding-left: 10px; border-left: 2px solid var(--border); color: var(--text); }
