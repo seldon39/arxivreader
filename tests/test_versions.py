@@ -1029,6 +1029,15 @@ class Unavailable(Base):
             except ArxivError as error:
                 return error, len(calls), sleep.call_count
 
+    def test_api_error_entry_is_not_a_paper(self):
+        """Identifiant inconnu : l'API d'arXiv répond 200 avec une entrée « Error », jamais importée comme article."""
+        feed = b"""<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>http://arxiv.org/api/errors#incorrect_id_format_for_2613.00001</id>
+<title>Error</title><summary>incorrect id format for 2613.00001</summary><author><name>arXiv api core</name></author></entry></feed>"""
+        client = lambda: arxiv.httpx.Client(transport=arxiv.httpx.MockTransport(lambda request: arxiv.httpx.Response(200, content=feed)))
+        with mock.patch.object(arxiv, "_client", client), mock.patch.object(arxiv.time, "sleep"):
+            with self.assertRaisesRegex(ArxivError, "introuvable"):
+                arxiv.fetch_metadata("2613.00001")
+
     def test_download_retries_then_gives_up(self):
         self.assertEqual(self.download([503, 503, 200]), (b"%PDF-1.4 data", 3, 2))
         self.assertEqual(self.download([404])[:2], (None, 1))  # pas de PDF : définitif, sans nouvel essai

@@ -783,7 +783,7 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
 
 - Full-text search of the library (`fulltext.py`, `GET /api/library/search?q=`, query cut to 300 characters): no index.
   Each search reads `content.html` (or `text.json` of an imported PDF or a PDF-only arXiv paper) of the library papers, most recently opened first;
-  extracted text cached by `lru_cache` on (path, `mtime_ns`), `CACHED_FILES`. `fold` removes accents and case through a 1:1
+  extracted text cached by `lru_cache` (1000 entries) on (path, `mtime_ns`). `fold` removes accents and case through a 1:1
   character mapping (`_Folding`), so a position in the folded text is valid in the original: a new equivalence must keep
   one character for one. `_pieces`: `<math>` replaced by its `alttext` between `$…$`, blocks separate words; literal
   dollars become `PLAIN_DOLLAR` (U+FF04), so a remaining `$` always delimits a formula. `_locate`: one hit per paragraph or
@@ -948,7 +948,7 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   (`cut`) or whose text was partly sent (`coverage`) is never taken as complete.
 - **Cut answers and coverage**: `ai_exchanges.coverage` (JSON: total, sent, partial, pages) and `cut` record what the
   assistant read and whether its answer stopped on a limit; the answer being written is saved every few seconds with
-  `status = 'running'` (`ai.stop_running` closes whatever is still `running` as `stopped` at shutdown; `GET /api/ai/running` tells the Mac shell
+  `status = 'running'` (`ai.stop_running` closes whatever is still `running` as `stopped` at startup, in `main.lifespan`; `GET /api/ai/running` tells the Mac shell
   what is in progress, to ask before quitting). Block tags added to a prompt go through `ai._neutral`.
 - **Notes between computers**: a deleted annotation leaves a row in `annotation_deletions` (uid, paper, date), carried by
   the export so that an import does not bring it back (the latest change wins; forgotten after about a year); `db._one_row_per_statement` merges
@@ -963,7 +963,7 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   entry is shown only when `crossrefs.match_by` returns `id` or `doi`, never `title`. The WebKit clipboard takes a write
   only after a gesture: `copyBibtex` passes the answer as a promise to `ClipboardItem`.
 - **Subject-class identifiers** (`math.DG/0211159`): normalised without the class (`math/0211159`) on entry
-  (`arxiv.strip_subject_class`, `crossrefs._norm`); `library.stored_key` finds an older record stored with the class.
+  (`arxiv.strip_subject_class`, `crossrefs._arxiv`); `library.stored_key` finds an older record stored with the class.
 - **Cached cross-reference index**: `crossrefs.nodes_of` reads another paper's `structure.json` as stored, cached by
   (date, size); it never re-analyses, which would rewrite every other paper's structure when one is opened.
 

@@ -144,7 +144,8 @@ def fetch_metadata(arxiv_id):
         response = _paced(lambda: patient_get(client, API, params={"id_list": arxiv_id}))
     response.raise_for_status()
     entry = ET.fromstring(response.text).find(f"{ATOM}entry")
-    if entry is None or not _text(entry, f"{ATOM}title"):
+    # identifiant mal formé ou inexistant : l'API répond 200 avec une entrée « Error » (<id>…/api/errors#…</id>)
+    if entry is None or not _text(entry, f"{ATOM}title") or "/api/errors" in _text(entry, f"{ATOM}id"):
         raise ArxivError(f"Article {arxiv_id} introuvable sur arXiv")
     return _metadata(arxiv_id, entry)
 

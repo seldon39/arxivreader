@@ -678,7 +678,7 @@ For a colleague without a Claude subscription, the AI tab also works with:
   otherwise pay as you go. Gemini CLI no longer accepts free Google accounts since June 2026.
 - **Local model** (Ollama, LM Studio, llama.cpp…: any OpenAI-compatible server on `127.0.0.1`): nothing
   leaves the computer. Allow a context of at least 32,000 tokens (`OLLAMA_CONTEXT_LENGTH=32768 ollama serve`);
-  only the beginning of long papers (~120,000 characters) is sent. Small models are much less reliable
+  only the beginning of long papers (~70,000 characters) is sent. Small models are much less reliable
   in mathematics.
 
 Codex is an agent: its tools are switched off through its own settings, a weaker guarantee than for Claude

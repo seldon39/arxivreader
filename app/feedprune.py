@@ -66,7 +66,7 @@ def prune(days=KEEP_DAYS):
                 batch = doomed[start:start + 500]
                 connection.execute(f"DELETE FROM embeddings WHERE key IN ({','.join('?' * len(batch))})", batch)
     if removed_items + len(doomed) >= VACUUM_FROM:
-        connection = db.sqlite3.connect(db.DB_PATH)
+        connection = db.sqlite3.connect(db.DB_PATH, timeout=30)
         try:
             connection.execute("VACUUM")
         finally:

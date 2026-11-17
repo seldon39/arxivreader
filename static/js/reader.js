@@ -1239,7 +1239,8 @@ class Reader {
   foldAll() {
     const proofs = [...this.content.querySelectorAll(".ltx_proof")];
     const collapse = proofs.some((p) => !p.classList.contains("collapsed"));
-    proofs.forEach((p) => this.setProof(p, collapse, { update: false }));
+    // toutes les sections changent de hauteur, lointaines comprises : hauteurs retenues par lazypaint refaites
+    this.relayout(() => proofs.forEach((p) => this.setProof(p, collapse, { update: false })));
     this.updateFoldButton();
   }
 

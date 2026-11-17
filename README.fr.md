@@ -715,7 +715,7 @@ Pour un collègue sans abonnement Claude, l'onglet IA fonctionne aussi avec :
   depuis juin 2026.
 - **Modèle local** (Ollama, LM Studio, llama.cpp… : tout serveur compatible OpenAI sur `127.0.0.1`) : rien ne
   quitte l'ordinateur. Prévoir un contexte d'au moins 32 000 jetons (`OLLAMA_CONTEXT_LENGTH=32768 ollama serve`) ;
-  seul le début des longs articles (~120 000 caractères) est transmis. Les petits modèles sont nettement moins
+  seul le début des longs articles (~70 000 caractères) est transmis. Les petits modèles sont nettement moins
   fiables en mathématiques.
 
 Codex est un agent : ses outils sont coupés par ses propres réglages, une garantie moins forte que pour

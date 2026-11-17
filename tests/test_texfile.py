@@ -332,7 +332,7 @@ class TexFile(unittest.TestCase):
         self.assertEqual(structure["equations"]["eq:x"], {"label": "(2.1)", "owner": structure["labels"]["prop:b"], "anchors": ["equation.2.1"]})
 
     def test_aux_item_labels_do_not_renumber_the_statement(self):
-        """\label d'un \item dans un énoncé (« (2) » de la liste) : jamais le numéro de l'énoncé."""
+        r"""\label d'un \item dans un énoncé (« (2) » de la liste) : jamais le numéro de l'énoncé."""
         source = r"""\documentclass{amsart}\newtheorem{thm}{Theorem}[section]
 \begin{document}\section{A}\begin{thm}\label{t:main} Two claims:
 \begin{enumerate}\item\label{One} first;\item\label{Two} second.\end{enumerate}
