@@ -24,6 +24,11 @@ class ArxivError(Exception):
     pass
 
 
+class ArxivUnavailable(ArxivError):
+    """arXiv ne répond pas pour l'instant (429, 5xx, délai, connexion), même après quelques essais : rien de définitif,
+    à redemander plus tard (jamais enregistré comme « pas de source » ou « pas de PDF »)."""
+
+
 def parse_arxiv_id(text):
     """Renvoie (identifiant sans version, version ou None) à partir d'un identifiant ou d'une URL."""
     text = text.strip()
@@ -218,36 +223,44 @@ def fetch_html(arxiv_id, version, ar5iv=True):
 MAX_SOURCE_BYTES = 60_000_000
 
 
+TRANSIENT = (429, 500, 502, 503, 504)
+
+
+def _download(url, delays=(3, 6, 9), sleep=None):
+    """Fichier d'arXiv (au plus MAX_SOURCE_BYTES), ou None si arXiv dit qu'il n'existe pas (404…) ou s'il est trop
+    gros. Indisponible (TRANSIENT, délai, connexion) : nouveaux essais (Retry-After respecté), puis ArxivUnavailable."""
+    for delay in (*delays, None):
+        try:
+            with _client() as client, client.stream("GET", url) as response:
+                if response.status_code not in TRANSIENT:
+                    if response.status_code != 200:
+                        return None
+                    chunks, size = [], 0
+                    for chunk in response.iter_bytes():
+                        size += len(chunk)
+                        if size > MAX_SOURCE_BYTES:
+                            return None
+                        chunks.append(chunk)
+                    return b"".join(chunks)
+                problem, wait = f"HTTP {response.status_code}", response.headers.get("Retry-After", "").strip()
+        except httpx.TransportError as error:  # délai dépassé, connexion refusée ou coupée
+            problem, wait = f"{type(error).__name__}: {error}", ""
+        if delay is None:
+            raise ArxivUnavailable(f"{url}: {problem}")
+        (sleep or time.sleep)(min(60, max(delay, int(wait) + 1)) if wait.isdigit() else delay)
+
+
 def fetch_source(arxiv_id, version):
-    """Source déposée sur arXiv (archive tar.gz ou .tex compressé), ou None si trop grosse ; version None : la
-    dernière (demandée avant de connaître la version, pendant la lecture de la fiche)."""
-    with _client() as client:
-        with client.stream("GET", f"https://arxiv.org/e-print/{arxiv_id}" + (f"v{version}" if version else "")) as response:
-            if response.status_code != 200:
-                return None
-            chunks, size = [], 0
-            for chunk in response.iter_bytes():
-                size += len(chunk)
-                if size > MAX_SOURCE_BYTES:
-                    return None
-                chunks.append(chunk)
-    return b"".join(chunks)
+    """Source déposée sur arXiv (archive tar.gz ou .tex compressé), ou None (pas de source, trop grosse) ; version
+    None : la dernière (demandée avant de connaître la version, pendant la lecture de la fiche). ArxivUnavailable :
+    à redemander."""
+    return _download(f"https://arxiv.org/e-print/{arxiv_id}" + (f"v{version}" if version else ""))
 
 
 def fetch_pdf(arxiv_id, version):
-    """PDF de l'article (articles sans version HTML : lus dans le PDF), ou None."""
-    with _client() as client:
-        with client.stream("GET", f"https://arxiv.org/pdf/{arxiv_id}v{version}") as response:
-            if response.status_code != 200:
-                return None
-            chunks, size = [], 0
-            for chunk in response.iter_bytes():
-                size += len(chunk)
-                if size > MAX_SOURCE_BYTES:
-                    return None
-                chunks.append(chunk)
-    data = b"".join(chunks)
-    return data if data[:5] == b"%PDF-" else None
+    """PDF de l'article (articles sans version HTML : lus dans le PDF), ou None. ArxivUnavailable : à redemander."""
+    data = _download(f"https://arxiv.org/pdf/{arxiv_id}v{version}")
+    return data if data and data[:5] == b"%PDF-" else None
 
 
 MAX_ASSET_BYTES = 20_000_000

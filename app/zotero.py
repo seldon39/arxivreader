@@ -268,7 +268,8 @@ def _sync(client, importer, careful):
               "skipped": 0, "duplicates": 0, "unmapped": 0, "importFailed": 0, "held": 0}
 
     # ---- toutes les collections (quelques requêtes) : « arXivReader » et son arbre, sans celles à la corbeille ----
-    every = {c["key"]: c for c in client.all("/collections") if not c["data"].get("deleted")}
+    listing = client.all("/collections")
+    every = {c["key"]: c for c in listing if not c["data"].get("deleted")}
     root = settings.get("zoteroRoot") if same_user else None
     if root and root not in every:
         _forget_all()  # « arXivReader » supprimée dans Zotero : la liaison repart de zéro (rien n'est retiré ici)
@@ -304,6 +305,10 @@ def _sync(client, importer, careful):
     vanished = sum(1 for fid, (key, _) in mapped.items() if fid in local_folders and key not in subs)
     hold_folders = careful and vanished > 1 and vanished * 2 > len(mapped)  # presque toutes disparues : on attend
     held = set()  # sous-collections disparues, gardées pour l'instant (synchronisation automatique)
+    # dossiers supprimés à ce passage : leurs articles restent, remis à la racine. Supprimé ici (`dropped`) : un élément
+    # sorti de l'arbre l'est par notre suppression ; supprimé dans Zotero (`binned`) : seulement s'il porte encore la
+    # sous-collection (à la corbeille de Zotero, ou ses sous-collections), sinon on ne sait pas s'il a été retiré
+    dropped, binned = set(), set()
     for folder_id, (key, name) in mapped.items():
         here, there = local_folders.get(folder_id), subs.get(key)
         if here and there:
@@ -329,6 +334,7 @@ def _sync(client, importer, careful):
                 report["held"] += 1
                 continue
             folders.delete(folder_id)
+            binned.add(key)
             report["folders"] += 1
         elif there and not here:
             # dossier supprimé ici : la sous-collection aussi (pas ses éléments) ; mais si Zotero y a rangé quelque
@@ -346,6 +352,7 @@ def _sync(client, importer, careful):
                 except folders.FolderError:
                     pass
             client.call("DELETE", f"/users/{client.user}/collections/{key}", version=there["version"])
+            dropped.add(str(folder_id))
             report["folders"] += 1
     for folder_id, folder in local_folders.items():
         if folder_id in mapped:
@@ -397,7 +404,18 @@ def _sync(client, importer, careful):
     remote_arxiv = {key: arxiv_of(item["data"]) for key, item in remote.items()}
     report["skipped"] = sum(1 for a in remote_arxiv.values() if not a)
 
+    below = {}
+    for collection in listing:
+        below.setdefault(collection["data"].get("parentCollection") or None, []).append(collection["key"])
+    stack = list(binned)
+    while stack:
+        current = stack.pop()
+        binned.add(current)
+        stack += below.get(current, [])
     local = {pid: keep(places) for pid, places in _local().items()}
+    # articles qui étaient dans un dossier supprimé ici à ce passage : leur élément hors de l'arbre l'est à cause du
+    # dossier, pas d'un retrait (le dossier part, pas ses articles)
+    orphaned = {pid for pid, places in before.items() if places & dropped}
     before = {pid: keep(places) | (places & held_places) for pid, places in before.items()}
     papers = {p["id"]: p for p in db.list_all_papers()}
     items = dict(saved_items)  # article → élément lié
@@ -469,9 +487,14 @@ def _sync(client, importer, careful):
     _check_stop()
     # ---- fusion des places, article par article ----
     plan = []
+    rescued = set()  # articles d'un dossier supprimé : remis à la racine « arXivReader » dans Zotero
     for pid, key in items.items():
         here, then = local.get(pid, set()), before.get(pid, set())
         there = remote_places.get(key, set()) | (then & held_places)  # dossier en attente : rien de changé là-bas
+        data = remote.get(key, {}).get("data", {})
+        if not there and key in remote and not data.get("deleted") and (pid in orphaned or set(data.get("collections", [])) & binned):
+            there = {LIBRARY}
+            rescued.add(pid)
         if LIBRARY in then and LIBRARY not in here:
             result = set()  # retiré de la bibliothèque ici : retiré partout (même rangé entre-temps dans Zotero)
         else:
@@ -515,7 +538,7 @@ def _sync(client, importer, careful):
                 folders.set_member(int(place), pid, place in result)
         # dans Zotero : collections de l'arbre voulues (une sous-collection plus profonde est gardée telle quelle),
         # les autres collections de l'élément gardées
-        if key not in remote or result == there:
+        if key not in remote or (result == there and pid not in rescued):
             continue
         data = remote[key]["data"]
         mine = data.get("collections", [])

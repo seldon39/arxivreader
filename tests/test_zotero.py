@@ -304,6 +304,34 @@ class Sync(unittest.TestCase):
         self.assertIn("1003.2523", self.folder_of("Toeplitz")["papers"])
         self.assertIn(self.zotero.named("Toeplitz"), self.zotero.collections)
 
+    def test_folder_deleted_keeps_its_papers(self):
+        """Élément rangé seulement dans une sous-collection : le dossier supprimé (ici ou dans Zotero), l'article reste
+        dans la bibliothèque et son élément revient à la racine « arXivReader » (pas pris pour un retrait)."""
+        for side in ("here", "zotero"):
+            with self.subTest(side=side):
+                self.tearDown()
+                self.setUp()
+                self.run_sync()
+                self.zotero.add_item({"itemType": "preprint", "title": "Review", "archiveID": "arXiv:1003.2523", "collections": []})
+                folder = folders.create("Toeplitz")
+                self.run_sync()
+                key = self.zotero.named("Toeplitz")
+                item = next(k for k, i in self.zotero.items.items() if i["data"].get("archiveID") == "arXiv:1003.2523")
+                self.zotero.items[item]["data"]["collections"] = [key]  # rangé dans Zotero, seulement dans le dossier
+                self.run_sync()
+                self.assertIn("1003.2523", self.folder_of("Toeplitz")["papers"])
+                if side == "here":
+                    folders.delete(folder["id"])
+                    report = self.run_sync()
+                else:  # Zotero 7 : la sous-collection à la corbeille, l'élément la porte encore
+                    self.zotero.collections[key]["data"]["deleted"] = True
+                    report = self.run_sync()
+                self.assertEqual(report["removedHere"], 0)
+                self.assertTrue(db.get_paper("1003.2523")["in_library"])
+                self.assertIn("arXivReader", self.places(item))
+                self.assertEqual(self.run_sync()["removedHere"], 0)  # et ensuite
+                self.assertTrue(db.get_paper("1003.2523")["in_library"])
+
     def test_deleted_or_trashed_item(self):
         # supprimé de Zotero (corbeille vidée) : retiré d'ici, comme à la corbeille ; rajouté ensuite ici : nouvel élément
         a = save("0806.2370", "Toeplitz operators")

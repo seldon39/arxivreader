@@ -203,6 +203,13 @@ def _entries(path):
 
 # ---------- Compilation ----------
 
+def in_project(name):
+    """Nom relatif au dossier du fichier principal, sans en sortir : ni « .. », ni chemin absolu
+    (\\input{/chemin/fig} ou C:/… : le fichier de l'utilisateur lui-même, jamais une destination d'écriture)."""
+    return bool(name) and ".." not in name and not posixpath.isabs(name) and not re.match(r"[A-Za-z]:", name) \
+        and not name.startswith("\\")
+
+
 def build_dir(pid):
     """Dossier de travail de la compilation (gardé d'une fois à l'autre : latexmk ne refait que le nécessaire) ;
     hors du dossier de l'utilisateur et sans espace dans le chemin (BibTeX s'y perd)."""
@@ -638,7 +645,7 @@ def _build(pid, settings):
         bib_dirs = [str(out)] + [str(Path(p).parent) for p in settings.get("bibs", {}).values()]
         # \include{chapitres/ch1} : LaTeX écrit chapitres/ch1.aux dans le dossier de travail, qui doit exister
         for name in files:
-            if ".." not in name:
+            if in_project(name):
                 (out / posixpath.dirname(name)).mkdir(parents=True, exist_ok=True)
         failed = False
         try:

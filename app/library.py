@@ -17,7 +17,7 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 
 from . import annotations, db, texstructure
-from .arxiv import ArxivError, fetch_asset, fetch_html, fetch_latest, fetch_metadata, fetch_pdf, fetch_source, open_client, paper_key, parse_arxiv_id
+from .arxiv import ArxivError, ArxivUnavailable, fetch_asset, fetch_html, fetch_latest, fetch_metadata, fetch_pdf, fetch_source, open_client, paper_key, parse_arxiv_id
 from .config import PAPERS
 from .sanitize import sanitize_document
 from .structure import STRUCTURE_VERSION, extract_structure
@@ -218,8 +218,11 @@ def _rename(source, target, attempts=6):
 
 
 def _source(arxiv_id, version):
+    """Source TeX, ou None ; ArxivUnavailable passe (arXiv ne répond pas : rien de définitif)."""
     try:
         return fetch_source(arxiv_id, version)
+    except ArxivUnavailable:
+        raise
     except Exception:
         return None
 
@@ -237,8 +240,15 @@ def _fill(staging, arxiv_id, meta, pending_source, overrides, ar5iv=True):
         # adresse d'origine de chaque image : une image qui n'a pas pu venir sera redemandée plus tard
         (staging / "assets.json").write_text(json.dumps(dict(assets)), encoding="utf-8")
         _fetch_assets(staging / "assets", assets)
-    # Source TeX : options que la version HTML perd (numéros d'équation, police, étiquettes de listes)
-    data = pending_source.result()
+    # Source TeX : options que la version HTML perd (numéros d'équation, police, étiquettes de listes). arXiv qui ne
+    # répond pas : sans version HTML, la source décide de la lecture (énoncés, dépendances), l'import échoue et se
+    # refait plus tard plutôt que d'enregistrer « pas de source » ; avec, seules ses options manquent
+    try:
+        data = pending_source.result()
+    except ArxivUnavailable:
+        if source == "none":
+            raise
+        data = None
     try:
         tex_options = analyze_source(data) if data else None
     except Exception:
@@ -253,10 +263,15 @@ def _fill(staging, arxiv_id, meta, pending_source, overrides, ar5iv=True):
             structure, text = found
             source = "tex"
             (staging / "source.tex").write_text(text, encoding="utf-8")
-            pdf = fetch_pdf(arxiv_id, meta.version)
+            try:
+                pdf = fetch_pdf(arxiv_id, meta.version)
+            except ArxivUnavailable:
+                pdf = None
             if pdf:
                 (staging / "paper.pdf").write_bytes(pdf)
                 texstructure.locate_pages(structure, pdf)
+            else:
+                structure["pagesPending"] = True  # PDF manqué : pages des énoncés cherchées quand il arrive (pdf_pages)
     if source == "none":
         # ni HTML ni source TeX (article déposé en PDF seul) : lu dans son PDF, comme un PDF importé ; texte de chaque
         # page pour l'assistant et la recherche. Téléchargement manqué : ensure_pdf le refera à l'ouverture
@@ -584,6 +599,7 @@ def import_version(paper_id, version):
         with paper_lock(archive_id):
             waiting = db.get_paper(archive_id)
             if waiting and waiting["source"] == PENDING:  # sinon : article retiré, ou version archivée par une mise à jour
+                _keep_images(paper_dir(archive_id), staging)  # images des notes importées pendant le téléchargement
                 shutil.rmtree(paper_dir(archive_id), ignore_errors=True)
                 _rename(staging, paper_dir(archive_id))
                 db.save_paper({"id": archive_id, **_fields(arxiv_id, meta, source)})
@@ -794,6 +810,17 @@ def pdf_pages(paper):
     """{"pages": {id d'énoncé ou de section: page du PDF}, "tops": {id: hauteur dans la page}} ;
     calculé une fois par PDF et gardé (pages.json)."""
     structure = load_structure(paper["id"]) or {}
+    if structure.get("source") == "tex" and structure.get("pagesPending"):
+        path = ensure_pdf(paper)  # PDF manqué à l'import : téléchargé, puis pages des énoncés trouvées et gardées
+        if path is None:
+            return None
+        with paper_lock(paper["id"]):  # relu sous le verrou (pas load_structure : sa ré-analyse le prend aussi)
+            saved = paper_dir(paper["id"]) / "structure.json"
+            structure = json.loads(saved.read_text(encoding="utf-8")) if saved.exists() else {}
+            if structure.get("pagesPending"):
+                texstructure.locate_pages(structure, path.read_bytes())
+                structure.pop("pagesPending")
+                write_atomic(paper_dir(paper["id"]) / "structure.json", json.dumps(structure, ensure_ascii=False))
     if structure.get("source") == "tex":  # pages déjà trouvées à l'import
         items = [item for item in structure.get("nodes", []) + structure.get("toc", []) + structure.get("proofBlocks", [])
                  if item.get("page")]

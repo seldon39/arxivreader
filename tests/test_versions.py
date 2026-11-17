@@ -1,6 +1,7 @@
 """Versions d'un article arXiv : archivage à la mise à jour, chaque version avec ses notes (bibliothèque temporaire,
 aucune requête réelle)."""
 
+import gzip
 import io
 import json
 import pathlib
@@ -625,6 +626,19 @@ class Download(Base):
     def started(self, version):
         library.ensure_version(db.get_paper(ID), version)
 
+    def test_images_of_notes_imported_while_downloading_are_kept(self):
+        """Notes d'une ancienne version importées pendant son téléchargement : leurs images (zones/) restent."""
+        with mock.patch.object(library, "_start_version"):
+            archive_id = library.ensure_version(db.get_paper(ID), 1)
+        zones = library.paper_dir(archive_id) / "zones"
+        zones.mkdir(parents=True)
+        (zones / "1.png").write_bytes(PNG)
+        with mock.patch.object(library, "fetch_metadata", return_value=metadata(1)), \
+             mock.patch.object(library, "fetch_html", side_effect=html), mock.patch.object(library, "fetch_source", return_value=None):
+            library.import_version(ID, 1)
+        self.assertEqual(db.get_paper(archive_id)["source"], "arxiv-html")
+        self.assertEqual((zones / "1.png").read_bytes(), PNG)
+
     def test_only_arxiv_html_of_that_version(self):
         urls = []
         client = mock.MagicMock()
@@ -990,3 +1004,69 @@ class PdfOnly(Base):
         with mock.patch("app.localpdf.read_pdf") as read:
             library.ensure_pdf(db.get_paper(ID))
         read.assert_not_called()
+
+
+class Unavailable(Base):
+    """arXiv qui ne répond pas (429, 503, délai) pour la source ou le PDF : nouveaux essais, puis rien d'enregistré comme
+    définitif (« pas de source », pages du PDF jamais cherchées)."""
+
+    TEX = gzip.compress(rb"""\documentclass{article}\newtheorem{theorem}{Theorem}\begin{document}\section{One}
+\begin{theorem}\label{t}Every word counts.\end{theorem}\end{document}""")
+
+    def download(self, statuses):
+        calls = []
+        def answer(request):
+            status = statuses[min(len(calls), len(statuses) - 1)]
+            calls.append(request.url)
+            if isinstance(status, Exception):
+                raise status
+            return arxiv.httpx.Response(status, content=b"%PDF-1.4 data" if status == 200 else b"")
+        client = lambda: arxiv.httpx.Client(transport=arxiv.httpx.MockTransport(answer))
+        with mock.patch.object(arxiv, "_client", client), mock.patch.object(arxiv.time, "sleep") as sleep:
+            try:
+                return arxiv.fetch_pdf(ID, 1), len(calls), sleep.call_count
+            except ArxivError as error:
+                return error, len(calls), sleep.call_count
+
+    def test_download_retries_then_gives_up(self):
+        self.assertEqual(self.download([503, 503, 200]), (b"%PDF-1.4 data", 3, 2))
+        self.assertEqual(self.download([404])[:2], (None, 1))  # pas de PDF : définitif, sans nouvel essai
+        error, calls, waits = self.download([503])
+        self.assertIsInstance(error, arxiv.ArxivUnavailable)
+        self.assertEqual((calls, waits), (4, 3))
+        error, calls, _ = self.download([arxiv.httpx.ConnectTimeout("slow")])
+        self.assertIsInstance(error, arxiv.ArxivUnavailable)
+
+    def test_no_html_and_source_unavailable_fails_the_import(self):
+        with mock.patch.object(library, "fetch_metadata", return_value=metadata(1)), \
+             mock.patch.object(library, "fetch_html", return_value=None), \
+             mock.patch.object(library, "fetch_source", side_effect=arxiv.ArxivUnavailable("503")), \
+             mock.patch.object(library, "fetch_pdf") as pdf, self.assertRaises(ArxivError):
+            library.import_paper(ID)
+        pdf.assert_not_called()  # pas lu « en PDF seul » pour toujours : l'import est à refaire
+        self.assertFalse((library.paper_dir(ID) / "structure.json").exists())
+        self.assertEqual(self.leftovers(), [])
+
+    def test_html_and_source_unavailable_still_imports(self):
+        with mock.patch.object(library, "fetch_metadata", return_value=metadata(1)), \
+             mock.patch.object(library, "fetch_html", side_effect=html), \
+             mock.patch.object(library, "fetch_source", side_effect=arxiv.ArxivUnavailable("503")):
+            paper = library.import_paper(ID)
+        self.assertEqual(paper["source"], "arxiv-html")
+
+    def test_pdf_missed_for_a_tex_source_then_pages_found(self):
+        from tests.test_localpdf import make_pdf
+        with mock.patch.object(library, "fetch_metadata", return_value=metadata(1)), \
+             mock.patch.object(library, "fetch_html", return_value=None), \
+             mock.patch.object(library, "fetch_source", return_value=self.TEX), \
+             mock.patch.object(library, "fetch_pdf", side_effect=arxiv.ArxivUnavailable("503")):
+            paper = library.import_paper(ID)
+        self.assertEqual(paper["source"], "tex")
+        self.assertTrue(library.load_structure(ID)["pagesPending"])
+        data = make_pdf(["1 One", "Theorem 1. Every word counts."])
+        with mock.patch.object(library, "fetch_pdf", return_value=data) as fetch:
+            pages = library.pdf_pages(db.get_paper(ID))
+            library.pdf_pages(db.get_paper(ID))
+        fetch.assert_called_once()
+        self.assertNotIn("pagesPending", library.load_structure(ID))
+        self.assertEqual(set(pages["pages"].values()), {1})

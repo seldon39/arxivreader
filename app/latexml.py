@@ -310,9 +310,9 @@ def _source(paper, work):
         labels = texfile.aux_labels(build)
         copy = work / "source"
         for name in texfile.read_project(main):
-            if ".." in name:
-                continue
             target = copy / name
+            if not texfile.in_project(name) or not target.resolve().is_relative_to(copy.resolve()):
+                continue  # hors du dossier (chemin absolu…) : LaTeXML lit l'original, jamais réécrit
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(_without_plots_bytes((main.parent / name).read_bytes(), labels))
         # tous les .bib trouvés : LaTeXML les lit (un .bbl au format amsrefs, par exemple, lui échappe) ; sinon le
@@ -325,7 +325,7 @@ def _source(paper, work):
         macros = _simple_macros(paper["id"])
         for bib in report.get("bibs", []):  # copiés à côté du fichier, macros de l'auteur développées
             target = copy / bib["name"]
-            if Path(bib["path"]).is_file() and ".." not in bib["name"]:
+            if Path(bib["path"]).is_file() and texfile.in_project(bib["name"]) and target.resolve().is_relative_to(copy.resolve()):
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(_expand_macros(Path(bib["path"]).read_bytes(), macros))
         folders = dict.fromkeys([main.parent, build, *(Path(b["path"]).parent for b in report.get("bibs", []))])

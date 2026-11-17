@@ -172,6 +172,34 @@ class Latexml(unittest.TestCase):
         self.assertEqual(latexml._ascii(work, work, 1), work)  # sans accent : tel quel
 
 
+    def test_absolute_inputs_are_never_rewritten(self):
+        """\\input et \\bibliography en chemin absolu : le fichier de l'utilisateur est lu par LaTeXML, jamais réécrit
+        dans la copie (pgfplots, macros développées)."""
+        project, elsewhere, work = self.tmp / "draft", self.tmp / "elsewhere", self.tmp / "work"
+        for folder in (project, elsewhere, work):
+            folder.mkdir()
+        figure = "\\begin{tikzpicture}\\begin{axis}\\addplot{x};\\end{axis}\\end{tikzpicture}\n"
+        bib = "@article{k, title={$\\mC$}}\n"
+        (elsewhere / "fig.tex").write_text(figure, encoding="utf-8")
+        (elsewhere / "refs.bib").write_text(bib, encoding="utf-8")
+        (project / "local.tex").write_text(figure, encoding="utf-8")
+        (project / "main.tex").write_text(f"\\documentclass{{article}}\\begin{{document}}\\input{{{elsewhere}/fig.tex}}\\input{{local}}"
+                                          f"\\bibliography{{{elsewhere}/refs}}\\end{{document}}", encoding="utf-8")
+        report = {"bibs": [{"name": f"{elsewhere}/refs.bib", "path": str(elsewhere / "refs.bib")}]}
+        with mock.patch.object(texfile, "is_tex_file", return_value=True), \
+             mock.patch.object(texfile, "_settings", return_value={"main": str(project / "main.tex")}), \
+             mock.patch.object(texfile, "build_dir", return_value=self.tmp / "build"), \
+             mock.patch.object(texfile, "report", return_value=report), \
+             mock.patch.object(latexml, "_simple_macros", return_value={"mC": "\\mathcal{C}"}), \
+             mock.patch.object(latexml, "_raster_figures"):
+            copy, name, _, _ = latexml._source({"id": "tex-x"}, work)
+        self.assertEqual((elsewhere / "fig.tex").read_text(encoding="utf-8"), figure)
+        self.assertEqual((elsewhere / "refs.bib").read_text(encoding="utf-8"), bib)
+        self.assertIn("Figure omitted", (copy / "local.tex").read_text(encoding="utf-8"))  # la copie, elle, est préparée
+        self.assertEqual(name, "main.tex")
+        self.assertFalse(texfile.in_project("C:/x.tex") or texfile.in_project("../x") or texfile.in_project("/x"))
+        self.assertTrue(texfile.in_project("sections/intro.tex"))
+
     def test_author_macros_expanded_in_bib(self):
         # LaTeXML lit le .bib sans le préambule : « $\mC^k$ » perdait son C
         macros = {"mC": r"\mathcal{C}", "cC": r"\mathscr{C}"}
