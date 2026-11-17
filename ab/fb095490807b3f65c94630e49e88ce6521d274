@@ -1,0 +1,35 @@
+README.fr.md
+  s_2e78fe3aad7ffd::t_3ef4b8e106c44c 718
+tests/test_texfile.py
+  s_2e78fe3aad7ffd::t_0bc8c50dad047c 335
+tests/test_versions.py
+  s_2e78fe3aad7ffd::t_927edf7c93bbfd 1032-1040
+app/arxiv.py
+  s_2e78fe3aad7ffd::t_927edf7c93bbfd 147-148
+MAINTENANCE.md
+  s_2e78fe3aad7ffd::t_3ef4b8e106c44c 786,951,966
+static/js/reader.js
+  s_2e78fe3aad7ffd::t_0bc8c50dad047c 1242-1243
+static/js/i18n.js
+  s_2e78fe3aad7ffd::t_3ef4b8e106c44c 826,1888
+README.md
+  s_2e78fe3aad7ffd::t_3ef4b8e106c44c 681
+app/feedprune.py
+  s_2e78fe3aad7ffd::t_0bc8c50dad047c 69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "abfb095490807b3f65c94630e49e88ce6521d274",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
