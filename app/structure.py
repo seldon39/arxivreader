@@ -100,8 +100,18 @@ def _color(value):
                 alpha = float(parts[3][:-1]) / 100 if parts[3].endswith("%") else float(parts[3])
         except ValueError:
             return None
+    return luminance(channels), alpha
+
+
+WHITE = 0.9  # luminance d'un texte qu'on ne voit pas sur la page blanche
+DARK = 0.4   # fond assez foncé pour qu'un texte blanc s'y lise
+
+
+def luminance(channels):
+    """Luminance relative WCAG d'une couleur (r, v, b) entre 0 et 1 : texte « blanc » à partir de 0,9 (ici, dans un
+    source TeX et dans un PDF), fond foncé en deçà de 0,4."""
     r, g, b = (c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in (min(max(c, 0), 1) for c in channels))
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b, alpha
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
 
 
 def _hiding(style):
@@ -111,7 +121,7 @@ def _hiding(style):
         return "other"
     for match in TEXT_COLOR.finditer(style):
         color = _color(match.group(1))
-        if color and (color[1] < 0.1 or color[0] >= 0.9):
+        if color and (color[1] < 0.1 or color[0] >= WHITE):
             return "color"
     return None
 
@@ -124,7 +134,7 @@ def _dark_background(element, stop):
         for match in BACKGROUND.finditer(node.get("style", "")):
             color = _color(match.group(1).split()[0] if match.group(1).split() else "")
             if color and color[1] >= 0.5:
-                return color[0] < 0.4
+                return color[0] < DARK
     return False
 
 

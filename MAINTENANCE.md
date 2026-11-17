@@ -463,15 +463,27 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   immediately before in the same coordinate frame (title of a tcolorbox box, `_on_dark_shape`, contrast of at least 2,3). Conservative:
   an unreadable shape on top (moved, relative commands, image), with no surface, partial, or a foreignObject with no
   width, and the text stays flagged; shapes read once per group.
-- Invisible text in a TeX source (`texstructure.invisible`, used by `strip_hidden`, hence by `extract` and `ai.tex_body`):
-  `\textcolor`/`\color` white (also a color defined white by `\definecolor`/`\colorlet`), `\fontsize` under 1 pt,
-  `\scalebox` under 0,1, `\resizebox` under 1 pt, `\phantom` (removed, never counted); nothing under a dark
-  `\pagecolor`; a span is cut at `_MAX_HIDDEN_SPAN` characters. Count in `hiddenText` of `structure.json` (papers
-  analysed before: after a re-analysis). In a PDF (`localpdf._page_text`, pypdf visitors): text drawn in white (unless a
-  large colored rectangle was filled earlier on the page: banner, box) or with a font under `MIN_VISIBLE_PT`; the
-  text layer of a scan (mode 3) is kept. Removed from `text.json` and counted (`hidden`, then `hiddenText`); a
-  `text.json` older than `TEXT_VERSION` is re-read once (`_refresh_text`). The reader shows the count without
-  a reveal button when only the PDF is displayed (`reader.hiddenTextSource`).
+- Invisible text in a TeX source (`texstructure.invisible`, used by `strip_hidden`, hence by `extract` and `ai.tex_body`;
+  thresholds `structure.WHITE` / `DARK`, shared with the HTML and the PDF). Colors are evaluated (`_xcolor`: names,
+  author colors `\definecolor`/`\colorlet`, mixes `white!95`, `black!3`, models `[rgb]`, `[HTML]`…): white or nearly
+  (luminance ≥ 0,9) by `\textcolor` or `\color`, whose scope (`_scope_end`) ends at its group, its environment, the
+  next `\color`/`\normalcolor` at its level; `\fontsize` under 1 pt (scope up to `\normalsize`, `\small`…),
+  `\scalebox` under 0,1 on either axis, `\resizebox` under 1 pt, `\phantom` (removed, never counted); the author's
+  macros and environments that do the same (`_hiding_macros`: `\hide{…}`, `{\wh …}`, `\begin{hid}`; nothing is removed
+  inside a definition). A declaration that runs to `\end{document}` over more than `_MAX_HIDDEN_SPAN` characters
+  is a setting of the whole document, kept. White is kept on a dark background (`_on_dark`): last `\pagecolor`,
+  `\colorbox`, or a dark (or unreadable) fill declared before it in its environment, closed environments excluded
+  (`fill=`, `\fill`, `\rowcolor`, `\cellcolor`, `colback=`…), and in beamer. Comments are ignored. Count in
+  `hiddenText` of `structure.json` (papers analysed before: after a re-analysis).
+- Invisible text in a PDF (`localpdf._page_text`, class `_Visible`): the content stream is walked with its graphics
+  state (q/Q, `cm`, fill and stroke colors, `Tf`, `Tz`, `Tr`, text matrices; Form XObjects once each), each text show
+  judged with the state in force: white or nearly unless a dark shape or an image was painted under it before,
+  size under `MIN_VISIBLE_PT` on either axis, invisible mode (`Tr` 3) except on a page with an image (text layer of a
+  recognized scan). Hidden shows are removed from the stream (in memory, a decoded copy for a form in a filter other
+  than Flate) before pypdf extracts the text; counted (`hidden`, then `hiddenText`). A `text.json` older than
+  `TEXT_VERSION` is re-read once (`_refresh_text`). The reader shows the count without a reveal button when only the
+  PDF is displayed (`reader.hiddenTextSource`). Known limits: text placed off the page or covered by a shape, and
+  colors behind special color spaces (Separation, patterns), are not detected.
 - Author text in the prompt: `ai._prompt_structure` (called by `build_prompt`) gives the AI a copy of the structure
   whose statement and equation labels are plain text (`_plain_label`: no `<`, `>`, quotes, 120 characters) and whose
   macros go through `_guard`.
@@ -783,7 +795,7 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
 
 - Full-text search of the library (`fulltext.py`, `GET /api/library/search?q=`, query cut to 300 characters): no index.
   Each search reads `content.html` (or `text.json` of an imported PDF or a PDF-only arXiv paper) of the library papers, most recently opened first;
-  extracted text cached by `lru_cache` (1000 entries) on (path, `mtime_ns`). `fold` removes accents and case through a 1:1
+  folded text cached in `_cache` (keyed on (path, `mtime_ns`), oldest dropped beyond `CACHED_CHARS` characters). `fold` removes accents and case through a 1:1
   character mapping (`_Folding`), so a position in the folded text is valid in the original: a new equivalence must keep
   one character for one. `_pieces`: `<math>` replaced by its `alttext` between `$…$`, blocks separate words; literal
   dollars become `PLAIN_DOLLAR` (U+FF04), so a remaining `$` always delimits a formula. `_locate`: one hit per paragraph or

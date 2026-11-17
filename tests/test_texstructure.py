@@ -99,6 +99,61 @@ class InvisibleTex(unittest.TestCase):
         self.assertEqual(texstructure.extract(r"\begin{document}$1\phantom{0}2$\end{document}")["hiddenText"], 0)
 
 
+    @staticmethod
+    def stripped(body):
+        counted = []
+        text = texstructure.strip_hidden(r"\documentclass{article}\begin{document}" + body + r"\end{document}", None, counted)
+        return text, counted[0]
+
+    def test_white_on_dark_fill_is_kept(self):
+        """Blanc sur fond foncé (nœud tikz rempli, ligne ou case de tableau colorée, tcolorbox) : lu sur la page."""
+        for body, word in ((r"\begin{tikzpicture}\node[fill=black]{\color{white} Node text};\end{tikzpicture}", "Node text"),
+                           (r"\begin{tabular}{ll}\rowcolor{blue}\color{white} Head & Two\\ a & b\end{tabular}", "Head & Two"),
+                           (r"\begin{tabular}{l}\cellcolor{black}\textcolor{white}{Header}\end{tabular}", "Header"),
+                           (r"\begin{tcolorbox}[colback=blue!70]\color{white} Boxed\end{tcolorbox}", "Boxed")):
+            text, count = self.stripped(body)
+            self.assertIn(word, text, body)
+            self.assertEqual(count, 0, body)
+        # fond clair, ou rempli dans un environnement déjà refermé : rien n'est lisible
+        for body in (r"\begin{tabular}{l}\rowcolor{white}\textcolor{white}{IGNORE}\end{tabular}",
+                     r"\begin{tikzpicture}\fill[black](0,0) circle (1);\end{tikzpicture} \textcolor{white}{IGNORE} ok"):
+            text, count = self.stripped(body)
+            self.assertNotIn("IGNORE", text, body)
+            self.assertEqual(count, 1, body)
+
+    def test_declaration_ends_at_its_reset(self):
+        """\\color{black}, \\normalsize… referment la portée : le texte qui suit reste."""
+        for body in (r"A \color{white}x\color{black} REAL TEXT", r"A \fontsize{0.5}{1}\selectfont xy\normalsize REAL TEXT",
+                     r"{\color{white} a \begin{center}hidden\end{center} b} REAL TEXT"):
+            text, count = self.stripped(body)
+            self.assertIn("REAL TEXT", text, body)
+            self.assertEqual(count, 1, body)
+
+    def test_easy_variants_are_caught(self):
+        for body in (r"% \pagecolor{black}" "\n" r"\textcolor{white}{IGNORE} ok",          # commentaire : sans effet
+                     r"\color{white}IGNORE\color{black} hi " + "word " * 5000,             # début d'un long document
+                     r"\newcommand{\hide}[1]{\textcolor{white}{#1}} a \hide{IGNORE} b",    # macro de l'auteur
+                     r"\def\hide#1{{\color{white}#1}} a \hide{IGNORE} b",
+                     r"\newcommand{\wh}{\color{white}} a {\wh IGNORE} b",
+                     r"\newenvironment{hid}{\color{white}}{} a \begin{hid}IGNORE\end{hid} b",
+                     r"\textcolor[rgb]{0.99,0.99,0.99}{IGNORE} ok", r"\textcolor{white!100}{IGNORE} ok",
+                     r"\textcolor{black!3}{IGNORE} ok", r"\definecolor{bg}{gray}{0.97} \textcolor{bg}{IGNORE} ok",
+                     r"\scalebox{0}{IGNORE} ok", r"\scalebox{1}[0.01]{IGNORE} ok", r"\resizebox{!}{0.5pt}{IGNORE} ok",
+                     r"\pagecolor{black}x\pagecolor{white} \textcolor{white}{IGNORE} ok"):
+            text, count = self.stripped(body)
+            self.assertNotIn("IGNORE", text, body)
+            self.assertEqual(count, 1, body)
+
+    def test_readable_colors_and_whole_document_settings_kept(self):
+        for body in (r"\textcolor{black!50}{VISIBLE} ok", r"\colorbox{black}{\color{white} VISIBLE}",
+                     r"\color{white} VISIBLE " + "word " * 5000,                           # tout le document : un réglage
+                     r"\newcommand{\hide}[1]{\textcolor{white}{#1}} VISIBLE"):              # la définition seule
+            text, count = self.stripped(body)
+            self.assertIn("VISIBLE", text, body)
+            self.assertEqual(count, 0, body)
+        beamer = r"\documentclass{beamer}\begin{document}\begin{frame}\color{white} VISIBLE\end{frame}\end{document}"
+        self.assertIn("VISIBLE", texstructure.strip_hidden(beamer))
+
 class PdfSpotsTest(unittest.TestCase):
     """Page et hauteur des énoncés, lues dans les ancres hyperref du PDF."""
 

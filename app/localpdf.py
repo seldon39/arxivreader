@@ -22,9 +22,10 @@ import httpx
 
 from . import db, s2
 from .library import paper_dir, paper_lock, write_atomic, write_atomic_bytes
-from .structure import STRUCTURE_VERSION
+from .structure import DARK, STRUCTURE_VERSION, WHITE, luminance
 
 SOURCE = "local-pdf"
+log = logging.getLogger(__name__)
 logging.getLogger("pypdf").setLevel(logging.ERROR)  # polices incomplètes, etc. : sans effet sur le texte utile
 MAX_BYTES = 150_000_000
 MAX_PAGES = 2000
@@ -65,7 +66,11 @@ def _clean(value):
 
 
 FILLS = {b"f", b"F", b"f*", b"B", b"B*", b"b", b"b*"}
+PAINTS = FILLS | {b"S", b"s", b"n"}
+SHOWS = {b"Tj", b"TJ", b"'", b'"'}
 MIN_VISIBLE_PT = 1  # corps de texte en deçà : invisible à l'écran comme à l'impression
+DEVICE_SPACES = {"/DeviceGray", "/DeviceRGB", "/DeviceCMYK", "/CalGray", "/CalRGB", "/ICCBased", "/G", "/RGB", "/CMYK"}
+IDENTITY = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
 
 
 def _numbers(args):
@@ -75,60 +80,227 @@ def _numbers(args):
         return None
 
 
-def _is_white(values):
-    """Couleur de remplissage blanche : gris 1, RVB (1, 1, 1), CMJN (0, 0, 0, 0)."""
-    if not values or len(values) not in (1, 3, 4):
+def _mult(a, b):
+    """Produit de deux matrices PDF [a b c d e f] (a appliquée d'abord)."""
+    return [a[0] * b[0] + a[1] * b[2], a[0] * b[1] + a[1] * b[3], a[2] * b[0] + a[3] * b[2], a[2] * b[1] + a[3] * b[3],
+            a[4] * b[0] + a[5] * b[2] + b[4], a[4] * b[1] + a[5] * b[3] + b[5]]
+
+
+def _point(m, x, y):
+    return x * m[0] + y * m[2] + m[4], x * m[1] + y * m[3] + m[5]
+
+
+def _luminance(values, known=True):
+    """Luminance d'une couleur de remplissage (gris, RVB, CMJN selon le nombre de composantes), None si on ne sait pas
+    la lire (espace de couleur spécial, motif)."""
+    if not known or not values or len(values) not in (1, 3, 4):
+        return None
+    if len(values) == 1:
+        return luminance(values * 3)
+    if len(values) == 3:
+        return luminance(values)
+    c, m, y, k = values
+    return luminance([(1 - c) * (1 - k), (1 - m) * (1 - k), (1 - y) * (1 - k)])
+
+
+def _known_space(name, resources):
+    """Espace de couleur dont les composantes se lisent comme gris / RVB / CMJN."""
+    if name in DEVICE_SPACES:
+        return True
+    try:
+        space = resources["/ColorSpace"][name].get_object()
+        return str(space[0] if isinstance(space, list) else space) in DEVICE_SPACES
+    except Exception:
         return False
-    return all(v > 0.97 for v in values) if len(values) < 4 else all(v < 0.03 for v in values)
 
 
-def _page_text(page, hidden=None):
-    """Texte de la page, sans le texte invisible (blanc hors d'un grand fond coloré, corps de moins d'1 pt), comme
-    dans la version HTML (structure.mark_hidden) : il peut porter une injection d'invite et n'est jamais transmis à
-    l'IA. `hidden` (liste) : y ajoute le nombre de passages invisibles avec des lettres. Le texte en mode 3 (invisible,
-    couche de texte d'un scan reconnu) est gardé : c'est le texte de la page."""
-    state, stack, segments, background = {"white": False}, [], [], [False]
-    rect = [None]
+def _raw(value):
+    """Octets d'une chaîne affichée (Tj) ou de celles d'un tableau (TJ)."""
+    if isinstance(value, list):
+        return b"".join(_raw(item) for item in value if isinstance(item, (str, bytes)))
+    if hasattr(value, "get_original_bytes"):
+        return value.get_original_bytes()
+    return bytes(value) if isinstance(value, bytes) else str(value).encode("latin-1", "replace")
 
-    def before(operator, args, cm, tm):
+
+def _has_images(page, contents):
+    def walk(resources, depth):
+        try:
+            xobjects = resources.get("/XObject") or {}
+            for name in xobjects:
+                xobject = xobjects[name].get_object()
+                if xobject.get("/Subtype") == "/Image" or depth < 3 and xobject.get("/Subtype") == "/Form" and walk(
+                        xobject.get("/Resources") or {}, depth + 1):
+                    return True
+        except Exception:
+            pass
+        return False
+    try:
+        return walk(page.get("/Resources") or {}, 0) or any(op == b"INLINE IMAGE" for _, op in contents.operations)
+    except Exception:
+        return False
+
+
+class _Visible:
+    """Parcours d'un flux de contenu qui retire les affichages de texte invisibles (`ops`) et les compte
+    (`passages` : suites de texte invisible avec des lettres). État graphique suivi : q/Q, cm, couleurs de remplissage
+    et de trait, Tf, Tz, Tr, TL, matrices de texte ; fonds foncés (ou d'image) déjà peints, avec leur place sur la page.
+    Formulaires (Do) parcourus de même, une fois chacun."""
+
+    def __init__(self, reader, scan):
+        self.reader, self.scan = reader, scan
+        self.backgrounds, self.passages, self.running, self.forms = [], 0, False, set()
+
+    def run(self, operations, resources, state, depth=0):
+        """(opérations gardées, flux changé) ; `state` (dict) : état graphique au départ, mis à jour."""
+        kept, stack, path, changed = [], [], [], False
+        tm = tlm = IDENTITY
+        for args, operator in operations:
+            try:
+                self._step(args, operator, resources, state, stack, path, depth)
+                if operator == b"BT":
+                    tm = tlm = IDENTITY
+                elif operator == b"Tm" and _numbers(args[:6]) and len(args) >= 6:
+                    tm = tlm = _numbers(args[:6])
+                elif operator in (b"Td", b"TD") and _numbers(args[:2]) and len(args) >= 2:
+                    tx, ty = _numbers(args[:2])
+                    state["leading"] = -ty if operator == b"TD" else state["leading"]
+                    tm = tlm = _mult([1, 0, 0, 1, tx, ty], tlm)
+                elif operator in (b"T*", b"'", b'"'):
+                    tm = tlm = _mult([1, 0, 0, 1, 0, -state["leading"]], tlm)
+                if operator in SHOWS and self._hidden(args, operator, resources, state, tm):
+                    if operator == b'"' and len(args) >= 3:
+                        kept += [([args[0]], b"Tw"), ([args[1]], b"Tc")]
+                    if operator in (b"'", b'"'):
+                        kept.append(([], b"T*"))
+                    changed = True
+                    continue
+            except Exception:  # opérande inattendu : l'opération est gardée telle quelle
+                pass
+            kept.append((args, operator))
+        return kept, changed
+
+    def _step(self, args, operator, resources, state, stack, path, depth):
         if operator == b"q":
             stack.append(dict(state))
         elif operator == b"Q" and stack:
+            state.clear()
             state.update(stack.pop())
+        elif operator == b"cm" and len(args) >= 6:
+            state["ctm"] = _mult(_numbers(args[:6]), state["ctm"])
         elif operator in (b"g", b"rg", b"k", b"sc", b"scn"):
-            state["white"] = _is_white(_numbers(args))
-        elif operator == b"cs":
-            state["white"] = False
-        elif operator == b"re":
-            rect[0] = _numbers(args)
-        elif operator in FILLS:
-            if rect[0] and len(rect[0]) == 4 and abs(rect[0][2]) > 40 and abs(rect[0][3]) > 10 and not state["white"]:
-                background[0] = True  # grand rectangle coloré (bandeau, encadré) : un texte blanc peut s'y lire
-            rect[0] = None
+            state["fill"] = _luminance(_numbers(args), state["fillKnown"] if operator in (b"sc", b"scn") else True)
+        elif operator in (b"G", b"RG", b"K", b"SC", b"SCN"):
+            state["stroke"] = _luminance(_numbers(args), state["strokeKnown"] if operator in (b"SC", b"SCN") else True)
+        elif operator in (b"cs", b"CS") and args:
+            known = _known_space(str(args[0]), resources)
+            side = "fill" if operator == b"cs" else "stroke"
+            state[side + "Known"], state[side] = known, 0.0 if known else None
+        elif operator == b"Tf" and len(args) >= 2:
+            state["size"] = abs(float(args[1]))
+            try:
+                state["cid"] = resources["/Font"][args[0]].get_object().get("/Subtype") == "/Type0"
+            except Exception:
+                state["cid"] = False
+        elif operator == b"Tz" and args:
+            state["scale"] = float(args[0]) / 100
+        elif operator == b"Tr" and args:
+            state["render"] = int(args[0])
+        elif operator == b"TL" and args:
+            state["leading"] = float(args[0])
+        elif operator in (b"m", b"l", b"c", b"v", b"y") and _numbers(args):
+            numbers = _numbers(args)
+            path += [_point(state["ctm"], numbers[i], numbers[i + 1]) for i in range(0, len(numbers) - 1, 2)]
+        elif operator == b"re" and len(args) >= 4:
+            x, y, w, h = _numbers(args[:4])
+            path += [_point(state["ctm"], x + dx, y + dy) for dx in (0, w) for dy in (0, h)]
+        elif operator in PAINTS:
+            if operator in FILLS and path and (state["fill"] is None or state["fill"] < DARK):
+                self._background(path)
+            path.clear()
+        elif operator == b"INLINE IMAGE":
+            self._background([_point(state["ctm"], x, y) for x in (0, 1) for y in (0, 1)])
+        elif operator == b"Do" and args:
+            self._draw(args[0], resources, state, depth)
 
-    def visit(text, cm, tm, font, size):
-        try:
-            scale = abs(size or 0) * math.hypot(tm[2], tm[3]) * math.hypot(cm[2], cm[3])
-        except (TypeError, IndexError):
-            scale = MIN_VISIBLE_PT
-        segments.append((text, 0 < scale < MIN_VISIBLE_PT or (state["white"] and not background[0])))
+    def _background(self, points):
+        xs, ys = [p[0] for p in points], [p[1] for p in points]
+        self.backgrounds.append((min(xs), min(ys), max(xs), max(ys)))
 
+    def _draw(self, name, resources, state, depth):
+        xobject = resources["/XObject"][name]
+        target = xobject.get_object()
+        if target.get("/Subtype") == "/Image":
+            self._background([_point(state["ctm"], x, y) for x in (0, 1) for y in (0, 1)])
+            return
+        key = getattr(xobject, "idnum", None) or id(target)
+        if target.get("/Subtype") != "/Form" or depth >= 5 or key in self.forms:
+            return
+        self.forms.add(key)
+        from pypdf.generic import ContentStream
+        content = ContentStream(target, self.reader)
+        inner = dict(state, ctm=_mult(_numbers(target.get("/Matrix", IDENTITY)) or IDENTITY, state["ctm"]))
+        kept, changed = self.run(content.operations, target.get("/Resources") or resources, inner, depth + 1)
+        if changed:
+            content.operations = kept
+            try:
+                target.set_data(content.get_data())
+            except Exception:  # filtre autre que Flate : copie décodée à la place du formulaire, dans ces ressources
+                from pypdf.generic import DecodedStreamObject, NameObject
+                copy = DecodedStreamObject()
+                copy.update({k: v for k, v in target.items() if k not in ("/Filter", "/DecodeParms", "/Length")})
+                copy.set_data(content.get_data())
+                resources["/XObject"][NameObject(name)] = copy
+
+    def _hidden(self, args, operator, resources, state, tm):
+        raw = _raw(args[-1] if args else b"")
+        blank = not raw.strip(b"\x00 ") if state.get("cid") else not raw.strip()
+        letters = bool(raw.strip(b"\x00")) if state.get("cid") else bool(re.search(rb"[A-Za-z\x80-\xff]", raw))
+        m = _mult(tm, state["ctm"])
+        size = state.get("size")
+        tiny = size is not None and (size * math.hypot(m[2], m[3]) < MIN_VISIBLE_PT
+                                     or size * state["scale"] * math.hypot(m[0], m[1]) < MIN_VISIBLE_PT)
+        render = state["render"] % 8
+        color = state["stroke"] if render in (1, 5) else state["fill"]
+        white = render in (0, 1, 2, 4, 5, 6) and color is not None and color >= WHITE and not self._on_dark(m, size or 10)
+        hidden = not blank and (tiny or white or render in (3, 7) and not self.scan)
+        if hidden and letters:
+            self.passages += not self.running
+            self.running = True
+        elif not blank and not hidden:
+            self.running = False
+        return hidden
+
+    def _on_dark(self, m, size):
+        points = [_point(m, 0, 0), _point(m, 0, size * 0.3)]
+        return any(x0 - 1 <= x <= x1 + 1 and y0 - 1 <= y <= y1 + 1 for x, y in points for x0, y0, x1, y1 in self.backgrounds)
+
+
+def _page_text(page, hidden=None):
+    """Texte de la page, sans le texte invisible, comme dans la version HTML (structure.mark_hidden) : il peut porter
+    une injection d'invite et n'est jamais transmis à l'IA. Invisible : blanc ou presque (luminance ≥ WHITE) hors d'un
+    fond foncé ou d'une image peints dessous, corps de moins de MIN_VISIBLE_PT, mode de rendu invisible (Tr 3) sauf
+    sur une page avec image (couche de texte d'un scan reconnu : le texte de la page). `hidden` (liste) : y ajoute le
+    nombre de passages invisibles avec des lettres."""
+    from pypdf.generic import ContentStream, NameObject
+    passages = 0
     try:
-        full = page.extract_text(visitor_operand_before=before, visitor_text=visit) or ""
+        contents = page.get_contents()
+        if contents is not None:
+            walk = _Visible(page.pdf, _has_images(page, contents))
+            state = {"ctm": IDENTITY, "fill": 0.0, "stroke": 0.0, "fillKnown": True, "strokeKnown": True, "size": None,
+                     "scale": 1.0, "render": 0, "leading": 0.0, "cid": False}
+            kept, changed = walk.run(contents.operations, page.get("/Resources") or {}, state)
+            passages = walk.passages
+            if changed:
+                contents.operations = kept
+                page[NameObject("/Contents")] = contents
+    except Exception:  # flux illisible pour ce parcours : pypdf en tire ce qu'il peut
+        log.debug("texte invisible non cherché", exc_info=True)
+    try:
+        full = page.extract_text() or ""
     except Exception:  # page abîmée, flux trop gros (garde de pypdf) : page sans texte, le reste est gardé
         return ""
-    passages, cursor, previous = 0, 0, False
-    for text, invisible in segments:
-        piece = text.strip()
-        letters = bool(re.search(r"[^\W\d_]", piece))
-        if invisible and piece:
-            found = full.find(piece, cursor)
-            if found >= 0:
-                full = full[:found] + " " + full[found + len(piece):]
-                cursor = found + 1
-            passages += letters and not previous
-        if piece:
-            previous = invisible and (letters or previous)
     if hidden is not None:
         hidden.append(passages)
     return full[:PAGE_CHARS]

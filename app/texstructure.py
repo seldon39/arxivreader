@@ -9,6 +9,7 @@ sinon d'une recherche du texte « Theorem 2.3 » dans le PDF.
 La source n'est ni extraite sur le disque ni compilée.
 """
 
+import bisect
 import io
 import posixpath
 import re
@@ -16,7 +17,7 @@ import unicodedata
 
 from .arxiv import extract_ids
 from .structure import (defines_macro, ANNOUNCES_PROOF_BELOW, IMPLICIT_REF, JUSTIFICATION, JUSTIFIES_NEXT, JUSTIFIES_PREVIOUS, NEEDS_PROOF,
-                        PROOF_HEADING, PROVING, STRUCTURE_VERSION, assign_chapters, classify)
+                        PROOF_HEADING, PROVING, STRUCTURE_VERSION, assign_chapters, classify, luminance, DARK, WHITE)
 from .texsource import _expand, _read_archive, choose_main
 
 SECTIONS = {"part": 0, "chapter": 0, "section": 1, "subsection": 2, "subsubsection": 3}
@@ -263,24 +264,96 @@ def _letter(n):
 
 
 # Texte imprimé mais invisible (blanc, minuscule) : retiré comme dans la version HTML (structure.mark_hidden), signalé
-# au lecteur, jamais transmis à l'IA (il peut porter une injection d'invite)
-_WHITE_SPEC = (r"\{\s*(?:white|White)\s*\}|\[\s*(?:rgb|RGB|gray|cmyk|HTML)\s*\]\s*\{\s*(?:1(?:\.0*)?|255|FFFFFF|ffffff)"
-               r"(?:\s*,\s*(?:1(?:\.0*)?|255)){0,2}\s*\}|\[\s*cmyk\s*\]\s*\{\s*0(?:\.0*)?(?:\s*,\s*0(?:\.0*)?){3}\s*\}")
+# au lecteur, jamais transmis à l'IA (il peut porter une injection d'invite). Heuristique : les détours de TeX sont
+# sans fin ; on couvre les façons simples, sans jamais retirer du texte qu'on lit sur la page.
+_XCOLORS = {"white": (1, 1, 1), "black": (0, 0, 0), "red": (1, 0, 0), "green": (0, 1, 0), "blue": (0, 0, 1),
+            "cyan": (0, 1, 1), "magenta": (1, 0, 1), "yellow": (1, 1, 0), "gray": (.5, .5, .5), "lightgray": (.75, .75, .75),
+            "darkgray": (.25, .25, .25), "brown": (.75, .5, .25), "lime": (.75, 1, 0), "olive": (.5, .5, 0),
+            "orange": (1, .5, 0), "pink": (1, .75, .75), "purple": (.75, 0, .25), "teal": (0, .5, .5), "violet": (.5, 0, .5)}
 _UNITS = {"pt": 1, "bp": 1, "": 1, "mm": 2.85, "cm": 28.5, "in": 72.3, "ex": 4.3, "em": 10, "sp": 1 / 65536}
-_MAX_HIDDEN_SPAN = 20000  # \\color{white} qui court plus loin : réglage d'ensemble (fond foncé), pas un passage caché
+_MAX_HIDDEN_SPAN = 20000  # déclaration qui court jusqu'à \end{document} sur plus que cela : réglage du document entier
+_SCAN = 200000            # portée d'une déclaration cherchée jusque-là au plus
+_COMMENT = re.compile(r"(?<!\\)%[^\n]*")
+_COLOR_USE = re.compile(r"\\(textcolor|color)\s*(?:\[\s*([A-Za-z]+)\s*\])?\s*\{([^{}]*)\}")
+_COLOR_DEFINITION = re.compile(r"\\(?:definecolor|providecolor)\s*(?:\[[^\]]*\])?\s*\{\s*([^{}]+?)\s*\}\s*\{\s*([^{}]+?)\s*\}"
+                               r"\s*\{([^{}]*)\}|\\colorlet\s*(?:\[[^\]]*\])?\s*\{\s*([^{}]+?)\s*\}\s*(?:\[[^\]]*\])?\s*\{([^{}]*)\}")
+_FONTSIZE = re.compile(r"\\fontsize\s*\{([^{}]*)\}\s*\{[^{}]*\}\s*\\selectfont\b")
+_SIZES = "normalsize|tiny|scriptsize|footnotesize|small|large|Large|LARGE|huge|Huge|fontsize"
+_ENV = re.compile(r"\\(begin|end)\s*\{([^{}]*)\}")
+# remplissage posé avant le texte : tikz (fill=, \fill…), tableaux (\rowcolor…), tcolorbox / mdframed (colback=…)
+_FILL = re.compile(r"(?:\bfill|\bcolback|\bbackgroundcolor|\bbg)\s*=\s*(\{[^{}]*\}|[\w!.\-]+)"
+                   r"|\\(?:row|cell|column)color\s*(?:\[[^\]]*\])?\s*\{([^{}]*)\}|\\(?:rowcolors|fill|filldraw|shade|shadedraw)\b")
+_PAGECOLOR = re.compile(r"\\pagecolor\s*(?:\[\s*([A-Za-z]+)\s*\])?\s*\{([^{}]*)\}")
+_DEFINITION = re.compile(r"\\(?:(?:re|provide)?newcommand|DeclareRobustCommand)\*?\s*\{?\s*\\([A-Za-z]+)\s*\}?\s*(?:\[\s*(\d)\s*\])?"
+                         r"\s*(?:\[[^\]]*\])?\s*(?=\{)|\\[gex]?def\s*\\([A-Za-z]+)\s*((?:#\d)*)\s*(?=\{)"
+                         r"|\\(?:re)?newenvironment\s*\{\s*([^{}]+?)\s*\}\s*(?:\[\s*\d\s*\])?\s*(?:\[[^\]]*\])?\s*(?=\{)")
 
 
-def _white_names(text):
-    """Couleurs blanches définies par l'auteur (\\definecolor{fond}{rgb}{1,1,1}, \\colorlet{fond}{white})."""
-    names = set()
-    for found in re.finditer(r"\\definecolor\s*\{\s*([\w-]+)\s*\}\s*\{\s*(\w+)\s*\}\s*\{([^}]*)\}", text):
-        model, value = found.group(2).lower(), found.group(3).replace(" ", "")
-        if (model in ("rgb", "gray") and all(re.fullmatch(r"1(\.0*)?", v) for v in value.split(","))
-                or model == "rgb255" and all(v == "255" for v in value.split(",")) or model == "html" and value.lower() == "ffffff"
-                or model == "cmyk" and all(re.fullmatch(r"0(\.0*)?", v) for v in value.split(","))):
-            names.add(found.group(1))
-    names |= {m.group(1) for m in re.finditer(r"\\colorlet\s*\{\s*([\w-]+)\s*\}\s*\{\s*(?:white|White)\s*\}", text)}
+def _channels(model, value):
+    """(r, v, b) entre 0 et 1 d'une couleur donnée dans un modèle xcolor ([rgb]{1,1,1}, [HTML]{FFFFFF}…), ou None."""
+    parts = [part.strip() for part in value.split(",")]
+    try:
+        numbers = [float(part) for part in parts] if model.lower() != "html" else None
+        if model == "rgb" and len(parts) == 3:
+            return tuple(numbers)
+        if model == "RGB" and len(parts) == 3:
+            return tuple(n / 255 for n in numbers)
+        if model in ("gray", "Gray") and len(parts) == 1:
+            return (numbers[0] / (15 if model == "Gray" else 1),) * 3
+        if model == "cmyk" and len(parts) == 4:
+            c, m, y, k = numbers
+            return (1 - c) * (1 - k), (1 - m) * (1 - k), (1 - y) * (1 - k)
+        if model == "cmy" and len(parts) == 3:
+            return tuple(1 - n for n in numbers)
+        if model.lower() == "html" and re.fullmatch(r"[0-9A-Fa-f]{6}", value.strip()):
+            return tuple(int(value.strip()[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    except ValueError:
+        pass
+    return None
+
+
+def _xcolor(expression, names):
+    """(r, v, b) d'une expression xcolor : nom (défini par l'auteur ou de base), mélange « red!30!blue », « black!5 »
+    (5 % de noir dans du blanc) ; None si on ne sait pas la lire (complément « -red », modèle inconnu…)."""
+    tokens = [token.strip() for token in (expression or "").strip().split("!")]
+    color = names.get(tokens[0], _XCOLORS.get(tokens[0].lower()))
+    for i in range(1, len(tokens), 2):
+        try:
+            share = min(max(float(tokens[i]) / 100, 0), 1)
+        except ValueError:
+            return None
+        other = names.get(tokens[i + 1], _XCOLORS.get(tokens[i + 1].lower())) if i + 1 < len(tokens) else (1, 1, 1)
+        if color is None or other is None:
+            return None
+        color = tuple(share * a + (1 - share) * b for a, b in zip(color, other))
+    return color
+
+
+def _color_names(text):
+    """Couleurs définies par l'auteur (\\definecolor, \\providecolor, \\colorlet), dans l'ordre : {nom: (r, v, b)}."""
+    names = {}
+    for found in _COLOR_DEFINITION.finditer(text):
+        if found.group(1):
+            color = _channels(found.group(2).split("/")[0].strip(), found.group(3))
+            name = found.group(1)
+        else:
+            color, name = _xcolor(found.group(5), names), found.group(4)
+        if color is not None:
+            names[name] = color
+        else:
+            names.pop(name, None)
     return names
+
+
+def _is_white(model, value, names):
+    color = _channels(model, value) if model else _xcolor(value, names)
+    return color is not None and luminance(color) >= WHITE
+
+
+def _is_dark(model, value, names):
+    """Fond foncé, ou qu'on ne sait pas lire (prudent : le texte blanc posé dessus est gardé)."""
+    color = _channels(model, value) if model else _xcolor(value.strip("{} "), names)
+    return color is None or luminance(color) < DARK
 
 
 def _length_pt(value):
@@ -288,25 +361,45 @@ def _length_pt(value):
     return float(found.group(1)) * _UNITS[found.group(2)] if found and found.group(2) in _UNITS else None
 
 
-def _group_rest(text, pos):
-    """Fin de la portée d'une déclaration (\\color, \\fontsize…\\selectfont) placée en `pos` : l'accolade qui ferme
-    le groupe où elle est, ou le \\end de son environnement ; None au-delà de _MAX_HIDDEN_SPAN."""
-    depth, index, stop = 0, pos, min(len(text), pos + _MAX_HIDDEN_SPAN)
-    while index < stop:
-        char = text[index]
-        if char == "\\":
-            if depth == 0 and text.startswith("\\end", index) and not text[index + 4:index + 5].isalpha():
-                return index
-            index += 2
-            continue
+def _scope_end(text, pos, resets):
+    """Fin de la portée d'une déclaration (\\color, \\fontsize…\\selectfont) placée en `pos` : (fin, fermée). Fermée
+    par l'accolade de son groupe, le \\end de son environnement ou une déclaration contraire au même niveau (`resets` :
+    « color|normalcolor »…) ; sinon (jusqu'à \\end{document}, la fin du texte ou _SCAN caractères) : ouverte."""
+    depth = envs = 0
+    tokens = re.compile(r"\\(begin|end)\s*\{([^{}]*)\}|\\(?:" + resets + r")(?![A-Za-z])|\\.|[{}]", re.S)
+    for token in tokens.finditer(text, pos, min(len(text), pos + _SCAN)):
+        char = token.group()
         if char == "{":
             depth += 1
         elif char == "}":
             depth -= 1
             if depth < 0:
-                return index
-        index += 1
-    return len(text) if index >= len(text) else None
+                return token.start(), True
+        elif depth == 0 and token.group(1) == "begin":
+            envs += 1
+        elif depth == 0 and token.group(1) == "end":
+            envs -= 1
+            if envs < 0:
+                return token.start(), token.group(2).strip() != "document"
+        elif depth == 0 and envs == 0 and not token.group(1) and len(char) > 2:
+            return token.start(), True
+    return min(len(text), pos + _SCAN), False
+
+
+def _environments(text):
+    """Environnements : [(début du \\begin, fin du \\end, nom)], triés par début."""
+    found, stack = [], []
+    for token in _ENV.finditer(text):
+        name = token.group(2).strip()
+        if token.group(1) == "begin":
+            stack.append((token.start(), name))
+        else:
+            while stack:
+                start, opened = stack.pop()
+                if opened == name:
+                    found.append((start, token.end(), name))
+                    break
+    return sorted(found)
 
 
 def _in_box(text, pos):
@@ -324,48 +417,138 @@ def _in_box(text, pos):
     return False
 
 
-def invisible(text):
-    """Passages imprimés mais invisibles : [(début, fin, avec_lettres)], dans l'ordre et sans chevauchement.
-    \\textcolor{white}{…} et \\color{white} (couleur blanche, ou définie blanche) hors d'un \\colorbox ;
-    \\fontsize{<1pt}…\\selectfont ; \\scalebox{<0.1}{…}, \\resizebox{<1pt}{…}{…} ; \\phantom{…} (retiré, jamais compté :
-    il aligne souvent des chiffres). Sans effet si l'auteur met tout le document sur fond foncé (\\pagecolor)."""
+def _on_dark(text, pos, envs, pages, names):
+    """Texte blanc en `pos` lisible : page foncée (dernier \\pagecolor avant lui), \\colorbox, ou remplissage foncé posé
+    avant lui (5000 caractères au plus) dans son environnement (tikzpicture, tableau, tcolorbox…) — hors des
+    environnements déjà refermés —, ou juste avant lui hors de tout environnement (\\tikz…). `envs` : triés par début."""
+    page = [dark for start, dark in pages if start < pos]
+    if page and page[-1] or _in_box(text, pos):
+        return True
+    index = bisect.bisect_left(envs, (pos,))
+    start = max(0, pos - 300)
+    for begin, end, name in reversed(envs[max(0, index - 2000):index]):  # le plus intérieur qui contient `pos`
+        if end > pos and name != "document":
+            start = max(begin, pos - 5000)
+            break
+    window = list(text[start:pos])
+    for inner, end, _ in envs[bisect.bisect_right(envs, (start,)):index]:
+        if end <= pos:
+            window[inner - start:end - start] = [" "] * (end - inner)
+    for found in _FILL.finditer("".join(window)):
+        spec = found.group(1) if found.group(1) is not None else found.group(2)
+        if spec is None or _is_dark(None, spec, names):
+            return True
+    return False
+
+
+def _hiding_macros(text, names):
+    """Macros et environnements de l'auteur qui cachent : {nom: "argument"} (« \\newcommand{\\hide}[1]{\\textcolor{white}
+    {#1}} » : leur premier argument), {nom: "declaration"} (« \\newcommand{\\wh}{\\color{white}} ») ; environnements :
+    {"\\begin{nom}": "environment"}. Et la place des corps de définitions (rien n'y est retiré)."""
+    macros, bodies = {}, []
+    for found in _DEFINITION.finditer(text):
+        body = _group(text, found.end(), "{")
+        if body is None:
+            continue
+        bodies.append((found.end(), body[1]))
+        name = found.group(1) or found.group(3) or found.group(5)
+        arguments = int(found.group(2) or 0) if found.group(1) else len(found.group(4) or "") // 2
+        spans = _candidates(body[0], names, {})
+        if found.group(5):
+            if any(not closed for *_, closed in spans):
+                macros["\\begin{" + name + "}"] = "environment"
+        elif arguments and "#1" in body[0]:
+            place = body[0].index("#1")
+            if any(start <= place < stop for start, stop, *_ in spans):
+                macros[name] = "argument"
+        elif any(not closed for *_, closed in spans):
+            macros[name] = "declaration"
+    return macros, bodies
+
+
+def _candidates(text, names, macros):
+    """Passages qui seraient invisibles : [(début, fin, début du texte caché ou None, couleur, fermé)] ; `couleur` :
+    caché par sa couleur (gardé s'il est posé sur un fond foncé) ; `fermé` : portée bornée (groupe, environnement…)."""
     spans = []
-    names = _white_names(text)
-    white = _WHITE_SPEC + ("|\\{\\s*(?:" + "|".join(map(re.escape, names)) + ")\\s*\\}" if names else "")
-    dark_page = re.search(r"\\pagecolor\s*(?:\[[^\]]*\])?\s*\{(?!\s*(?:white|White)\s*\})", text)
-    if not dark_page:
-        for found in re.finditer(r"\\textcolor\s*(?:" + white + r")", text):
+    for found in _COLOR_USE.finditer(text):
+        if not _is_white(found.group(2), found.group(3), names):
+            continue
+        if found.group(1) == "textcolor":
             content = _group(text, found.end(), "{")
-            if content and not _in_box(text, found.start()):
-                spans.append((found.start(), content[1], content[1] - len(content[0]) - 1))
-        for found in re.finditer(r"\\color\s*(?:" + white + r")", text):
-            end = _group_rest(text, found.end())
-            if end is not None and not _in_box(text, found.start()):
-                spans.append((found.start(), end, found.end()))
-    for found in re.finditer(r"\\fontsize\s*\{([^{}]*)\}\s*\{[^{}]*\}\s*\\selectfont\b", text):
-        size = _length_pt(found.group(1))
-        end = _group_rest(text, found.end()) if size is not None and size < 1 else None
-        if end is not None:
-            spans.append((found.start(), end, found.end()))
-    for found in re.finditer(r"\\(scalebox|resizebox)\s*\{([^{}]*)\}", text):
-        if found.group(1) == "scalebox":
-            small = re.fullmatch(r"\s*0?\.0\d*\s*", found.group(2))
-            content = _group(text, found.end(), "{")
+            if content:
+                spans.append((found.start(), content[1], content[1] - len(content[0]) - 1, True, True))
         else:
-            size = _length_pt(found.group(2))
-            small = size is not None and size < 1
-            second = _group(text, found.end(), "{")
-            content = _group(text, second[1], "{") if second else None
-        if small and content:
-            spans.append((found.start(), content[1], content[1] - len(content[0]) - 1))
+            end, closed = _scope_end(text, found.end(), "color|normalcolor")
+            spans.append((found.start(), end, found.end(), True, closed))
+    for found in _FONTSIZE.finditer(text):
+        size = _length_pt(found.group(1))
+        if size is not None and size < 1:
+            end, closed = _scope_end(text, found.end(), _SIZES)
+            spans.append((found.start(), end, found.end(), False, closed))
+    for found in re.finditer(r"\\scalebox\s*\{([^{}]*)\}\s*(?:\[([^\]]*)\])?", text):
+        scales = []
+        for value in (found.group(1), found.group(2)):
+            try:
+                scales.append(abs(float(value)) if value is not None else None)
+            except ValueError:
+                scales.append(None)
+        content = _group(text, found.end(), "{")
+        if content and any(scale is not None and scale < 0.1 for scale in scales):
+            spans.append((found.start(), content[1], content[1] - len(content[0]) - 1, False, True))
+    for found in re.finditer(r"\\resizebox\*?\s*\{([^{}]*)\}\s*\{([^{}]*)\}", text):
+        sizes = [_length_pt(value) for value in found.groups()]
+        content = _group(text, found.end(), "{")
+        if content and any(size is not None and size < 1 for size in sizes):
+            spans.append((found.start(), content[1], content[1] - len(content[0]) - 1, False, True))
     for found in re.finditer(r"\\[hv]?phantom\s*(?=\{)", text):
         content = _group(text, found.end(), "{")
         if content:
-            spans.append((found.start(), content[1], None))  # jamais compté
+            spans.append((found.start(), content[1], None, False, True))  # jamais compté : aligne souvent des chiffres
+    for name, kind in macros.items():
+        if kind == "environment":
+            for found in re.finditer(re.escape(name), text):
+                close = re.compile(r"\\end\s*\{\s*" + re.escape(name[7:-1]) + r"\s*\}")
+                end = close.search(text, found.end())
+                if end:
+                    spans.append((found.start(), end.end(), found.end(), False, True))
+            continue
+        for found in re.finditer(r"\\" + name + r"(?![A-Za-z])\s*", text):
+            if kind == "argument":
+                content = _group(text, found.end(), "{")
+                if content:
+                    spans.append((found.start(), content[1], content[1] - len(content[0]) - 1, False, True))
+            else:
+                end, closed = _scope_end(text, found.end(), "color|normalcolor|" + _SIZES)
+                spans.append((found.start(), end, found.end(), False, closed))
+    return spans
+
+
+def invisible(text):
+    """Passages imprimés mais invisibles : [(début, fin, avec_lettres)], dans l'ordre et sans chevauchement.
+    Couleur blanche ou presque (luminance ≥ WHITE : white, white!95, black!5, [rgb]{.97,.97,.97}, couleur définie
+    ainsi) par \\textcolor ou \\color — portée jusqu'à la fin du groupe, de l'environnement ou au \\color suivant —,
+    sauf sur un fond foncé (`_on_dark`) et dans une présentation beamer ; \\fontsize{<1pt}…\\selectfont ;
+    \\scalebox{<0.1} ; \\resizebox{<1pt} ; \\phantom{…} (retiré, jamais compté) ; macros et environnements de l'auteur
+    qui font de même (`_hiding_macros`). Commentaires ignorés ; rien n'est retiré dans le corps d'une définition."""
+    masked = _COMMENT.sub(lambda found: " " * len(found.group()), text)
+    names = _color_names(masked)
+    macros, bodies = _hiding_macros(masked, names)
+    beamer = re.search(r"\\documentclass\s*(?:\[[^\]]*\])?\s*\{\s*beamer\s*\}|\\setbeamercolor\b", masked)
+    envs = _environments(masked)
+    pages = [(found.start(), _is_dark(found.group(1), found.group(2), names)) for found in _PAGECOLOR.finditer(masked)]
+    spans = []
+    for start, stop, shown, colored, closed in _candidates(masked, names, macros):
+        if any(begin <= start < end for begin, end in bodies):
+            continue
+        if not closed and stop - start > _MAX_HIDDEN_SPAN:
+            continue  # tout le reste du document ainsi : un réglage d'ensemble, pas un passage caché
+        if colored and (beamer or _on_dark(masked, start, envs, pages, names)):
+            continue
+        spans.append((start, stop, shown))
     kept, end = [], -1
     for start, stop, shown in sorted(spans):  # `shown` : début du texte rendu invisible
         if start >= end:
-            letters = shown is not None and bool(re.search(r"[^\W\d_]", re.sub(r"\\[A-Za-z]+", "", text[shown:stop])))
+            letters = shown is not None and bool(re.search(r"[^\W\d_]", re.sub(r"\\[A-Za-z]+", "", masked[shown:stop])))
             kept.append((start, stop, letters))
             end = stop
     return kept

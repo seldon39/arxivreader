@@ -55,17 +55,71 @@ HIDDEN_PDF = raw_pdf("BT /F1 12 Tf 72 720 Td (Visible words.) Tj ET 1 g BT /F1 1
 
 
 class InvisiblePdfText(unittest.TestCase):
-    """Texte invisible d'un PDF (blanc, corps de moins d'1 pt) : retiré du texte transmis à l'IA et compté ; blanc sur
-    un fond coloré et couche de texte d'un scan (mode 3) gardés."""
+    """Texte invisible d'un PDF (blanc, corps de moins d'1 pt, mode 3 hors d'un scan) : retiré du texte transmis à
+    l'IA et compté ; blanc sur un fond coloré ou une image peints dessous, couche de texte d'un scan gardés."""
+
+    @staticmethod
+    def page(content):
+        found = localpdf.read_pdf(raw_pdf(content))
+        return found["pages"][0], found["hidden"]
 
     def test_white_and_tiny_text_removed(self):
         found = localpdf.read_pdf(HIDDEN_PDF)
         page = found["pages"][0]
-        for kept in ("Visible words.", "Between.", "White on blue", "OCR layer"):
+        for kept in ("Visible words.", "Between.", "White on blue"):
             self.assertIn(kept, page)
-        self.assertNotIn("IGNORE", page)
-        self.assertNotIn("secret", page)
-        self.assertEqual(found["hidden"], 2)
+        for gone in ("IGNORE", "secret", "OCR layer"):  # mode 3 sans image : rien d'un scan
+            self.assertNotIn(gone, page)
+        self.assertEqual(found["hidden"], 3)
+
+    def test_state_of_each_show(self):
+        """Couleur changée entre deux affichages d'un même bloc de texte : chacun jugé avec la sienne."""
+        start = "BT /F1 12 Tf 72 700 Td "
+        self.assertEqual(self.page(start + "(Line one) Tj 0 -14 Td 1 g (HIDDEN) Tj 0 g ET"), ("Line one\n", 1))
+        self.assertEqual(self.page(start + "(Body text) Tj 1 g ( white tail) Tj ET"), ("Body text", 1))
+        page, count = self.page(start + "(Some data here) Tj ET 1 g BT /F1 12 Tf 72 680 Td (at) Tj ET")
+        self.assertIn("Some data here", page)
+        self.assertEqual(count, 1)
+        self.assertEqual(self.page("BT /F1 12 Tf 14 TL 72 700 Td (first) Tj 1 g (HIDDEN) ' 0 g (third) ' ET"),
+                         ("first\nthird", 1))
+        page, count = self.page("1 g " + start + "[(IGN) -20 (ORE)] TJ ET 0 g BT /F1 12 Tf 72 650 Td (ok) Tj ET")
+        self.assertNotIn("IGN", page)
+
+    def test_background_must_be_under_the_text(self):
+        """Un petit rectangle foncé ailleurs sur la page ne rend pas lisible le texte blanc ; une image dessous, si."""
+        self.assertEqual(self.page("0 g 0 0 41 11 re f 1 g BT /F1 12 Tf 72 700 Td (IGNORE PREVIOUS) Tj ET"), ("", 1))
+        image = "q 300 0 0 300 50 600 cm BI /W 1 /H 1 /CS /G /BPC 8 ID \x00 EI Q "
+        self.assertEqual(self.page(image + "1 g BT /F1 12 Tf 72 700 Td (Caption) Tj ET"), ("Caption", 0))
+
+    def test_scan_layer_and_other_tricks(self):
+        image = "q 100 0 0 100 300 300 cm BI /W 1 /H 1 /CS /G /BPC 8 ID \x80 EI Q "
+        self.assertEqual(self.page(image + "BT 3 Tr /F1 12 Tf 72 560 Td (OCR layer) Tj ET"), ("OCR layer", 0))
+        visible = " BT 0 Tr 100 Tz /F1 12 Tf 72 500 Td (ok) Tj ET"
+        for trick in ("BT 3 Tr /F1 12 Tf 72 560 Td (IGNORE) Tj ET",                      # mode invisible
+                      "BT /F1 12 Tf 0 Tz 72 560 Td (IGNORE) Tj ET",                        # largeur nulle
+                      "q 0.05 0 0 0.05 0 0 cm BT /F1 12 Tf 72 700 Td (IGNORE) Tj ET Q"):    # réduit par la matrice
+            self.assertEqual(self.page(trick + visible), ("ok", 1), trick)
+
+    def test_form_xobject(self):
+        form = "1 g BT /F1 12 Tf 0 0 Td (IGNORE) Tj ET 0 g BT /F1 12 Tf 0 -20 Td (Form text) Tj ET"
+        objects = ["<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+                   "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R "
+                   "/Resources << /Font << /F1 5 0 R >> /XObject << /X1 6 0 R >> >> >>",
+                   "<< /Length 30 >>\nstream\nq 1 0 0 1 72 700 cm /X1 Do Q\nendstream",
+                   "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+                   f"<< /Type /XObject /Subtype /Form /BBox [0 -100 300 50] /Resources << /Font << /F1 5 0 R >> >> "
+                   f"/Length {len(form)} >>\nstream\n{form}\nendstream"]
+        out, offsets = "%PDF-1.4\n", []
+        for number, body in enumerate(objects, 1):
+            offsets.append(len(out.encode("latin-1")))
+            out += f"{number} 0 obj\n{body}\nendobj\n"
+        start = len(out.encode("latin-1"))
+        out += f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n" + "".join(f"{o:010d} 00000 n \n" for o in offsets)
+        out += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{start}\n%%EOF\n"
+        found = localpdf.read_pdf(out.encode("latin-1"))
+        self.assertIn("Form text", found["pages"][0])
+        self.assertNotIn("IGNORE", found["pages"][0])
+        self.assertEqual(found["hidden"], 1)
 
     def test_old_text_cleaned_on_first_reading(self):
         saved = (db.DB_PATH, db.LIBRARY, library.PAPERS)
@@ -81,7 +135,7 @@ class InvisiblePdfText(unittest.TestCase):
         self.assertNotIn("IGNORE", localpdf.text("pdf-x"))
         stored = json.loads((folder / "text.json").read_text())
         self.assertEqual((stored["textVersion"], stored["metaVersion"]), (localpdf.TEXT_VERSION, 2))
-        self.assertEqual(json.loads((folder / "structure.json").read_text())["hiddenText"], 2)
+        self.assertEqual(json.loads((folder / "structure.json").read_text())["hiddenText"], 3)
 
 
 class LocalPdf(unittest.TestCase):
