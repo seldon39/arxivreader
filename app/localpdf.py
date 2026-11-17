@@ -66,13 +66,16 @@ def _clean(value):
 
 
 FILLS = {b"f", b"F", b"f*", b"B", b"B*", b"b", b"b*"}
-PAINTS = FILLS | {b"S", b"s", b"n"}
+STROKES = {b"S", b"s", b"B", b"B*", b"b", b"b*"}
+PAINTS = FILLS | STROKES | {b"n"}
 SHOWS = {b"Tj", b"TJ", b"'", b'"'}
 MIN_VISIBLE_PT = 1      # corps de texte en deçà : invisible à l'écran comme à l'impression
 MIN_BACKGROUND_PT = 4   # fond plus petit (point, filet) : un texte blanc n'y tient pas
 SCAN_SHARE = 0.5        # image qui couvre au moins cette part de la page : page scannée
 MAX_FORM_DEPTH = 12     # formulaires imbriqués plus profond : vidés (aucun article n'en a)
 MAX_STEPS = 2_000_000   # opérations parcourues par page, formulaires compris ; au-delà, formulaires laissés tels quels
+FORM_COST = 200         # un formulaire affiché compte pour autant d'opérations (le relire coûte, même s'il est court)
+MAX_LOOKUPS = 5_000_000 # fonds examinés par page pour juger le texte blanc ; au-delà, le texte blanc est gardé
 GRID = 64               # côté des cases de l'index des fonds (points)
 DEVICE_SPACES = {"/DeviceGray", "/DeviceRGB", "/DeviceCMYK", "/CalGray", "/CalRGB", "/ICCBased", "/G", "/RGB", "/CMYK"}
 COMPONENTS = {"/DeviceGray": 1, "/CalGray": 1, "/G": 1, "/DeviceRGB": 3, "/CalRGB": 3, "/RGB": 3, "/DeviceCMYK": 4, "/CMYK": 4}
@@ -178,21 +181,21 @@ class _Visible:
     """Parcours d'un flux de contenu qui retire les affichages de texte invisibles et les compte (`passages` : suites
     de texte invisible avec des lettres). État graphique suivi : q/Q, cm, couleurs de remplissage et de trait (espaces
     de couleur, palettes), opacité (gs), découpe (W), calques masqués (BDC /OC), Tf, Tz, Tr, TL, matrices de texte ;
-    fonds foncés (formes, dégradés, images) déjà peints, avec leur place sur la page, effacés par un aplat clair peint
-    par-dessus. Formulaires (Do) jugés à chaque affichage, avec l'état du moment : copie nettoyée sous un autre nom
+    fonds foncés (formes, traits épais, bandes fines à la suite, dégradés, images) et aplats clairs, dans l'ordre où
+    ils sont peints : la dernière forme sous un point dit s'il est sur un fond foncé. Formulaires (Do) jugés à chaque affichage, avec l'état du moment : copie nettoyée sous un autre nom
     s'il faut, l'original (partagé) n'est jamais modifié."""
 
     def __init__(self, reader, scan, page_box):
         self.reader, self.scan, self.page_box = reader, scan, page_box
-        self.rects, self.grid, self.big = [], {}, []
-        self.passages, self.running, self.scanned, self.steps = 0, False, False, 0
+        self.shapes, self.grid, self.big, self.strip = [], {}, [], None
+        self.passages, self.running, self.scanned, self.steps, self.lookups, self.covered = 0, False, False, 0, 0, 0.0
         self.walking, self.copies, self.off = set(), {}, _off_groups(reader)
 
     @staticmethod
     def start_state():
         return {"ctm": IDENTITY, "fill": 0.0, "stroke": 0.0, "fillSpace": ("device", None), "strokeSpace": ("device", None),
                 "size": None, "scale": 1.0, "render": 0, "leading": 0.0, "cid": False, "alpha": 1.0, "strokeAlpha": 1.0,
-                "clip": None, "hiddenLayer": False}
+                "clip": None, "hiddenLayer": False, "lineWidth": 1.0}
 
     def run(self, operations, resources, state, depth=0):
         """(opérations gardées, flux changé) ; `state` (dict) : état graphique au départ, mis à jour."""
@@ -276,6 +279,8 @@ class _Visible:
             state["render"] = int(args[0])
         elif operator == b"TL" and args:
             state["leading"] = float(args[0])
+        elif operator == b"w" and args:
+            state["lineWidth"] = abs(float(args[0]))
         elif operator in (b"m", b"l", b"c", b"v", b"y") and _numbers(args):
             numbers = _numbers(args)
             path["points"] += [_point(state["ctm"], numbers[i], numbers[i + 1]) for i in range(0, len(numbers) - 1, 2)]
@@ -296,8 +301,14 @@ class _Visible:
             if operator in FILLS and points:
                 if state["fill"] is None or state["fill"] < DARK:
                     self._background(_box(points))
-                elif path["rect"] and state["alpha"] >= 0.95:
-                    self._cover(_box(points))
+                elif state["alpha"] >= 0.95 and (path["rect"] or _upright(points)):
+                    self._paint(_box(points), False)  # aplat clair par-dessus : ce qu'il couvre n'est plus un fond
+            if operator in STROKES and points and (state["stroke"] is None or state["stroke"] < DARK):
+                m = state["ctm"]
+                half = state["lineWidth"] * math.sqrt(abs(m[0] * m[3] - m[1] * m[2])) / 2
+                if 2 * half >= MIN_BACKGROUND_PT:  # trait épais (bandeau) : un fond
+                    x0, y0, x1, y1 = _box(points)
+                    self._background((x0 - half, y0 - half, x1 + half, y1 + half))
             path.update(points=[], rect=True, clip=False)
         elif operator == b"sh":
             self._background(state["clip"] or self.page_box)
@@ -305,56 +316,82 @@ class _Visible:
             self._image(state)
 
     def _layer_off(self, ref, resources):
-        """Calque masqué : `ref` est un nom de /Properties, ou la référence (ou le dictionnaire) du calque."""
+        """Calque masqué : `ref` est un nom de /Properties, ou la référence (ou le dictionnaire) du calque. Appartenance
+        (OCMD) : selon sa règle /P (AnyOn par défaut) ; une expression /VE n'est pas lue (visible)."""
         if isinstance(ref, str):
             ref = resources["/Properties"].get_object().raw_get(ref)
         target = ref.get_object()
-        if target.get("/Type") == "/OCMD":  # appartenance : masqué si tous ses calques le sont
+        if target.get("/Type") == "/OCMD":
             members = target.get("/OCGs") or []
             members = members if isinstance(members, list) else [members]
-            return bool(members) and all(getattr(member, "idnum", None) in self.off for member in members)
+            if not members or "/VE" in target:
+                return False
+            off = [getattr(member, "idnum", None) in self.off for member in members]
+            policy = str(target.get("/P", "/AnyOn"))
+            visible = {"/AllOn": not any(off), "/AnyOff": any(off), "/AllOff": all(off)}.get(policy, not all(off))
+            return not visible
         return getattr(ref, "idnum", None) in self.off
 
     def _image(self, state):
+        """Image : un fond ; les images qui couvrent ensemble au moins SCAN_SHARE de la page (scan d'un seul tenant
+        ou en bandes) en font une page scannée."""
         box = _box([_point(state["ctm"], x, y) for x in (0, 1) for y in (0, 1)])
         self._background(box)
         x0, y0, x1, y1 = self.page_box
         width = max(0.0, min(box[2], x1) - max(box[0], x0))
         height = max(0.0, min(box[3], y1) - max(box[1], y0))
-        if width * height >= SCAN_SHARE * (x1 - x0) * (y1 - y0):
+        self.covered += width * height
+        if self.covered >= SCAN_SHARE * (x1 - x0) * (y1 - y0):
             self.scanned = True
 
-    def _cells(self, box):
-        x0, y0, x1, y1 = (int(math.floor(v / GRID)) for v in box)
-        return [(x, y) for x in range(x0, x1 + 1) for y in range(y0, y1 + 1)] if (x1 - x0 + 1) * (y1 - y0 + 1) <= 400 else None
-
     def _background(self, box):
-        """Fond foncé (ou de couleur inconnue, ou image) peint sur `box` : un texte blanc posé dessus se lit."""
+        """Fond foncé (ou de couleur inconnue, ou image) peint sur `box` : un texte blanc posé dessus se lit. Bandes
+        fines peintes à la suite (dégradé découpé en tranches) : réunies en un fond."""
+        thin = box[2] - box[0] < MIN_BACKGROUND_PT or box[3] - box[1] < MIN_BACKGROUND_PT
+        if thin:
+            last, self.strip = self.strip, box
+            if last is None:
+                return
+            same_x = abs(last[0] - box[0]) <= 1 and abs(last[2] - box[2]) <= 1 and box[1] <= last[3] + 1 and last[1] <= box[3] + 1
+            same_y = abs(last[1] - box[1]) <= 1 and abs(last[3] - box[3]) <= 1 and box[0] <= last[2] + 1 and last[0] <= box[2] + 1
+            if not (same_x or same_y):
+                return
+            box = self.strip = (min(last[0], box[0]), min(last[1], box[1]), max(last[2], box[2]), max(last[3], box[3]))
+            if box[2] - box[0] < MIN_BACKGROUND_PT or box[3] - box[1] < MIN_BACKGROUND_PT:
+                return
+        self._paint(box, True)
+
+    def _paint(self, box, dark):
+        """Forme peinte sur `box`, dans l'ordre du flux : la dernière qui recouvre un point dit s'il est sur un fond
+        foncé (`dark`) ou clair (aplat clair peint par-dessus)."""
         if box[2] - box[0] < MIN_BACKGROUND_PT or box[3] - box[1] < MIN_BACKGROUND_PT:
             return
-        self.rects.append(box)
-        cells = self._cells(box)
-        if cells is None:
-            self.big.append(len(self.rects) - 1)
+        self.shapes.append((box, dark))
+        index = len(self.shapes) - 1
+        x0, y0, x1, y1 = (int(math.floor(v / GRID)) for v in box)
+        if (x1 - x0 + 1) * (y1 - y0 + 1) > 400:
+            self.big.append(index)
         else:
-            for cell in cells:
-                self.grid.setdefault(cell, []).append(len(self.rects) - 1)
+            for cell in ((x, y) for x in range(x0, x1 + 1) for y in range(y0, y1 + 1)):
+                self.grid.setdefault(cell, []).append(index)
 
-    def _cover(self, box):
-        """Aplat clair peint par-dessus : les fonds qu'il recouvre entièrement ne comptent plus."""
-        cells = self._cells(box)
-        nearby = range(len(self.rects)) if cells is None else {i for cell in cells for i in self.grid.get(cell, [])} | set(self.big)
-        for index in nearby:
-            rect = self.rects[index]
-            if rect and box[0] <= rect[0] and box[1] <= rect[1] and rect[2] <= box[2] and rect[3] <= box[3]:
-                self.rects[index] = None
+    def _top(self, indices, x, y):
+        """Indice de la dernière forme de `indices` (croissants) qui recouvre (x, y), ou -1."""
+        for index in reversed(indices):
+            self.lookups += 1
+            (x0, y0, x1, y1), dark = self.shapes[index]
+            margin = 1 if dark else 0
+            if x0 - margin <= x <= x1 + margin and y0 - margin <= y <= y1 + margin:
+                return index
+        return -1
 
     def _on_dark(self, points):
+        if self.lookups > MAX_LOOKUPS:
+            return True  # page piégée (des milliers de formes) : texte blanc gardé plutôt que de s'y attarder
         for x, y in points:
             cell = (int(math.floor(x / GRID)), int(math.floor(y / GRID)))
-            if not any(self.rects[i] and self.rects[i][0] - 1 <= x <= self.rects[i][2] + 1
-                       and self.rects[i][1] - 1 <= y <= self.rects[i][3] + 1
-                       for i in self.grid.get(cell, []) + self.big):
+            top = max(self._top(self.grid.get(cell, ()), x, y), self._top(self.big, x, y))
+            if top < 0 or not self.shapes[top][1]:
                 return False
         return True
 
@@ -373,6 +410,7 @@ class _Visible:
         key = getattr(reference, "idnum", None) or id(target)
         if key in self.walking or self.steps > MAX_STEPS:
             return None
+        self.steps += FORM_COST
         inner = dict(state, ctm=_mult(_numbers(target.get("/Matrix", IDENTITY)) or IDENTITY, state["ctm"]))
         if "/OC" in target:
             inner["hiddenLayer"] = state["hiddenLayer"] or self._layer_off(target.raw_get("/OC"), resources)
@@ -393,8 +431,9 @@ class _Visible:
         content.operations = kept
         copy.set_data(content.get_data())
         fresh = NameObject(f"/ArxivReaderVisible{id(copy)}")
-        self.copies[fresh] = copy
-        xobjects.get_object()[fresh] = copy
+        owner = xobjects.get_object()
+        self.copies[fresh] = owner
+        owner[fresh] = copy
         return fresh
 
     def _hidden(self, args, state, tm):
@@ -406,12 +445,15 @@ class _Visible:
         tiny = size is not None and (size * math.hypot(m[2], m[3]) < MIN_VISIBLE_PT
                                      or size * state["scale"] * math.hypot(m[0], m[1]) < MIN_VISIBLE_PT)
         render = state["render"] % 8
-        stroked = render in (1, 5)
-        color = state["stroke"] if stroked else state["fill"]
+        sides = {0: ("fill",), 4: ("fill",), 1: ("stroke",), 5: ("stroke",), 2: ("fill", "stroke"), 6: ("fill", "stroke")}.get(render, ())
+        alphas = {"fill": state["alpha"], "stroke": state["strokeAlpha"]}
         height = (size or 10) * math.hypot(m[2], m[3]) or 10
-        points = [_point(m, 0, 0), _point(m, 0, (size or 10) * 0.3), _point(m, (size or 10) * 0.5, (size or 10) * 0.3)]
-        white = render not in (3, 7) and color is not None and color >= WHITE and not self._on_dark(points)
-        clear = (state["strokeAlpha"] if stroked else state["alpha"]) < 0.05
+        em = size or 10
+        middle = 0.25 * em * state["scale"] * (len(raw) / 2 if state.get("cid") else len(raw))  # milieu estimé du texte
+        points = [_point(m, 0, 0), _point(m, 0, em * 0.3), _point(m, em * 0.5, em * 0.3), _point(m, max(middle, em * 0.5), em * 0.3)]
+        light = all(state[side] is not None and state[side] >= WHITE for side in sides)  # rempli et tracé (Tr 2) : les deux
+        white = bool(sides) and light and not self._on_dark(points)
+        clear = bool(sides) and all(alphas[side] < 0.05 for side in sides)
         clip = state["clip"]
         clipped = clip is not None and all(not (clip[0] - height <= x <= clip[2] + height and clip[1] - height <= y <= clip[3] + height)
                                            for x, y in points)
@@ -423,6 +465,20 @@ class _Visible:
         elif not blank and not hidden:
             self.running = False
         return hidden
+
+
+def _upright(points):
+    """Contour fait de côtés horizontaux et verticaux (rectangle tracé à la main)."""
+    pairs = zip(points, points[1:] + points[:1])
+    return len(points) >= 4 and all(abs(a[0] - b[0]) < 0.01 or abs(a[1] - b[1]) < 0.01 for a, b in pairs)
+
+
+def _has_forms(resources):
+    try:
+        xobjects = resources["/XObject"].get_object()
+        return any(xobjects[name].get_object().get("/Subtype") == "/Form" for name in xobjects)
+    except Exception:
+        return False
 
 
 def _page_text(page, hidden=None):
@@ -442,12 +498,14 @@ def _page_text(page, hidden=None):
             resources = page.get("/Resources") or {}
             operations = contents.operations
             scan = False
-            if any(operator == b"Tr" and args and args[0] in (3, 7) for args, operator in operations):
+            if any(operator == b"Tr" and args and args[0] in (3, 7) for args, operator in operations) or _has_forms(resources):
                 first = _Visible(page.pdf, False, box)  # page scannée ? les images peuvent venir après le texte
-                first.run(operations, resources, _Visible.start_state())
-                scan = first.scanned
-                for name in first.copies:
-                    del resources["/XObject"].get_object()[name]
+                try:
+                    first.run(operations, resources, _Visible.start_state())
+                    scan = first.scanned
+                finally:
+                    for name, owner in first.copies.items():
+                        owner.pop(name, None)
             walk = _Visible(page.pdf, scan, box)
             kept, changed = walk.run(operations, resources, _Visible.start_state())
             passages = walk.passages

@@ -189,6 +189,60 @@ class InvisibleTex(unittest.TestCase):
             self.assertNotIn("SECRET", text, body)
             self.assertGreaterEqual(count, 1, body)
 
+    def test_third_review_cases(self):
+        """Titres de boîtes, figures sur image, macros qui dessinent le fond : gardés ; rangées, options, maths : retirés."""
+        def run(preamble, body, opening="Opening words. " * 10):
+            counted = []
+            text = texstructure.strip_hidden(r"\documentclass{article}" + preamble + r"\begin{document}" + opening
+                                             + body + r"\end{document}", None, counted)
+            return text, counted[0]
+        kept = [("", r"\begin{tcolorbox}[colframe=black,fonttitle=\bfseries\color{white},title=Theorem 1]Body text important.\end{tcolorbox}",
+                 ("Theorem 1", "Body text important")),
+                ("", r"\begin{tcolorbox}[colframe=blue!50!black,title={\textcolor{white}{Theorem 1}}]Body\end{tcolorbox}", ("Theorem 1",)),
+                ("", r"\begin{mdframed}[frametitle={\textcolor{white}{Thm}},frametitlebackgroundcolor=black]Body\end{mdframed}", ("Thm",)),
+                ("", r"\begin{tikzpicture}\node[inner sep=0]{\includegraphics{bg.png}};\node[text=white] at (0,0){Label};\end{tikzpicture}",
+                 ("Label",)),
+                ("", r"\begin{tikzpicture}\node[text=white](a) at(1,1){Hello};\begin{scope}[on background layer]"
+                     r"\fill[black](a.south west) rectangle(a.north east);\end{scope}\end{tikzpicture}", ("Hello",)),
+                (r"\tikzset{base/.style={fill=black},vertex/.style={base,circle}}",
+                 r"\begin{tikzpicture}\node[vertex]{\textcolor{white}{Vertex}};\end{tikzpicture}", ("Vertex",)),
+                (r"\newcommand{\wh}[1]{\textcolor{white}{#1}}\newcommand{\tagb}[1]{\colorbox{black}{#1}}", r"\tagb{\wh{Tagged}}", ("Tagged",)),
+                (r"\newenvironment{darkbox}{\par\colorbox{black}\bgroup\color{white}}{\egroup}",
+                 r"\begin{darkbox}Hello readable world\end{darkbox}", ("Hello readable world",)),
+                ("", r"\begin{tikzcd}[background color=black]\color{white}Arrow\arrow[r]&B\end{tikzcd}", ("Arrow",)),
+                ("", r"\todo[color=black]{\textcolor{white}{fix this}}", ("fix this",)),
+                ("", r"\sethlcolor{black}\hl{\textcolor{white}{highlighted}}", ("highlighted",)),
+                ("", r"\begin{tabular}{l}\rowcolor{black}\textcolor{white}{Dark row}\\ b\end{tabular}", ("Dark row",))]
+        for preamble, body, words in kept:
+            text, count = run(preamble, body)
+            self.assertEqual(([word in text for word in words], count), ([True] * len(words), 0), body)
+        text, count = run("", r"\begin{theorem}[\color{white} Name]Body text here\end{theorem}")
+        self.assertIn("Body text here", text)  # le nom (blanc) seul est retiré, pas l'énoncé
+        gone = [(r"\tcbset{colback=black}", r"\begin{tcolorbox}[colback=white]\color{white}SECRET\end{tcolorbox}"),
+                (r"\newmdenv[backgroundcolor=black]{dk}", r"\begin{mdframed}[backgroundcolor=white]\color{white}SECRET\end{mdframed}"),
+                ("", r"[fill=black] \textcolor{white}{SECRET}"), ("", r"\texttt{[fill=black]} \textcolor{white}{SECRET}"),
+                ("", r"\begin{tabular}{l}\rowcolor{black}x\\ \color{white}SECRET\\\end{tabular}"),
+                ("", r"\begin{tabular}{ll}\cellcolor{black}x & y\\ \textcolor{white}{SECRET}\end{tabular}"),
+                ("", r"{\transparent{0}SECRET}"), ("", r"\begin{tikzpicture}[opacity=0]\node{SECRET};\end{tikzpicture}")]
+        for preamble, body in gone:
+            text, count = run(preamble, body)
+            self.assertNotIn("SECRET", text, body)
+            self.assertGreaterEqual(count, 1, body)
+        visible = "Visible paper text. " * 20
+        for body in (r"$\color{white}SECRET$ ", r"$$\color{white}SECRET$$ ", r"\begingroup\color{white}SECRET\endgroup ",
+                     r"\(\color{white}SECRET\) "):
+            text, count = run("", body + visible, opening="")
+            self.assertNotIn("SECRET", text, body)
+            self.assertIn("Visible paper text.", text, body)
+        self.assertIn(r"\\[2pt] \color{white} Tail", run("", r"$x$ a\\[2pt] \color{white} Tail", opening="")[0])  # réglage d'ensemble
+
+    def test_nested_declarations_stay_fast(self):
+        import time
+        for body in (r"{\color{white}" * 4000 + "x" + "}" * 4000, r"\color{white}{" * 4000 + "x" + "}" * 4000):
+            start = time.monotonic()
+            texstructure.strip_hidden(r"\documentclass{article}\begin{document}" + "Words. " * 100 + body + r"\end{document}")
+            self.assertLess(time.monotonic() - start, 5)
+
 class PdfSpotsTest(unittest.TestCase):
     """Page et hauteur des énoncés, lues dans les ancres hyperref du PDF."""
 

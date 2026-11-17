@@ -151,6 +151,66 @@ class InvisiblePdfText(unittest.TestCase):
                 ("/Pattern cs 1 1 1 rg 1 1 1 sc " + text % "SECRET", "")):
             self.assertEqual(page(content, resources, *more), ("", 1), content)
 
+    def test_third_review_cases(self):
+        def page(*args):
+            found = localpdf.read_pdf(build_pdf(*args))
+            return found["pages"][0].strip(), found["hidden"]
+        text = "BT /F1 12 Tf 72 615 Td (%s) Tj ET"
+        image = ("/XObject << /Im0 6 0 R >>",
+                 ["<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 8 /Length 1 >>"
+                  "\nstream\n\x80\nendstream"])
+        ocr = "3 Tr BT /F1 12 Tf 72 700 Td (OCR text) Tj ET"
+        strips = "".join(f"q 612 0 0 264 0 {y} cm /Im0 Do Q " for y in (0, 264, 528))
+        layer = ("/Properties << /MC0 7 0 R >>", ["<< /Type /OCG /Name (L) >>"])
+        catalog = "/OCProperties << /OCGs [6 0 R] /D << /OFF [6 0 R] >> >>"
+        # lisible : scan en bandes, couche reconnue dans un formulaire peint avant l'image, texte rempli blanc et
+        # tracé noir, dégradé en tranches fines, bandeau tracé épais, calque AnyOff, fond orange
+        self.assertEqual(page(strips + ocr, *image), ("OCR text", 0))
+        form = form_object("3 Tr BT /F1 12 Tf 72 0 Td (OCR in form) Tj ET")
+        self.assertEqual(page("q /Fm1 Do Q q 612 0 0 792 0 0 cm /Im0 Do Q", "/XObject << /Im0 6 0 R /Fm1 7 0 R >>",
+                              [image[1][0], form]), ("OCR in form", 0))
+        self.assertEqual(page("1 g 0 G 2 Tr " + text % "Outlined"), ("Outlined", 0))
+        sliced = "".join(f"0 0 {0.1 + i / 200:.3f} rg 60 {600 + i} 300 1 re f " for i in range(40))
+        self.assertEqual(page(sliced + "1 g " + text % "On slices"), ("On slices", 0))
+        self.assertEqual(page("0 G 30 w 60 620 m 400 620 l S 1 g " + text % "On bar"), ("On bar", 0))
+        self.assertEqual(page("/OC /MC0 BDC 1 0 0 1 0 0 cm " + text % "AnyOff" + " EMC",
+                              "/Properties << /MC0 7 0 R >>", ["<< /Type /OCG /Name (L) >>", "<< /Type /OCMD /OCGs [6 0 R] /P /AnyOff >>"],
+                              catalog), ("AnyOff", 0))
+        self.assertEqual(page("1 0.6 0 rg 60 600 300 40 re f 1 g " + text % "On orange"), ("On orange", 0))
+        # invisible : blanc sur un aplat blanc posé sur la page foncée (rectangle ou contour), point foncé sous le
+        # début d'une longue ligne, deux traits blancs (Tr 2), calque AllOn dont un membre est masqué
+        for content, *more in (
+                ("0 g 0 0 612 792 re f 1 g 60 600 400 40 re f " + text % "SECRET INJECTION TEXT",),
+                ("0 g 0 0 612 792 re f 1 g 60 600 m 460 600 l 460 640 l 60 640 l h f " + text % "SECRET INJECTION TEXT",),
+                ("0 g 70 612 7 7 re f 1 g " + text % "SECRET INJECTION long white text here",),
+                ("1 g 1 G 2 Tr " + text % "SECRET",),
+                ("/OC /MC0 BDC " + text % "SECRET" + " EMC", "/Properties << /MC0 7 0 R >>",
+                 ["<< /Type /OCG /Name (L) >>", "<< /Type /OCMD /OCGs [6 0 R] /P /AllOn >>"], catalog)):
+            self.assertEqual(page(content, *more), ("", 1), content)
+        # Tr 3 et formulaire imbriqué avec ses propres ressources : le premier passage ne casse pas le second
+        inner = form_object("1 g BT /F1 12 Tf 10 0 Td (SECRETNESTED) Tj ET")
+        outer = form_object("q /B Do Q 0 g BT /F1 12 Tf 0 -20 Td (visible A) Tj ET", "/Font << /F1 5 0 R >> /XObject << /B 7 0 R >>")
+        found = page("BT 3 Tr /F1 12 Tf 72 500 Td (ocr) Tj ET 0 Tr 0 g BT /F1 12 Tf 72 400 Td (between) Tj ET q 1 0 0 1 72 650 cm /A Do Q", "/XObject << /A 6 0 R >>", [outer, inner])
+        self.assertEqual(found, ("between\nvisible A", 2))
+
+    def test_traps_stay_fast(self):
+        import time
+        n = 3000
+        traps = ["0 g " + "0 0 600 700 re f " * n + "1 g " + "0 0 600 700 re f " * n + "BT /F1 12 Tf 72 700 Td (x) Tj ET",
+                 "0 g " + "0 0 600 700 re f " * n + "1 g " + "BT /F1 12 Tf 72 700 Td (x) Tj ET " * n,
+                 "0 g " + " ".join(f"{i % 60} {i // 60} 5 5 re f" for i in range(n)) + " 1 g "
+                 + "BT /F1 12 Tf 30 30 Td (x) Tj ET " * n]
+        for content in traps:
+            start = time.monotonic()
+            localpdf.read_pdf(raw_pdf(content))
+            self.assertLess(time.monotonic() - start, 5)
+        k = 12  # formulaires en éventail : chacun affiche trois fois le suivant
+        chain = [form_object("/N Do /N Do /N Do", f"/Font << /F1 5 0 R >> /XObject << /N {i + 7} 0 R >>") for i in range(k)]
+        chain.append(form_object("1 g BT /F1 12 Tf 0 0 Td (leaf) Tj ET"))
+        start = time.monotonic()
+        localpdf.read_pdf(build_pdf("/X0 Do", "/XObject << /X0 6 0 R >>", chain))
+        self.assertLess(time.monotonic() - start, 5)
+
     def test_form_judged_at_each_draw(self):
         """Un formulaire affiché deux fois, en noir puis en blanc (ou l'inverse) : la copie blanche seule retirée."""
         form = (form_object("BT /F1 12 Tf 0 0 Td (FORM TEXT) Tj ET"),)

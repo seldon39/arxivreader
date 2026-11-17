@@ -468,36 +468,52 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   (`_Colors`: a color redefined later does not change what precedes; `_xcolor`: names, mixes `white!95`, `black!3`,
   complement `-black`, models `[rgb]`, `[HTML]`, `[hsb]`, `[named]`…). Hidden: white or nearly (luminance ≥ 0,9) by
   `\textcolor`, `\mathcolor` (argument in braces or `\bgroup…\egroup`), `\color` — scope (`_scope_end`) up to its
-  group, its environment, the next `\color`/`\normalcolor` at its level (not inside `\verb` nor after `\string`) —
+  group (braces, `\bgroup`, `\begingroup`), its environment, the end of the math it sits in (`$`, `$$`, `\)`, `\]`),
+  the closing `]` of an option list (`fonttitle=\color{white}`, `_option_list`), the next `\color`/`\normalcolor` at
+  its level (not inside `\verb` nor after `\string`); at most `_SCAN_BUDGET` characters scanned per text, then open —
   or a tikz node `[text=white]`; `\fontsize` under 1 pt (scope up to `\normalsize`, `\small`…), `\scalebox` under
-  0,1 on either axis, `\resizebox` under 1 pt, `\texttransparent` under 0,1, tikz node `[opacity=0]`, `\phantom`
+  0,1 on either axis, `\resizebox` under 1 pt, `\texttransparent` and `\transparent` under 0,1, tikz node, picture
+  or scope `[opacity=0]`, `\phantom`
   (removed, never counted); the author's macros and environments that do the same (`_hiding_macros`: `\newcommand`,
   `\def`, `\NewDocumentCommand`, environments; any hidden argument `#k`), and what a definition hides without a
   parameter. Kept: a declaration that runs to `\end{document}` with no readable text before it (preamble, start
   of the document: a setting of the whole document); white on a dark background (`_Context.on_dark`): last
-  `\pagecolor` (outside definitions, readable and dark), dark `\colorbox`, colored box (tcolorbox, mdframed, shaded,
-  boxes defined by `\newtcolorbox`… when a setup command declares a dark fill, `shadecolor` dark), dark fill declared
-  before it in its environment, closed environments excluded: option keys `[fill=…]`, `[colback=…]` (not in prose,
-  not `none`), table cells `\rowcolor`/`\cellcolor`/`\columncolor` (in a table, also after the color in its own
-  scope), tikz shapes `\fill`… and dark tikz styles (in a tikz picture); a definition that sets its own dark
-  background; beamer documents. Comments are ignored. Count in `hiddenText` of `structure.json` (papers analysed
+  `\pagecolor` (outside definitions, readable and dark), dark `\colorbox` (also opened by `\bgroup` in an
+  environment's opening code), the arguments of an author macro or the body of an author environment whose
+  definition draws a dark box or fill, `\todo[color=…]` and `\hl` after `\sethlcolor` when dark, the option list of a
+  box (title, title font: on the title bar), colored box (tcolorbox, mdframed, shaded: its own fill option if it has
+  one, otherwise its definition `\newtcolorbox{name}{…}`, `\newmdenv`, or a dark `\tcbset`/`\mdfsetup`;
+  `shadecolor` dark), a tikz picture, pgfplots axis or tikzcd that draws an image, a plot, a background layer or a
+  dark fill anywhere in it, dark fill declared before it in its environment, closed environments excluded: option
+  keys `[fill=…]`, `[colback=…]`, `[background color=…]` (after a command, `\begin{…}`, `node` or `)`; not in prose,
+  not `none`), table cells (`\columncolor`, `\rowcolors`; `\rowcolor` of its row, `\cellcolor` of its cell; also
+  after the color in its own scope), tikz shapes `\fill`… and dark tikz styles, also through another style (in a
+  tikz picture); a definition that sets its own dark background; beamer documents. Comments are ignored. Count in `hiddenText` of `structure.json` (papers analysed
   before: after a re-analysis).
 - Invisible text in a PDF (`localpdf._page_text`, class `_Visible`): the content stream is walked with its graphics
   state (q/Q, `cm`, fill and stroke colors with their color spaces and Indexed palettes, `gs` opacity, clipping `W`,
   optional content `BDC /OC` hidden by default, `Tf`, `Tz`, `Tr`, text matrices), each text show judged with the
-  state in force. Hidden: white or nearly unless a dark (or unreadable) shape, a shading (`sh`) or an image of at
-  least `MIN_BACKGROUND_PT` was painted under it before (and not covered since by a light rectangle), size under
-  `MIN_VISIBLE_PT` on either axis, opacity under 0,05, outside the clip, hidden layer, invisible mode (`Tr` 3/7) except
-  on a scanned page (an image covers at least `SCAN_SHARE` of it: text layer of a recognized scan; a first pass finds
-  it when the image comes after the text). Form XObjects are judged at each draw with the state of that moment: a
+  state in force. Hidden: white or nearly (for fill-and-stroke text, `Tr` 2/6, both colors) unless the last shape
+  painted under its start and its estimated middle is dark: a dark (or unreadable) fill, a thick dark stroke, thin dark
+  strips painted one after another (sliced gradient), a shading (`sh`) or an image, at least `MIN_BACKGROUND_PT` (an
+  opaque light fill, rectangle or axis-aligned outline, painted later covers it); size under `MIN_VISIBLE_PT` on
+  either axis, opacity under 0,05 (both for `Tr` 2/6), outside the clip, hidden layer (membership dictionaries by
+  their `/P` policy; a `/VE` expression is not read: visible), invisible mode (`Tr` 3/7) except on a scanned page
+  (images, whole or in strips, cover at least `SCAN_SHARE` of it: text layer of a recognized scan; a first pass finds
+  it when the image comes after the text, also when the page draws forms). Form XObjects are judged at each draw with the state of that moment: a
   cleaned copy is drawn under another name, the shared original is never changed; forms nested deeper than
-  `MAX_FORM_DEPTH` are emptied; beyond `MAX_STEPS` operations on a page, forms are left as they are. Dark shapes are
-  indexed in a grid (`GRID`). Hidden shows are removed from the stream in memory before pypdf extracts the text;
+  `MAX_FORM_DEPTH` are emptied; each draw counts `FORM_COST` operations, and beyond `MAX_STEPS` operations on a
+  page, forms are left as they are. Shapes are indexed in a grid (`GRID`); beyond `MAX_LOOKUPS` shapes examined on a
+  page, white text is kept. Hidden shows are removed from the stream in memory before pypdf extracts the text;
   counted (`hidden`, then `hiddenText`). A `text.json` older than `TEXT_VERSION` is re-read once (`_refresh_text`).
   The reader shows the count without a reveal button when only the PDF is displayed (`reader.hiddenTextSource`).
 - Known limits of both (heuristics, by design): TeX indirection beyond simple definitions (`\let`, styles of other
   packages, `\pdfcolorstack`, `\special`, fontspec `Color=`), text covered by a shape or placed off the page, colors
-  behind Separation or pattern color spaces and shading colors (counted as dark), near-white just under 0,9. The
+  behind Separation or pattern color spaces and shading colors (counted as dark), near-white just under 0,9. Leaning
+  towards keeping readable text: in TeX, white text in a tikz picture that has a dark fill elsewhere, or in a box
+  whose title or definition is dark, is kept; white text after a dark tikz overlay already closed (title page) is
+  removed. In a PDF, a dark shape under the start and middle of a white line keeps the whole line; light shapes that
+  are neither rectangles nor axis-aligned outlines do not cover. The
   prompt keeps its other defences (`ai._guard`, tagged blocks, instructions).
 - Author text in the prompt: `ai._prompt_structure` (called by `build_prompt`) gives the AI a copy of the structure
   whose statement and equation labels are plain text (`_plain_label`: no `<`, `>`, quotes, 120 characters) and whose

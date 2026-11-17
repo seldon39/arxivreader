@@ -104,12 +104,12 @@ def _color(value):
 
 
 WHITE = 0.9  # luminance d'un texte qu'on ne voit pas sur la page blanche
-DARK = 0.4   # fond assez foncé pour qu'un texte blanc s'y lise
+DARK = 0.5   # fond assez foncé pour qu'un texte blanc s'y lise (orange compris : contraste ≥ 1,9)
 
 
 def luminance(channels):
     """Luminance relative WCAG d'une couleur (r, v, b) entre 0 et 1 : texte « blanc » à partir de 0,9 (ici, dans un
-    source TeX et dans un PDF), fond foncé en deçà de 0,4."""
+    source TeX et dans un PDF), fond foncé en deçà de 0,5."""
     r, g, b = (c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in (min(max(c, 0), 1) for c in channels))
     return 0.2126 * r + 0.7152 * g + 0.0722 * b
 
@@ -257,7 +257,7 @@ def _on_dark_shape(element, cache):
                     return False  # couvre une partie seulement : on ne sait pas
                 continue
             color = _color(fill)
-            return color is not None and color[1] >= 0.5 and color[0] < 0.4
+            return color is not None and color[1] >= 0.5 and color[0] < DARK
     return False
 
 
