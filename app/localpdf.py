@@ -12,6 +12,7 @@ import hashlib
 import io
 import json
 import logging
+import math
 import re
 import unicodedata
 from pathlib import Path
@@ -63,11 +64,74 @@ def _clean(value):
     return " ".join(str(value or "").replace("\x00", "").split())
 
 
-def _page_text(page):
+FILLS = {b"f", b"F", b"f*", b"B", b"B*", b"b", b"b*"}
+MIN_VISIBLE_PT = 1  # corps de texte en deçà : invisible à l'écran comme à l'impression
+
+
+def _numbers(args):
     try:
-        return (page.extract_text() or "")[:PAGE_CHARS]
+        return [float(a) for a in args]
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_white(values):
+    """Couleur de remplissage blanche : gris 1, RVB (1, 1, 1), CMJN (0, 0, 0, 0)."""
+    if not values or len(values) not in (1, 3, 4):
+        return False
+    return all(v > 0.97 for v in values) if len(values) < 4 else all(v < 0.03 for v in values)
+
+
+def _page_text(page, hidden=None):
+    """Texte de la page, sans le texte invisible (blanc hors d'un grand fond coloré, corps de moins d'1 pt), comme
+    dans la version HTML (structure.mark_hidden) : il peut porter une injection d'invite et n'est jamais transmis à
+    l'IA. `hidden` (liste) : y ajoute le nombre de passages invisibles avec des lettres. Le texte en mode 3 (invisible,
+    couche de texte d'un scan reconnu) est gardé : c'est le texte de la page."""
+    state, stack, segments, background = {"white": False}, [], [], [False]
+    rect = [None]
+
+    def before(operator, args, cm, tm):
+        if operator == b"q":
+            stack.append(dict(state))
+        elif operator == b"Q" and stack:
+            state.update(stack.pop())
+        elif operator in (b"g", b"rg", b"k", b"sc", b"scn"):
+            state["white"] = _is_white(_numbers(args))
+        elif operator == b"cs":
+            state["white"] = False
+        elif operator == b"re":
+            rect[0] = _numbers(args)
+        elif operator in FILLS:
+            if rect[0] and len(rect[0]) == 4 and abs(rect[0][2]) > 40 and abs(rect[0][3]) > 10 and not state["white"]:
+                background[0] = True  # grand rectangle coloré (bandeau, encadré) : un texte blanc peut s'y lire
+            rect[0] = None
+
+    def visit(text, cm, tm, font, size):
+        try:
+            scale = abs(size or 0) * math.hypot(tm[2], tm[3]) * math.hypot(cm[2], cm[3])
+        except (TypeError, IndexError):
+            scale = MIN_VISIBLE_PT
+        segments.append((text, 0 < scale < MIN_VISIBLE_PT or (state["white"] and not background[0])))
+
+    try:
+        full = page.extract_text(visitor_operand_before=before, visitor_text=visit) or ""
     except Exception:  # page abîmée, flux trop gros (garde de pypdf) : page sans texte, le reste est gardé
         return ""
+    passages, cursor, previous = 0, 0, False
+    for text, invisible in segments:
+        piece = text.strip()
+        letters = bool(re.search(r"[^\W\d_]", piece))
+        if invisible and piece:
+            found = full.find(piece, cursor)
+            if found >= 0:
+                full = full[:found] + " " + full[found + len(piece):]
+                cursor = found + 1
+            passages += letters and not previous
+        if piece:
+            previous = invisible and (letters or previous)
+    if hidden is not None:
+        hidden.append(passages)
+    return full[:PAGE_CHARS]
 
 
 def _names(line):
@@ -125,9 +189,9 @@ def read_pdf(data, filename=""):
         reader = PdfReader(io.BytesIO(data))
         if reader.is_encrypted and not reader.decrypt(""):
             raise PdfError("encrypted")
-        pages, total = [], 0
+        pages, total, hidden = [], 0, []
         for page in reader.pages[:MAX_PAGES]:
-            pages.append(_page_text(page) if total < TOTAL_CHARS else "")
+            pages.append(_page_text(page, hidden) if total < TOTAL_CHARS else "")
             total += len(pages[-1])
         try:
             info = reader.metadata or {}
@@ -171,7 +235,7 @@ def read_pdf(data, filename=""):
                 abstract = candidate
     doi = DOI.search(first)
     return {"title": title[:300], "authors": authors[:30], "abstract": abstract, "doi": doi.group(1) if doi else None,
-            "pages": pages}
+            "pages": pages, "hidden": sum(hidden)}
 
 
 def arxiv_stamp(data):
@@ -214,8 +278,9 @@ def _import(pid, data, filename):
     folder = paper_dir(pid)
     folder.mkdir(parents=True, exist_ok=True)
     write_atomic_bytes(folder / "paper.pdf", data)
-    write_atomic(folder / "text.json", json.dumps({"pages": found["pages"], "metaVersion": META_VERSION}, ensure_ascii=False))
-    write_atomic(folder / "structure.json", json.dumps(EMPTY_STRUCTURE))
+    write_atomic(folder / "text.json", json.dumps({"pages": found["pages"], "metaVersion": META_VERSION, "textVersion": TEXT_VERSION},
+                                                  ensure_ascii=False))
+    write_atomic(folder / "structure.json", json.dumps({**EMPTY_STRUCTURE, "hiddenText": found["hidden"]}))
     db.save_paper({"id": pid, "arxiv_id": "", "version": None, "title": found["title"], "authors": found["authors"],
                    "abstract": found["abstract"], "categories": [], "primary_category": "", "published": None,
                    "updated": None, "doi": found["doi"], "journal_ref": None, "comment": _clean(filename)[:200],
@@ -223,14 +288,41 @@ def _import(pid, data, filename):
     return db.get_paper(pid)
 
 
+TEXT_VERSION = 2  # 2 : texte invisible retiré ; un text.json plus ancien est refait à sa première lecture par l'IA
+
+
 def text(pid):
     """Texte du PDF pour l'assistant, page par page (« [page 3] ») : il peut renvoyer à une page."""
     path = paper_dir(pid) / "text.json"
     try:
-        pages = json.loads(path.read_text(encoding="utf-8"))["pages"]
-    except (OSError, ValueError, KeyError):
+        stored = json.loads(path.read_text(encoding="utf-8"))
+        pages = stored["pages"]
+    except (OSError, ValueError, KeyError, TypeError):
         return ""
+    if stored.get("textVersion", 1) < TEXT_VERSION and (path.parent / "paper.pdf").exists():
+        pages = _refresh_text(pid)
     return "\n\n".join(f"[page {n}]\n{page.strip()}" for n, page in enumerate(pages, 1) if page.strip())
+
+
+def _refresh_text(pid):
+    """text.json extrait avant le retrait du texte invisible : refait (le reste du fichier gardé), le nombre de
+    passages invisibles signalé au lecteur (structure.json). Renvoie les pages."""
+    folder = paper_dir(pid)
+    with paper_lock(pid):
+        stored = json.loads((folder / "text.json").read_text(encoding="utf-8"))
+        if stored.get("textVersion", 1) >= TEXT_VERSION:
+            return stored["pages"]
+        try:
+            found = read_pdf((folder / "paper.pdf").read_bytes())
+            stored["pages"], hidden = found["pages"], found["hidden"]
+        except (OSError, PdfError):
+            hidden = 0  # illisible : texte gardé tel quel, pas relu à chaque fois
+        write_atomic(folder / "text.json", json.dumps({**stored, "textVersion": TEXT_VERSION}, ensure_ascii=False))
+        saved = folder / "structure.json"
+        if hidden and saved.exists():
+            structure = json.loads(saved.read_text(encoding="utf-8"))
+            write_atomic(saved, json.dumps({**structure, "hiddenText": hidden}, ensure_ascii=False))
+        return stored["pages"]
 
 
 def update_meta(pid, title, authors):

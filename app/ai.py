@@ -444,6 +444,24 @@ def _guard(text):
     return GUARD_TAGS.sub(lambda m: m.group(0).replace("<", "&lt;"), text or "")
 
 
+def _plain_label(text, limit=120):
+    """Étiquette écrite par l'auteur (« Theorem 2.1 », clé de \\label) placée dans l'invite, dans un attribut ou une
+    consigne : une ligne, sans < > ni guillemet, pour qu'elle ne referme ni attribut ni bloc."""
+    return re.sub(r'[\s<>"]+', " ", str(text or "")).strip()[:limit]
+
+
+def _prompt_structure(structure):
+    """Structure à citer dans l'invite : étiquettes des énoncés, des équations et des \\label en clair (_plain_label),
+    macros de l'auteur neutralisées (_guard) ; la structure enregistrée n'est pas touchée."""
+    safe = dict(structure)
+    safe["nodes"] = [{**n, "label": _plain_label(n.get("label"))} for n in structure.get("nodes", [])]
+    safe["equations"] = {k: {**e, "label": _plain_label(e["label"])} if isinstance(e, dict) and e.get("label") else e
+                         for k, e in (structure.get("equations") or {}).items()}
+    safe["labels"] = {_plain_label(k): v for k, v in (structure.get("labels") or {}).items()}
+    safe["macros"] = [_guard(m) for m in structure.get("macros") or []]
+    return safe
+
+
 CITED_STATEMENTS = 30        # énoncés repris de la littérature, joints à une relecture, au plus
 TEX_CHAPTER = re.compile(r"\\chapter\*?(?=\s*[\[{])")  # source sans commentaires ni texte masqué (tex_body)
 TEX_SECTION = re.compile(r"\\section\*?(?=\s*[\[{])")
@@ -1531,6 +1549,7 @@ def build_prompt(paper, structure, task, target=None, quote=None, question=None,
         raise AIError("Unknown task")
     if task in ("zone", "transcribe") and not zone:
         raise AIError("No image")
+    structure = _prompt_structure(structure)  # étiquettes et macros de l'auteur : jamais une balise de l'invite
     soup, index, text = _load(paper["id"])
     if task == "transcribe":  # transcription d'une image : l'article n'y sert pas (réponse rapide, peu coûteuse)
         text = f"# {paper['title']}"

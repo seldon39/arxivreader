@@ -34,8 +34,10 @@ These are not negotiable; a change that weakens one of them will not be merged.
   `/api/` request without the session token (cookie set by `/?t=`, or the `X-ArXivReader-Token` header). Data
   lives in the user's library folder.
 - **The AI assistant has no tools and no network**, and sees only the paper. Text hidden in a paper (white,
-  tiny, invisible) is flagged to the reader and never sent to the assistant (`app/structure.py`, `app/ai.py`):
-  it can carry prompt injections. Every request goes through `ai.build_prompt`, including the four of a
+  tiny, invisible), whether in its HTML, its TeX source or its PDF, is flagged to the reader and never sent to the
+  assistant (`app/structure.py`, `app/texstructure.py`, `app/localpdf.py`, `app/ai.py`): it can carry prompt
+  injections. Labels and macros written by the author reach the prompt only as plain text (`ai._prompt_structure`).
+  Every request goes through `ai.build_prompt`, including the four of a
   cross-review (second assistant too), a book chapter's summary or review (other chapters: statements only) and a
   paper section's summary or review (the whole paper is sent, with the statements linked to the section; only if it
   is too long for the assistant, the section and the start of the paper); the synthesis of a whole book, or of a

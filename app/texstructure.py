@@ -262,10 +262,120 @@ def _letter(n):
     return chr(ord("A") + n - 1) if 1 <= n <= 26 else str(n)
 
 
-def strip_hidden(text, shifts=None):
+# Texte imprimé mais invisible (blanc, minuscule) : retiré comme dans la version HTML (structure.mark_hidden), signalé
+# au lecteur, jamais transmis à l'IA (il peut porter une injection d'invite)
+_WHITE_SPEC = (r"\{\s*(?:white|White)\s*\}|\[\s*(?:rgb|RGB|gray|cmyk|HTML)\s*\]\s*\{\s*(?:1(?:\.0*)?|255|FFFFFF|ffffff)"
+               r"(?:\s*,\s*(?:1(?:\.0*)?|255)){0,2}\s*\}|\[\s*cmyk\s*\]\s*\{\s*0(?:\.0*)?(?:\s*,\s*0(?:\.0*)?){3}\s*\}")
+_UNITS = {"pt": 1, "bp": 1, "": 1, "mm": 2.85, "cm": 28.5, "in": 72.3, "ex": 4.3, "em": 10, "sp": 1 / 65536}
+_MAX_HIDDEN_SPAN = 20000  # \\color{white} qui court plus loin : réglage d'ensemble (fond foncé), pas un passage caché
+
+
+def _white_names(text):
+    """Couleurs blanches définies par l'auteur (\\definecolor{fond}{rgb}{1,1,1}, \\colorlet{fond}{white})."""
+    names = set()
+    for found in re.finditer(r"\\definecolor\s*\{\s*([\w-]+)\s*\}\s*\{\s*(\w+)\s*\}\s*\{([^}]*)\}", text):
+        model, value = found.group(2).lower(), found.group(3).replace(" ", "")
+        if (model in ("rgb", "gray") and all(re.fullmatch(r"1(\.0*)?", v) for v in value.split(","))
+                or model == "rgb255" and all(v == "255" for v in value.split(",")) or model == "html" and value.lower() == "ffffff"
+                or model == "cmyk" and all(re.fullmatch(r"0(\.0*)?", v) for v in value.split(","))):
+            names.add(found.group(1))
+    names |= {m.group(1) for m in re.finditer(r"\\colorlet\s*\{\s*([\w-]+)\s*\}\s*\{\s*(?:white|White)\s*\}", text)}
+    return names
+
+
+def _length_pt(value):
+    found = re.fullmatch(r"\s*([0-9]*\.?[0-9]+)\s*([a-z]*)\s*", value or "")
+    return float(found.group(1)) * _UNITS[found.group(2)] if found and found.group(2) in _UNITS else None
+
+
+def _group_rest(text, pos):
+    """Fin de la portée d'une déclaration (\\color, \\fontsize…\\selectfont) placée en `pos` : l'accolade qui ferme
+    le groupe où elle est, ou le \\end de son environnement ; None au-delà de _MAX_HIDDEN_SPAN."""
+    depth, index, stop = 0, pos, min(len(text), pos + _MAX_HIDDEN_SPAN)
+    while index < stop:
+        char = text[index]
+        if char == "\\":
+            if depth == 0 and text.startswith("\\end", index) and not text[index + 4:index + 5].isalpha():
+                return index
+            index += 2
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth < 0:
+                return index
+        index += 1
+    return len(text) if index >= len(text) else None
+
+
+def _in_box(text, pos):
+    """Dans le contenu d'un \\colorbox / \\fcolorbox (blanc sur fond coloré : visible)."""
+    for found in re.finditer(r"\\f?colorbox\b", text[max(0, pos - 3000):pos]):
+        start = max(0, pos - 3000) + found.end()
+        if text.startswith("\\fcolorbox", start - len("\\fcolorbox")):
+            group = _group(text, start, "{")
+            start = group[1] if group else start
+        spec = _group(text, start, "[")
+        group = _group(text, spec[1] if spec else start, "{")  # couleur du fond
+        content = _group(text, group[1], "{") if group else None
+        if content and content[1] > pos:
+            return True
+    return False
+
+
+def invisible(text):
+    """Passages imprimés mais invisibles : [(début, fin, avec_lettres)], dans l'ordre et sans chevauchement.
+    \\textcolor{white}{…} et \\color{white} (couleur blanche, ou définie blanche) hors d'un \\colorbox ;
+    \\fontsize{<1pt}…\\selectfont ; \\scalebox{<0.1}{…}, \\resizebox{<1pt}{…}{…} ; \\phantom{…} (retiré, jamais compté :
+    il aligne souvent des chiffres). Sans effet si l'auteur met tout le document sur fond foncé (\\pagecolor)."""
+    spans = []
+    names = _white_names(text)
+    white = _WHITE_SPEC + ("|\\{\\s*(?:" + "|".join(map(re.escape, names)) + ")\\s*\\}" if names else "")
+    dark_page = re.search(r"\\pagecolor\s*(?:\[[^\]]*\])?\s*\{(?!\s*(?:white|White)\s*\})", text)
+    if not dark_page:
+        for found in re.finditer(r"\\textcolor\s*(?:" + white + r")", text):
+            content = _group(text, found.end(), "{")
+            if content and not _in_box(text, found.start()):
+                spans.append((found.start(), content[1], content[1] - len(content[0]) - 1))
+        for found in re.finditer(r"\\color\s*(?:" + white + r")", text):
+            end = _group_rest(text, found.end())
+            if end is not None and not _in_box(text, found.start()):
+                spans.append((found.start(), end, found.end()))
+    for found in re.finditer(r"\\fontsize\s*\{([^{}]*)\}\s*\{[^{}]*\}\s*\\selectfont\b", text):
+        size = _length_pt(found.group(1))
+        end = _group_rest(text, found.end()) if size is not None and size < 1 else None
+        if end is not None:
+            spans.append((found.start(), end, found.end()))
+    for found in re.finditer(r"\\(scalebox|resizebox)\s*\{([^{}]*)\}", text):
+        if found.group(1) == "scalebox":
+            small = re.fullmatch(r"\s*0?\.0\d*\s*", found.group(2))
+            content = _group(text, found.end(), "{")
+        else:
+            size = _length_pt(found.group(2))
+            small = size is not None and size < 1
+            second = _group(text, found.end(), "{")
+            content = _group(text, second[1], "{") if second else None
+        if small and content:
+            spans.append((found.start(), content[1], content[1] - len(content[0]) - 1))
+    for found in re.finditer(r"\\[hv]?phantom\s*(?=\{)", text):
+        content = _group(text, found.end(), "{")
+        if content:
+            spans.append((found.start(), content[1], None))  # jamais compté
+    kept, end = [], -1
+    for start, stop, shown in sorted(spans):  # `shown` : début du texte rendu invisible
+        if start >= end:
+            letters = shown is not None and bool(re.search(r"[^\W\d_]", re.sub(r"\\[A-Za-z]+", "", text[shown:stop])))
+            kept.append((start, stop, letters))
+            end = stop
+    return kept
+
+
+def strip_hidden(text, shifts=None, counted=None):
     """Passages que LaTeX n'imprime pas : \\begin{comment}…\\end{comment}, \\iffalse…\\fi, argument d'une macro
-    qui ne l'imprime pas (« \\newcommand{\\comment}[1]{} »). `shifts` (liste) : y ajoute la correspondance des
-    positions de chaque étape (Shifts, dans l'ordre)."""
+    qui ne l'imprime pas (« \\newcommand{\\comment}[1]{} ») ; puis ceux qu'il imprime invisibles (`invisible`).
+    `shifts` (liste) : y ajoute la correspondance des positions de chaque étape (Shifts, dans l'ordre). `counted`
+    (liste) : y ajoute le nombre de passages invisibles avec des lettres (signalés au lecteur)."""
     text = _sub(r"\\begin\s*\{comment\}.*?\\end\s*\{comment\}", " ", text, shifts, flags=re.S)
     for name in set(re.findall(r"\\(?:re)?newcommand\*?\s*\{?\\([A-Za-z]+)\}?\s*\[1\]\s*\{\s*\}", text)):
         edits, pos = [], 0
@@ -291,7 +401,11 @@ def strip_hidden(text, shifts=None):
                 break
         else:
             break
-    return _edit(text, edits, shifts)
+    text = _edit(text, edits, shifts)
+    spans = invisible(text)
+    if counted is not None:
+        counted.append(sum(1 for *_, letters in spans if letters))
+    return _edit(text, [(start, stop, " ") for start, stop, _ in spans], shifts)
 
 
 def extract(text, bbl="", positions=None):
@@ -300,7 +414,8 @@ def extract(text, bbl="", positions=None):
     {"nodes": {id: (début, fin)}, "proofs": {id: (début, fin)}, "sections": {id: début}} (identifiants d'avant
     texfile.stable_ids) ; la structure rendue est la même avec ou sans."""
     hidden = [] if positions is not None else None
-    text = strip_hidden(text, hidden)
+    invisible_count = []
+    text = strip_hidden(text, hidden, invisible_count)
     envs, within, formats = declarations(text)
     begin = text.find("\\begin{document}")
     body = text[begin + len("\\begin{document}"):] if begin >= 0 else text
@@ -629,7 +744,8 @@ def extract(text, bbl="", positions=None):
         "version": STRUCTURE_VERSION, "source": "tex", "toc": toc, "book": book,
         "nodes": [{k: v for k, v in nodes[n].items() if k not in ("insideProof", "chain")} for n in order],
         "proofBlocks": [{"id": p["id"], "of": p["of"], "anchors": []} for p in proofs.values()],
-        "equations": equations, "bibliography": bibliography(body + "\n" + bbl), "hiddenText": 0,
+        "equations": equations, "bibliography": bibliography(body + "\n" + bbl),
+        "hiddenText": invisible_count[0],
     }, lambda proof: proofs.get(proof, {}).get("section") or proof)
 
 

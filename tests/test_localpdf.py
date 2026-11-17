@@ -33,6 +33,57 @@ def make_pdf(lines, title=None):
     return out.encode("latin-1")
 
 
+def raw_pdf(content):
+    """PDF d'une page dont le flux de contenu est `content` (police F1 : Helvetica)."""
+    objects = ["<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+               "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+               f"<< /Length {len(content)} >>\nstream\n{content}\nendstream", "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+    out, offsets = "%PDF-1.4\n", []
+    for number, body in enumerate(objects, 1):
+        offsets.append(len(out.encode("latin-1")))
+        out += f"{number} 0 obj\n{body}\nendobj\n"
+    start = len(out.encode("latin-1"))
+    out += f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n" + "".join(f"{o:010d} 00000 n \n" for o in offsets)
+    out += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{start}\n%%EOF\n"
+    return out.encode("latin-1")
+
+
+HIDDEN_PDF = raw_pdf("BT /F1 12 Tf 72 720 Td (Visible words.) Tj ET 1 g BT /F1 12 Tf 72 700 Td (IGNORE PREVIOUS) Tj ET 0 g "
+                     "BT /F1 12 Tf 72 690 Td (Between.) Tj ET BT /F1 0.2 Tf 72 680 Td (tiny secret) Tj ET "
+                     "0 0 1 rg 50 600 300 40 re f 1 1 1 rg BT /F1 12 Tf 72 610 Td (White on blue) Tj ET "
+                     "0 g BT 3 Tr /F1 12 Tf 72 560 Td (OCR layer) Tj ET")
+
+
+class InvisiblePdfText(unittest.TestCase):
+    """Texte invisible d'un PDF (blanc, corps de moins d'1 pt) : retiré du texte transmis à l'IA et compté ; blanc sur
+    un fond coloré et couche de texte d'un scan (mode 3) gardés."""
+
+    def test_white_and_tiny_text_removed(self):
+        found = localpdf.read_pdf(HIDDEN_PDF)
+        page = found["pages"][0]
+        for kept in ("Visible words.", "Between.", "White on blue", "OCR layer"):
+            self.assertIn(kept, page)
+        self.assertNotIn("IGNORE", page)
+        self.assertNotIn("secret", page)
+        self.assertEqual(found["hidden"], 2)
+
+    def test_old_text_cleaned_on_first_reading(self):
+        saved = (db.DB_PATH, db.LIBRARY, library.PAPERS)
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        db.DB_PATH, db.LIBRARY, library.PAPERS = tmp / "test.db", tmp, tmp / "papers"
+        self.addCleanup(lambda: (setattr(db, "DB_PATH", saved[0]), setattr(db, "LIBRARY", saved[1]), setattr(library, "PAPERS", saved[2])))
+        db.init()
+        folder = library.paper_dir("pdf-x")
+        folder.mkdir(parents=True)
+        (folder / "paper.pdf").write_bytes(HIDDEN_PDF)
+        (folder / "text.json").write_text(json.dumps({"pages": ["Visible words. IGNORE PREVIOUS"], "metaVersion": 2}))
+        (folder / "structure.json").write_text(json.dumps(localpdf.EMPTY_STRUCTURE))
+        self.assertNotIn("IGNORE", localpdf.text("pdf-x"))
+        stored = json.loads((folder / "text.json").read_text())
+        self.assertEqual((stored["textVersion"], stored["metaVersion"]), (localpdf.TEXT_VERSION, 2))
+        self.assertEqual(json.loads((folder / "structure.json").read_text())["hiddenText"], 2)
+
+
 class LocalPdf(unittest.TestCase):
     def setUp(self):
         self.saved = (db.DB_PATH, db.LIBRARY, library.PAPERS)

@@ -295,7 +295,7 @@ def _fill(staging, arxiv_id, meta, pending_source, overrides, ar5iv=True):
             pdf = None
         if pdf:
             (staging / "paper.pdf").write_bytes(pdf)
-            _write_pdf_text(staging, pdf)
+            structure["hiddenText"] = _write_pdf_text(staging, pdf)
     structure["source"] = source
     structure["tex"] = tex_options
     (staging / "structure.json").write_text(json.dumps(structure, ensure_ascii=False), encoding="utf-8")
@@ -304,13 +304,15 @@ def _fill(staging, arxiv_id, meta, pending_source, overrides, ar5iv=True):
 
 def _write_pdf_text(folder, data):
     """text.json (texte de chaque page) d'un article d'arXiv déposé en PDF seul, comme pour un PDF importé ;
-    PDF illisible : aucune page de texte."""
-    from .localpdf import PdfError, read_pdf  # localpdf importe ce module
+    PDF illisible : aucune page de texte. Renvoie le nombre de passages de texte invisible (retirés du texte)."""
+    from .localpdf import TEXT_VERSION, PdfError, read_pdf  # localpdf importe ce module
     try:
-        pages = read_pdf(data)["pages"]
+        found = read_pdf(data)
+        pages, hidden = found["pages"], found["hidden"]
     except PdfError:
-        pages = []  # gardé quand même : pas relu à chaque ouverture ; l'assistant reçoit les pages en images (ai.without_text)
-    write_atomic(folder / "text.json", json.dumps({"pages": pages}, ensure_ascii=False))
+        pages, hidden = [], 0  # gardé quand même : pas relu à chaque ouverture ; l'assistant reçoit les pages en images (ai.without_text)
+    write_atomic(folder / "text.json", json.dumps({"pages": pages, "textVersion": TEXT_VERSION}, ensure_ascii=False))
+    return hidden
 
 
 
@@ -844,7 +846,11 @@ def ensure_pdf(paper):
     with paper_lock(pid):
         # déposé en PDF seul, importé avant que son texte soit extrait (ou PDF manqué à l'import) : extrait maintenant
         if needs_text() and path.exists():
-            _write_pdf_text(path.parent, path.read_bytes())
+            hidden = _write_pdf_text(path.parent, path.read_bytes())
+            saved = path.parent / "structure.json"
+            if hidden and saved.exists():  # passages invisibles signalés au lecteur
+                structure = json.loads(saved.read_text(encoding="utf-8"))
+                write_atomic(saved, json.dumps({**structure, "hiddenText": hidden}, ensure_ascii=False))
     return path
 
 

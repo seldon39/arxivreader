@@ -38,8 +38,10 @@ function loadMathJax() {
         // \href, \style, \class, \cssId désactivés : un résumé ou un titre (texte venu d'arXiv) pourrait y
         // cacher un lien vers n'importe quelle adresse, invisible et étendu à toute la fenêtre. Ni chargés à la
         // demande (autoload), ni par \require{html} : le paquet require est retiré, et html.js n'est pas livré
-        packages: { "[-]": ["require", "html"] },
-        autoload: { html: [] } },
+        // \bbox de même : son style CSS est libre (position: fixed, fond, marge sur toute la fenêtre). \mmlToken (paquet
+        // de base, pas retirable) pose des attributs MathML quelconques (href, style) : neutralisé dans le texte (rawMml)
+        packages: { "[-]": ["require", "html", "bbox"] },
+        autoload: { html: [], bbox: [] } },
       startup: { typeset: false, ready: () => { window.MathJax.startup.defaultReady(); resolve(window.MathJax); } },
       options: { enableMenu: false, menuOptions: { settings: { assistiveMml: false } } },
       // adaptiveCSS: false : les règles de tous les caractères posées au départ, d'un coup. Sinon MathJax en ajoute à
@@ -314,6 +316,16 @@ function slashLetters(element) {
   }
 }
 
+// \mmlToken{mi}[href="…",style="position:fixed…"]{x} rouvrirait un lien invisible sur toute la fenêtre : la commande
+// devient inconnue (affichée telle quelle, comme toute macro inconnue), jamais un titre ou résumé n'en a besoin
+const RAW_MML = /\\mmlToken(?![A-Za-z])/g;
+function rawMml(element) {
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (node.data.includes("\\mmlToken")) node.data = node.data.replace(RAW_MML, "\\mmlTokenDisabled");
+  }
+}
+
 // Texte contenant du TeX entre $…$ (titres, résumés, notes) : mise en forme par MathJax.
 // Les demandes passent une à une (MathJax garde un état partagé), les éléments déjà retirés de la page
 // sont ignorés, et MathJax oublie ensuite les formules traitées (sinon sa liste grossit sans fin).
@@ -322,6 +334,7 @@ export function typesetTex(elements) {
   queue = queue.then(async () => {
     const live = elements.filter((element) => element?.isConnected);
     if (!live.length) return;
+    live.forEach(rawMml);
     live.forEach(slashLetters);
     const MathJax = await loadMathJax();
     await MathJax.typesetPromise(live);

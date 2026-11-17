@@ -1000,7 +1000,7 @@ class PdfOnly(Base):
         (folder / "text.json").unlink()
         (folder / "paper.pdf").write_bytes(b"%PDF-1.4 broken")
         library.ensure_pdf(db.get_paper(ID))
-        self.assertEqual(json.loads((folder / "text.json").read_text(encoding="utf-8")), {"pages": []})
+        self.assertEqual(json.loads((folder / "text.json").read_text(encoding="utf-8"))["pages"], [])
         self.assertTrue(ai.without_text(db.get_paper(ID)))
         with mock.patch("app.localpdf.read_pdf") as read:
             library.ensure_pdf(db.get_paper(ID))

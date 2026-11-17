@@ -463,6 +463,21 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   immediately before in the same coordinate frame (title of a tcolorbox box, `_on_dark_shape`, contrast of at least 2,3). Conservative:
   an unreadable shape on top (moved, relative commands, image), with no surface, partial, or a foreignObject with no
   width, and the text stays flagged; shapes read once per group.
+- Invisible text in a TeX source (`texstructure.invisible`, used by `strip_hidden`, hence by `extract` and `ai.tex_body`):
+  `\textcolor`/`\color` white (also a color defined white by `\definecolor`/`\colorlet`), `\fontsize` under 1 pt,
+  `\scalebox` under 0,1, `\resizebox` under 1 pt, `\phantom` (removed, never counted); nothing under a dark
+  `\pagecolor`; a span is cut at `_MAX_HIDDEN_SPAN` characters. Count in `hiddenText` of `structure.json` (papers
+  analysed before: after a re-analysis). In a PDF (`localpdf._page_text`, pypdf visitors): text drawn in white (unless a
+  large colored rectangle was filled earlier on the page: banner, box) or with a font under `MIN_VISIBLE_PT`; the
+  text layer of a scan (mode 3) is kept. Removed from `text.json` and counted (`hidden`, then `hiddenText`); a
+  `text.json` older than `TEXT_VERSION` is re-read once (`_refresh_text`). The reader shows the count without
+  a reveal button when only the PDF is displayed (`reader.hiddenTextSource`).
+- Author text in the prompt: `ai._prompt_structure` (called by `build_prompt`) gives the AI a copy of the structure
+  whose statement and equation labels are plain text (`_plain_label`: no `<`, `>`, quotes, 120 characters) and whose
+  macros go through `_guard`.
+- MathJax and the paper's TeX (`math.js`): the packages `require`, `html` and `bbox` are removed (no `\href`,
+  `\style`, `\class`, `\bbox`), and `\mmlToken` is replaced before typesetting (`rawMml`, before `slashLetters`):
+  a paper could otherwise draw an overlay or a link over the page.
 - Slashed letter (`\not{\mathcal{D}}`, `\not D`, `\slashed{D}`: Dirac operator): LaTeXML leaves the letter followed by
   U+0338, a combining slash that **Chrome draws on the letter and WebKit after it** (on the subscript). `math.slashedLetters`
   replaces it with the font's same non-combining slash, ⧸ U+29F8 (slash of `\not` and of ≠: height 0,716 em,

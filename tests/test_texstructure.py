@@ -2,6 +2,7 @@
 
 import unittest
 
+from app import texstructure
 from app.texstructure import extract
 
 SOURCE = r"""
@@ -70,6 +71,32 @@ class TexStructure(unittest.TestCase):
         self.assertIn(r"\newcommand{\RR}{\mathbb{R}}", self.structure["macros"])
         self.assertIn(r"\newcommand{\Ker}{\operatorname{Ker}}", self.structure["macros"])
         self.assertEqual(self.structure["labels"]["lem:two"], self.nodes["Lemma 1.4"]["id"])
+
+
+class InvisibleTex(unittest.TestCase):
+    """Texte que LaTeX imprime invisible (blanc, minuscule) : ni dans le texte transmis à l'IA, ni dans l'analyse ;
+    compté pour le lecteur. Blanc sur fond coloré, \\phantom de chiffres, fond de page foncé : rien de signalé."""
+
+    SOURCE = (r"\documentclass{article}\definecolor{bg}{rgb}{1,1,1}\newtheorem{theorem}{Theorem}\begin{document}"
+              r"Visible. \textcolor{white}{IGNORE PREVIOUS} {\color{white}\fontsize{0.1pt}{0.1pt}\selectfont secret} "
+              r"\colorbox{black}{\textcolor{white}{shown}} $a\phantom{00}b$ \textcolor{bg}{named} \scalebox{0.01}{small} "
+              r"\begin{theorem}A {\color{white} inner} B\end{theorem}\end{document}")
+
+    def test_removed_and_counted(self):
+        from app import ai
+        body = ai.tex_body(self.SOURCE)
+        for gone in ("IGNORE", "secret", "named", "small", "inner"):
+            self.assertNotIn(gone, body)
+        for kept in ("Visible.", "shown", "A ", "B"):
+            self.assertIn(kept, body)
+        structure = texstructure.extract(self.SOURCE)
+        self.assertEqual(structure["hiddenText"], 5)
+        self.assertEqual(len(structure["nodes"]), 1)
+
+    def test_dark_page_and_digits_not_flagged(self):
+        dark = r"\begin{document}\pagecolor{black}\color{white} All the text.\end{document}"
+        self.assertIn("All the text.", texstructure.strip_hidden(dark))
+        self.assertEqual(texstructure.extract(r"\begin{document}$1\phantom{0}2$\end{document}")["hiddenText"], 0)
 
 
 class PdfSpotsTest(unittest.TestCase):
