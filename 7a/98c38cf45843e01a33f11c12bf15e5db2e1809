@@ -1,0 +1,50 @@
+app/ai.py
+  s_2e78fe3aad7ffd::t_f5188ab8f721c1 447-464,1552
+tests/test_ai.py
+  s_2e78fe3aad7ffd::t_ad222bd7cfea66 1664-1683
+app/texstructure.py
+  s_2e78fe3aad7ffd::t_6ee2d057affb56 340,344,349,360,364,366,368
+  s_2e78fe3aad7ffd::t_e264a76eb0cb8c 265-339,341-343,345-348,350-359,361-363,365,367,369-374,376-378,404-408,417-418,747-748
+tests/test_texstructure.py
+  s_2e78fe3aad7ffd::t_48629f0bff5e15 76-101
+  s_2e78fe3aad7ffd::t_015a180eca889a 5
+static/js/math.js
+  s_2e78fe3aad7ffd::t_52331f45590270 41-44,319-328,337
+app/localpdf.py
+  s_2e78fe3aad7ffd::t_3e2b6c4c70bec4 238,283
+  s_2e78fe3aad7ffd::t_033d5d4fa4cfcd 281-282,291-293,298-300,302-303,307-325
+  s_2e78fe3aad7ffd::t_f977ef37fda005 15,67-115,117,120-134,192,194
+  s_2e78fe3aad7ffd::t_55d79c76190c72 326-327
+tests/test_versions.py
+  s_2e78fe3aad7ffd::t_e8824cf894e357 1003
+static/js/i18n.js
+  s_2e78fe3aad7ffd::t_3188ffc09d73dd 603,1665
+app/library.py
+  s_2e78fe3aad7ffd::t_3e2b6c4c70bec4 298,307,310-311,313,315,849-853
+  s_2e78fe3aad7ffd::t_033d5d4fa4cfcd 308,314
+tests/test_localpdf.py
+  s_2e78fe3aad7ffd::t_48629f0bff5e15 36-86
+MAINTENANCE.md
+  s_2e78fe3aad7ffd::t_a4ff200274090c 466-469,473-480
+  s_2e78fe3aad7ffd::t_e799e02176593d 470-472
+CONTRIBUTING.md
+  s_2e78fe3aad7ffd::t_a4ff200274090c 37-40
+static/js/reader.js
+  s_2e78fe3aad7ffd::t_3188ffc09d73dd 596-600
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "7a98c38cf45843e01a33f11c12bf15e5db2e1809",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
