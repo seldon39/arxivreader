@@ -68,8 +68,14 @@ def _clean(value):
 FILLS = {b"f", b"F", b"f*", b"B", b"B*", b"b", b"b*"}
 PAINTS = FILLS | {b"S", b"s", b"n"}
 SHOWS = {b"Tj", b"TJ", b"'", b'"'}
-MIN_VISIBLE_PT = 1  # corps de texte en deçà : invisible à l'écran comme à l'impression
+MIN_VISIBLE_PT = 1      # corps de texte en deçà : invisible à l'écran comme à l'impression
+MIN_BACKGROUND_PT = 4   # fond plus petit (point, filet) : un texte blanc n'y tient pas
+SCAN_SHARE = 0.5        # image qui couvre au moins cette part de la page : page scannée
+MAX_FORM_DEPTH = 12     # formulaires imbriqués plus profond : vidés (aucun article n'en a)
+MAX_STEPS = 2_000_000   # opérations parcourues par page, formulaires compris ; au-delà, formulaires laissés tels quels
+GRID = 64               # côté des cases de l'index des fonds (points)
 DEVICE_SPACES = {"/DeviceGray", "/DeviceRGB", "/DeviceCMYK", "/CalGray", "/CalRGB", "/ICCBased", "/G", "/RGB", "/CMYK"}
+COMPONENTS = {"/DeviceGray": 1, "/CalGray": 1, "/G": 1, "/DeviceRGB": 3, "/CalRGB": 3, "/RGB": 3, "/DeviceCMYK": 4, "/CMYK": 4}
 IDENTITY = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
 
 
@@ -90,10 +96,14 @@ def _point(m, x, y):
     return x * m[0] + y * m[2] + m[4], x * m[1] + y * m[3] + m[5]
 
 
-def _luminance(values, known=True):
-    """Luminance d'une couleur de remplissage (gris, RVB, CMJN selon le nombre de composantes), None si on ne sait pas
-    la lire (espace de couleur spécial, motif)."""
-    if not known or not values or len(values) not in (1, 3, 4):
+def _box(points):
+    xs, ys = [p[0] for p in points], [p[1] for p in points]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _luminance(values):
+    """Luminance d'une couleur (gris, RVB, CMJN selon le nombre de composantes), None si on ne sait pas la lire."""
+    if not values or len(values) not in (1, 3, 4):
         return None
     if len(values) == 1:
         return luminance(values * 3)
@@ -103,72 +113,119 @@ def _luminance(values, known=True):
     return luminance([(1 - c) * (1 - k), (1 - m) * (1 - k), (1 - y) * (1 - k)])
 
 
-def _known_space(name, resources):
-    """Espace de couleur dont les composantes se lisent comme gris / RVB / CMJN."""
+def _space(name, resources):
+    """Espace de couleur : ("device", None) (composantes lues comme gris / RVB / CMJN), ("indexed", (n, palette)),
+    ("other", None) (séparation, motif… : couleur inconnue)."""
+    name = str(name)
     if name in DEVICE_SPACES:
-        return True
+        return "device", None
     try:
         space = resources["/ColorSpace"][name].get_object()
-        return str(space[0] if isinstance(space, list) else space) in DEVICE_SPACES
+        kind = str(space[0]) if isinstance(space, list) else str(space)
+        if kind in DEVICE_SPACES:
+            return "device", None
+        if kind == "/Indexed":
+            base = space[1].get_object()
+            base_name = str(base[0]) if isinstance(base, list) else str(base)
+            count = int(base[1].get_object().get("/N", 0)) if base_name == "/ICCBased" else COMPONENTS.get(base_name, 0)
+            lookup = space[3].get_object()
+            data = lookup.get_data() if hasattr(lookup, "get_data") else _raw(lookup)
+            if count:
+                return "indexed", (count, data)
     except Exception:
-        return False
+        pass
+    return "other", None
+
+
+def _color(args, space):
+    """Luminance de la couleur posée par sc/scn dans `space` (voir _space), None si inconnue."""
+    kind, data = space
+    numbers = _numbers(args)
+    if kind == "device":
+        return _luminance(numbers)
+    if kind == "indexed" and numbers and len(numbers) == 1:
+        count, palette = data
+        entry = palette[int(numbers[0]) * count:(int(numbers[0]) + 1) * count]
+        return _luminance([byte / 255 for byte in entry]) if len(entry) == count else None
+    return None
 
 
 def _raw(value):
     """Octets d'une chaîne affichée (Tj) ou de celles d'un tableau (TJ)."""
     if isinstance(value, list):
         return b"".join(_raw(item) for item in value if isinstance(item, (str, bytes)))
-    if hasattr(value, "get_original_bytes"):
-        return value.get_original_bytes()
+    if hasattr(value, "original_bytes"):  # octets lus dans le fichier (get_original_bytes les réencoderait)
+        return value.original_bytes
     return bytes(value) if isinstance(value, bytes) else str(value).encode("latin-1", "replace")
 
 
-def _has_images(page, contents):
-    def walk(resources, depth):
-        try:
-            xobjects = resources.get("/XObject") or {}
-            for name in xobjects:
-                xobject = xobjects[name].get_object()
-                if xobject.get("/Subtype") == "/Image" or depth < 3 and xobject.get("/Subtype") == "/Form" and walk(
-                        xobject.get("/Resources") or {}, depth + 1):
-                    return True
-        except Exception:
-            pass
-        return False
+def _off_groups(reader):
+    """Calques (groupes de contenu optionnel) masqués par défaut : leurs numéros d'objet."""
     try:
-        return walk(page.get("/Resources") or {}, 0) or any(op == b"INLINE IMAGE" for _, op in contents.operations)
+        properties = reader.trailer["/Root"].get("/OCProperties")
+        if not properties:
+            return set()
+        default = properties.get_object()["/D"].get_object()
+        every = {getattr(ref, "idnum", None) for ref in properties.get_object().get("/OCGs", [])}
+        on = {getattr(ref, "idnum", None) for ref in default.get("/ON", [])}
+        off = {getattr(ref, "idnum", None) for ref in default.get("/OFF", [])}
+        return (every - on if default.get("/BaseState") == "/OFF" else off) - {None}
     except Exception:
-        return False
+        return set()
 
 
 class _Visible:
-    """Parcours d'un flux de contenu qui retire les affichages de texte invisibles (`ops`) et les compte
-    (`passages` : suites de texte invisible avec des lettres). État graphique suivi : q/Q, cm, couleurs de remplissage
-    et de trait, Tf, Tz, Tr, TL, matrices de texte ; fonds foncés (ou d'image) déjà peints, avec leur place sur la page.
-    Formulaires (Do) parcourus de même, une fois chacun."""
+    """Parcours d'un flux de contenu qui retire les affichages de texte invisibles et les compte (`passages` : suites
+    de texte invisible avec des lettres). État graphique suivi : q/Q, cm, couleurs de remplissage et de trait (espaces
+    de couleur, palettes), opacité (gs), découpe (W), calques masqués (BDC /OC), Tf, Tz, Tr, TL, matrices de texte ;
+    fonds foncés (formes, dégradés, images) déjà peints, avec leur place sur la page, effacés par un aplat clair peint
+    par-dessus. Formulaires (Do) jugés à chaque affichage, avec l'état du moment : copie nettoyée sous un autre nom
+    s'il faut, l'original (partagé) n'est jamais modifié."""
 
-    def __init__(self, reader, scan):
-        self.reader, self.scan = reader, scan
-        self.backgrounds, self.passages, self.running, self.forms = [], 0, False, set()
+    def __init__(self, reader, scan, page_box):
+        self.reader, self.scan, self.page_box = reader, scan, page_box
+        self.rects, self.grid, self.big = [], {}, []
+        self.passages, self.running, self.scanned, self.steps = 0, False, False, 0
+        self.walking, self.copies, self.off = set(), {}, _off_groups(reader)
+
+    @staticmethod
+    def start_state():
+        return {"ctm": IDENTITY, "fill": 0.0, "stroke": 0.0, "fillSpace": ("device", None), "strokeSpace": ("device", None),
+                "size": None, "scale": 1.0, "render": 0, "leading": 0.0, "cid": False, "alpha": 1.0, "strokeAlpha": 1.0,
+                "clip": None, "hiddenLayer": False}
 
     def run(self, operations, resources, state, depth=0):
         """(opérations gardées, flux changé) ; `state` (dict) : état graphique au départ, mis à jour."""
-        kept, stack, path, changed = [], [], [], False
+        kept, stack, path, layers, changed = [], [], {"points": [], "rect": True, "clip": False}, [], False
         tm = tlm = IDENTITY
         for args, operator in operations:
+            self.steps += 1
             try:
-                self._step(args, operator, resources, state, stack, path, depth)
+                if operator == b"Do" and args:
+                    replacement = self._draw(args[0], resources, state, depth)
+                    if replacement is not None:
+                        kept.append(([replacement], b"Do"))
+                        changed = True
+                        continue
+                elif operator in (b"BDC", b"BMC"):
+                    layers.append(state["hiddenLayer"])
+                    if operator == b"BDC" and len(args) >= 2 and str(args[0]) == "/OC":
+                        state["hiddenLayer"] = state["hiddenLayer"] or self._layer_off(args[1], resources)
+                elif operator == b"EMC" and layers:
+                    state["hiddenLayer"] = layers.pop()
+                else:
+                    self._step(args, operator, resources, state, stack, path)
                 if operator == b"BT":
                     tm = tlm = IDENTITY
-                elif operator == b"Tm" and _numbers(args[:6]) and len(args) >= 6:
+                elif operator == b"Tm" and len(args) >= 6 and _numbers(args[:6]):
                     tm = tlm = _numbers(args[:6])
-                elif operator in (b"Td", b"TD") and _numbers(args[:2]) and len(args) >= 2:
+                elif operator in (b"Td", b"TD") and len(args) >= 2 and _numbers(args[:2]):
                     tx, ty = _numbers(args[:2])
                     state["leading"] = -ty if operator == b"TD" else state["leading"]
                     tm = tlm = _mult([1, 0, 0, 1, tx, ty], tlm)
                 elif operator in (b"T*", b"'", b'"'):
                     tm = tlm = _mult([1, 0, 0, 1, 0, -state["leading"]], tlm)
-                if operator in SHOWS and self._hidden(args, operator, resources, state, tm):
+                if operator in SHOWS and self._hidden(args, state, tm):
                     if operator == b'"' and len(args) >= 3:
                         kept += [([args[0]], b"Tw"), ([args[1]], b"Tc")]
                     if operator in (b"'", b'"'):
@@ -180,7 +237,7 @@ class _Visible:
             kept.append((args, operator))
         return kept, changed
 
-    def _step(self, args, operator, resources, state, stack, path, depth):
+    def _step(self, args, operator, resources, state, stack, path):
         if operator == b"q":
             stack.append(dict(state))
         elif operator == b"Q" and stack:
@@ -188,14 +245,25 @@ class _Visible:
             state.update(stack.pop())
         elif operator == b"cm" and len(args) >= 6:
             state["ctm"] = _mult(_numbers(args[:6]), state["ctm"])
-        elif operator in (b"g", b"rg", b"k", b"sc", b"scn"):
-            state["fill"] = _luminance(_numbers(args), state["fillKnown"] if operator in (b"sc", b"scn") else True)
-        elif operator in (b"G", b"RG", b"K", b"SC", b"SCN"):
-            state["stroke"] = _luminance(_numbers(args), state["strokeKnown"] if operator in (b"SC", b"SCN") else True)
+        elif operator in (b"g", b"rg", b"k"):
+            state["fillSpace"], state["fill"] = ("device", None), _luminance(_numbers(args))
+        elif operator in (b"G", b"RG", b"K"):
+            state["strokeSpace"], state["stroke"] = ("device", None), _luminance(_numbers(args))
+        elif operator in (b"sc", b"scn"):
+            state["fill"] = _color(args, state["fillSpace"])
+        elif operator in (b"SC", b"SCN"):
+            state["stroke"] = _color(args, state["strokeSpace"])
         elif operator in (b"cs", b"CS") and args:
-            known = _known_space(str(args[0]), resources)
             side = "fill" if operator == b"cs" else "stroke"
-            state[side + "Known"], state[side] = known, 0.0 if known else None
+            space = _space(args[0], resources)
+            state[side + "Space"] = space
+            state[side] = 0.0 if space[0] == "device" else _color([0], space)  # couleur initiale : composantes nulles
+        elif operator == b"gs" and args:
+            extended = resources["/ExtGState"][args[0]].get_object()
+            if "/ca" in extended:
+                state["alpha"] = float(extended["/ca"])
+            if "/CA" in extended:
+                state["strokeAlpha"] = float(extended["/CA"])
         elif operator == b"Tf" and len(args) >= 2:
             state["size"] = abs(float(args[1]))
             try:
@@ -210,49 +278,126 @@ class _Visible:
             state["leading"] = float(args[0])
         elif operator in (b"m", b"l", b"c", b"v", b"y") and _numbers(args):
             numbers = _numbers(args)
-            path += [_point(state["ctm"], numbers[i], numbers[i + 1]) for i in range(0, len(numbers) - 1, 2)]
+            path["points"] += [_point(state["ctm"], numbers[i], numbers[i + 1]) for i in range(0, len(numbers) - 1, 2)]
+            path["rect"] = False
         elif operator == b"re" and len(args) >= 4:
             x, y, w, h = _numbers(args[:4])
-            path += [_point(state["ctm"], x + dx, y + dy) for dx in (0, w) for dy in (0, h)]
+            path["points"] += [_point(state["ctm"], x + dx, y + dy) for dx in (0, w) for dy in (0, h)]
+        elif operator in (b"W", b"W*"):
+            path["clip"] = True
         elif operator in PAINTS:
-            if operator in FILLS and path and (state["fill"] is None or state["fill"] < DARK):
-                self._background(path)
-            path.clear()
+            points = path["points"]
+            if points and path["clip"]:
+                x0, y0, x1, y1 = _box(points)
+                if state["clip"]:
+                    c0, d0, c1, d1 = state["clip"]
+                    x0, y0, x1, y1 = max(x0, c0), max(y0, d0), min(x1, c1), min(y1, d1)
+                state["clip"] = (x0, y0, x1, y1)
+            if operator in FILLS and points:
+                if state["fill"] is None or state["fill"] < DARK:
+                    self._background(_box(points))
+                elif path["rect"] and state["alpha"] >= 0.95:
+                    self._cover(_box(points))
+            path.update(points=[], rect=True, clip=False)
+        elif operator == b"sh":
+            self._background(state["clip"] or self.page_box)
         elif operator == b"INLINE IMAGE":
-            self._background([_point(state["ctm"], x, y) for x in (0, 1) for y in (0, 1)])
-        elif operator == b"Do" and args:
-            self._draw(args[0], resources, state, depth)
+            self._image(state)
 
-    def _background(self, points):
-        xs, ys = [p[0] for p in points], [p[1] for p in points]
-        self.backgrounds.append((min(xs), min(ys), max(xs), max(ys)))
+    def _layer_off(self, ref, resources):
+        """Calque masqué : `ref` est un nom de /Properties, ou la référence (ou le dictionnaire) du calque."""
+        if isinstance(ref, str):
+            ref = resources["/Properties"].get_object().raw_get(ref)
+        target = ref.get_object()
+        if target.get("/Type") == "/OCMD":  # appartenance : masqué si tous ses calques le sont
+            members = target.get("/OCGs") or []
+            members = members if isinstance(members, list) else [members]
+            return bool(members) and all(getattr(member, "idnum", None) in self.off for member in members)
+        return getattr(ref, "idnum", None) in self.off
+
+    def _image(self, state):
+        box = _box([_point(state["ctm"], x, y) for x in (0, 1) for y in (0, 1)])
+        self._background(box)
+        x0, y0, x1, y1 = self.page_box
+        width = max(0.0, min(box[2], x1) - max(box[0], x0))
+        height = max(0.0, min(box[3], y1) - max(box[1], y0))
+        if width * height >= SCAN_SHARE * (x1 - x0) * (y1 - y0):
+            self.scanned = True
+
+    def _cells(self, box):
+        x0, y0, x1, y1 = (int(math.floor(v / GRID)) for v in box)
+        return [(x, y) for x in range(x0, x1 + 1) for y in range(y0, y1 + 1)] if (x1 - x0 + 1) * (y1 - y0 + 1) <= 400 else None
+
+    def _background(self, box):
+        """Fond foncé (ou de couleur inconnue, ou image) peint sur `box` : un texte blanc posé dessus se lit."""
+        if box[2] - box[0] < MIN_BACKGROUND_PT or box[3] - box[1] < MIN_BACKGROUND_PT:
+            return
+        self.rects.append(box)
+        cells = self._cells(box)
+        if cells is None:
+            self.big.append(len(self.rects) - 1)
+        else:
+            for cell in cells:
+                self.grid.setdefault(cell, []).append(len(self.rects) - 1)
+
+    def _cover(self, box):
+        """Aplat clair peint par-dessus : les fonds qu'il recouvre entièrement ne comptent plus."""
+        cells = self._cells(box)
+        nearby = range(len(self.rects)) if cells is None else {i for cell in cells for i in self.grid.get(cell, [])} | set(self.big)
+        for index in nearby:
+            rect = self.rects[index]
+            if rect and box[0] <= rect[0] and box[1] <= rect[1] and rect[2] <= box[2] and rect[3] <= box[3]:
+                self.rects[index] = None
+
+    def _on_dark(self, points):
+        for x, y in points:
+            cell = (int(math.floor(x / GRID)), int(math.floor(y / GRID)))
+            if not any(self.rects[i] and self.rects[i][0] - 1 <= x <= self.rects[i][2] + 1
+                       and self.rects[i][1] - 1 <= y <= self.rects[i][3] + 1
+                       for i in self.grid.get(cell, []) + self.big):
+                return False
+        return True
 
     def _draw(self, name, resources, state, depth):
-        xobject = resources["/XObject"][name]
-        target = xobject.get_object()
+        """Do d'une image (fond, page scannée) ou d'un formulaire : nom d'une copie nettoyée à afficher à sa place,
+        ou None (rien à changer)."""
+        from pypdf.generic import ContentStream, DecodedStreamObject, NameObject
+        xobjects = resources["/XObject"]
+        reference = xobjects[name]
+        target = reference.get_object()
         if target.get("/Subtype") == "/Image":
-            self._background([_point(state["ctm"], x, y) for x in (0, 1) for y in (0, 1)])
-            return
-        key = getattr(xobject, "idnum", None) or id(target)
-        if target.get("/Subtype") != "/Form" or depth >= 5 or key in self.forms:
-            return
-        self.forms.add(key)
-        from pypdf.generic import ContentStream
-        content = ContentStream(target, self.reader)
+            self._image(state)
+            return None
+        if target.get("/Subtype") != "/Form":
+            return None
+        key = getattr(reference, "idnum", None) or id(target)
+        if key in self.walking or self.steps > MAX_STEPS:
+            return None
         inner = dict(state, ctm=_mult(_numbers(target.get("/Matrix", IDENTITY)) or IDENTITY, state["ctm"]))
-        kept, changed = self.run(content.operations, target.get("/Resources") or resources, inner, depth + 1)
-        if changed:
-            content.operations = kept
+        if "/OC" in target:
+            inner["hiddenLayer"] = state["hiddenLayer"] or self._layer_off(target.raw_get("/OC"), resources)
+        if depth >= MAX_FORM_DEPTH:
+            kept, changed = [], True
+        else:
+            self.walking.add(key)
             try:
-                target.set_data(content.get_data())
-            except Exception:  # filtre autre que Flate : copie décodée à la place du formulaire, dans ces ressources
-                from pypdf.generic import DecodedStreamObject, NameObject
-                copy = DecodedStreamObject()
-                copy.update({k: v for k, v in target.items() if k not in ("/Filter", "/DecodeParms", "/Length")})
-                copy.set_data(content.get_data())
-                resources["/XObject"][NameObject(name)] = copy
+                kept, changed = self.run(ContentStream(target, self.reader).operations,
+                                         target.get("/Resources") or resources, inner, depth + 1)
+            finally:
+                self.walking.discard(key)
+        if not changed:
+            return None
+        copy = DecodedStreamObject()
+        copy.update({k: v for k, v in target.items() if k not in ("/Filter", "/DecodeParms", "/Length")})
+        content = ContentStream(None, self.reader)
+        content.operations = kept
+        copy.set_data(content.get_data())
+        fresh = NameObject(f"/ArxivReaderVisible{id(copy)}")
+        self.copies[fresh] = copy
+        xobjects.get_object()[fresh] = copy
+        return fresh
 
-    def _hidden(self, args, operator, resources, state, tm):
+    def _hidden(self, args, state, tm):
         raw = _raw(args[-1] if args else b"")
         blank = not raw.strip(b"\x00 ") if state.get("cid") else not raw.strip()
         letters = bool(raw.strip(b"\x00")) if state.get("cid") else bool(re.search(rb"[A-Za-z\x80-\xff]", raw))
@@ -261,9 +406,17 @@ class _Visible:
         tiny = size is not None and (size * math.hypot(m[2], m[3]) < MIN_VISIBLE_PT
                                      or size * state["scale"] * math.hypot(m[0], m[1]) < MIN_VISIBLE_PT)
         render = state["render"] % 8
-        color = state["stroke"] if render in (1, 5) else state["fill"]
-        white = render in (0, 1, 2, 4, 5, 6) and color is not None and color >= WHITE and not self._on_dark(m, size or 10)
-        hidden = not blank and (tiny or white or render in (3, 7) and not self.scan)
+        stroked = render in (1, 5)
+        color = state["stroke"] if stroked else state["fill"]
+        height = (size or 10) * math.hypot(m[2], m[3]) or 10
+        points = [_point(m, 0, 0), _point(m, 0, (size or 10) * 0.3), _point(m, (size or 10) * 0.5, (size or 10) * 0.3)]
+        white = render not in (3, 7) and color is not None and color >= WHITE and not self._on_dark(points)
+        clear = (state["strokeAlpha"] if stroked else state["alpha"]) < 0.05
+        clip = state["clip"]
+        clipped = clip is not None and all(not (clip[0] - height <= x <= clip[2] + height and clip[1] - height <= y <= clip[3] + height)
+                                           for x, y in points)
+        hidden = not blank and (tiny or white or clear or clipped or state["hiddenLayer"]
+                                or render in (3, 7) and not (self.scan or self.scanned))
         if hidden and letters:
             self.passages += not self.running
             self.running = True
@@ -271,27 +424,35 @@ class _Visible:
             self.running = False
         return hidden
 
-    def _on_dark(self, m, size):
-        points = [_point(m, 0, 0), _point(m, 0, size * 0.3)]
-        return any(x0 - 1 <= x <= x1 + 1 and y0 - 1 <= y <= y1 + 1 for x, y in points for x0, y0, x1, y1 in self.backgrounds)
-
 
 def _page_text(page, hidden=None):
     """Texte de la page, sans le texte invisible, comme dans la version HTML (structure.mark_hidden) : il peut porter
     une injection d'invite et n'est jamais transmis à l'IA. Invisible : blanc ou presque (luminance ≥ WHITE) hors d'un
-    fond foncé ou d'une image peints dessous, corps de moins de MIN_VISIBLE_PT, mode de rendu invisible (Tr 3) sauf
-    sur une page avec image (couche de texte d'un scan reconnu : le texte de la page). `hidden` (liste) : y ajoute le
-    nombre de passages invisibles avec des lettres."""
-    from pypdf.generic import ContentStream, NameObject
+    fond foncé, dégradé ou image peints dessous, corps de moins de MIN_VISIBLE_PT, transparent, découpé, calque masqué,
+    mode de rendu invisible (Tr 3) sauf sur une page scannée (une image en couvre au moins la moitié : la couche de
+    texte reconnu est le texte de la page). `hidden` (liste) : y ajoute le nombre de passages invisibles avec des
+    lettres. Le contenu de la page est remplacé en mémoire (rien n'est écrit)."""
+    from pypdf.generic import NameObject
     passages = 0
     try:
         contents = page.get_contents()
         if contents is not None:
-            walk = _Visible(page.pdf, _has_images(page, contents))
-            state = {"ctm": IDENTITY, "fill": 0.0, "stroke": 0.0, "fillKnown": True, "strokeKnown": True, "size": None,
-                     "scale": 1.0, "render": 0, "leading": 0.0, "cid": False}
-            kept, changed = walk.run(contents.operations, page.get("/Resources") or {}, state)
+            box = [float(v) for v in page.mediabox]
+            box = (min(box[0], box[2]), min(box[1], box[3]), max(box[0], box[2]), max(box[1], box[3]))
+            resources = page.get("/Resources") or {}
+            operations = contents.operations
+            scan = False
+            if any(operator == b"Tr" and args and args[0] in (3, 7) for args, operator in operations):
+                first = _Visible(page.pdf, False, box)  # page scannée ? les images peuvent venir après le texte
+                first.run(operations, resources, _Visible.start_state())
+                scan = first.scanned
+                for name in first.copies:
+                    del resources["/XObject"].get_object()[name]
+            walk = _Visible(page.pdf, scan, box)
+            kept, changed = walk.run(operations, resources, _Visible.start_state())
             passages = walk.passages
+            if walk.steps > MAX_STEPS:
+                log.info("page très chargée : formulaires au-delà de %d opérations laissés tels quels", MAX_STEPS)
             if changed:
                 contents.operations = kept
                 page[NameObject("/Contents")] = contents

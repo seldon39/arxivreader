@@ -154,6 +154,41 @@ class InvisibleTex(unittest.TestCase):
         beamer = r"\documentclass{beamer}\begin{document}\begin{frame}\color{white} VISIBLE\end{frame}\end{document}"
         self.assertIn("VISIBLE", texstructure.strip_hidden(beamer))
 
+    def test_second_review_cases(self):
+        """Fonds foncés posés ailleurs (macro, préambule, style tikz, colonne) : gardé ; détours simples : retirés."""
+        def run(preamble, body):
+            counted = []
+            text = texstructure.strip_hidden(r"\documentclass{article}" + preamble + r"\begin{document}" + "Opening words. " * 10
+                                             + body + r"\end{document}", None, counted)
+            return text, counted[0]
+        kept = [(r"\newcommand{\wt}[1]{\textcolor{white}{#1}}", r"\colorbox{black}{\wt{Title}}", "Title"),
+                (r"\newcommand{\hcell}[1]{\cellcolor{black}\textcolor{white}{#1}}",
+                 r"\begin{tabular}{cc}\hcell{Name} & b\end{tabular}", "Name"),
+                (r"\newcommand{\wh}{\color{white}}", r"\begin{tikzpicture}\node[fill=black]{\wh Label};\end{tikzpicture}", "Label"),
+                (r"\definecolor{shadecolor}{gray}{0.2}", r"\begin{shaded}\color{white} Shaded\end{shaded}", "Shaded"),
+                (r"\tcbset{colback=black}", r"\begin{tcolorbox}\color{white} Boxed\end{tcolorbox}", "Boxed"),
+                (r"\newtcolorbox{mybox}{colback=blue!50!black}", r"\begin{mybox}\color{white} Mine\end{mybox}", "Mine"),
+                (r"\tikzset{box/.style={draw, fill=black}}", r"\begin{tikzpicture}\node[box]{\color{white} Styled};\end{tikzpicture}", "Styled"),
+                ("", r"\begin{tabular}{>{\color{white}\columncolor{black}}c}Head\end{tabular}", "Head"),
+                (r"\definecolor{acc}{rgb}{0,0,1}", r"\textcolor{acc}{Blue} x\definecolor{acc}{rgb}{1,1,1}", "Blue")]
+        for preamble, body, word in kept:
+            self.assertEqual((word in run(preamble, body)[0], run(preamble, body)[1]), (True, 0), body)
+        gone = [("", r"\newcommand{\x}{\pagecolor{black}} \textcolor{white}{SECRET}"), ("", r"\pagecolor{zzz}x \textcolor{white}{SECRET}"),
+                ("", r"Hello fill=black \textcolor{white}{SECRET}"), ("", r"[fill=none] \textcolor{white}{SECRET}"),
+                ("", r"\colorbox{white}{\textcolor{white}{SECRET}}"), (r"\definecolor{c}{rgb}{1,1,1}", r"\textcolor{c}{SECRET}\definecolor{c}{rgb}{0,0,0}"),
+                (r"\definecolor{h}{hsb}{0,0,1}", r"\textcolor{h}{SECRET}"), ("", r"\textcolor[named]{White}{SECRET}"),
+                ("", r"\textcolor{-black}{SECRET}"), ("", r"\textcolor{white}\bgroup SECRET\egroup"),
+                ("", r"{\color{white} A \verb|\color| SECRET}"), ("", r"\color{white} SECRET " + "x " * 10100),
+                (r"\NewDocumentCommand{\hide}{m}{\textcolor{white}{#1}}", r"\hide{SECRET}"),
+                (r"\newcommand{\hide}[2]{\textcolor{white}{#2}}", r"\hide{a}{SECRET}"),
+                ("", r"\newcommand{\p}{\textcolor{white}{SECRET}}\p"), ("", r"\tikz \node[text=white]{SECRET};"),
+                ("", r"\tikz \node[opacity=0]{SECRET};"), ("", r"\texttransparent{0}{SECRET}"), ("", r"$\mathcolor{white}{SECRET}$"),
+                ("", r"{\fontsize{0.5}{1}\rmfamily\selectfont SECRET}")]
+        for preamble, body in gone:
+            text, count = run(preamble, body)
+            self.assertNotIn("SECRET", text, body)
+            self.assertGreaterEqual(count, 1, body)
+
 class PdfSpotsTest(unittest.TestCase):
     """Page et hauteur des énoncés, lues dans les ancres hyperref du PDF."""
 

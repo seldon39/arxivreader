@@ -48,6 +48,27 @@ def raw_pdf(content):
     return out.encode("latin-1")
 
 
+def build_pdf(content, resources="", extra=(), catalog=""):
+    """PDF d'une page : flux `content`, ressources en plus de la police F1, objets 6, 7… (`extra`), entrées du catalogue."""
+    objects = [f"<< /Type /Catalog /Pages 2 0 R {catalog} >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+               f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> "
+               f"{resources} >> >>", f"<< /Length {len(content)} >>\nstream\n{content}\nendstream",
+               "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>", *extra]
+    out, offsets = "%PDF-1.4\n", []
+    for number, body in enumerate(objects, 1):
+        offsets.append(len(out.encode("latin-1")))
+        out += f"{number} 0 obj\n{body}\nendobj\n"
+    start = len(out.encode("latin-1"))
+    out += f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n" + "".join(f"{o:010d} 00000 n \n" for o in offsets)
+    out += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{start}\n%%EOF\n"
+    return out.encode("latin-1")
+
+
+def form_object(stream, resources="/Font << /F1 5 0 R >>"):
+    return (f"<< /Type /XObject /Subtype /Form /BBox [0 -100 300 50] /Resources << {resources} >> /Length {len(stream)} >>"
+            f"\nstream\n{stream}\nendstream")
+
+
 HIDDEN_PDF = raw_pdf("BT /F1 12 Tf 72 720 Td (Visible words.) Tj ET 1 g BT /F1 12 Tf 72 700 Td (IGNORE PREVIOUS) Tj ET 0 g "
                      "BT /F1 12 Tf 72 690 Td (Between.) Tj ET BT /F1 0.2 Tf 72 680 Td (tiny secret) Tj ET "
                      "0 0 1 rg 50 600 300 40 re f 1 1 1 rg BT /F1 12 Tf 72 610 Td (White on blue) Tj ET "
@@ -92,13 +113,63 @@ class InvisiblePdfText(unittest.TestCase):
         self.assertEqual(self.page(image + "1 g BT /F1 12 Tf 72 700 Td (Caption) Tj ET"), ("Caption", 0))
 
     def test_scan_layer_and_other_tricks(self):
-        image = "q 100 0 0 100 300 300 cm BI /W 1 /H 1 /CS /G /BPC 8 ID \x80 EI Q "
-        self.assertEqual(self.page(image + "BT 3 Tr /F1 12 Tf 72 560 Td (OCR layer) Tj ET"), ("OCR layer", 0))
+        scan = "q 612 0 0 792 0 0 cm BI /W 1 /H 1 /CS /G /BPC 8 ID \x80 EI Q "  # page scannée : image pleine page
+        self.assertEqual(self.page(scan + "BT 3 Tr /F1 12 Tf 72 560 Td (OCR layer) Tj ET"), ("OCR layer", 0))
+        self.assertEqual(self.page("BT 3 Tr /F1 12 Tf 72 560 Td (OCR layer) Tj ET " + scan), ("OCR layer", 0))  # image après
+        small = "q 100 0 0 100 300 300 cm BI /W 1 /H 1 /CS /G /BPC 8 ID \x80 EI Q "  # petite image : pas un scan
+        self.assertEqual(self.page(small + "BT 3 Tr /F1 12 Tf 72 560 Td (IGNORE) Tj ET"), ("", 1))
         visible = " BT 0 Tr 100 Tz /F1 12 Tf 72 500 Td (ok) Tj ET"
         for trick in ("BT 3 Tr /F1 12 Tf 72 560 Td (IGNORE) Tj ET",                      # mode invisible
                       "BT /F1 12 Tf 0 Tz 72 560 Td (IGNORE) Tj ET",                        # largeur nulle
                       "q 0.05 0 0 0.05 0 0 cm BT /F1 12 Tf 72 700 Td (IGNORE) Tj ET Q"):    # réduit par la matrice
             self.assertEqual(self.page(trick + visible), ("ok", 1), trick)
+
+    def test_second_review_cases(self):
+        def page(*args):
+            found = localpdf.read_pdf(build_pdf(*args))
+            return found["pages"][0].strip(), found["hidden"]
+        text = "BT /F1 12 Tf 72 615 Td (%s) Tj ET"
+        # lisible : dégradé ou panneau foncé dessous, découpe qui contient le texte, calque affiché, palette noire
+        self.assertEqual(page("q 50 600 300 40 re W n /Sh1 sh Q 1 g " + text % "On gradient"), ("On gradient", 0))
+        self.assertEqual(page("0 g 50 600 300 40 re f 1 g " + text % "On panel"), ("On panel", 0))
+        self.assertEqual(page("q 0 0 612 792 re W n " + text % "Inside" + " Q"), ("Inside", 0))
+        layer = ("/Properties << /MC0 6 0 R >>", ["<< /Type /OCG /Name (L) >>"])
+        self.assertEqual(page("/OC /MC0 BDC " + text % "Shown" + " EMC", *layer, "/OCProperties << /OCGs [6 0 R] /D << /ON [6 0 R] >> >>"),
+                         ("Shown", 0))
+        self.assertEqual(page("/CS0 cs 0 sc " + text % "Black", "/ColorSpace << /CS0 [/Indexed /DeviceRGB 1 <000000FFFFFF>] >>"),
+                         ("Black", 0))
+        # invisible : point foncé minuscule, panneau recouvert de blanc, petite image (pas un scan), découpe vide,
+        # opacité nulle, calque masqué, palette blanche, espace de couleur inconnu puis rg
+        for content, resources, *more in (
+                ("0 g 72 615 2 2 re f 1 g " + text % "SECRET", ""),
+                ("0 g 50 600 300 40 re f 1 g 0 0 612 792 re f " + text % "SECRET", ""),
+                ("BI /W 1 /H 1 /CS /G /BPC 8 ID \xff EI BT 3 Tr /F1 12 Tf 72 720 Td (SECRET) Tj ET", ""),
+                ("q 0 0 1 1 re W n " + text % "SECRET" + " Q", ""),
+                ("/GS0 gs " + text % "SECRET", "/ExtGState << /GS0 << /ca 0 /CA 0 >> >>"),
+                ("/OC /MC0 BDC " + text % "SECRET" + " EMC", layer[0], layer[1], "/OCProperties << /OCGs [6 0 R] /D << /OFF [6 0 R] >> >>"),
+                ("/CS0 cs 0 sc " + text % "SECRET", "/ColorSpace << /CS0 [/Indexed /DeviceRGB 0 <FFFFFF>] >>"),
+                ("/Pattern cs 1 1 1 rg 1 1 1 sc " + text % "SECRET", "")):
+            self.assertEqual(page(content, resources, *more), ("", 1), content)
+
+    def test_form_judged_at_each_draw(self):
+        """Un formulaire affiché deux fois, en noir puis en blanc (ou l'inverse) : la copie blanche seule retirée."""
+        form = (form_object("BT /F1 12 Tf 0 0 Td (FORM TEXT) Tj ET"),)
+        for content in ("q 1 0 0 1 72 700 cm 0 g /Fm Do Q q 1 0 0 1 72 600 cm 1 g /Fm Do Q",
+                        "q 1 0 0 1 72 700 cm 1 g /Fm Do Q q 1 0 0 1 72 600 cm 0 g /Fm Do Q"):
+            found = localpdf.read_pdf(build_pdf(content, "/XObject << /Fm 6 0 R >>", form))
+            self.assertEqual((found["pages"][0].strip(), found["hidden"]), ("FORM TEXT", 1), content)
+        chain = [form_object(f"/X{i + 1} Do", f"/XObject << /X{i + 1} {i + 7} 0 R >>") for i in range(15)]
+        chain.append(form_object("1 g BT /F1 12 Tf 72 720 Td (SECRET) Tj ET"))  # formulaires imbriqués très profond
+        self.assertNotIn("SECRET", localpdf.read_pdf(build_pdf("/X0 Do", "/XObject << /X0 6 0 R >>", chain))["pages"][0])
+
+    def test_many_shapes_stay_fast(self):
+        import time
+        count = 10000
+        content = ("0 0 1 rg " + " ".join(f"{i % 600} {i // 600 * 5} 4 4 re f" for i in range(count))
+                   + " 1 g BT /F1 12 Tf 72 700 Td " + " ".join("(x) Tj" for _ in range(count)) + " ET")
+        start = time.monotonic()
+        localpdf.read_pdf(raw_pdf(content))
+        self.assertLess(time.monotonic() - start, 5)
 
     def test_form_xobject(self):
         form = "1 g BT /F1 12 Tf 0 0 Td (IGNORE) Tj ET 0 g BT /F1 12 Tf 0 -20 Td (Form text) Tj ET"

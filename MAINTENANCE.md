@@ -464,26 +464,41 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   an unreadable shape on top (moved, relative commands, image), with no surface, partial, or a foreignObject with no
   width, and the text stays flagged; shapes read once per group.
 - Invisible text in a TeX source (`texstructure.invisible`, used by `strip_hidden`, hence by `extract` and `ai.tex_body`;
-  thresholds `structure.WHITE` / `DARK`, shared with the HTML and the PDF). Colors are evaluated (`_xcolor`: names,
-  author colors `\definecolor`/`\colorlet`, mixes `white!95`, `black!3`, models `[rgb]`, `[HTML]`…): white or nearly
-  (luminance ≥ 0,9) by `\textcolor` or `\color`, whose scope (`_scope_end`) ends at its group, its environment, the
-  next `\color`/`\normalcolor` at its level; `\fontsize` under 1 pt (scope up to `\normalsize`, `\small`…),
-  `\scalebox` under 0,1 on either axis, `\resizebox` under 1 pt, `\phantom` (removed, never counted); the author's
-  macros and environments that do the same (`_hiding_macros`: `\hide{…}`, `{\wh …}`, `\begin{hid}`; nothing is removed
-  inside a definition). A declaration that runs to `\end{document}` over more than `_MAX_HIDDEN_SPAN` characters
-  is a setting of the whole document, kept. White is kept on a dark background (`_on_dark`): last `\pagecolor`,
-  `\colorbox`, or a dark (or unreadable) fill declared before it in its environment, closed environments excluded
-  (`fill=`, `\fill`, `\rowcolor`, `\cellcolor`, `colback=`…), and in beamer. Comments are ignored. Count in
-  `hiddenText` of `structure.json` (papers analysed before: after a re-analysis).
+  thresholds `structure.WHITE` / `DARK`, shared with the HTML and the PDF). Colors are evaluated where they are used
+  (`_Colors`: a color redefined later does not change what precedes; `_xcolor`: names, mixes `white!95`, `black!3`,
+  complement `-black`, models `[rgb]`, `[HTML]`, `[hsb]`, `[named]`…). Hidden: white or nearly (luminance ≥ 0,9) by
+  `\textcolor`, `\mathcolor` (argument in braces or `\bgroup…\egroup`), `\color` — scope (`_scope_end`) up to its
+  group, its environment, the next `\color`/`\normalcolor` at its level (not inside `\verb` nor after `\string`) —
+  or a tikz node `[text=white]`; `\fontsize` under 1 pt (scope up to `\normalsize`, `\small`…), `\scalebox` under
+  0,1 on either axis, `\resizebox` under 1 pt, `\texttransparent` under 0,1, tikz node `[opacity=0]`, `\phantom`
+  (removed, never counted); the author's macros and environments that do the same (`_hiding_macros`: `\newcommand`,
+  `\def`, `\NewDocumentCommand`, environments; any hidden argument `#k`), and what a definition hides without a
+  parameter. Kept: a declaration that runs to `\end{document}` with no readable text before it (preamble, start
+  of the document: a setting of the whole document); white on a dark background (`_Context.on_dark`): last
+  `\pagecolor` (outside definitions, readable and dark), dark `\colorbox`, colored box (tcolorbox, mdframed, shaded,
+  boxes defined by `\newtcolorbox`… when a setup command declares a dark fill, `shadecolor` dark), dark fill declared
+  before it in its environment, closed environments excluded: option keys `[fill=…]`, `[colback=…]` (not in prose,
+  not `none`), table cells `\rowcolor`/`\cellcolor`/`\columncolor` (in a table, also after the color in its own
+  scope), tikz shapes `\fill`… and dark tikz styles (in a tikz picture); a definition that sets its own dark
+  background; beamer documents. Comments are ignored. Count in `hiddenText` of `structure.json` (papers analysed
+  before: after a re-analysis).
 - Invisible text in a PDF (`localpdf._page_text`, class `_Visible`): the content stream is walked with its graphics
-  state (q/Q, `cm`, fill and stroke colors, `Tf`, `Tz`, `Tr`, text matrices; Form XObjects once each), each text show
-  judged with the state in force: white or nearly unless a dark shape or an image was painted under it before,
-  size under `MIN_VISIBLE_PT` on either axis, invisible mode (`Tr` 3) except on a page with an image (text layer of a
-  recognized scan). Hidden shows are removed from the stream (in memory, a decoded copy for a form in a filter other
-  than Flate) before pypdf extracts the text; counted (`hidden`, then `hiddenText`). A `text.json` older than
-  `TEXT_VERSION` is re-read once (`_refresh_text`). The reader shows the count without a reveal button when only the
-  PDF is displayed (`reader.hiddenTextSource`). Known limits: text placed off the page or covered by a shape, and
-  colors behind special color spaces (Separation, patterns), are not detected.
+  state (q/Q, `cm`, fill and stroke colors with their color spaces and Indexed palettes, `gs` opacity, clipping `W`,
+  optional content `BDC /OC` hidden by default, `Tf`, `Tz`, `Tr`, text matrices), each text show judged with the
+  state in force. Hidden: white or nearly unless a dark (or unreadable) shape, a shading (`sh`) or an image of at
+  least `MIN_BACKGROUND_PT` was painted under it before (and not covered since by a light rectangle), size under
+  `MIN_VISIBLE_PT` on either axis, opacity under 0,05, outside the clip, hidden layer, invisible mode (`Tr` 3/7) except
+  on a scanned page (an image covers at least `SCAN_SHARE` of it: text layer of a recognized scan; a first pass finds
+  it when the image comes after the text). Form XObjects are judged at each draw with the state of that moment: a
+  cleaned copy is drawn under another name, the shared original is never changed; forms nested deeper than
+  `MAX_FORM_DEPTH` are emptied; beyond `MAX_STEPS` operations on a page, forms are left as they are. Dark shapes are
+  indexed in a grid (`GRID`). Hidden shows are removed from the stream in memory before pypdf extracts the text;
+  counted (`hidden`, then `hiddenText`). A `text.json` older than `TEXT_VERSION` is re-read once (`_refresh_text`).
+  The reader shows the count without a reveal button when only the PDF is displayed (`reader.hiddenTextSource`).
+- Known limits of both (heuristics, by design): TeX indirection beyond simple definitions (`\let`, styles of other
+  packages, `\pdfcolorstack`, `\special`, fontspec `Color=`), text covered by a shape or placed off the page, colors
+  behind Separation or pattern color spaces and shading colors (counted as dark), near-white just under 0,9. The
+  prompt keeps its other defences (`ai._guard`, tagged blocks, instructions).
 - Author text in the prompt: `ai._prompt_structure` (called by `build_prompt`) gives the AI a copy of the structure
   whose statement and equation labels are plain text (`_plain_label`: no `<`, `>`, quotes, 120 characters) and whose
   macros go through `_guard`.
