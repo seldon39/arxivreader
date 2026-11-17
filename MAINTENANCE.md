@@ -205,7 +205,12 @@ checked). Run by hand, it reads the settings of the user's library (keys) and wr
 (without touching the macOS/WebKit marker of the weekly job); `ARXIVREADER_LIBRARY=<copie>` to avoid this. The
 weekly job (`./arxivreader check --weekly`, launchd
 `org.arxivreader.check`, Monday 10:00) does this with the Python of the installed app and notifies in case of a
-problem; log `~/Library/Logs/arXivReader-check.log`, result `check.json` in the library.
+problem; log `~/Library/Logs/arXivReader-check.log`, result `check.json` in the library. No network (every network
+check failing with `NETWORK_ERRORS`, none reached; `LOCAL` checks do not count): `offline`, retried `RETRIES` times
+every `RETRY_WAIT` s by the weekly job, then status `offline` and no "service" notification. The report as text
+(`check.text`, also printed) is served by `/api/check` and shown by the page `#/check` (`check.js`, "Copy the
+report"), opened by a click on the notification (`route="#/check"`), Help > "Last Service Check" (`help.check`) or
+the link in Settings > About (`updatesSection`); the system notification says what moved (`system_change`).
 
 | Service | Used by | What usually breaks | Existing fallback |
 |---|---|---|---|
@@ -249,7 +254,7 @@ hand, in the installed app:
   the Mac shell (`postNotifications` in `main.swift`, every 5 s and at launch) posts them through
   `UNUserNotificationCenter` and deletes the files. A click opens `route` in a new tab: `#/arxiv/<id>` (`app.js`
   imports the paper as a click in the feed does, marks it seen, then replaces the route by `#/paper/<id>`) or
-  `#/feed`; without a route (weekly check) the app only comes forward. The folder is created by the app, so the
+  `#/feed`, or `#/check` (weekly check: its report). The folder is created by the app, so the
   weekly check writes there too (shown at the next launch if the app is closed); without it (development server)
   `osascript` is used, which macOS attributes to Script Editor (a click opens it). macOS asks for permission at
   the first notification (bundle id `local.arxivreader`, ad-hoc signed); refused, the files are dropped. To recheck:

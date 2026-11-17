@@ -143,6 +143,7 @@ export const api = {
   aiPartners: () => request("GET", "/api/ai/partners"),
   aiProfile: () => request("GET", "/api/ai/profile"),
   updates: () => request("GET", "/api/updates"),
+  checkReport: () => request("GET", "/api/check"),
   checkUpdates: () => request("POST", "/api/updates/check", {}),
   dismissUpdate: (version) => request("POST", "/api/updates/dismiss", { version }),
   aiSetup: (provider, step) => request("POST", "/api/ai/setup", { provider, step }),

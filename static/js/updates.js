@@ -50,6 +50,8 @@ export function updatesSection() {
     parts.push(h("div", {}, h("button", { class: "button small-button", type: "button", disabled: checking,
       onclick: () => { draw(current, true); refreshUpdates(true).then((next) => draw(next)); } },
     checking ? t("updates.checking") : t("updates.checkNow"))));
+    // rapport de la vérification des services (check.js) : la fenêtre des réglages se ferme sur la page
+    parts.push(h("p", { class: "hint" }, h("a", { href: "#/check", onclick: () => box.closest("dialog")?.close() }, t("check.open"))));
     box.replaceChildren(...parts);
   };
   draw(current);

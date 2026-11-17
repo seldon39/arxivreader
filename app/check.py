@@ -5,7 +5,8 @@ forme de sa réponse. Les tests (tests/) simulent ces services ; cette vérifica
     python -m app.check --notify   en plus, une notification macOS en cas de problème (tâche hebdomadaire)
 
 Elle signale aussi un changement de macOS ou de WebKit depuis la vérification précédente (rien à appeler : la
-liste des points à revoir à la main est dans le message). Résultat gardé dans la bibliothèque (check.json).
+liste des points à revoir à la main est dans le message). Résultat gardé dans la bibliothèque (check.json) ; un clic
+sur la notification ouvre ce rapport dans l'application (#/check, texte de `text`, à copier).
 """
 
 import json
@@ -35,6 +36,14 @@ WEBKIT_POINTS = ("glisser un article d'une fenêtre à l'autre, sur un onglet et
                  "couleurs du graphe des papiers liés (color-mix)", "réglages et graphe agrandi (fenêtre de dialogue, inert)",
                  "lecteur PDF", "formules (MathJax)", "export des notes (téléchargement)",
                  "défilement d'un long article (sections masquées, mémoire)")
+
+
+# Pas de réseau (Mac qui sort de veille) : aucun service joint, chaque échec une erreur de connexion. Rien n'a changé ;
+# la tâche hebdomadaire réessaie (RETRIES fois, toutes les RETRY_WAIT secondes), puis le dit sans notification
+NETWORK_ERRORS = ("ConnectError", "ConnectTimeout")
+LOCAL = {"Assistant IA"}  # vérifié sans réseau
+RETRIES, RETRY_WAIT = 3, 120
+MARKS = {"ok": "✓", "skipped": "–", "changed": "✗", "failed": "✗", "offline": "·"}
 
 
 class Skip(Exception):
@@ -190,9 +199,38 @@ def system():
     return {"macos": platform.mac_ver()[0] or "?", "webkit": webkit}
 
 
-def run(baseline=True):
+def offline(results):
+    """Aucun service du réseau joint et tous ses échecs dus à la connexion : pas de réseau."""
+    network = [r for r in results if r["name"] not in LOCAL]
+    failed = [r for r in network if r["status"] == "failed"]
+    return (bool(failed) and not any(r["status"] in ("ok", "changed") for r in network)
+            and all(r["detail"].startswith(NETWORK_ERRORS) for r in failed))
+
+
+def run(baseline=True, retries=0):
     """Tous les services ; `baseline` : le macOS et le WebKit vus deviennent la référence des prochaines fois (la
-    tâche hebdomadaire ; une vérification lancée à la main ne la déplace pas, pour ne pas taire un changement)."""
+    tâche hebdomadaire ; une vérification lancée à la main ne la déplace pas, pour ne pas taire un changement).
+    `retries` : sans réseau, nouveaux essais (après RETRY_WAIT secondes chacun)."""
+    results = _services()
+    while retries > 0 and offline(results):
+        retries -= 1
+        time.sleep(RETRY_WAIT)
+        results = _services()
+    unreachable = offline(results)
+    if unreachable:  # pas de réseau : pas un changement des services
+        for r in results:
+            if r["status"] == "failed":
+                r["status"] = "offline"
+    report = _with_system(results, baseline)
+    report["offline"] = unreachable
+    try:
+        REPORT.write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
+    except OSError:
+        pass
+    return report
+
+
+def _services():
     results = []
     for name, check in CHECKS:
         started = time.time()
@@ -205,6 +243,10 @@ def run(baseline=True):
         except Exception as error:
             status, detail = "failed", f"{type(error).__name__}: {error}"[:300]
         results.append({"name": name, "status": status, "detail": detail or "", "seconds": round(time.time() - started, 1)})
+    return results
+
+
+def _with_system(results, baseline):
     previous = {}
     try:
         previous = json.loads(REPORT.read_text(encoding="utf-8"))
@@ -215,37 +257,57 @@ def run(baseline=True):
     now = system()
     reference = previous.get("baseline") or previous.get("system")
     moved = bool(reference) and reference != now
-    report = {"checkedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "version": VERSION, "system": now,
-              "baseline": now if baseline or not reference else reference,
-              "systemChanged": moved, "previousSystem": reference, "results": results}
-    try:
-        REPORT.write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
-    except OSError:
-        pass
-    return report
+    return {"checkedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "version": VERSION, "system": now,
+            "baseline": now if baseline or not reference else reference,
+            "systemChanged": moved, "previousSystem": reference, "results": results}
 
 
 def problems(report):
     return [r for r in report["results"] if r["status"] in ("changed", "failed")]
 
 
+def system_change(report):
+    """« macOS 27.2 → 27.2.1, WebKit inchangé (…) » : ce qui a bougé depuis la référence."""
+    now, before = report.get("system") or {}, report.get("previousSystem") or {}
+    parts = []
+    for key, name in (("macos", "macOS"), ("webkit", "WebKit")):
+        old, new = before.get(key, "?"), now.get(key, "?")
+        parts.append(f"{name} {old} → {new}" if old != new else f"{name} inchangé ({new})")
+    return ", ".join(parts)
+
+
+def text(report):
+    """Rapport en texte (terminal, page #/check de l'application, à copier tel quel)."""
+    system_now = report.get("system") or {}
+    lines = [f"arXivReader {report.get('version', '?')}, vérification du {report.get('checkedAt', '?')}"]
+    if report.get("offline"):
+        lines.append("Pas de réseau pendant la vérification : services non vérifiés (rien n'indique un changement).")
+    for r in report.get("results") or []:
+        if isinstance(r, dict):
+            lines.append(f"{MARKS.get(r.get('status'), '?')} {str(r.get('name', '?')):<34} {r.get('detail', '')}")
+    lines.append(f"  macOS {system_now.get('macos', '?')}, WebKit {system_now.get('webkit', '?')}"
+                 + ("  (changé depuis la dernière vérification)" if report.get("systemChanged") else ""))
+    if report.get("systemChanged"):
+        lines += [f"  {system_change(report)}", "À revoir : " + ", ".join(WEBKIT_POINTS) + "."]
+    return "\n".join(lines)
+
+
 def main(argv):
     # lancée à la main ou par la tâche hebdomadaire, toujours sur la vraie bibliothèque : ses clés d'API sont dans le
     # trousseau (rien à changer dans une tâche installée par une version précédente)
     keystore.ENABLED = sys.platform in ("darwin", "win32")
-    report = run(baseline="--notify" in argv)
-    marks = {"ok": "✓", "skipped": "–", "changed": "✗", "failed": "✗"}
-    for r in report["results"]:
-        print(f"{marks[r['status']]} {r['name']:<34} {r['detail']}")
-    print(f"  macOS {report['system']['macos']}, WebKit {report['system']['webkit']}"
-          + ("  (changé depuis la dernière vérification)" if report["systemChanged"] else ""))
+    notify = "--notify" in argv
+    report = run(baseline=notify, retries=RETRIES if notify else 0)
+    print(text(report))
     bad = problems(report)
-    if "--notify" in argv and (bad or report["systemChanged"]):
-        if bad:
-            body = " ; ".join(f"{r['name']} : {r['detail']}" for r in bad)
-            alerts.display("arXivReader", "Un service a changé ou ne répond pas", body)
-        if report["systemChanged"]:
-            alerts.display("arXivReader", "macOS ou WebKit a changé", "À revoir : " + ", ".join(WEBKIT_POINTS) + ".")
+    # un clic ouvre le rapport entier dans l'application, à copier (la notification n'en montre que le début)
+    if notify and bad:
+        body = " ; ".join(f"{r['name']} : {r['detail']}" for r in bad)
+        alerts.display("arXivReader", "Un service a changé ou ne répond pas", body, route="#/check")
+    if notify and report["systemChanged"]:
+        webkit = (report.get("previousSystem") or {}).get("webkit") != report["system"].get("webkit")
+        alerts.display("arXivReader", "WebKit a changé" if webkit else "macOS a changé (WebKit inchangé)",
+                       f"{system_change(report)}. À revoir : " + ", ".join(WEBKIT_POINTS) + ".", route="#/check")
     return 1 if bad else 0
 
 

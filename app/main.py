@@ -28,7 +28,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Red
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import (ai, alerts, annotations, bibtex, bookjob, notesync, safety, citations, crossrefs, db, export, feed, feedprune, folders, fulltext, journals, latexml, library, localpdf, onboarding, profile, providers, related, texfile,
+from . import (ai, alerts, annotations, bibtex, bookjob, check, notesync, safety, citations, crossrefs, db, export, feed, feedprune, folders, fulltext, journals, latexml, library, localpdf, onboarding, profile, providers, related, texfile,
                relevance, search, texexport, updates, zotero)
 from .arxiv import ArxivError, fetch_metadata, paper_key, parse_arxiv_id, strip_subject_class
 from .config import HOST, PORT, STATIC, TOKEN, TOKEN_FILE
@@ -1428,6 +1428,19 @@ def get_alerts():
 
 class SeenRequest(BaseModel):
     keys: list[str]
+
+
+@app.get("/api/check")
+def check_report():
+    """Dernier rapport de la vérification des services (tâche hebdomadaire ou ./arxivreader check), en texte à copier ;
+    page #/check, ouverte d'un clic sur sa notification."""
+    try:
+        report = json.loads(check.REPORT.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        report = None
+    if not isinstance(report, dict):
+        return {"checkedAt": None, "text": ""}
+    return {"checkedAt": report.get("checkedAt"), "text": check.text(report)}
 
 
 @app.get("/api/updates")

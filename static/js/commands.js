@@ -30,6 +30,7 @@ function pageOf(hash) {
   if (/^#\/feed/.test(hash)) return "feed";
   if (/^#\/search/.test(hash)) return "search";
   if (/^#\/related/.test(hash)) return "related";
+  if (/^#\/check/.test(hash)) return "check";
   return "library";
 }
 
@@ -70,7 +71,7 @@ async function onLibrary(selector) {
   return null;
 }
 
-const PAGES = { "go.library": "#/", "go.feed": "#/feed", "go.search": "#/search", "go.related": "#/related" };
+const PAGES = { "go.library": "#/", "go.feed": "#/feed", "go.search": "#/search", "go.related": "#/related", "help.check": "#/check" };
 
 async function command(name) {
   if (PAGES[name]) { if (location.hash !== PAGES[name]) location.hash = PAGES[name]; return; }

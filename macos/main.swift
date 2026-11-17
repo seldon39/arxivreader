@@ -801,6 +801,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let windowsMenu = main.items.last?.submenu
         submenu(tr("Aide", "Help"), [
             command(tr("Raccourcis clavier", "Keyboard Shortcuts"), "help.keys"),
+            command(tr("Dernière vérification des services", "Last Service Check"), "help.check"),
         ] + (isBeta ? [entry(tr("Notes de la bêta", "Beta Notes"), #selector(showBetaNotes), target: self)] : []))
         NSApp.helpMenu = main.items.last?.submenu
         NSApp.mainMenu = main

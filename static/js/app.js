@@ -7,6 +7,7 @@ import { renderReader } from "./reader.js";
 import { defineMacros } from "./texview.js";
 import { renderRelated } from "./related.js";
 import { renderSearch } from "./search.js";
+import { renderCheck } from "./check.js";
 import { loadSettings, onSettingsChange, openSettingsDialog, settings } from "./settings.js";
 import { refreshUpdates } from "./updates.js";
 import { api } from "./api.js";
@@ -52,13 +53,15 @@ async function route() {
   const feedMatch = location.hash.match(/^#\/feed(?:\/(recommended|import|profile))?$/);
   const searchMatch = location.hash.match(/^#\/search(?:\?(.*))?$/);  // « ?terms=… » : recherche préremplie, lancée
   const relatedMatch = location.hash.match(/^#\/related(?:\/(.+))?$/);
-  const section = match ? "paper" : feedMatch ? "#/feed" : searchMatch ? "#/search" : relatedMatch ? "#/related" : "#/";
+  const checkPage = location.hash === "#/check";  // rapport de la vérification des services (check.js)
+  const section = match ? "paper" : feedMatch ? "#/feed" : searchMatch ? "#/search" : relatedMatch ? "#/related" : checkPage ? "check" : "#/";
   if (!match) {
     navigation.listHash = searchMatch ? "#/search" : location.hash || "#/";  // recherche préremplie : pas relancée au retour
     defineMacros([]).catch(() => {});  // macros de l'article quitté : plus valables dans le feed, la recherche…
   }
   // titre de l'onglet (et de la fenêtre) : la page ; le lecteur y met le titre de l'article
-  document.title = match ? "arXivReader" : feedMatch ? t("feed.title") : searchMatch ? t("search.title") : relatedMatch ? t("related.title") : t("library.title");
+  document.title = match ? "arXivReader" : feedMatch ? t("feed.title") : searchMatch ? t("search.title") : relatedMatch ? t("related.title")
+    : checkPage ? t("check.title") : t("library.title");
   document.querySelectorAll(".topnav a").forEach((a) => {
     const active = a.getAttribute("href") === section;
     a.classList.toggle("active", active);
@@ -68,6 +71,7 @@ async function route() {
     const dispose = feedMatch ? await renderFeed(view, feedMatch[1] || "arxiv")
       : searchMatch ? await renderSearch(view, new URLSearchParams(searchMatch[1] || ""))
       : relatedMatch ? await renderRelated(view, relatedMatch[1] ? decodeURIComponent(relatedMatch[1]) : null)
+      : checkPage ? await renderCheck(view)
       : match ? await renderReader(view, ...decodeURIComponent(match[1]).split("/"), () => token === routeToken)
         : await renderLibrary(view, { restoreTo: scrollMemory.get(location.hash) || 0 });
     if (token !== routeToken) { dispose?.(); return; } // page déjà quittée pendant le chargement

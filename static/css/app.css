@@ -1806,3 +1806,8 @@ body.related-expanded { overflow: hidden; }
 .ai-profile-preview summary { cursor: pointer; font-size: 13px; color: var(--accent, var(--text)); }
 .ai-profile-text { margin: 8px 0 0; max-height: 220px; overflow: auto; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px;
   background: var(--bg); font: 12px/1.45 var(--font-mono, ui-monospace, monospace); white-space: pre-wrap; color: var(--muted); }
+
+/* Rapport de la vérification des services (check.js) */
+.check-page .check-actions { margin: 12px 0; }
+.check-report { font: 12px/1.5 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; user-select: text; }

@@ -41,6 +41,65 @@ class Check(unittest.TestCase):
         self.assertEqual((code, display.call_count), (0, 0))
 
 
+    def test_offline_is_not_a_change_and_is_retried(self):
+        """Pas de réseau (Mac qui sort de veille) : nouveaux essais, puis aucune notification « service » ; le réseau
+        revenu entre deux essais : vérification normale."""
+        import httpx
+        def down():
+            raise httpx.ConnectError("[Errno 8] nodename nor servname provided, or not known")
+        checks = [("arXiv", down), ("Zotero", down), ("Assistant IA", lambda: "claude (opus)")]
+        with mock.patch.object(check, "RETRY_WAIT", 0), mock.patch.object(check.time, "sleep") as sleep:
+            code, display = self.run_with(checks, {"macos": "27.2", "webkit": "1"})
+        self.assertEqual((code, display.call_count, sleep.call_count), (0, 0, check.RETRIES))
+        report = check.json.loads(self.report.read_text(encoding="utf-8"))
+        self.assertTrue(report["offline"])
+        self.assertEqual([r["status"] for r in report["results"]], ["offline", "offline", "ok"])
+        self.assertIn("Pas de réseau", check.text(report))
+        # une vraie panne (réponse d'erreur) n'est pas « pas de réseau » ; à la main : pas de nouvel essai
+        def broken():
+            raise httpx.HTTPStatusError("503", request=httpx.Request("GET", "https://x"), response=httpx.Response(503))
+        with mock.patch.object(check.time, "sleep") as sleep:
+            code, display = self.run_with([("arXiv", down), ("Zotero", broken)], {"macos": "27.2", "webkit": "1"})
+        self.assertEqual((code, display.call_count, sleep.call_count), (1, 1, 0))
+        self.assertEqual(display.call_args.kwargs.get("route"), "#/check")
+        # réseau revenu au deuxième essai
+        calls = []
+        def flaky():
+            calls.append(1)
+            if len(calls) == 1:
+                down()
+            return "ok"
+        with mock.patch.object(check.time, "sleep") as sleep:
+            code, display = self.run_with([("arXiv", flaky)], {"macos": "27.2", "webkit": "1"})
+        self.assertEqual((code, display.call_count, sleep.call_count, len(calls)), (0, 0, 1, 2))
+        self.assertFalse(check.json.loads(self.report.read_text(encoding="utf-8"))["offline"])
+
+    def test_report_route(self):
+        """Page #/check : le rapport en texte ; aucun rapport, ou abîmé : texte vide."""
+        from fastapi.testclient import TestClient
+        from app import main
+        client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
+        with mock.patch.object(check, "REPORT", self.report):
+            self.assertEqual(client.get("/api/check").json(), {"checkedAt": None, "text": ""})
+            self.report.write_text("[1]")
+            self.assertEqual(client.get("/api/check").json()["text"], "")
+            self.run_with([("bon", lambda: "ok")], {"macos": "27.2", "webkit": "1"})
+            data = client.get("/api/check").json()
+        self.assertTrue(data["checkedAt"])
+        self.assertIn("✓ bon", data["text"])
+
+    def test_system_change_says_what_moved(self):
+        self.run_with([("bon", lambda: "ok")], {"macos": "27.2", "webkit": "22625"})
+        code, display = self.run_with([("bon", lambda: "ok")], {"macos": "27.2.1", "webkit": "22625"})
+        self.assertEqual(display.call_args.args[1], "macOS a changé (WebKit inchangé)")
+        self.assertIn("macOS 27.2 → 27.2.1, WebKit inchangé (22625)", display.call_args.args[2])
+        self.assertEqual(display.call_args.kwargs.get("route"), "#/check")
+        report = check.json.loads(self.report.read_text(encoding="utf-8"))
+        self.assertIn("À revoir :", check.text(report))
+        code, display = self.run_with([("bon", lambda: "ok")], {"macos": "27.2.1", "webkit": "22626"})
+        self.assertEqual(display.call_args.args[1], "WebKit a changé")
+        self.assertEqual(check.text({"results": [None, {"status": "?"}]}).count("\n"), 2)  # rapport abîmé : lisible
+
     def test_manual_run_keeps_the_weekly_baseline(self):
         self.run_with([("bon", lambda: "ok")], {"macos": "27.0", "webkit": "1"})          # tâche hebdomadaire : référence 1
         self.run_with([("bon", lambda: "ok")], {"macos": "27.1", "webkit": "2"}, argv=())  # à la main : signalé, référence gardée

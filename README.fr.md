@@ -753,7 +753,10 @@ Zotero, les assistants IA, GitHub) et de WebKit, qui change avec macOS. Les test
 réponses (✓ bon, ✗ changé ou en panne, – non vérifié : pas de clé, quota atteint). Elle signale aussi un changement de macOS ou de
 WebKit depuis la fois précédente, avec les points à revoir à la main. `./arxivreader check --weekly` la lance
 chaque lundi à 10 h par l'application installée (notification macOS en cas de problème ; journal dans
-`~/Library/Logs/arXivReader-check.log`) ; `--no-weekly` l'arrête.
+`~/Library/Logs/arXivReader-check.log`) ; `--no-weekly` l'arrête. Sans réseau à ce moment (Mac qui sort de veille),
+elle réessaie trois fois en six minutes, puis le note sans notification. Un clic sur la notification, le menu Aide >
+« Dernière vérification des services » ou le lien de Réglages > À propos ouvre le rapport entier, avec un
+bouton pour le copier.
 
 Versions : `requirements.txt` liste les paquets voulus, `requirements.lock` leurs versions exactes, testées, que
 `.venv` installe et que l'application embarque ; `macos/build.sh` refuse de construire si `.venv` en diffère. Pour

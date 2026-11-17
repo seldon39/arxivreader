@@ -714,7 +714,10 @@ services; `./arxivreader check` really calls them (except zbMATH), one minimal r
 of the answers (✓ fine, ✗ changed or down, – not checked: no key, quota reached). It also reports a change of macOS
 or WebKit since the previous time, with the points to review by hand. `./arxivreader check --weekly` runs it every Monday at 10 am
 through the installed application (macOS notification if something is wrong; log in
-`~/Library/Logs/arXivReader-check.log`); `--no-weekly` stops it.
+`~/Library/Logs/arXivReader-check.log`); `--no-weekly` stops it. Without a network at that time (a Mac waking up),
+it tries again three times over six minutes, then notes it without a notification. A click on the notification, the
+Help menu > "Last Service Check" or the link in Settings > About opens the whole report, with a button
+to copy it.
 
 Versions: `requirements.txt` lists the wanted packages, `requirements.lock` their exact, tested versions, which
 `.venv` installs and the application ships; `macos/build.sh` refuses to build if `.venv` differs. To update a
