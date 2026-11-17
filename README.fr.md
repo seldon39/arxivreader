@@ -445,8 +445,11 @@ La compilation produit aussi le fichier SyncTeX (gardé à côté du PDF), qui r
 du PDF ; un fichier TeX importé avant doit être **recompilé** une fois pour l'avoir.
 
 **Copie .tex annotée** (onglet Notes, « Copie .tex annotée… », fichiers TeX importés seulement) : télécharge une copie
-.zip du dossier du projet où vos notes sont insérées à côté de ce qu'elles concernent ; le projet d'origine n'est
-jamais modifié. Deux formes : **commentaires %** (chaque note un bloc `% [arXivReader] … % [/arXivReader]`, le PDF
+.zip du projet où vos notes sont insérées à côté de ce qu'elles concernent ; le projet d'origine n'est jamais modifié.
+Seuls les fichiers utilisés par l'article sont copiés : sa source, les fichiers qu'elle nomme (figures,
+bibliographie…, aussi par `\graphicspath` ou par une macro qui ajoute le dossier), ceux lus par la dernière
+compilation, les classes et styles ; les autres fichiers du dossier (brouillons, données…) sont laissés de côté, et
+la fenêtre et le LISEZMOI de la copie disent combien. Deux formes : **commentaires %** (chaque note un bloc `% [arXivReader] … % [/arXivReader]`, le PDF
 compilé ne change pas) ou **notes en marge** (les mêmes commentaires plus une note courte en marge, avec le paquet
 todonotes chargé dans le préambule de la copie). Options des notes en marge : une marge agrandie (texte décalé à
 gauche, page élargie à droite si besoin ; les coupures de lignes et de pages restent celles de l'original) et les

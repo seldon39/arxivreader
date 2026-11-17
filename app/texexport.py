@@ -39,7 +39,7 @@ from pathlib import Path
 
 from . import annotations, export, synctex, texfile, texstructure
 from .library import paper_dir
-from .texsource import _expand, _strip_comments, expand_with_origins
+from .texsource import INPUT, _expand, _strip_comments, expand_with_origins, input_target
 
 MODES = ("comments", "todo")
 LANGUAGES = ("fr", "en")
@@ -61,7 +61,11 @@ BUILD_FILES = (".fls", ".fdb_latexmk", ".synctex", ".synctex.gz", ".synctex(busy
 ARTEFACTS = (".aux", ".log", ".out", ".toc", ".lof", ".lot", ".blg", ".bcf", ".run.xml", ".nav", ".snm", ".vrb",
              ".dvi", ".idx", ".ind", ".ilg", ".glo", ".gls", ".glg", ".bak", ".tmp")
 MAX_VISITED = 50_000     # entrées parcourues dans le dossier du projet, ignorées comprises
-LARGE_FILES, LARGE_BYTES = 300, 50_000_000  # au-delà : avertissement (dossier qui contient sans doute autre chose)
+# Fichiers dont la compilation a besoin sans que la source les nomme : classe, styles et leurs configurations, styles
+# de bibliographie (BibTeX, biblatex) et d'index, cherchés par TeX dans le dossier ; gardés même sans renvoi
+INFRA = (".cls", ".sty", ".clo", ".cfg", ".def", ".fd", ".bst", ".bbx", ".cbx", ".lbx", ".dbx", ".ist")
+GRAPHICSPATH = re.compile(r"\\graphicspath\s*\{((?:\s*\{[^{}]*\})+)\s*\}")
+LARGE_FILES, LARGE_BYTES = 300, 50_000_000  # au-delà : avertissement (copie à vérifier avant de la partager)
 VERBATIM = {"verbatim", "verbatim*", "Verbatim", "Verbatim*", "BVerbatim", "LVerbatim", "spverbatim", "lstlisting",
             "minted", "comment", "alltt", "filecontents", "filecontents*", "luacode", "luacode*", "tcblisting",
             "sageblock", "sagesilent", "pycode"}
@@ -114,7 +118,8 @@ WORDS = {
            "readme": ["Copie annotée par arXivReader le {date}", "",
                       "Ce dossier est une copie du projet {name} : les notes de l'article y sont insérées dans les",
                       "fichiers .tex, à côté des énoncés et des passages qu'elles concernent. Le projet d'origine n'a",
-                      "pas été modifié.", "", "Forme choisie : {mode}.", "",
+                      "pas été modifié. Seuls les fichiers utilisés par l'article sont copiés : sa source, les fichiers",
+                      "qu'elle nomme (figures, bibliographie…) et ceux de la compilation (classes, styles).", "", "Forme choisie : {mode}.", "",
                       "{counts}", "",
                       "Retirer les notes : chaque note est un bloc de commentaires qui commence par « % [arXivReader] »",
                       "et finit par « % [/arXivReader] » ; en mode notes en marge, les lignes \\arxivreadertodo et le",
@@ -129,6 +134,7 @@ WORDS = {
                         "document » dans arXivReader."],
            "endComment": "notes longues en entier (renvois « → note N » des notes en marge)",
            "readmeWarnings": "Avertissements :", "readmeUnplaced": "Notes non localisées (en tête de {main}) :",
+           "readmeUnused": "Autres fichiers du dossier, non utilisés par l'article : {n}, non copiés.",
            "counts": "{total} notes : {exact} placées exactement, {approx} approximativement, {unplaced} non localisées, {header} en tête du fichier principal (fiche de lecture, marque-pages).",
            "warn": {"noSynctex": "Pas de données SyncTeX pour ce PDF : recompilez l'article dans arXivReader pour placer plus précisément les zones et notes épinglées du PDF.",
                     "staleSynctex": "La source a changé depuis la dernière compilation : recompilez l'article dans arXivReader pour placer plus précisément les notes du PDF.",
@@ -140,7 +146,7 @@ WORDS = {
                     "noPositions": "La source n'a pas pu être analysée avec ses positions : les notes sont en tête du fichier principal.",
                     "noDocument": "\\begin{document} introuvable : pas de notes en marge, seulement des commentaires.",
                     "sharedLine": "\\documentclass et \\begin{document} sont sur la même ligne : pas de notes en marge, seulement des commentaires.",
-                    "large": "Le dossier du projet « {folder} » est copié en entier ({files} fichiers, {size} Mo) : vérifiez qu'il ne contient que cet article avant de partager la copie."}},
+                    "large": "La copie du projet « {folder} » est volumineuse ({files} fichiers utilisés par l'article, {size} Mo) : vérifiez son contenu avant de la partager."}},
     "en": {"proof": "Proof of {label}", "highlight": "Highlighted passage, page {page}", "htmlHighlight": "Highlighted passage",
            "zone": "Region of page {page}", "pin": "Pinned note, page {page}", "htmlNote": "Note",
            "sheet": "Reading notes", "bookmarks": "Bookmarks", "page": "page {page}",
@@ -176,7 +182,8 @@ WORDS = {
            "readme": ["Annotated copy made by arXivReader on {date}", "",
                       "This folder is a copy of the project {name}: the notes of the paper are inserted in its .tex",
                       "files, next to the statements and passages they are about. The original project was not",
-                      "modified.", "", "Chosen form: {mode}.", "",
+                      "modified. Only the files used by the paper are copied: its source, the files it names (figures,",
+                      "bibliography…) and those of the compilation (classes, styles).", "", "Chosen form: {mode}.", "",
                       "{counts}", "",
                       "Removing the notes: each note is a comment block starting with \"% [arXivReader]\" and ending",
                       "with \"% [/arXivReader]\"; in margin-note mode, the \\arxivreadertodo lines and the block added",
@@ -190,6 +197,7 @@ WORDS = {
                         "everything in the margin: untick \"Continue long notes at the end of the document\" in arXivReader."],
            "endComment": "long notes in full (references \"→ note N\" of the margin notes)",
            "readmeWarnings": "Warnings:", "readmeUnplaced": "Notes not located (at the top of {main}):",
+           "readmeUnused": "Other files of the folder, not used by the paper: {n}, not copied.",
            "counts": "{total} notes: {exact} placed exactly, {approx} approximately, {unplaced} not located, {header} at the top of the main file (reading notes, bookmarks).",
            "warn": {"noSynctex": "No SyncTeX data for this PDF: recompile the paper in arXivReader to place the PDF regions and pinned notes more precisely.",
                     "staleSynctex": "The source changed since the last compilation: recompile the paper in arXivReader to place the PDF notes more precisely.",
@@ -201,7 +209,7 @@ WORDS = {
                     "noPositions": "The source could not be analysed with its positions: the notes are at the top of the main file.",
                     "noDocument": "\\begin{document} not found: no margin notes, comments only.",
                     "sharedLine": "\\documentclass and \\begin{document} are on the same line: no margin notes, comments only.",
-                    "large": "The project folder \"{folder}\" is copied in full ({files} files, {size} MB): check that it holds only this paper before sharing the copy."}},
+                    "large": "The copy of the project \"{folder}\" is large ({files} files used by the paper, {size} MB): check its content before sharing it."}},
 }
 ERRORS = {"fr": {"main": "Fichier principal introuvable : {path}",
                  "tooBig": "Le dossier du projet est trop volumineux : placez le fichier .tex dans un dossier à part",
@@ -1360,7 +1368,10 @@ class Plan:
         self.root = self.main.parent
         self.files = texfile.read_project(self.main)
         self.lines = {name: Lines(text) for name, text in self.files.items()}
-        self.copy, self.size = _walk(self.root, self.main, language, referenced(self.files))
+        names = referenced(self.files)
+        recorded = texfile.recorded_inputs(pid, self.main)
+        self.copy, self.size, self.unused = _walk(self.root, self.main, language, names, select=lambda candidates: used_files(
+            self.files, names, recorded, package_texts(self.root, candidates)))
         if len(self.copy) > LARGE_FILES or self.size > LARGE_BYTES:
             self.warnings.append(self.words["warn"]["large"].format(
                 folder=self.root.name, files=len(self.copy), size=f"{self.size / 1_000_000:.0f}"))
@@ -1904,7 +1915,14 @@ class Plan:
 # ---------- Copie du projet ----------
 
 # arguments de commandes qui nomment un fichier lu autrement que par \\input (\\verbatiminput{run.out}…)
-ARGUMENT = re.compile(r"\\([A-Za-z]+)\*?\s*(?:\[[^\]]*\]\s*)*\{([^{}]*)\}")
+ARGUMENT = re.compile(r"\\([A-Za-z]+)\*?\s*(?:<[^<>{}]*>\s*)?(?:\[[^\]]*\]\s*)*\{([^{}]*)\}")  # <…> : calque beamer
+# fichier nommé ailleurs que dans le premier argument : \import{dossier/}{fichier}, \inputminted{langage}{fichier}…
+# (second argument, et dossier + fichier) ; \addplot table {données}, \addplot graphics {image} de pgfplots
+SECOND_ARGUMENT = re.compile(r"\\(?:sub)?(?:import|includefrom|inputfrom)\*?\s*\{([^{}]*)\}\s*\{([^{}]*)\}"
+                             r"|\\inputminted\*?\s*(?:\[[^\]]*\]\s*)*\{[^{}]*\}\s*\{([^{}]*)\}")
+ADDPLOT = re.compile(r"\\addplot3?\+?[^;{}\\]*?\b(?:table|graphics|file)\s*(?:\[[^\]]*\]\s*)*\{([^{}]*)\}")
+# fichiers locaux de classe et de styles lus pour y chercher les fichiers qu'ils chargent eux-mêmes (logo, définitions)
+PACKAGE_FILES, MAX_PACKAGE_BYTES, MAX_PACKAGES = (".cls", ".sty", ".def", ".cfg", ".clo"), 512_000, 100
 NOT_FILES = {"input", "include", "includeonly", "label", "ref", "eqref", "cref", "Cref", "autoref", "pageref", "begin",
              "end", "usepackage", "RequirePackage", "documentclass", "section", "subsection", "emph", "textbf", "textit"}
 
@@ -1912,15 +1930,75 @@ NOT_FILES = {"input", "include", "includeonly", "label", "ref", "eqref", "cref",
 def referenced(files):
     """Noms (chemins, avec ou sans extension) cités en argument d'une commande dans la source sans commentaires."""
     names = set()
+
+    def add(value):
+        for name in value.split(","):
+            name = name.strip()
+            if name and len(name) < 200:
+                names.add(posixpath.normpath(name))
     for text in files.values():
-        for match in ARGUMENT.finditer(_strip_comments(text)):
+        text = _strip_comments(text)
+        for match in ARGUMENT.finditer(text):
             if match.group(1) in NOT_FILES or match.group(1).startswith("cite"):
                 continue
-            for name in match.group(2).split(","):
-                name = name.strip()
-                if name and len(name) < 200:
-                    names.add(posixpath.normpath(name))
+            add(match.group(2))
+        for match in SECOND_ARGUMENT.finditer(text):
+            if match.group(3):
+                add(match.group(3))
+            elif match.group(2).strip():
+                add(match.group(2))
+                add(posixpath.join(match.group(1).strip(), match.group(2).strip()))
+        for match in ADDPLOT.finditer(text):
+            add(match.group(1))
     return names
+
+
+def package_texts(root, candidates):
+    """Texte des fichiers locaux de classe et de styles du projet (PACKAGE_FILES, taille et nombre bornés) : ce qu'ils
+    chargent eux-mêmes (\\includegraphics{logo}, \\input{defs}) compte comme utilisé ; jamais annotés."""
+    texts, real_root = {}, os.path.realpath(root)
+    for rel, path in candidates:
+        if len(texts) >= MAX_PACKAGES or not rel.lower().endswith(PACKAGE_FILES):
+            continue
+        try:
+            real = os.path.realpath(path)
+            if real.startswith(real_root + os.sep) and os.path.isfile(real) and os.path.getsize(real) <= MAX_PACKAGE_BYTES:
+                texts[rel] = Path(real).read_bytes().decode("utf-8", errors="replace")
+        except OSError:
+            continue
+    return texts
+
+
+def used_files(files, names, recorded=frozenset(), packages=None):
+    """Test « fichier utilisé par l'article » sur un chemin relatif au dossier du projet (la copie annotée ne garde que
+    ceux-là) : fichier lu par la source ; nommé par une de ses commandes (`names`, \\input compris), avec ou sans
+    extension, depuis le dossier du projet, celui d'un fichier de la source ou un dossier de \\graphicspath, ou par son
+    seul nom (macro qui ajoute le dossier : \\fig{plot} → figures/plot.pdf) ; lu par la dernière compilation
+    (`recorded`, texfile.recorded_inputs) ; fichier de compilation (INFRA) ; .bbl d'un fichier de la source. Les
+    fichiers locaux de classe et de styles (`packages`, package_texts) comptent comme la source pour les noms."""
+    names = set(names) | (referenced(packages) if packages else set())
+    dirs = {""} | {posixpath.dirname(n) for n in files}
+    for text in [*files.values(), *(packages or {}).values()]:
+        text = _strip_comments(text)
+        names |= {input_target(m) for m in INPUT.finditer(text)}
+        for found in GRAPHICSPATH.finditer(text):
+            dirs |= {d.strip() for d in re.findall(r"\{([^{}]*)\}", found.group(1)) if d.strip()}
+    exact, bare = {n.lower() for n in files}, set()
+    for name in names:
+        name = name.strip().strip('"').replace("\\", "/")
+        if not name or name.startswith("/") or "#" in name:
+            continue
+        for folder in dirs:
+            exact.add(posixpath.normpath(posixpath.join(folder, name)).lower())
+        bare.add(posixpath.basename(name).lower())
+    stems = {posixpath.splitext(n)[0].lower() for n in files}
+
+    def used(rel):
+        low = rel.lower()
+        stem, base = posixpath.splitext(low)[0], posixpath.basename(low)
+        return (low in exact or stem in exact or low in recorded or base in bare or posixpath.splitext(base)[0] in bare
+                or low.endswith(INFRA) or (low.endswith(".bbl") and stem in stems))
+    return used
 
 
 def _generated(rel, lowered, stems, names):
@@ -1935,10 +2013,13 @@ def _generated(rel, lowered, stems, names):
     return not ({rel, stem, posixpath.basename(rel), base} & names)
 
 
-def _walk(root, main, language, names=frozenset()):
-    """Fichiers du dossier du projet à copier : [(chemin relatif, chemin, taille)] ; dossiers liés jamais suivis,
-    fichiers liés seulement si leur cible est dans le projet ; fichiers produits par la compilation ignorés (`names` :
-    fichiers cités par la source, gardés). ExportError au-delà des limites ou pour un fichier illisible."""
+def _walk(root, main, language, names=frozenset(), used=None, select=None):
+    """Fichiers du dossier du projet à copier : ([(chemin relatif, chemin, taille)], taille, nombre laissé de côté) ;
+    seulement ceux que l'article utilise (`used`, voir used_files, ou `select`, qui le construit d'après les fichiers
+    trouvés : les autres sont comptés, ni lus ni copiés) ; dossiers
+    liés jamais suivis, fichiers liés seulement si leur cible est dans le projet ; fichiers produits par la compilation
+    ignorés (`names` : fichiers cités par la source, gardés). ExportError au-delà des limites ou pour un fichier
+    illisible."""
     errors = ERRORS.get(language, ERRORS["en"])
     candidates, visited = [], 0
     real_root = os.path.realpath(root)
@@ -1958,9 +2039,11 @@ def _walk(root, main, language, names=frozenset()):
                         or rel == f"{main.stem}.pdf"):
                     continue
                 candidates.append((rel, Path(folder) / name))
+        if select is not None:
+            used = select(candidates)
         stems = {rel.lower()[:-4] for rel, _ in candidates if rel.lower().endswith((".tex", ".ltx"))}
         stems |= {posixpath.basename(stem) for stem in stems}
-        found, total = [], 0
+        found, total, unused = [], 0, 0
         for rel, path in candidates:
             if _generated(rel, rel.lower(), stems, names):
                 continue
@@ -1969,6 +2052,9 @@ def _walk(root, main, language, names=frozenset()):
                 if not (target == real_root or target.startswith(real_root + os.sep)) or not os.path.isfile(target):
                     continue
             if not path.is_file():
+                continue
+            if used is not None and not used(rel):
+                unused += 1
                 continue
             if not os.access(path, os.R_OK):
                 raise ExportError(errors["unreadableFile"].format(path=rel))
@@ -1979,7 +2065,7 @@ def _walk(root, main, language, names=frozenset()):
                 raise ExportError(errors["tooBig"])
     except OSError as error:
         raise ExportError(errors["unreadable"].format(error=error))
-    return found, total
+    return found, total, unused
 
 
 def _decode(raw):
@@ -2538,7 +2624,8 @@ def summary(pid, mode, language, layout="wide", endnotes=True):
     notes longues renvoyées en fin de document."""
     plan, _, counts = _prepare(pid, mode, language, layout, endnotes)
     return {**{k: counts[k] for k in ("total", "exact", "approx", "unplaced", "header", "byKind")},
-            "synctex": plan.sync is not None, "files": len(plan.copy), "size": plan.size, "folder": str(plan.root),
+            "synctex": plan.sync is not None, "files": len(plan.copy), "size": plan.size, "unused": plan.unused,
+            "folder": str(plan.root),
             "warnings": plan.warnings,
             "todoMacro": MACRO if mode == "todo" else None, "mode": mode, "layout": plan.layout,
             "endnotes": len(plan.long_entries)}
@@ -2550,6 +2637,8 @@ def _readme(plan, counts, date):
     lines = [line.format(date=date, name=plan.root.name, mode=mode,
                          counts=words["counts"].format(**{k: counts[k] for k in ("total", "exact", "approx", "unplaced", "header")}))
              for line in words["readme"]]
+    if plan.unused:
+        lines += ["", words["readmeUnused"].format(n=plan.unused)]
     if plan.wide:
         lines += [""] + words["layout"]
     if plan.long_entries:

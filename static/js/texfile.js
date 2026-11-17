@@ -220,7 +220,7 @@ export function texAnnotatedDialog(paperId) {
         if (s.endnotes > 0) parts.push(tn("texAnnot.endnotes", s.endnotes));
         steps.push({ state: s.unplaced ? "warn" : "ok", text: parts.join(" · "),
           detail: [tn("texAnnot.project", s.files, { size: (s.size / 1048576).toLocaleString(lang, { maximumFractionDigits: 1, minimumFractionDigits: 1 }) }),
-            h("div", { class: "tex-path" }, s.folder)] });
+            h("div", { class: "tex-path" }, s.folder), ...(s.unused > 0 ? [h("div", {}, tn("texAnnot.unused", s.unused))] : [])] });
       }
       // SyncTeX absent ou périmé, \todo du document, dossier volumineux… : avertissements du serveur
       for (const warning of s.warnings || []) steps.push({ state: "warn", text: warning });

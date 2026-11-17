@@ -211,6 +211,26 @@ def build_dir(pid):
     return folder
 
 
+def recorded_inputs(pid, main):
+    """Fichiers du dossier du projet lus par la dernière compilation (journal .fls de latexmk, -recorder) : chemins
+    relatifs en minuscules ; vide sans ce journal (pdflatex seul, dossier temporaire vidé depuis)."""
+    path = build_dir(pid) / f"{main.stem}.fls"
+    root = os.path.realpath(main.parent)
+    found, pwd = set(), str(main.parent)
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()[:200_000]
+    except OSError:
+        return found
+    for line in lines:
+        if line.startswith("PWD "):
+            pwd = line[4:].strip()
+        elif line.startswith("INPUT "):
+            target = os.path.realpath(os.path.join(pwd, line[6:].strip()))
+            if target.startswith(root + os.sep):
+                found.add(os.path.relpath(target, root).replace(os.sep, "/").lower())
+    return found
+
+
 def _engine(raw, text):
     magic = MAGIC.search(raw[:3000])
     if magic and magic.group(1).lower() in ENGINES:

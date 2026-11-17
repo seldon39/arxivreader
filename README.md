@@ -423,7 +423,10 @@ The compilation also produces the SyncTeX file (kept next to the PDF), which lin
 TeX file imported before needs one **Recompile** to get it.
 
 **Annotated .tex copy** (Notes tab, "Annotated .tex copy…", imported TeX files only): downloads a .zip copy of the
-project folder in which your notes are inserted next to what they concern; the original project is never modified.
+project in which your notes are inserted next to what they concern; the original project is never modified. Only the
+files used by the paper are copied: its source, the files it names (figures, bibliography…, also through
+`\graphicspath` or a macro that adds the folder), those read by the last compilation, classes and styles; the other
+files of the folder (drafts, data…) are left out, and the window and the README of the copy say how many.
 Two forms: **% comments** (each note a `% [arXivReader] … % [/arXivReader]` block, the compiled PDF unchanged) or
 **margin notes** (the same comments plus a short note in the margin, with the todonotes package loaded in the copy's
 preamble). Options for margin notes: a wider margin (text shifted left, page widened on the right if needed; line

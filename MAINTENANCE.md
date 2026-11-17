@@ -690,7 +690,16 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   temporary file (`build_zip`; the route deletes it after sending, and each call purges those older than 6 h,
   `STALE_AFTER`) with `LISEZMOI-arXivReader.txt` / `README-arXivReader.txt` inside (language of the request). Only lines are added, each one carrying `[arXivReader]`. Files
   are read as UTF-8, otherwise latin1 (`_decode`), line endings kept. Limits: `MAX_COPY_FILES` (3000), `MAX_COPY_BYTES`
-  (300 MB), files read outside the project folder not copied (reported). `scan` classifies the source (verbatim, math,
+  (300 MB), files read outside the project folder not copied (reported). Only the files used by the paper are copied
+  (`used_files`, applied in `_walk`, the others counted in `unused`: summary, dialog, README of the copy): files of
+  the source, names given to any command (`referenced`: first argument, beamer overlays allowed; second argument of
+  `\import`-like commands and `\inputminted`, `SECOND_ARGUMENT`; pgfplots `\addplot table {…}`, `ADDPLOT`; plus
+  `\input` targets; also those of local classes and styles, `package_texts`) with or without extension, from the
+  project folder, the folder of a source file or a `\graphicspath` folder, or by base name alone (a macro that adds the
+  folder); files read by the last compilation (`texfile.recorded_inputs`, latexmk's `.fls` in the build folder: absent
+  after pdflatex alone or once the temporary folder is emptied, so this only adds files); `INFRA` extensions (classes,
+  styles, BibTeX/biblatex/index styles: TeX finds them without a name in the source); the `.bbl` of a source file.
+  Over-inclusion is preferred (a word given to a command may match a file name). `scan` classifies the source (verbatim, math,
   boxes/floats, lists, comments): comment blocks go before `\begin` of a statement or proof; the `todonotes` margin
   note (`\arxivreadertodo`, guarded by `\ifmmode\else\ifinner\else`) is never put inside verbatim, boxes, floats or
   math (the comment stays). Quotes (highlights) are found by their letters in the expanded text (`texsource.expand_with_origins`,

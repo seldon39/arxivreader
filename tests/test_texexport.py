@@ -688,7 +688,12 @@ class Safety(unittest.TestCase):
 
 class Copy(Setup):
     def test_zip_layout_skipped_files_and_originals_unchanged(self):
+        (self.project / "main.tex").write_text(MAIN.replace("\\fbox{Box}", "\\fbox{Box}\\includegraphics{fig}\\includegraphics{fig-link}"),
+                                               encoding="utf-8", newline="\n")
         (self.project / "fig.png").write_bytes(b"\x89PNG\r\n\x1a\nbinary\x00data")
+        for name in ("draft-old.tex", "notes-perso.txt", "data/unused.csv"):  # dans le dossier, pas dans l'article
+            (self.project / name).parent.mkdir(exist_ok=True)
+            (self.project / name).write_text("private", encoding="utf-8", newline="\n")
         (self.project / "main.bbl").write_text("\\begin{thebibliography}{1}\\end{thebibliography}", encoding="utf-8", newline="\n")
         for name in ("main.aux", "main.log", "main.synctex.gz", "main.fdb_latexmk", "notes.tex~", ".DS_Store"):
             (self.project / name).write_text("x", encoding="utf-8", newline="\n")
@@ -713,13 +718,46 @@ class Copy(Setup):
                                                                    "main.bbl", "main.tex", "sec/one.tex")))
         self.assertEqual(files[root + "fig.png"], (self.project / "fig.png").read_bytes())
         self.assertEqual(files[root + "fig-link.png"], (self.project / "fig.png").read_bytes())
-        self.assertEqual(summary["files"], 5)
+        self.assertEqual((summary["files"], summary["unused"]), (5, 3))
         self.assertEqual(summary["size"], sum((self.project / n).stat().st_size for n in ("fig.png", "fig-link.png", "main.bbl", "main.tex", "sec/one.tex")))
         readme = files[root + "LISEZMOI-arXivReader.txt"].decode("utf-8")
         self.assertIn("copie du projet my draft", readme)
+        self.assertIn("non utilisés par l'article : 3, non copiés", readme)
         self.assertIn("[arXivReader]", readme)
         _, english = self.files_of("comments", "en")
         self.assertIn("my draft (annotated)/README-arXivReader.txt", english)
+
+    def test_only_files_used_by_the_paper(self):
+        """Fichiers nommés par la source (chemins, \\graphicspath, macro qui ajoute le dossier, \\input sans extension,
+        bibliographie), lus par la dernière compilation (.fls), classes et styles, .bbl : copiés ; le reste du dossier
+        (brouillons, données, nom cité seulement en commentaire) : compté, pas copié."""
+        text = MAIN.replace("\\begin{document}", "\n".join([
+            "\\usepackage{graphicx}", "\\graphicspath{{img/}{../outside/}}",
+            "\\newcommand{\\fig}[1]{\\includegraphics{figures/#1}}", "\\begin{document}",
+            "\\includegraphics{logo}\\fig{plot}\\includegraphics[width=2cm]{sec/diagram.pdf}",
+            "\\input{tables/big}% \\input{draft-old}", "\\bibliographystyle{mystyle}\\bibliography{refs,bib/more}",
+            "\\addplot table[x=a]{data/r.csv};\\subimport{chap/}{intro}"]), 1)
+        (self.project / "main.tex").write_text(text, encoding="utf-8", newline="\n")
+        used = ["img/logo.pdf", "figures/plot.png", "sec/diagram.pdf", "tables/big.tex", "refs.bib", "bib/more.bib",
+                "mystyle.bst", "local.sty", "journal.cls", "main.bbl", "data/run.csv", "data/r.csv", "chap/intro.tex",
+                "brand.png"]  # brand.png : chargé par local.sty
+        unused = ["draft-old.tex", "img/other.png", "figures/old/plot2.png", "notes.txt", "refs-old.bib", "other.bbl"]
+        for name in used + unused:
+            (self.project / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.project / name).write_text("x\n", encoding="utf-8", newline="\n")
+        (self.project / "local.sty").write_text("\\newcommand{\\brand}{\\includegraphics{brand}}\n", encoding="utf-8", newline="\n")
+        pid = self.import_without_tex()
+        annotations.create(pid, "block", {"id": "tex-lbl-thm:main"}, note="A note")
+        # lu par la dernière compilation seulement (macro qui construit le nom) ; hors du projet : ignoré
+        (texfile.build_dir(pid) / "main.fls").write_text(
+            f"PWD {self.project}\nINPUT data/run.csv\nINPUT {self.tmp}/elsewhere.tex\nINPUT /usr/share/x.sty\n"
+            f"OUTPUT main.pdf\n", encoding="utf-8", newline="\n")
+        _, files = self.files_of()
+        copied = sorted(n.split("/", 1)[1] for n in files)
+        self.assertEqual(copied, sorted(used + ["LISEZMOI-arXivReader.txt", "main.tex", "sec/one.tex"]))
+        self.assertEqual(texexport.summary(pid, "comments", "fr")["unused"], len(unused))
+        (texfile.build_dir(pid) / "main.fls").unlink()  # journal effacé (dossier temporaire vidé) : fichier oublié
+        self.assertNotIn("my draft (annoté)/data/run.csv", self.files_of()[1])
 
     def test_outside_files_limits_and_latin1(self):
         shared = self.tmp / "shared"
@@ -754,7 +792,7 @@ class Copy(Setup):
         """Fichiers lus par la source malgré une extension d'artefact (run.out, sup.aux de \\externaldocument, data.tmp)
         copiés ; artefacts d'un .tex du projet ignorés ; droits gardés ; fichier illisible : erreur dès le bilan."""
         text = MAIN.replace("\\begin{document}", "\\usepackage{verbatim}\n\\begin{document}\n\\verbatiminput{run.out}"
-                            "\n\\externaldocument{sup}", 1)
+                            "\n\\externaldocument{sup}\n\\verbatiminput{data.tmp}\n\\lstinputlisting{build.sh}", 1)
         (self.project / "main.tex").write_text(text, encoding="utf-8", newline="\n")
         for name in ("run.out", "sup.aux", "sup.tex", "data.tmp", "sec/one.aux", "sec/one.log", "main.toc", "main.tex.bak"):
             (self.project / name).write_text("x\n", encoding="utf-8", newline="\n")
@@ -1125,6 +1163,8 @@ class Fixes(Setup):
     def test_temporary_archives_always_deleted(self):
         import asyncio
         (self.project / "fig.png").write_bytes(b"\x89PNG data")  # copié tel quel (ZipFile.write)
+        (self.project / "main.tex").write_text(MAIN.replace("\\fbox{Box}", "\\fbox{Box}\\includegraphics{fig}"),
+                                               encoding="utf-8", newline="\n")
         pid = self.import_without_tex()
         annotations.create(pid, "block", {"id": "tex-lbl-thm:main"}, note="A note")
         # écriture de l'archive en échec (disque plein…) : erreur, rien ne reste
