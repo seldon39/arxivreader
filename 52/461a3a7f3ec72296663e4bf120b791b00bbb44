@@ -1,0 +1,51 @@
+macos/main.swift
+  s_2e78fe3aad7ffd::t_b2ef7cfbe9e9a2 804
+static/js/app.js
+  s_2e78fe3aad7ffd::t_b2ef7cfbe9e9a2 10,56-57,63-64,74
+README.fr.md
+  s_2e78fe3aad7ffd::t_9f432848f876b5 758
+  s_2e78fe3aad7ffd::t_9143201913c9cf 756-757,759
+app/check.py
+  s_2e78fe3aad7ffd::t_afb1e594d583b5 8-9,41-48,202-210,212-233,246-249,260-262,269-294,299-301,303-310
+MAINTENANCE.md
+  s_2e78fe3aad7ffd::t_9143201913c9cf 208-212,257
+  s_2e78fe3aad7ffd::t_4f50af7c84985b 213
+app/main.py
+  s_2e78fe3aad7ffd::t_11daa495f5adba 31,1433-1443
+  s_2e78fe3aad7ffd::t_1052cfe462cf40 1444-1445
+tests/test_check.py
+  s_2e78fe3aad7ffd::t_b12d6cd326410a 44-75,90-102
+  s_2e78fe3aad7ffd::t_dae5f157f3d558 76-89
+static/js/api.js
+  s_2e78fe3aad7ffd::t_b2ef7cfbe9e9a2 146
+static/js/check.js
+  s_2e78fe3aad7ffd::t_b2ef7cfbe9e9a2 1-21
+static/js/i18n.js
+  s_2e78fe3aad7ffd::t_b2ef7cfbe9e9a2 787-789,1848-1850
+static/js/commands.js
+  s_2e78fe3aad7ffd::t_b2ef7cfbe9e9a2 74
+  s_2e78fe3aad7ffd::t_e3da1cfd036d8b 33
+static/js/updates.js
+  s_2e78fe3aad7ffd::t_b2ef7cfbe9e9a2 53-54
+README.md
+  s_2e78fe3aad7ffd::t_9143201913c9cf 717-718,720
+  s_2e78fe3aad7ffd::t_9f432848f876b5 719
+static/css/app.css
+  s_2e78fe3aad7ffd::t_b2ef7cfbe9e9a2 1809-1813
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "52461a3a7f3ec72296663e4bf120b791b00bbb44",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
