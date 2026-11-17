@@ -284,6 +284,7 @@ _FONTSIZE = re.compile(r"\\fontsize\s*\{([^{}]*)\}\s*\{[^{}]*\}(?:\s*\\(?!select
 _SIZES = "normalsize|tiny|scriptsize|footnotesize|small|large|Large|LARGE|huge|Huge|fontsize"
 _ENV = re.compile(r"\\(begin|end)\s*\{([^{}]*)\}")
 _TABLES = re.compile(r"tabular|tabu|array|longtable|tblr|NiceTabular")
+_ALIGNMENTS = re.compile(r"tabular|tabu|array|longtable|tblr|NiceTabular|align|gather|matrix|cases|eqnarray|split")  # cases : & et \\
 # remplissages : clé d'options [fill=…] (tikz, tcolorbox, mdframed…) ; cases de tableau ; formes tikz
 _FILL_KEY = re.compile(r"[\[,{]\s*(?:fill|colback|backgroundcolor|bg|background\s+color)\s*=\s*(\{[^{}]*\}|[\w!.\-]+)")
 _OPTIONS_HEAD = re.compile(r"(?:\\[A-Za-z@]+\*?|\\begin\s*\{[^{}]*\}|[)\]]|\bnode|\bcoordinate)\s*$")  # […] d'une commande
@@ -357,31 +358,40 @@ def _xcolor(expression, names):
 class _Colors:
     """Couleurs définies par l'auteur (\\definecolor, \\providecolor, \\colorlet) telles qu'en vigueur à une place
     du texte (une couleur redéfinie plus loin ne change pas ce qui précède) ; un nom pas encore défini prend sa
-    première définition (texte partiel, corps de macro)."""
+    première définition (texte partiel, corps de macro). Chaque nom garde ses définitions dans l'ordre."""
 
     def __init__(self, text):
-        self.places, self.tables, first, names = [], [], {}, {}
+        self.defs, current = {}, {}
         for found in _COLOR_DEFINITION.finditer(text):
             if found.group(1):
                 color, name = _channels(found.group(2).split("/")[0], found.group(3)), found.group(1)
             else:
-                color, name = _xcolor(found.group(5), names), found.group(4)
-            names = dict(names)
-            names[name] = color
-            first.setdefault(name, color)
-            self.places.append(found.start())
-            self.tables.append(names)
-        self.first = {name: color for name, color in first.items() if color is not None}
+                color, name = _xcolor(found.group(5), current), found.group(4)
+            current[name] = color
+            if color is None:
+                current.pop(name)
+            places, colors = self.defs.setdefault(name, ([], []))
+            places.append(found.start())
+            colors.append(color)
+        self.first = {name: next((c for c in colors if c is not None), None) for name, (_, colors) in self.defs.items()}
 
     def at(self, pos):
-        index = bisect.bisect_left(self.places, pos)
-        table = dict(self.first)
-        if index:
-            table.update({name: color for name, color in self.tables[index - 1].items() if color is not None})
-            for name, color in self.tables[index - 1].items():
-                if color is None:
-                    table.pop(name, None)
-        return table
+        return _ColorsAt(self, pos)
+
+
+class _ColorsAt:
+    """Couleurs de l'auteur vues d'une place (`get`, comme un dict)."""
+
+    def __init__(self, colors, pos):
+        self.colors, self.pos = colors, pos
+
+    def get(self, name, default=None):
+        found = self.colors.defs.get(name)
+        if not found:
+            return default
+        index = bisect.bisect_left(found[0], self.pos)
+        color = found[1][index - 1] if index else self.colors.first[name]
+        return default if color is None else color
 
 
 def _is_white(model, value, names):
@@ -408,14 +418,32 @@ def _length_pt(value):
 def _scope_tokens(resets):
     return re.compile(r"(\\verb\*?([^A-Za-z\s*]).*?\2|\\string\s*\\[A-Za-z]+)|\\(begin|end)\s*\{([^{}]*)\}"
                       r"|(\\(?:" + resets + r")(?![A-Za-z]))|(\\bgroup|\\egroup|\\begingroup|\\endgroup)(?![A-Za-z])"
-                      r"|((?<!\\)\$\$?|\\[)\]])|\\.|[{}]", re.S)
+                      r"|((?<!\\)\$\$?|\\[)\]])|(&|\\\\|\\cr(?![A-Za-z]))|\\.|[{}]", re.S)
 
 
-def _math_closer(text, pos):
-    """Fermeture des maths ouvertes avant `pos` dans son paragraphe (« $ », « $$ », « \\) », « \\] »), ou None."""
+class _Work:
+    """Travail permis pour juger les passages d'un texte (caractères parcourus), et ce qu'on garde d'un passage à
+    l'autre (maths ouvertes au fil du paragraphe)."""
+
+    def __init__(self):
+        self.left, self.math = _SCAN_BUDGET, None
+
+
+_MATH = re.compile(r"\\\\|(?<!\\)\$\$?|\\[()\[\]]")
+
+
+def _math_closer(text, pos, work=None):
+    """Fermeture des maths ouvertes avant `pos` dans son paragraphe (« $ », « $$ », « \\) », « \\] »), ou None ;
+    `work` : reprend là où le passage précédent du même paragraphe s'est arrêté."""
     start = max(text.rfind("\n\n", max(0, pos - 5000), pos), pos - 5000, 0)
-    closer = None
-    for found in re.finditer(r"\\\\|(?<!\\)\$\$?|\\[()\[\]]", text[start:pos]):
+    begin, closer = start, None
+    if work is not None:
+        if work.math and work.math[0] == start and work.math[1] <= pos:
+            begin, closer = work.math[1], work.math[2]
+        if work.left <= 0:
+            return None
+        work.left -= pos - begin
+    for found in _MATH.finditer(text, begin, pos):
         token = found.group()
         if token == "\\\\":
             continue  # retour à la ligne (« \\\\[2pt] » n'ouvre pas de maths)
@@ -423,20 +451,23 @@ def _math_closer(text, pos):
             closer = None if closer == token else token
         else:
             closer = {"\\(": "\\)", "\\[": "\\]"}.get(token)
+    if work is not None:
+        work.math = (start, pos, closer)
     return closer
 
 
-def _scope_end(text, pos, resets, budget=None):
+def _scope_end(text, pos, resets, work=None, cells=False):
     """Fin de la portée d'une déclaration (\\color, \\fontsize…\\selectfont) placée en `pos` : (fin, fermée). Fermée
     par l'accolade de son groupe (\\bgroup, \\begingroup), le \\end de son environnement, la fin des maths où elle
-    est, ou une déclaration contraire au même niveau (`resets` : « color|normalcolor »… ; pas dans \\verb ni après
-    \\string) ; sinon (jusqu'à \\end{document}, la fin du texte ou _SCAN caractères) : ouverte. `budget` ([n]) :
-    caractères qu'il reste à parcourir pour ce texte ; épuisé, la déclaration est tenue pour ouverte."""
+    est, la fin de sa case (`cells` : dans un tableau, un align… : « & », « \\\\ »), ou une déclaration contraire au
+    même niveau (`resets` : « color|normalcolor »… ; pas dans \\verb ni après \\string) ; sinon (jusqu'à
+    \\end{document}, la fin du texte ou _SCAN caractères) : ouverte. `work` (_Work) : travail qu'il reste pour ce
+    texte ; épuisé, la déclaration est tenue pour ouverte."""
     limit = min(len(text), pos + _SCAN)
-    if budget is not None and budget[0] <= 0:
+    if work is not None and work.left <= 0:
         return limit, False
     depth = envs = 0
-    closer = _math_closer(text, pos)
+    closer = _math_closer(text, pos, work)
     result = (limit, False)
     for token in _scope_tokens(resets).finditer(text, pos, limit):
         char, group = token.group(), token.group(6)
@@ -453,6 +484,10 @@ def _scope_end(text, pos, resets, budget=None):
             if depth == 0 and envs == 0 and char == closer:
                 result = token.start(), True
                 break
+        elif token.group(8):
+            if cells and depth == 0 and envs == 0:
+                result = token.start(), True
+                break
         elif depth == 0 and token.group(3) == "begin":
             envs += 1
         elif depth == 0 and token.group(3) == "end":
@@ -463,17 +498,22 @@ def _scope_end(text, pos, resets, budget=None):
         elif depth == 0 and envs == 0 and token.group(5):
             result = token.start(), True
             break
-    if budget is not None:
-        budget[0] -= result[0] - pos
+    if work is not None:
+        work.left -= result[0] - pos
     return result
 
 
-def _option_list(text, pos):
+def _option_list(text, pos, work=None):
     """`pos` dans la liste d'options […] d'une commande ou d'un environnement (\\begin{tcolorbox}[…], \\item[…]) :
     (début du « [ », fin du « ] », environnement ou None, directement dans la liste et pas dans un {…} de valeur) ;
     sinon None."""
+    stop = max(0, pos - 600)
+    if text.rfind("[", stop, pos) < 0 or work is not None and work.left <= 0:
+        return None
+    if work is not None:
+        work.left -= pos - stop
     depth = brackets = 0
-    nested, index, stop = False, pos - 1, max(0, pos - 600)
+    nested, index = False, pos - 1
     while index >= stop:
         char = text[index]
         if index and text[index - 1] == "\\" and char in "{}[]":
@@ -518,6 +558,28 @@ def _environments(text):
                     found.append((start, token.end(), name))
                     break
     return sorted(found)
+
+
+def _innermost(envs, pos):
+    """Nom de l'environnement le plus intérieur autour de `pos` (`envs` : _environments), ou None."""
+    index = bisect.bisect_left(envs, (pos,))
+    for begin, end, name in reversed(envs[max(0, index - 2000):index]):
+        if end > pos:
+            return name
+    return None
+
+
+def _last_top(window, token):
+    """Dernière place de `token` hors des groupes {…} dans `window` (un \\\\ dans \\makecell{…} ne finit pas la
+    ligne), ou -1."""
+    place = len(window)
+    while True:
+        place = window.rfind(token, 0, place)
+        if place < 0:
+            return -1
+        after = re.sub(r"\\.", "", window[place + len(token):])
+        if after.count("}") <= after.count("{") and not (token == "&" and window[place - 1:place] == "\\"):
+            return place
 
 
 def _bgroup(text, pos):
@@ -567,8 +629,8 @@ def _fill_dark(window, names, tables, tikz):
         if _is_dark(None, found.group(1), names):
             return True
     if tables:
-        row = window.rfind("\\\\")
-        cell = max(row, window.rfind("&"))
+        row = _last_top(window, "\\\\")
+        cell = max(row, _last_top(window, "&"))
         for found in _CELL.finditer(window):
             kind = found.group()[:5]
             if kind == "\\rowc" and not found.group().startswith("\\rowcolors") and found.start() < row:
@@ -601,7 +663,8 @@ class _Context:
     et environnements de l'auteur qui dessinent un fond foncé, surlignages et notes de couleur foncée."""
 
     def __init__(self, text, colors, outside):
-        self.text, self.colors = text, colors
+        self.text, self.colors, self.work = text, colors, _Work()
+        self.work.left *= 10  # fenêtres de quelques milliers de caractères par passage blanc
         self.envs = _environments(text)
         self.pages = [(found.start(), _is_dark(found.group(1), found.group(2), colors.at(found.start()), unknown=False))
                       for found in _PAGECOLOR.finditer(text) if outside(found.start())]
@@ -690,12 +753,14 @@ class _Context:
         remplissage foncé déclaré avant lui (5000 caractères au plus) dans son environnement — hors des environnements
         déjà refermés —, juste avant lui hors de tout environnement (\\tikz…), ou couleur de sa case."""
         text, names = self.text, self.colors.at(pos)
+        if self.work.left <= 0:
+            return False  # des dizaines de milliers de passages blancs : jugés sans fond
         page = [dark for start, dark in self.pages if start < pos]
         if page and page[-1] or _in_box(text, pos, names):
             return True
         if any(start <= pos < end for start, end in self.ranges[:bisect.bisect_right(self.ranges, (pos, len(text)))]):
             return True
-        options = _option_list(text, pos)
+        options = _option_list(text, pos, self.work)
         if options and options[2] in self.boxes:
             return True  # titre, police du titre… : posés sur le bandeau de titre, foncé d'ordinaire
         index = bisect.bisect_left(self.envs, (pos,))
@@ -704,9 +769,13 @@ class _Context:
         if names_around & self.dark_envs:
             return True
         for begin, _, name in around:
-            if name in self.boxes and not _FILL_KEY.search("[" + self._box_options(begin)) and (
-                    self.dark_boxes or name in ("shaded", "shaded*", "snugshade", "snugshade*")
-                    and _is_dark(None, "shadecolor", names, unknown=False)):
+            if name not in self.boxes:
+                continue
+            own = "[" + self._box_options(begin)
+            if _FILL_KEY.search(own):
+                if _fill_dark(own, names, False, False):
+                    return True  # la boîte pose son propre fond foncé, même loin ou sous un autre environnement
+            elif self.dark_boxes or name in ("shaded", "shaded*", "snugshade", "snugshade*") and _is_dark(None, "shadecolor", names, unknown=False):
                 return True
         picture = next(((begin, end) for begin, end, name in around if name in ("tikzpicture", "axis", "tikzcd")), None)
         if picture:
@@ -715,12 +784,19 @@ class _Context:
                 return True
         inner = [(begin, name) for begin, _, name in around if name != "document"]
         start = max(inner[0][0], pos - 5000) if inner else max(0, pos - 300)
-        window = list(text[start:pos])
+        self.work.left -= pos - start
+        pieces, cursor = [], start
         for begin, end, _ in self.envs[bisect.bisect_right(self.envs, (start,)):index]:
-            if end <= pos:
-                window[begin - start:end - start] = [" "] * (end - begin)
-        window = "".join(window)
+            if end <= pos and begin >= cursor:
+                pieces += [text[cursor:begin], " " * (end - begin)]
+                cursor = end
+        window = "".join(pieces) + text[cursor:pos]
         tables = any(_TABLES.search(name) for name in names_around)
+        table = next((begin for begin, _, name in reversed(around) if _TABLES.search(name)), None)
+        if table is not None:  # \\rowcolors posé juste avant le tableau
+            for found in _CELL.finditer(text, max(0, table - 300), table):
+                if found.group(3) is not None and any(_is_dark(None, value, names) for value in found.group(3, 4)):
+                    return True
         tikz = "tikzpicture" in names_around or "\\tikz" in window
         if tikz and self.dark_styles and ("every node" in self.dark_styles or any(
                 re.search(r"[\[,]\s*" + re.escape(style) + r"\s*[,\]]", window) for style in self.dark_styles)):
@@ -767,7 +843,8 @@ def _candidates(text, names, macros):
     caché par sa couleur (gardé s'il est posé sur un fond foncé) ; `fermé` : portée bornée (groupe, environnement…).
     `names` : couleurs de l'auteur (dict, ou _Colors pour les lire à la place de chaque usage)."""
     at = names.at if isinstance(names, _Colors) else (lambda pos: names)
-    spans, budget = [], [_SCAN_BUDGET]
+    spans, work, envs = [], _Work(), _environments(text)
+    cells = lambda pos: bool(_ALIGNMENTS.search(_innermost(envs, pos) or ""))  # noqa: E731
     for found in _COLOR_USE.finditer(text):
         if not _is_white(found.group(2), found.group(3), at(found.start())):
             continue
@@ -776,15 +853,15 @@ def _candidates(text, names, macros):
             if content:
                 spans.append((found.start(), content[1], content[0], True, True))
         else:
-            end, closed = _scope_end(text, found.end(), "color|normalcolor", budget)
-            options = _option_list(text, found.start())
+            end, closed = _scope_end(text, found.end(), "color|normalcolor", work, cells(found.start()))
+            options = _option_list(text, found.start(), work)
             if options and options[3] and options[1] < end:
                 end, closed = options[1], True  # « fonttitle=\\color{white} » : jusqu'au « ] » de la liste d'options
             spans.append((found.start(), end, found.end(), True, closed))
     for found in _FONTSIZE.finditer(text):
         size = _length_pt(found.group(1))
         if size is not None and size < 1:
-            end, closed = _scope_end(text, found.end(), _SIZES, budget)
+            end, closed = _scope_end(text, found.end(), _SIZES, work, cells(found.start()))
             spans.append((found.start(), end, found.end(), False, closed))
     for found in re.finditer(r"\\scalebox\s*\{([^{}]*)\}\s*(?:\[([^\]]*)\])?", text):
         scales = []
@@ -813,7 +890,7 @@ def _candidates(text, names, macros):
             if content:
                 spans.append((found.start(), content[1], content[0], False, True))
         else:  # déclaration : jusqu'à la fin de son groupe
-            end, closed = _scope_end(text, found.end(), "transparent", budget)
+            end, closed = _scope_end(text, found.end(), "transparent", work, cells(found.start()))
             spans.append((found.start(), end, found.end(), False, closed))
     for found in re.finditer(r"\\begin\s*\{\s*(tikzpicture|scope)\s*\}\s*\[([^\]]*)\]", text):
         if re.search(r"(?:^|,)\s*(?:text\s+)?opacity\s*=\s*0*(?:\.0\d*)?\s*(?:,|$)", found.group(2)):
@@ -848,7 +925,7 @@ def _candidates(text, names, macros):
             continue
         for found in re.finditer(r"\\" + name + r"(?![A-Za-z])\s*", text):
             if kind == "declaration":
-                end, closed = _scope_end(text, found.end(), "color|normalcolor|" + _SIZES, budget)
+                end, closed = _scope_end(text, found.end(), "color|normalcolor|" + _SIZES, work, cells(found.start()))
                 spans.append((found.start(), end, found.end(), colored, closed))
                 continue
             cursor, first, end = found.end(), None, None

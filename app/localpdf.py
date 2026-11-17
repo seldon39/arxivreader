@@ -195,7 +195,7 @@ class _Visible:
     def start_state():
         return {"ctm": IDENTITY, "fill": 0.0, "stroke": 0.0, "fillSpace": ("device", None), "strokeSpace": ("device", None),
                 "size": None, "scale": 1.0, "render": 0, "leading": 0.0, "cid": False, "alpha": 1.0, "strokeAlpha": 1.0,
-                "clip": None, "hiddenLayer": False, "lineWidth": 1.0}
+                "clip": None, "hiddenLayer": False, "lineWidth": 1.0, "plain": True}
 
     def run(self, operations, resources, state, depth=0):
         """(opérations gardées, flux changé) ; `state` (dict) : état graphique au départ, mis à jour."""
@@ -267,6 +267,10 @@ class _Visible:
                 state["alpha"] = float(extended["/ca"])
             if "/CA" in extended:
                 state["strokeAlpha"] = float(extended["/CA"])
+            if "/BM" in extended or "/SMask" in extended:  # fusion (Multiply…) ou masque : un aplat clair ne couvre plus
+                blend = extended.get("/BM", "/Normal")
+                blend = blend[0] if isinstance(blend, list) and blend else blend
+                state["plain"] = str(blend) in ("/Normal", "/Compatible") and str(extended.get("/SMask", "/None")) == "/None"
         elif operator == b"Tf" and len(args) >= 2:
             state["size"] = abs(float(args[1]))
             try:
@@ -298,17 +302,30 @@ class _Visible:
                     c0, d0, c1, d1 = state["clip"]
                     x0, y0, x1, y1 = max(x0, c0), max(y0, d0), min(x1, c1), min(y1, d1)
                 state["clip"] = (x0, y0, x1, y1)
+            clip = state["clip"]
             if operator in FILLS and points:
-                if state["fill"] is None or state["fill"] < DARK:
-                    self._background(_box(points))
-                elif state["alpha"] >= 0.95 and (path["rect"] or _upright(points)):
-                    self._paint(_box(points), False)  # aplat clair par-dessus : ce qu'il couvre n'est plus un fond
+                box = _clipped(_box(points), clip)
+                if box is None:
+                    pass
+                elif state["fill"] is None or state["fill"] < DARK:
+                    self._background(box)
+                elif state["alpha"] >= 0.95 and state["plain"] and (path["rect"] or _upright(points)):
+                    self._paint(box, False)  # aplat clair par-dessus : ce qu'il couvre n'est plus un fond
             if operator in STROKES and points and (state["stroke"] is None or state["stroke"] < DARK):
                 m = state["ctm"]
                 half = state["lineWidth"] * math.sqrt(abs(m[0] * m[3] - m[1] * m[2])) / 2
-                if 2 * half >= MIN_BACKGROUND_PT:  # trait épais (bandeau) : un fond
-                    x0, y0, x1, y1 = _box(points)
-                    self._background((x0 - half, y0 - half, x1 + half, y1 + half))
+                if 2 * half >= MIN_BACKGROUND_PT:  # trait épais : un bandeau (segment droit), ou les côtés d'un cadre
+                    if len(points) == 2 and (abs(points[0][0] - points[1][0]) < 0.01 or abs(points[0][1] - points[1][1]) < 0.01):
+                        sides = [_box(points)]
+                    elif path["rect"] and len(points) == 4:
+                        x0, y0, x1, y1 = _box(points)
+                        sides = [(x0, y0, x0, y1), (x1, y0, x1, y1), (x0, y0, x1, y0), (x0, y1, x1, y1)]
+                    else:
+                        sides = []
+                    for x0, y0, x1, y1 in sides:
+                        box = _clipped((x0 - half, y0 - half, x1 + half, y1 + half), clip)
+                        if box is not None:
+                            self._background(box)
             path.update(points=[], rect=True, clip=False)
         elif operator == b"sh":
             self._background(state["clip"] or self.page_box)
@@ -376,8 +393,9 @@ class _Visible:
                 self.grid.setdefault(cell, []).append(index)
 
     def _top(self, indices, x, y):
-        """Indice de la dernière forme de `indices` (croissants) qui recouvre (x, y), ou -1."""
-        for index in reversed(indices):
+        """Indice de la dernière forme de `indices` (croissants) qui recouvre (x, y), ou -1 ; au-delà de MAX_LOOKUPS
+        formes examinées sur la page, seules les 64 dernières de la case le sont encore."""
+        for index in reversed(indices if self.lookups <= MAX_LOOKUPS else indices[-64:]):
             self.lookups += 1
             (x0, y0, x1, y1), dark = self.shapes[index]
             margin = 1 if dark else 0
@@ -386,8 +404,6 @@ class _Visible:
         return -1
 
     def _on_dark(self, points):
-        if self.lookups > MAX_LOOKUPS:
-            return True  # page piégée (des milliers de formes) : texte blanc gardé plutôt que de s'y attarder
         for x, y in points:
             cell = (int(math.floor(x / GRID)), int(math.floor(y / GRID)))
             top = max(self._top(self.grid.get(cell, ()), x, y), self._top(self.big, x, y))
@@ -398,7 +414,7 @@ class _Visible:
     def _draw(self, name, resources, state, depth):
         """Do d'une image (fond, page scannée) ou d'un formulaire : nom d'une copie nettoyée à afficher à sa place,
         ou None (rien à changer)."""
-        from pypdf.generic import ContentStream, DecodedStreamObject, NameObject
+        from pypdf.generic import ContentStream
         xobjects = resources["/XObject"]
         reference = xobjects[name]
         target = reference.get_object()
@@ -408,7 +424,9 @@ class _Visible:
         if target.get("/Subtype") != "/Form":
             return None
         key = getattr(reference, "idnum", None) or id(target)
-        if key in self.walking or self.steps > MAX_STEPS:
+        if key in self.walking:  # formulaire qui s'affiche lui-même : l'appel est vidé (l'original garde son texte)
+            return self._copy(target, [], xobjects)
+        if self.steps > MAX_STEPS:
             return None
         self.steps += FORM_COST
         inner = dict(state, ctm=_mult(_numbers(target.get("/Matrix", IDENTITY)) or IDENTITY, state["ctm"]))
@@ -425,6 +443,11 @@ class _Visible:
                 self.walking.discard(key)
         if not changed:
             return None
+        return self._copy(target, kept, xobjects)
+
+    def _copy(self, target, kept, xobjects):
+        """Nom d'une copie du formulaire `target` qui affiche `kept`, rangée dans `xobjects` (ressources du flux)."""
+        from pypdf.generic import ContentStream, DecodedStreamObject, NameObject
         copy = DecodedStreamObject()
         copy.update({k: v for k, v in target.items() if k not in ("/Filter", "/DecodeParms", "/Length")})
         content = ContentStream(None, self.reader)
@@ -465,6 +488,14 @@ class _Visible:
         elif not blank and not hidden:
             self.running = False
         return hidden
+
+
+def _clipped(box, clip):
+    """Partie de `box` dans la découpe `clip` (ou toute la boîte sans découpe), None si elle est vide."""
+    if clip is None:
+        return box
+    box = (max(box[0], clip[0]), max(box[1], clip[1]), min(box[2], clip[2]), min(box[3], clip[3]))
+    return box if box[0] < box[2] and box[1] < box[3] else None
 
 
 def _upright(points):

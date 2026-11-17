@@ -236,9 +236,30 @@ class InvisibleTex(unittest.TestCase):
             self.assertIn("Visible paper text.", text, body)
         self.assertIn(r"\\[2pt] \color{white} Tail", run("", r"$x$ a\\[2pt] \color{white} Tail", opening="")[0])  # réglage d'ensemble
 
+    def test_fourth_review_cases(self):
+        """Boîte foncée autour d'une liste, cases et lignes d'alignement, \rowcolors avant le tableau : gardés."""
+        def run(body):
+            counted = []
+            text = texstructure.strip_hidden(r"\documentclass{article}\begin{document}" + "Opening words. " * 10 + body
+                                             + r"\end{document}", None, counted)
+            return text, counted[0]
+        kept = [(r"\begin{tcolorbox}[colback=black]\begin{itemize}\item \textcolor{white}{Item}\end{itemize}\end{tcolorbox}", "Item"),
+                (r"\begin{mdframed}[backgroundcolor=black]\begin{center}\color{white} Centered\end{center}\end{mdframed}", "Centered"),
+                (r"\begin{tcolorbox}[colback=black]" + "word " * 1500 + r"\textcolor{white}{Far}\end{tcolorbox}", "Far"),
+                (r"\begin{tabular}{ll}\color{white} a & Next \\ Row & c\end{tabular}", "Next"),
+                (r"\begin{tabular}{ll}\color{white} a & b \\ Row & c\end{tabular}", "Row"),
+                (r"\begin{align} a &= b \color{white} \\ c &= Dee \end{align}", "Dee"),
+                (r"\rowcolors{1}{black}{black}\begin{tabular}{ll}\textcolor{white}{Aa} & b\\\end{tabular}", "Aa"),
+                (r"\begin{tabular}{ll}\rowcolor{black}\makecell{x\\y} & \textcolor{white}{Cee}\end{tabular}", "Cee")]
+        for body, word in kept:
+            self.assertIn(word, run(body)[0], body)
+        self.assertNotIn("SECRET", run(r"\begin{tabular}{ll}\color{white} SECRET & b\end{tabular}")[0])
+
     def test_nested_declarations_stay_fast(self):
         import time
-        for body in (r"{\color{white}" * 4000 + "x" + "}" * 4000, r"\color{white}{" * 4000 + "x" + "}" * 4000):
+        for body in (r"{\color{white}" * 4000 + "x" + "}" * 4000, r"\color{white}{" * 4000 + "x" + "}" * 4000,
+                     "a b $x$ \\color{white} z " * 40000, "[a] [ \\color{white} z ] " * 40000,
+                     r"\begin{tabular}{ll}" + r"\cellcolor{black}\textcolor{white}{a} & b \\" * 20000 + r"\end{tabular}"):
             start = time.monotonic()
             texstructure.strip_hidden(r"\documentclass{article}\begin{document}" + "Words. " * 100 + body + r"\end{document}")
             self.assertLess(time.monotonic() - start, 5)

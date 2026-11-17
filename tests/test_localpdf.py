@@ -193,6 +193,27 @@ class InvisiblePdfText(unittest.TestCase):
         found = page("BT 3 Tr /F1 12 Tf 72 500 Td (ocr) Tj ET 0 Tr 0 g BT /F1 12 Tf 72 400 Td (between) Tj ET q 1 0 0 1 72 650 cm /A Do Q", "/XObject << /A 6 0 R >>", [outer, inner])
         self.assertEqual(found, ("between\nvisible A", 2))
 
+    def test_fourth_review_cases(self):
+        def page(*args):
+            found = localpdf.read_pdf(build_pdf(*args))
+            return found["pages"][0].strip(), found["hidden"]
+        banner, text = "0 0.2 0.5 rg 60 600 300 40 re f ", "1 g BT /F1 12 Tf 72 615 Td (%s) Tj ET"
+        # lisible : aplat clair découpé ailleurs, aplat clair en mode Multiply, bandeau tracé épais, bord d'un cadre épais
+        self.assertEqual(page(banner + "q 400 100 50 50 re W n 1 1 1 rg 0 0 612 792 re f Q " + text % "Banner"), ("Banner", 0))
+        self.assertEqual(page(banner + "/G0 gs 1 g 0 0 612 792 re f /G1 gs " + text % "Banner",
+                              "/ExtGState << /G0 << /BM /Multiply >> /G1 << /BM /Normal >> >>"), ("Banner", 0))
+        self.assertEqual(page("0 G 30 w 60 600 400 100 re S 1 g BT /F1 12 Tf 62 650 Td (Edge) Tj ET"), ("Edge", 0))
+        # invisible : cadre ou diagonale tracés (leur boîte n'est pas un fond), formulaire qui s'affiche lui-même
+        for content in ("0 G 5 w 0 0 612 792 re S " + text % "SECRET", "0 G 5 w 0 0 m 612 792 l S " + text % "SECRET"):
+            self.assertEqual(page(content), ("", 1), content)
+        loop = form_object("1 g BT /F1 12 Tf 0 0 Td (SECRET) Tj ET /A Do 0 g BT /F1 12 Tf 0 -20 Td (visible) Tj ET",
+                           "/Font << /F1 5 0 R >> /XObject << /A 6 0 R >>")
+        self.assertEqual(page("q 1 0 0 1 100 100 cm /A Do Q", "/XObject << /A 6 0 R >>", [loop]), ("visible", 1))
+        # des milliers de petites formes et de textes de remplissage : le texte blanc qui suit reste jugé
+        shapes = "0 g " + " ".join(f"{(i % 50) * 0.3} {(i // 50) * 0.3} 5 5 re f" for i in range(3000)) + " 1 g "
+        found = page(shapes + "BT /F1 12 Tf 30 30 Td (X) Tj ET " * 1700 + "BT /F1 12 Tf 30 30 Td (INJECTED) Tj ET")
+        self.assertNotIn("INJECTED", found[0])
+
     def test_traps_stay_fast(self):
         import time
         n = 3000
