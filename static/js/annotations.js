@@ -449,6 +449,25 @@ export class Annotator {
     try { this.items = await api.annotations(this.paperId); } catch { this.items = []; }
   }
 
+  // Quelque chose à exporter (bouton du panneau Notes, menu Fichier de l'app Mac) : fiche, passage, note, marque-page
+  exportable() {
+    return this.items.some((a) => (a.kind === "general" ? (a.note || "").trim() : a.kind === "bookmark"
+      || a.kind === "highlight" || a.note || a.state));
+  }
+
+  exportUrl() {
+    return `/api/papers/${encodeURIComponent(this.paperId)}/notes?lang=${document.documentElement.lang || "fr"}`;
+  }
+
+  // Export depuis le menu : le même fichier que le bouton du panneau (dossier Téléchargements)
+  exportFromMenu() {
+    if (!this.exportable()) { toast(t("notes.exportNone")); return; }
+    const link = h("a", { href: this.exportUrl(), download: "", hidden: true });
+    document.body.append(link);
+    link.click();
+    link.remove();
+  }
+
   // Après la mise en page (formules et figures) : surlignages, boutons de note, états
   apply() {
     // passages du HTML ; ceux du PDF ({pdf: …}) sont dessinés dans le PDF (pdfnotes.js)
@@ -1084,9 +1103,8 @@ export class Annotator {
     refresh();
     body.append(section);
     // export : fiche, énoncés et preuves, passages, en Markdown (dossier Téléchargements) ; .zip avec les images des zones
-    if (located.length || (this.general?.note || "").trim() || this.items.some((a) => a.kind === "bookmark")) {
-      body.append(h("div", { class: "panel-section" }, h("a", { class: "button small-button", download: "",
-        href: `/api/papers/${encodeURIComponent(this.paperId)}/notes?lang=${document.documentElement.lang || "fr"}` }, t("notes.export")),
+    if (this.exportable()) {
+      body.append(h("div", { class: "panel-section" }, h("a", { class: "button small-button", download: "", href: this.exportUrl() }, t("notes.export")),
         h("p", { class: "hint" }, t("notes.exportHint"))));
     }
     // fichier TeX de l'ordinateur : copie du projet avec les notes insérées (commentaires % ou notes en marge)

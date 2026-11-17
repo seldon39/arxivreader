@@ -723,6 +723,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             entry(tr("Afficher le PDF dans le Finder", "Show the PDF in Finder"), #selector(showPaperPDF), target: self),
             command(tr("Exporter la bibliothèque en .bib…", "Export the Library as .bib…"), "export.bib"),
             .separator(),
+            command(tr("Exporter les notes de l'article", "Export the Paper's Notes"), "reader.notesExport"),
+            command(tr("Importer des notes…", "Import Notes…"), "notes.import"),
+            .separator(),
             entry(tr("Afficher la bibliothèque dans le Finder", "Show the Library in Finder"), #selector(showLibraryFolder), target: self),
             entry(tr("Recopier une bibliothèque…", "Copy a Library…"), #selector(copyLibrary), "", target: self),
         ])

@@ -54,10 +54,26 @@ class Reliability(unittest.TestCase):
         item = annotations.list_for(PID)[0]
         self.assertTrue(item["image"])
         self.assertEqual(annotations.image_path(item).read_bytes(), PNG)
-        # image manquante : remise même si la note est déjà là
+        # image manquante : remise même si la note est déjà là (article redessiné s'il est affiché)
         annotations.image_path(item).unlink()
-        self.assertEqual(self.send(content, name)["unchanged"], 1)
+        report = self.send(content, name)
+        self.assertEqual((report["unchanged"], report["changed"]), (1, [PID]))
+        self.assertEqual(self.send(content, name)["changed"], [])  # image déjà là : rien n'a changé
         self.assertTrue(annotations.list_for(PID)[0]["image"])
+
+    def test_report_names_the_papers_that_changed(self):
+        """Le bilan nomme les articles dont les notes ont changé (menu Fichier : l'article affiché est redessiné)."""
+        note = annotations.create(PID, "highlight", SPAN, "yellow", "abc")
+        md = self.export_md()
+        new_library(self)
+        self.assertEqual(self.send(md)["changed"], [PID])
+        self.assertEqual(self.send(md)["changed"], [])  # déjà là : rien n'a changé
+        annotations.delete(annotations.list_for(PID)[0]["id"])
+        self.assertEqual(self.send(md)["changed"], [])  # supprimée ici depuis : elle ne revient pas
+        new_library(self)
+        annotations.create(PID, "highlight", SPAN, "yellow", "abc")  # autre annotation, même article
+        self.assertEqual(self.send(md)["changed"], [PID])
+        self.assertTrue(note["uid"])
 
     def test_bad_or_old_images_are_ignored(self):
         annotations.create(PID, "highlight", target={"pdf": {"page": 2, "rect": [0.1, 0.2, 0.5, 0.4]}}, image=PNG)

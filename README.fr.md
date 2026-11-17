@@ -109,7 +109,8 @@ augmenté `VERSION` dans `app/version.py`) : étiquette Git, envoi sur GitHub, i
 - **Menus** refaits d'après les fonctions de l'app ; ce qui ne s'applique pas est grisé, et les libellés suivent l'état
   (« Afficher le HTML », « Masquer le sommaire », « Zoom avant » dans le PDF…). **Fichier** : importer depuis arXiv (⌘O) ou
   un PDF / TeX (⇧⌘O), ajouter l'article lu à la bibliothèque, copier son BibTeX, l'ouvrir sur arXiv, montrer son PDF dans
-  le Finder, exporter toute la bibliothèque en .bib (« Afficher la bibliothèque dans le Finder » ouvre le dossier des
+  le Finder, exporter ses notes (le fichier du bouton de l'onglet Notes), importer des notes, par exemple venues d'un
+  autre ordinateur (comme dans les Réglages), exporter toute la bibliothèque en .bib (« Afficher la bibliothèque dans le Finder » ouvre le dossier des
   articles). **Édition** : rechercher dans l'article (⌘F), dans la bibliothèque (⌥⌘F), marque-page (⌘D). **Présentation** :
   HTML / PDF (⌥⌘P), sommaire (⌃⌘S), onglets du panneau (⌥⌘1…⌥⌘5), panneau (⌥⌘0), replier les preuves, zoom, largeur du
   texte. **Aller** : Bibliothèque, Feed, Recherche, Papiers liés (⌃⌘1…⌃⌘4), page précédente / suivante, énoncés (j / k / p

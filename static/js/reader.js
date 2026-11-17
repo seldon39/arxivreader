@@ -2601,6 +2601,7 @@ class Reader {
     switch (name) {
       case "reader.library": if (!this.paper.in_library && !this.paper.archived_of) this.libraryButton?.click(); break;
       case "reader.bibtex": copyPaperBibtex(this.paper.id); break;
+      case "reader.notesExport": this.annotator?.exportFromMenu(); break;
       case "reader.bookmark": this.addBookmark(); break;
       case "view.mode": this.viewSwitch?.querySelector('button[aria-pressed="false"]')?.click(); break;
       case "view.toc": this.toggle("toc"); break;

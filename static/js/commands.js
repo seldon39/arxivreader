@@ -7,6 +7,7 @@ import { api } from "./api.js";
 import { saveBibtex } from "./bibtex.js";
 import { forSystem, t, tn } from "./i18n.js";
 import { markdownToHtml } from "./markdown.js";
+import { importNotes } from "./settings.js";
 import { h, toast, toastError } from "./util.js";
 
 const mac = () => window.webkit?.messageHandlers?.arxivreader || null;
@@ -88,7 +89,24 @@ async function command(name) {
     return;
   }
   if (name === "export.bib") { saveBibtex(() => api.libraryBibtex(), "/api/library.bib"); return; }
+  if (name === "notes.import") { pickNotes(); return; }
   if (reader && !reader.destroyed) reader.menuCommand(name);
+}
+
+// Notes exportées par arXivReader (un article, ou l'export complet des Réglages) ; l'article affiché est redessiné si
+// ses notes ont changé
+function pickNotes() {
+  const input = h("input", { type: "file", accept: ".md,.zip,text/markdown,application/zip", multiple: true, hidden: true });
+  input.addEventListener("change", async () => {
+    const files = [...input.files];
+    input.remove();
+    const report = await importNotes(files);
+    const shown = readerState?.id;
+    if (shown && report?.changed?.includes(shown) && pageOf(location.hash) === "paper") dispatchEvent(new HashChangeEvent("hashchange"));
+  });
+  input.addEventListener("cancel", () => input.remove());
+  document.body.append(input);
+  input.click();
 }
 
 document.addEventListener("app:command", (event) => {

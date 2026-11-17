@@ -209,7 +209,8 @@ def import_files(files, accept=()):
     importé de leurs fichiers tant qu'ils ne sont pas acceptés)."""
     own = key_id(_raw(_private_key().public_key()))
     known = trusted()
-    report = {"papers": 0, "folders": 0, "added": 0, "updated": 0, "unchanged": 0, "deleted": 0, "missing": [], "rejected": [], "untrusted": {}}
+    report = {"papers": 0, "folders": 0, "added": 0, "updated": 0, "unchanged": 0, "deleted": 0, "missing": [], "rejected": [], "untrusted": {},
+              "changed": []}  # articles dont les notes ont changé (la page affichée se recharge si c'est le sien)
     verified = []
     for name, text in _texts(files):
         try:
@@ -305,11 +306,16 @@ def _import_paper(payload, report, images=None):
     if not paper_id:
         return
     paper_id = _version_of_notes(payload["paper"], paper_id)
+    outcomes, repaired = [], False
     for item in payload.get("annotations") or []:
         outcome = annotations.import_one(paper_id, item)
-        report[outcome] += 1
+        outcomes.append(outcome)
         if images and isinstance(item, dict) and item.get("uid") in images:  # zone du PDF : son image (même sans changement, si elle manque)
-            annotations.import_image(paper_id, item["uid"], images[item["uid"]], replace=outcome != "unchanged")
+            repaired |= annotations.import_image(paper_id, item["uid"], images[item["uid"]], replace=outcome != "unchanged")
     for gone in payload.get("deleted") or []:  # après les notes : une note modifiée plus tard qu'une suppression reste
         if isinstance(gone, dict):
-            report[annotations.import_deletion(paper_id, gone.get("uid"), gone.get("deleted_at"))] += 1
+            outcomes.append(annotations.import_deletion(paper_id, gone.get("uid"), gone.get("deleted_at")))
+    for outcome in outcomes:
+        report[outcome] += 1
+    if (repaired or any(outcome != "unchanged" for outcome in outcomes)) and paper_id not in report["changed"]:
+        report["changed"].append(paper_id)

@@ -565,14 +565,15 @@ const asBase64 = (file) => new Promise((resolve, reject) => {
   reader.readAsDataURL(file);
 });
 
-async function importNotes(list) {
-  if (!list.length) return;
+// Import des notes (Réglages, menu Fichier de l'app Mac) ; renvoie le bilan (null : rien d'importé)
+export async function importNotes(list) {
+  if (!list.length) return null;
   try {
     const files = await Promise.all(list.map(asBase64));
     let report = await api.importNotes(files);
     const unknown = Object.entries(report.untrusted || {});
     if (unknown.length) {  // notes d'un autre ordinateur : l'accepter une fois, ses fichiers passent ensuite
-      if (!(await trustDialog(unknown))) return;
+      if (!(await trustDialog(unknown))) return null;
       report = await api.importNotes(files, unknown.map(([key]) => key));
     }
     const parts = [t("settings.notesImported", { added: report.added, updated: report.updated })];
@@ -582,8 +583,10 @@ async function importNotes(list) {
     if (report.rejected.length) parts.push(t("settings.notesImportRejected", { n: report.rejected.length }));
     if (report.missing.length) parts.push(t("settings.notesImportMissing", { n: report.missing.length }));
     toast(parts.join(" "), { duration: 9000, error: !report.added && !report.updated && report.rejected.length > 0 });
+    return report;
   } catch (error) {
     toast(t("error.generic", { message: error.message }), { error: true });
+    return null;
   }
 }
 

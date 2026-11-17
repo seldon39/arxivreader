@@ -103,8 +103,9 @@ that bundles Python and its packages. `macos/release.sh` publishes it as a new v
   window (two papers side by side); ⌘N opens a new window.
 - **Menus** built from the app's functions; what does not apply is greyed out, and labels follow the state ("Show HTML",
   "Hide Contents", "Zoom In" in the PDF…). **File**: import from arXiv (⌘O) or a PDF / TeX file (⇧⌘O), add the paper being
-  read to the library, copy its BibTeX, open it on arXiv, show its PDF in the Finder, export the whole library as .bib
-  ("Show the library in Finder" opens the folder of the papers). **Edit**: find in the paper (⌘F), in the library (⌥⌘F),
+  read to the library, copy its BibTeX, open it on arXiv, show its PDF in the Finder, export its notes (the
+  file of the Notes tab button), import notes, for example from another computer (as in Settings), export the whole
+  library as .bib ("Show the library in Finder" opens the folder of the papers). **Edit**: find in the paper (⌘F), in the library (⌥⌘F),
   bookmark (⌘D). **View**: HTML / PDF (⌥⌘P), contents (⌃⌘S), panel tabs (⌥⌘1…⌥⌘5), panel (⌥⌘0), fold the proofs, zoom, text
   width. **Go**: Library, Feed, Search, Related papers (⌃⌘1…⌃⌘4), previous / next page, statements (j / k / p recalled).
   **Help**: keyboard shortcuts.
