@@ -1,0 +1,36 @@
+tests/test_localpdf.py
+  s_2e78fe3aad7ffd::t_23ce4e3112323c 154-192,195-213
+  s_2e78fe3aad7ffd::t_ac07ed6c9b3364 193-194
+MAINTENANCE.md
+  s_2e78fe3aad7ffd::t_258b657ce75fd6 471-473,475-476,481-491,496-503,505-507,512-516
+app/texstructure.py
+  s_2e78fe3aad7ffd::t_ac60742572794b 876
+  s_2e78fe3aad7ffd::t_7f1b42be46b7ba 418,420-421
+  s_2e78fe3aad7ffd::t_b438a22bfdcc69 14
+  s_2e78fe3aad7ffd::t_3753a0669f531b 278,288-290,407-417,419,422-429,431-437,439-442,445,447,450-455,461-462,464-504,543-544,553-555,565-566,570-571,573-577
+  s_2e78fe3aad7ffd::t_88a7e9e11a2c6a 770,779-782,787,804,806,809-825,851
+  s_2e78fe3aad7ffd::t_4d5dd0e7300c79 590-598,600-601,608-609,621-622,625-683,687-691,696-700,702-704,706-716
+app/localpdf.py
+  s_2e78fe3aad7ffd::t_4ef7ffe415b9a0 69-70,77-78,190-191,198,282-283,304-311,319-320,324,327-332,336-337,343-344,348-366,369-373,375-386,389-390,393-394,413,434-436,448-449,451-456,470-483,501,503-508
+  s_2e78fe3aad7ffd::t_6cb2dad76c5ab2 184-185
+app/structure.py
+  s_2e78fe3aad7ffd::t_f81a7eff91a399 107,112,260
+tests/test_texstructure.py
+  s_2e78fe3aad7ffd::t_f595b1c382ef91 192-245
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "d5af5cee745015e0c9f16966853035571eb2d486",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
