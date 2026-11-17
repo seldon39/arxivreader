@@ -305,10 +305,11 @@ def _sync(client, importer, careful):
     vanished = sum(1 for fid, (key, _) in mapped.items() if fid in local_folders and key not in subs)
     hold_folders = careful and vanished > 1 and vanished * 2 > len(mapped)  # presque toutes disparues : on attend
     held = set()  # sous-collections disparues, gardées pour l'instant (synchronisation automatique)
-    # dossiers supprimés à ce passage : leurs articles restent, remis à la racine. Supprimé ici (`dropped`) : un élément
-    # sorti de l'arbre l'est par notre suppression ; supprimé dans Zotero (`binned`) : seulement s'il porte encore la
-    # sous-collection (à la corbeille de Zotero, ou ses sous-collections), sinon on ne sait pas s'il a été retiré
-    dropped, binned = set(), set()
+    # dossiers supprimés : leurs articles restent, remis à la racine. Supprimé ici : un élément sorti de l'arbre l'est
+    # par notre suppression de la sous-collection (même à un passage précédent interrompu) ; supprimé dans Zotero
+    # (`binned`, `binned_folders`) : seulement s'il porte encore la sous-collection (à la corbeille de Zotero, ou ses
+    # sous-collections), sinon on ne sait pas s'il a été retiré
+    binned, binned_folders = set(), set()
     for folder_id, (key, name) in mapped.items():
         here, there = local_folders.get(folder_id), subs.get(key)
         if here and there:
@@ -335,6 +336,7 @@ def _sync(client, importer, careful):
                 continue
             folders.delete(folder_id)
             binned.add(key)
+            binned_folders.add(str(folder_id))
             report["folders"] += 1
         elif there and not here:
             # dossier supprimé ici : la sous-collection aussi (pas ses éléments) ; mais si Zotero y a rangé quelque
@@ -352,7 +354,6 @@ def _sync(client, importer, careful):
                 except folders.FolderError:
                     pass
             client.call("DELETE", f"/users/{client.user}/collections/{key}", version=there["version"])
-            dropped.add(str(folder_id))
             report["folders"] += 1
     for folder_id, folder in local_folders.items():
         if folder_id in mapped:
@@ -413,9 +414,12 @@ def _sync(client, importer, careful):
         binned.add(current)
         stack += below.get(current, [])
     local = {pid: keep(places) for pid, places in _local().items()}
-    # articles qui étaient dans un dossier supprimé ici à ce passage : leur élément hors de l'arbre l'est à cause du
-    # dossier, pas d'un retrait (le dossier part, pas ses articles)
-    orphaned = {pid for pid, places in before.items() if places & dropped}
+    # articles qui étaient dans un dossier supprimé ici (il n'existe plus, et pas par Zotero) : leur élément hors de
+    # l'arbre l'est à cause du dossier, pas d'un retrait (le dossier part, pas ses articles). Places d'avant gardées
+    # telles quelles (`kept_before`) tant que l'élément n'est pas remis à la racine : un refus ou une attente ne le perd pas
+    existing = {str(f["id"]) for f in folders.list_folders()}
+    orphaned = {pid for pid, places in before.items() if places - {LIBRARY} - existing - binned_folders}
+    kept_before = dict(before)
     before = {pid: keep(places) | (places & held_places) for pid, places in before.items()}
     papers = {p["id"]: p for p in db.list_all_papers()}
     items = dict(saved_items)  # article → élément lié
@@ -507,7 +511,7 @@ def _sync(client, importer, careful):
     leaving = [entry for entry in plan if LIBRARY in entry[2] and LIBRARY not in entry[5]]
     if careful and (held or _massive(len(leaving), len(local))):
         report["held"] += len(leaving)
-        _save(items, {pid: before[pid] for pid in before if pid in items}, who, report)
+        _save(items, {pid: kept_before[pid] if pid in rescued else before[pid] for pid in before if pid in items}, who, report)
         return report
 
     results, updates, changes = {}, [], []
@@ -559,6 +563,8 @@ def _sync(client, importer, careful):
             if index in written:
                 report["toZotero"] += joined
                 report["removedZotero"] += left
+            elif pid in rescued:
+                results[pid] = kept_before[pid]  # remise à la racine refusée : refaite au prochain passage
             elif before.get(pid):
                 results[pid] = before[pid]  # refusé (changé entre-temps) : le changement d'ici sera repris au prochain passage
             else:

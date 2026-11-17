@@ -8,6 +8,7 @@ import pathlib
 import shutil
 import sqlite3
 import tempfile
+import threading
 import time
 import unittest
 import zipfile
@@ -1070,3 +1071,35 @@ class Unavailable(Base):
         fetch.assert_called_once()
         self.assertNotIn("pagesPending", library.load_structure(ID))
         self.assertEqual(set(pages["pages"].values()), {1})
+
+    def test_pages_pending_survives_a_new_analysis(self):
+        with mock.patch.object(library, "fetch_metadata", return_value=metadata(1)), \
+             mock.patch.object(library, "fetch_html", return_value=None), \
+             mock.patch.object(library, "fetch_source", return_value=self.TEX), \
+             mock.patch.object(library, "fetch_pdf", side_effect=arxiv.ArxivUnavailable("503")):
+            library.import_paper(ID)
+        saved = json.loads((library.paper_dir(ID) / "structure.json").read_text(encoding="utf-8"))
+        self.assertTrue(library.reanalyze(ID, saved)["pagesPending"])
+
+    def test_pdf_unavailable_is_said_at_once_for_a_while(self):
+        self.installed(1)
+        paper = db.get_paper(ID)
+        with mock.patch.object(library, "fetch_pdf", side_effect=arxiv.ArxivUnavailable("503")) as fetch:
+            for _ in range(2):
+                with self.assertRaises(arxiv.ArxivUnavailable):
+                    library.ensure_pdf(paper)
+        fetch.assert_called_once()
+        library._pdf_unavailable.clear()
+        with mock.patch.object(library, "fetch_pdf", return_value=b"%PDF-1.4"):
+            self.assertTrue(library.ensure_pdf(paper).exists())
+
+    def test_failed_import_does_not_wait_for_the_source(self):
+        released = threading.Event()
+        def slow_source(*_):
+            released.wait(5)
+        started = time.monotonic()
+        with mock.patch.object(library, "fetch_metadata", side_effect=ArxivError("not found")), \
+             mock.patch.object(library, "fetch_source", side_effect=slow_source), self.assertRaises(ArxivError):
+            library.import_paper(ID)
+        self.assertLess(time.monotonic() - started, 2)
+        released.set()

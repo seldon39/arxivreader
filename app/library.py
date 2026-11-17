@@ -11,6 +11,7 @@ import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 
 from pathlib import Path
 
@@ -80,11 +81,24 @@ def stored_key(arxiv_id):
     return key
 
 
+@contextmanager
+def _background():
+    """Un fil pour la source TeX, demandée pendant la lecture de la fiche. Erreur (fiche introuvable, hors ligne) :
+    elle est dite tout de suite, sans attendre les nouveaux essais de la source (son résultat est abandonné)."""
+    pool = ThreadPoolExecutor(1)
+    try:
+        yield pool
+    except BaseException:
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
+    pool.shutdown(wait=True)
+
+
 def import_paper(query, add_to_library=True, must_exist=False):
     arxiv_id, _ = parse_arxiv_id(query)
     # source TeX (souvent plusieurs Mo, l'étape la plus longue) demandée tout de suite, sans attendre la fiche
     # d'arXiv ni la page et ses figures, qui se font pendant ce temps : le résultat est le même, en moins de temps
-    with ThreadPoolExecutor(1) as background:
+    with _background() as background:
         pending_source = background.submit(_source, arxiv_id, None)
         meta = fetch_metadata(arxiv_id)
         paper_id = stored_key(arxiv_id)
@@ -590,7 +604,7 @@ def import_version(paper_id, version):
     arxiv_id = db.get_paper(archive_id)["arxiv_id"]
     staging = None
     try:
-        with ThreadPoolExecutor(1) as background:
+        with _background() as background:
             pending_source = background.submit(_source, arxiv_id, version)
             meta = fetch_metadata(f"{arxiv_id}v{version}")
             if meta.version != version:
@@ -701,7 +715,7 @@ def _reimport_installed(paper):
     ar5iv = paper["source"] == "ar5iv"
     if ar5iv and latest_version(arxiv_id) != version:  # ar5iv sert sa propre version de l'article : pas sous le numéro d'une plus ancienne
         return
-    with ThreadPoolExecutor(1) as background:
+    with _background() as background:
         pending_source = background.submit(_source, arxiv_id, version)
         meta = fetch_metadata(f"{arxiv_id}v{version}")
         with paper_lock(paper["id"]):
@@ -766,6 +780,8 @@ def reanalyze(paper_id, previous):
             pdf = folder / "paper.pdf"
             if pdf.exists():
                 texstructure.locate_pages(structure, pdf.read_bytes())
+            elif previous.get("pagesPending"):
+                structure["pagesPending"] = True  # PDF toujours attendu : ses pages seront cherchées à son arrivée
             structure["source"] = previous.get("source")
             structure["tex"] = previous.get("tex")
             if local:  # énoncés repérés par leur \label, sinon par leur texte
@@ -785,20 +801,49 @@ def reanalyze(paper_id, previous):
     return structure
 
 
+PDF_RETRY_AFTER = 60  # arXiv n'a pas répondu pour ce PDF : pas de nouvelle série d'essais avant (secondes)
+_pdf_unavailable = {}  # article → instant jusqu'auquel l'échec est redit tout de suite
+
+
 def ensure_pdf(paper):
-    """Chemin du PDF de l'article, téléchargé depuis arXiv s'il manque ; None s'il est introuvable."""
-    path = paper_dir(paper["id"]) / "paper.pdf"
-    with paper_lock(paper["id"]):
-        if not path.exists():
+    """Chemin du PDF de l'article, téléchargé depuis arXiv s'il manque ; None s'il est introuvable. Le téléchargement
+    (et ses nouveaux essais si arXiv ne répond pas) se fait hors du verrou de l'article : l'import, la mise à jour et
+    les autres pages ne l'attendent pas ; ArxivUnavailable redit sans nouvel essai pendant PDF_RETRY_AFTER."""
+    pid = paper["id"]
+    path = paper_dir(pid) / "paper.pdf"
+    needs_text = lambda: paper.get("source") == "none" and not (path.parent / "text.json").exists()
+    if path.exists() and not needs_text():
+        return path
+    for _ in range(2):  # une seconde fois si une mise à jour a changé la version pendant le téléchargement
+        with paper_lock(pid):
+            current = db.get_paper(pid)
+            if path.exists() or not current:
+                break
             if not paper.get("arxiv_id"):  # PDF importé dont le fichier a disparu : rien à télécharger
                 return None
-            # version relue : une mise à jour a pu s'achever pendant l'attente du verrou
-            data = fetch_pdf(paper["arxiv_id"], db.get_paper(paper["id"])["version"])
-            if not data:
-                return None
-            write_atomic_bytes(path, data)
+            version = current["version"]  # relue : une mise à jour a pu s'achever pendant l'attente du verrou
+        if _pdf_unavailable.get(pid, 0) > time.monotonic():
+            raise ArxivUnavailable(f"PDF of {paper['arxiv_id']}: arXiv did not answer a moment ago")
+        try:
+            data = fetch_pdf(paper["arxiv_id"], version)
+        except ArxivUnavailable:
+            _pdf_unavailable[pid] = time.monotonic() + PDF_RETRY_AFTER
+            raise
+        _pdf_unavailable.pop(pid, None)
+        if not data:
+            return None
+        with paper_lock(pid):
+            current = db.get_paper(pid)
+            if path.exists() or not current:
+                break
+            if current["version"] == version and path.parent.is_dir():
+                write_atomic_bytes(path, data)
+                break
+    if not path.exists():
+        return None
+    with paper_lock(pid):
         # déposé en PDF seul, importé avant que son texte soit extrait (ou PDF manqué à l'import) : extrait maintenant
-        if paper.get("source") == "none" and not (path.parent / "text.json").exists():
+        if needs_text() and path.exists():
             _write_pdf_text(path.parent, path.read_bytes())
     return path
 

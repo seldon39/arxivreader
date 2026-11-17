@@ -332,6 +332,24 @@ class Sync(unittest.TestCase):
                 self.assertEqual(self.run_sync()["removedHere"], 0)  # et ensuite
                 self.assertTrue(db.get_paper("1003.2523")["in_library"])
 
+    def test_refused_rescue_is_retried(self):
+        """Remise à la racine refusée (élément changé entre-temps) : l'article reste, et elle est refaite ensuite."""
+        self.run_sync()
+        self.zotero.add_item({"itemType": "preprint", "title": "Review", "archiveID": "arXiv:1003.2523", "collections": []})
+        folder = folders.create("Toeplitz")
+        self.run_sync()
+        item = next(k for k, i in self.zotero.items.items() if i["data"].get("archiveID") == "arXiv:1003.2523")
+        self.zotero.items[item]["data"]["collections"] = [self.zotero.named("Toeplitz")]
+        self.run_sync()
+        folders.delete(folder["id"])
+        self.zotero.refuse.add(item)
+        self.assertEqual(self.run_sync()["removedHere"], 0)
+        self.zotero.refuse.clear()
+        self.assertEqual(self.run_sync()["removedHere"], 0)
+        self.assertTrue(db.get_paper("1003.2523")["in_library"])
+        self.assertIn("arXivReader", self.places(item))
+        self.assertEqual(self.run_sync()["removedHere"], 0)
+
     def test_deleted_or_trashed_item(self):
         # supprimé de Zotero (corbeille vidée) : retiré d'ici, comme à la corbeille ; rajouté ensuite ici : nouvel élément
         a = save("0806.2370", "Toeplitz operators")
