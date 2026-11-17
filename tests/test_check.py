@@ -16,7 +16,8 @@ class Check(unittest.TestCase):
 
     def run_with(self, checks, system, argv=("--notify",)):
         with mock.patch.object(check, "CHECKS", checks), mock.patch.object(check, "REPORT", self.report), \
-             mock.patch.object(check, "system", return_value=system), mock.patch.object(check.alerts, "display") as display:
+             mock.patch.object(check, "system", return_value=system), mock.patch.object(check.alerts, "display") as display, \
+             mock.patch("builtins.print"):
             code = check.main(list(argv))
         return code, display
 
@@ -47,7 +48,7 @@ class Check(unittest.TestCase):
         import httpx
         def down():
             raise httpx.ConnectError("[Errno 8] nodename nor servname provided, or not known")
-        checks = [("arXiv", down), ("Zotero", down), ("Assistant IA", lambda: "claude (opus)")]
+        checks = [("arXiv", down), ("Zotero", down), (check.CLAUDE, lambda: "CLI 2.1.321, connecté (opus)")]
         with mock.patch.object(check, "RETRY_WAIT", 0), mock.patch.object(check.time, "sleep") as sleep:
             code, display = self.run_with(checks, {"macos": "27.2", "webkit": "1"})
         self.assertEqual((code, display.call_count, sleep.call_count), (0, 0, check.RETRIES))
@@ -112,15 +113,102 @@ class Check(unittest.TestCase):
         self.assertEqual(code, 0)
 
     def test_not_a_change(self):
-        # assistant pas lancé, aucune version publiée : non vérifié, pas « changé »
+        # assistant pas lancé, pas installé, sans clé, aucune version publiée : non vérifié, pas « changé »
         with mock.patch("app.ai.status", return_value={"provider": "local", "available": False}), \
+             mock.patch("app.ai.current_model", return_value="local:x"), \
              mock.patch.object(check.db, "DB_PATH", self.report), mock.patch.object(check.db, "get_settings", return_value={}):
             self.report.write_text("{}")
             with self.assertRaises(check.Skip):
-                check.ai_assistant()
+                check.local_assistant()
+            with mock.patch.object(check.providers, "find", return_value=None), self.assertRaises(check.Skip):
+                check.codex_assistant()
+            with self.assertRaises(check.Skip):
+                check.gemini_assistant()
         with mock.patch.object(check.updates, "fetch", return_value=None), self.assertRaises(check.Skip):
             check.github_updates()
 
+    def test_assistant_checks(self):
+        """Claude, Codex, Gemini vérifiés qu'ils soient choisis ou non : version du CLI, connexion, modèles."""
+        settings = {"aiProvider": "codex", "geminiApiKey": "k"}
+        run = mock.Mock(return_value=mock.Mock(returncode=0, stdout="codex-cli 0.162.1\n", stderr=""))
+        with mock.patch.object(check.db, "DB_PATH", self.report), mock.patch.object(check.db, "get_settings", return_value=settings), \
+             mock.patch.object(check.subprocess, "run", run):
+            self.report.write_text("{}")
+            with mock.patch.object(check.providers, "find", return_value="/x/codex"), \
+                 mock.patch.object(check.providers, "status", return_value={"loggedIn": True, "chosen": "gpt-5"}):
+                detail, seen = check.codex_assistant()
+            self.assertEqual(detail, "CLI 0.162.1, connecté (gpt-5), assistant choisi")
+            self.assertEqual(seen, {"id": "codex", "name": "Codex", "version": "0.162.1", "followed": True})
+            self.assertEqual(run.call_args.args[0], ["/x/codex", "--version"])
+            # Claude : CLI intégré au SDK (suivi avec arXivReader), pas connecté : non vérifié, version retenue
+            run.return_value = mock.Mock(returncode=0, stdout="2.1.321 (Claude Code)\n", stderr="")
+            with mock.patch("app.ai.cli_path", return_value="/sdk/_bundled/claude"), \
+                 mock.patch("app.ai.status", return_value={"loggedIn": False}):
+                with self.assertRaises(check.Skip) as skipped:
+                    check.claude_assistant()
+            self.assertIn("non connecté", str(skipped.exception))
+            self.assertEqual(skipped.exception.assistant["version"], "2.1.321")
+            self.assertFalse(skipped.exception.assistant["followed"])
+            # CLI en échec (Node trop ancien) : le numéro du message n'est pas une version
+            run.return_value = mock.Mock(returncode=1, stdout="", stderr="SyntaxError … Node.js v16.20.2")
+            with mock.patch.object(check.providers, "find", return_value="/x/codex"), self.assertRaises(RuntimeError):
+                check.codex_assistant()
+            # sortie illisible : changé
+            run.return_value = mock.Mock(returncode=0, stdout="", stderr="unknown option")
+            with mock.patch.object(check.providers, "find", return_value="/x/codex"), self.assertRaises(check.Changed):
+                check.codex_assistant()
+            # Gemini : modèles ; clé refusée, quota : non vérifié ; aucun modèle : changé
+            with mock.patch.object(check.providers, "gemini_models", return_value=["gemini-3-flash", "gemini-3-pro"]):
+                detail, seen = check.gemini_assistant()
+            self.assertEqual(seen["version"], ["gemini-3-flash", "gemini-3-pro"])
+            self.assertTrue(detail.startswith("2 modèles"))
+            for code in ("login", "limit"):
+                with mock.patch.object(check.providers, "gemini_models", side_effect=check.providers.ProviderError("x", code)), \
+                     self.assertRaises(check.Skip):
+                    check.gemini_assistant()
+            with mock.patch.object(check.providers, "gemini_models", return_value=[]), self.assertRaises(check.Changed):
+                check.gemini_assistant()
+
+    def test_assistant_change_is_reported(self):
+        """Nouvelle version de Codex, modèle Gemini retiré : notification ; CLI intégré au SDK, modèle seulement ajouté :
+        dans le rapport, sans notification ; un assistant pas vu (pas de réseau) garde sa référence."""
+        def with_versions(codex, gemini, claude="2.1.321"):
+            def codex_check():
+                return "ok", {"id": "codex", "name": "Codex", "version": codex, "followed": True}
+            def gemini_check():
+                if gemini is None:
+                    raise check.Skip("quota atteint")
+                return "ok", {"id": "gemini", "name": "Gemini", "version": gemini, "followed": True}
+            def claude_check():
+                raise check.Skip("non connecté", {"id": "claude", "name": "Claude", "version": claude, "followed": False})
+            return [(check.CODEX, codex_check), (check.GEMINI, gemini_check), (check.CLAUDE, claude_check)]
+        system = {"macos": "27.2", "webkit": "1"}
+        code, display = self.run_with(with_versions("0.162.1", ["g-flash", "g-pro"]), system)
+        self.assertEqual(display.call_count, 0)  # première fois : la référence
+        code, display = self.run_with(with_versions("0.162.1", ["g-flash", "g-pro", "g-ultra"], "2.1.400"), system)
+        self.assertEqual((code, display.call_count), (0, 0))
+        report = check.json.loads(self.report.read_text(encoding="utf-8"))
+        self.assertIn("Gemini : modèles ajoutés : g-ultra", check.text(report))
+        self.assertIn("Claude 2.1.321 → 2.1.400 (CLI intégré au SDK", check.text(report))
+        code, display = self.run_with(with_versions("0.163.0", None, "2.1.400"), system)  # Gemini pas vu : gardé
+        self.assertEqual(display.call_count, 1)
+        self.assertEqual(display.call_args.args[1], "Un assistant IA a changé")
+        self.assertIn("Codex 0.162.1 → 0.163.0", display.call_args.args[2])
+        self.assertIn("model_reasoning_effort", display.call_args.args[2])
+        self.assertEqual(display.call_args.kwargs.get("route"), "#/check")
+        code, display = self.run_with(with_versions("0.163.0", ["g-flash", "g-ultra"], "2.1.400"), system)
+        self.assertEqual(display.call_count, 1)
+        self.assertIn("Gemini : modèles retirés : g-pro", display.call_args.args[2])
+        self.assertIn("thinkingLevel", display.call_args.args[2])
+        # à la main : signalé dans le rapport, référence gardée ; la tâche hebdomadaire le notifie ensuite
+        self.run_with(with_versions("0.164.0", ["g-flash", "g-ultra"], "2.1.400"), system, argv=())
+        code, display = self.run_with(with_versions("0.164.0", ["g-flash", "g-ultra"], "2.1.400"), system)
+        self.assertIn("Codex 0.163.0 → 0.164.0", display.call_args.args[2])
+        # rapport d'une version précédente (sans assistants) ou abîmé : aucune comparaison
+        self.report.write_text('{"assistantsBaseline": {"codex": "0.1"}, "assistantChanges": [null]}')
+        code, display = self.run_with(with_versions("0.165.0", ["g-flash"]), system)
+        self.assertEqual(display.call_count, 0)
+        self.assertIsInstance(check.text({"assistantChanges": [None, {"id": "x"}]}), str)
 
 if __name__ == "__main__":
     unittest.main()

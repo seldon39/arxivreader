@@ -712,7 +712,10 @@ The application depends on services it does not control (arXiv and its LaTeXML p
 Zotero, the AI assistants, GitHub) and on WebKit, which changes with macOS. The tests (`tests/`) simulate these
 services; `./arxivreader check` really calls them (except zbMATH), one minimal request each, and checks the shape
 of the answers (✓ fine, ✗ changed or down, – not checked: no key, quota reached). It also reports a change of macOS
-or WebKit since the previous time, with the points to review by hand. `./arxivreader check --weekly` runs it every Monday at 10 am
+or WebKit since the previous time, with the points to review by hand. All AI assistants are checked, chosen or not:
+version of the Claude and Codex CLIs, sign-in, models offered by the Gemini API; a new Codex version or a Gemini model
+withdrawn is reported, with the points to review (Claude's CLI is the SDK's, which only changes with arXivReader: its
+change is only noted in the report). `./arxivreader check --weekly` runs it every Monday at 10 am
 through the installed application (macOS notification if something is wrong; log in
 `~/Library/Logs/arXivReader-check.log`); `--no-weekly` stops it. Without a network at that time (a Mac waking up),
 it tries again three times over six minutes, then notes it without a notification. A click on the notification, the

@@ -211,6 +211,13 @@ every `RETRY_WAIT` s by the weekly job, then status `offline` and no "service" n
 (`check.text`, also printed) is served by `/api/check` and shown by the page `#/check` (`check.js`, "Copy the
 report"), opened by a click on the notification (`route="#/check"`), Help > "Last Service Check" (`help.check`) or
 the link in Settings > About (`updatesSection`); the system notification says what moved (`system_change`).
+AI assistants: one check each (`CLAUDE`, `CODEX`, `GEMINI`, `LOCAL_MODEL`), chosen or not (the local model only
+when chosen); a check may return `(detail, assistant)` or raise `Skip(message, assistant)` with
+`{"id", "name", "version", "followed"}` (`cli_version`: `--version` of the CLI; Gemini: the list of models). Versions
+are compared with `assistantsBaseline` (moved like the system marker; an assistant not seen keeps its entry);
+`assistant_change` lists the changes in `assistantChanges`, notified ("Un assistant IA a changé", with
+`ASSISTANT_POINTS`) unless the CLI is the one bundled with the SDK (`followed: false`, it changes with arXivReader) or
+Gemini models were only added.
 
 | Service | Used by | What usually breaks | Existing fallback |
 |---|---|---|---|

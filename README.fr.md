@@ -751,7 +751,10 @@ L'application dépend de services qu'elle ne contrôle pas (arXiv et ses pages L
 Zotero, les assistants IA, GitHub) et de WebKit, qui change avec macOS. Les tests (`tests/`) simulent ces services ;
 `./arxivreader check` les appelle vraiment (sauf zbMATH), une requête minimale chacun, et vérifie la forme des
 réponses (✓ bon, ✗ changé ou en panne, – non vérifié : pas de clé, quota atteint). Elle signale aussi un changement de macOS ou de
-WebKit depuis la fois précédente, avec les points à revoir à la main. `./arxivreader check --weekly` la lance
+WebKit depuis la fois précédente, avec les points à revoir à la main. Les assistants IA sont tous vérifiés, choisis
+ou non : version du CLI de Claude et de Codex, connexion, modèles proposés par l'API Gemini ; une nouvelle version de
+Codex ou un modèle Gemini retiré est signalé, avec les points à revoir (le CLI de Claude est celui du SDK, qui ne
+change qu'avec arXivReader : son changement est seulement noté dans le rapport). `./arxivreader check --weekly` la lance
 chaque lundi à 10 h par l'application installée (notification macOS en cas de problème ; journal dans
 `~/Library/Logs/arXivReader-check.log`) ; `--no-weekly` l'arrête. Sans réseau à ce moment (Mac qui sort de veille),
 elle réessaie trois fois en six minutes, puis le note sans notification. Un clic sur la notification, le menu Aide >
