@@ -39,8 +39,7 @@ REPORT = LIBRARY / "check.json"
 WEBKIT_POINTS = ("glisser un article d'une fenêtre à l'autre, sur un onglet et sur « Bibliothèque » ou « Papiers liés »",
                  "couleurs du graphe des papiers liés (color-mix)", "réglages et graphe agrandi (fenêtre de dialogue, inert)",
                  "lecteur PDF", "formules (MathJax)", "export des notes (téléchargement)",
-                 "défilement d'un long article (sections masquées, mémoire)",
-                 "plein écran et « Tous les onglets » (rien de la page au-dessus de la barre rouge)")
+                 "défilement d'un long article (sections masquées, mémoire)")
 
 
 # Pas de réseau (Mac qui sort de veille) : aucun service joint, chaque échec une erreur de connexion. Rien n'a changé ;

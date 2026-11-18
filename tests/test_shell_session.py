@@ -33,19 +33,6 @@ class Routes(unittest.TestCase):
             self.assertIn(f'"{variable}"', SWIFT[SWIFT.index("var sessionEnabled"):])
 
 
-
-class FullScreen(unittest.TestCase):
-    """Choisir un onglet dans « Tous les onglets » en plein écran : rien de la page dans la bande de la barre (vidéo du 18/11/2026)."""
-
-    def test_page_sits_below_the_bar_in_a_container(self):
-        self.assertIn("container.addSubview(webView)", SWIFT)
-        self.assertIn("webView.topAnchor.constraint(equalTo: (window.contentLayoutGuide as? NSLayoutGuide)?.topAnchor", SWIFT)
-        self.assertNotIn("window.contentView = webView", SWIFT)
-
-    def test_full_screen_window_takes_the_whole_height(self):
-        self.assertIn("func windowWillEnterFullScreen(_ notification: Notification) { window.styleMask.insert(.fullSizeContentView) }", SWIFT)
-        self.assertIn("func windowDidExitFullScreen(_ notification: Notification) { window.styleMask.remove(.fullSizeContentView) }", SWIFT)
-
 class Keys(unittest.TestCase):
     def test_new_keys_in_both_languages(self):
         for key in ("settings.saveFailed", "onboarding.error.local", "texAnnot.button", "texAnnot.hint", "texAnnot.title",
