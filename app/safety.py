@@ -121,9 +121,9 @@ def snapshot(db_path, today=None, keep=KEEP):
     if dest.exists():
         return None
     temp = dest.with_name(dest.name + ".tmp")
-    source = sqlite3.connect(db_path)
+    source = sqlite3.connect(db_path, timeout=BUSY_TIMEOUT)
     try:
-        target = sqlite3.connect(temp)
+        target = sqlite3.connect(temp, timeout=BUSY_TIMEOUT)
         try:
             source.backup(target)
             target.execute("DROP TABLE IF EXISTS embeddings")

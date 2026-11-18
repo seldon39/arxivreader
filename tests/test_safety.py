@@ -68,6 +68,15 @@ class Library(unittest.TestCase):
         status = safety.status(db.DB_PATH)
         self.assertEqual((status["last"], status["count"]), ("2026-01-10", 7))
 
+    def test_snapshot_waits_for_a_busy_database(self):
+        """Toutes les connexions de la copie attendent un autre écrivain (MAINTENANCE : chaque sqlite3.connect a un timeout)."""
+        db.init()
+        seen = []
+        real = sqlite3.connect
+        with unittest.mock.patch.object(safety.sqlite3, "connect", lambda *a, **k: seen.append(k.get("timeout")) or real(*a, **k)):
+            self.assertIsNotNone(safety.snapshot(db.DB_PATH, today="2026-01-01"))
+        self.assertEqual(seen, [safety.BUSY_TIMEOUT] * 2)
+
     def test_corrupt_restored_from_snapshot(self):
         db.init()
         self.note("precious")
