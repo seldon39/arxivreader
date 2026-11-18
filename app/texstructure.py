@@ -740,7 +740,9 @@ class _Context:
             if body is None:
                 continue
             names = colors.at(found.start())
-            if not (_dark_colorbox(body[0], names) or _fill_dark(body[0], names, True, "tikz" in body[0])):
+            # ouvre une boîte foncée de l'auteur (\newtcolorbox{nom}{colback=black} puis \begin{nom}) : fond foncé aussi
+            around = self.dark_envs and re.search(r"\\begin\s*\{(?:" + "|".join(map(re.escape, self.dark_envs)) + r")\}", body[0])
+            if not (_dark_colorbox(body[0], names) or around or _fill_dark(body[0], names, True, "tikz" in body[0])):
                 continue
             if found.group(6) or found.group(7):
                 self.dark_envs.add((found.group(6) or found.group(7)).strip())
@@ -799,7 +801,8 @@ class _Context:
         index = bisect.bisect_left(self.envs, (pos,))
         around = [(begin, end, name) for begin, end, name in reversed(self.envs[max(0, index - 2000):index]) if end > pos]
         names_around = {name for _, _, name in around}
-        if names_around & self.dark_envs:
+        opened = {name for _, _, name in self.envs[index:bisect.bisect_left(self.envs, (pos + 1,))]}  # environnement ouvert à cette place
+        if (names_around | opened) & self.dark_envs:
             return True
         for begin, _, name in around:
             if name not in self.boxes:

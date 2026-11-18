@@ -172,6 +172,16 @@ class InvisibleTex(unittest.TestCase):
         self.assertNotIn("GONE", text)
         self.assertEqual(count, 1)
 
+    def test_author_box_opened_by_a_macro_is_dark(self):
+        """Une macro ou un environnement qui ouvre une \\newtcolorbox foncée : blanc lisible, même loin de la définition
+        (la fenêtre de 300 caractères avant le texte ne doit pas être ce qui le sauve)."""
+        opening = "Opening words and more words here. " * 30
+        for definition, use in ((r"\newenvironment{important}{\begin{mybox}\color{white}}{\end{mybox}}", r"\begin{important}Kept words\end{important}"),
+                                (r"\newcommand{\wbox}[1]{\begin{mybox}\textcolor{white}{#1}\end{mybox}}", r"\wbox{Kept words}")):
+            text, count = self.stripped(r"\newtcolorbox{mybox}{colback=black}" + definition + opening + use)
+            self.assertIn("Kept words", text, definition)
+            self.assertEqual(count, 0, definition)
+
     def test_readable_colors_and_whole_document_settings_kept(self):
         for body in (r"\textcolor{black!50}{VISIBLE} ok", r"\colorbox{black}{\color{white} VISIBLE}",
                      r"\color{white} VISIBLE " + "word " * 5000,                           # tout le document : un réglage
