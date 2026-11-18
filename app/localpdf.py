@@ -712,7 +712,7 @@ def _import(pid, data, filename):
     return db.get_paper(pid)
 
 
-TEXT_VERSION = 3  # 2 : texte invisible retiré ; 3 : texte gardé lu avec le codage des polices. Un text.json plus
+TEXT_VERSION = 4  # 2 : texte invisible retiré ; 3 : texte gardé lu avec le codage des polices ; 4 : jaune, turquoise. Un text.json plus
                   # ancien est refait au démarrage (redetect_all), ou à sa première lecture par l'IA
 
 

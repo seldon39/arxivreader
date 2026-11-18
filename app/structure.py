@@ -7,7 +7,7 @@ from bs4 import NavigableString, Tag
 
 from .arxiv import ID_RE, extract_ids
 
-STRUCTURE_VERSION = 19  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
+STRUCTURE_VERSION = 20  # à augmenter quand l'analyse change : les articles déjà importés sont ré-analysés
 
 SECTION_LEVELS = {
     "ltx_part": 0, "ltx_chapter": 0, "ltx_section": 1, "ltx_appendix": 1,
@@ -104,14 +104,18 @@ def _color(value):
 
 
 WHITE = 0.9  # luminance d'un texte qu'on ne voit pas sur la page blanche
-DARK = 0.5   # fond assez foncé pour qu'un texte blanc s'y lise (orange compris : contraste ≥ 1,9)
+DARK = 0.6   # fond assez foncé pour qu'un texte blanc s'y lise : contraste ≥ 1,6 (orange, turquoise clair à 0,54)
+SATURATED = 0.5  # écart entre canaux d'une teinte franche (jaune pur : 1) : lisible sur blanc, jamais « presque blanche »
 
 
 def luminance(channels):
     """Luminance relative WCAG d'une couleur (r, v, b) entre 0 et 1 : texte « blanc » à partir de 0,9 (ici, dans un
-    source TeX et dans un PDF), fond foncé en deçà de 0,5."""
-    r, g, b = (c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in (min(max(c, 0), 1) for c in channels))
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    source TeX et dans un PDF), fond foncé en deçà de 0,6. Une teinte franche (jaune pur : 0,93, contraste 1,07 avec la
+    page mais lisible) est ramenée juste sous WHITE : jamais tenue pour du blanc."""
+    channels = [min(max(c, 0), 1) for c in channels]
+    r, g, b = (c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels)
+    value = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    return min(value, WHITE - 0.001) if max(channels) - min(channels) >= SATURATED else value
 
 
 def _hiding(style):

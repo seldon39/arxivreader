@@ -99,6 +99,24 @@ class InvisibleTex(unittest.TestCase):
         self.assertEqual(texstructure.extract(r"\begin{document}$1\phantom{0}2$\end{document}")["hiddenText"], 0)
 
 
+    def test_saturated_hue_and_light_turquoise_are_readable(self):
+        """Jaune pur (luminance 0,93) : une teinte franche n'est jamais du blanc. Blanc sur turquoise clair (0,54,
+        contraste 1,78) : fond foncé. Mêmes règles en TeX, en HTML et en PDF ; le gris très clair reste caché."""
+        from bs4 import BeautifulSoup
+        from app import localpdf, structure
+        from tests.test_localpdf import raw_pdf
+        for body in (r"\textcolor{yellow}{steel plate}", r"\colorbox[rgb]{0.45,0.82,0.82}{\textcolor{white}{Gender}}"):
+            self.assertEqual(self.stripped(body)[1], 0, body)
+        self.assertEqual(self.stripped(r"\textcolor[rgb]{0.98,0.98,0.98}{IGNORE}")[1], 1)
+        for html, count in (('<span style="color:#ffff00">steel plate</span>', 0),
+                            ('<span style="background-color:#73d1d1"><span style="color:#fff">Gender</span></span>', 0),
+                            ('<span style="color:#fafafa">IGNORE</span>', 1)):
+            self.assertEqual(structure.mark_hidden(BeautifulSoup(f"<p>{html}</p>", "html.parser")), count, html)
+        for content, count in (("1 1 0 rg BT /F1 12 Tf 72 700 Td (steel plate) Tj ET", 0),
+                               ("0.45 0.82 0.82 rg 60 690 200 30 re f 1 g BT /F1 12 Tf 72 700 Td (Gender) Tj ET", 0),
+                               ("0.98 g BT /F1 12 Tf 72 700 Td (IGNORE) Tj ET", 1)):
+            self.assertEqual(localpdf.read_pdf(raw_pdf(content))["hidden"], count, content)
+
     @staticmethod
     def stripped(body):
         counted = []

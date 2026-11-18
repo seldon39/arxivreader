@@ -457,18 +457,20 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   miniforge's base Python.
 
 - Invisible text (`structure.mark_hidden`, at the start of the analysis: `plain` keeps it neither in labels nor in
-  titles): text color white or nearly white (luminance ≥ 0,9), transparent or zero alpha (`_hiding`, `_color`:
+  titles): text color white or nearly white (`structure.luminance` ≥ `WHITE`, 0,9; a saturated hue, channels at least
+  `SATURATED` 0,5 apart, never counts as white: pure yellow is readable on the page), transparent or zero alpha (`_hiding`, `_color`:
   #rgb(a), #rrggbb(aa), rgb(a)(), a few names; not a background color: `--ltx-bg-color`, `background-color`,
   `--ltx-fill-color`), tiny font, hidden, opacity < 0,1; marked `.arx-hidden-text`, counted, never passed to
   the AI (`ai._render`, which does not read drawings either). Exceptions (white text only): dark background set on it
-  or on a parent (`\colorbox`, `_dark_background`); in a drawing, a dark shape covering its full width, drawn
-  immediately before in the same coordinate frame (title of a tcolorbox box, `_on_dark_shape`, contrast of at least 2,3). Conservative:
+  or on a parent (`\colorbox`, `_dark_background`; dark: luminance < `DARK`, 0,6, i.e. a contrast with white of at
+  least 1,6, so light turquoise labels stay); in a drawing, a dark shape covering its full width, drawn
+  immediately before in the same coordinate frame (title of a tcolorbox box, `_on_dark_shape`, same `DARK`). Conservative:
   an unreadable shape on top (moved, relative commands, image), with no surface, partial, or a foreignObject with no
   width, and the text stays flagged; shapes read once per group.
 - Invisible text in a TeX source (`texstructure.invisible`, used by `strip_hidden`, hence by `extract` and `ai.tex_body`;
   thresholds `structure.WHITE` / `DARK`, shared with the HTML and the PDF). Colors are evaluated where they are used
   (`_Colors`: a color redefined later does not change what precedes; `_xcolor`: names, mixes `white!95`, `black!3`,
-  complement `-black`, models `[rgb]`, `[HTML]`, `[hsb]`, `[named]`…). Hidden: white or nearly (luminance ≥ 0,9) by
+  complement `-black`, models `[rgb]`, `[HTML]`, `[hsb]`, `[named]`…). Hidden: white or nearly (same rule as the HTML) by
   `\textcolor`, `\mathcolor` (argument in braces or `\bgroup…\egroup`), `\color` — scope (`_scope_end`) up to its
   group (braces, `\bgroup`, `\begingroup`), its environment, the end of the math it sits in (`$`, `$$`, `\)`, `\]`),
   the closing `]` of an option list (`fonttitle=\color{white}`, `_option_list`), the end of its cell in a table or an
@@ -495,7 +497,7 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   What TeX never executes is blanked first (`_unexecuted`): comments, `\verb`, `\lstinline`, verbatim, lstlisting
   and minted environments, the false branch of `\iffalse` and of `\ifnum` between two numbers (up to its `\else`). Past ten times `_SCAN_BUDGET`
   characters of windows on a text (tens of thousands of white passages), white text is judged without background. Count in `hiddenText` of `structure.json`; papers analysed before are
-  analysed again when loaded (`STRUCTURE_VERSION` 19), so their statements (`node["tex"]`, sent to the AI) lose it too.
+  analysed again when loaded (`STRUCTURE_VERSION` 20), so their statements (`node["tex"]`, sent to the AI) lose it too.
 - Invisible text in a PDF (`localpdf._page_text`, class `_Visible`): the content stream is walked with its graphics
   state (q/Q, `cm`, fill and stroke colors with their color spaces and Indexed palettes, `gs` opacity, clipping `W`,
   optional content `BDC /OC` hidden by default, `Tf`, `Tz`, `Tr`, text matrices), each text show judged with the
