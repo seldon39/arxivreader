@@ -86,8 +86,8 @@ git clone https://github.com/seldon39/arxivreader.git && cd arxivreader && ./arx
 
 The first time, the script creates the Python environment (`.venv/`, ~1 min), then opens http://127.0.0.1:8710/
 with `xdg-open`; Ctrl+C stops the app. Another Python: `PYTHON=python3.14 ./arxivreader`. To update: `git pull`, then
-`./arxivreader` again (the app says when a new version is out). The tests run on Linux with Python 3.12, 3.13 and
-3.14 at every push.
+`./arxivreader` again (the app says when a new version is out). The tests run on Linux with Python 3.12 to 3.15
+at every push.
 
 ## Mac app: building
 
