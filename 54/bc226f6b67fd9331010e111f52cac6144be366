@@ -1,0 +1,26 @@
+README.fr.md
+  s_2e78fe3aad7ffd::t_887f2e4d44315e 693
+README.md
+  s_2e78fe3aad7ffd::t_887f2e4d44315e 657
+MAINTENANCE.md
+  s_2e78fe3aad7ffd::t_5b589cdc4e850d 234,765-767,985-987
+CONTRIBUTING.md
+  s_2e78fe3aad7ffd::t_04919f4c81eb1a 38-39
+  s_2e78fe3aad7ffd::t_887f2e4d44315e 37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "54bc226f6b67fd9331010e111f52cac6144be366",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
