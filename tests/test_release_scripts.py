@@ -8,6 +8,7 @@ import os
 import pathlib
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -20,6 +21,8 @@ GIT_ENV = {
 }
 
 
+# Scripts du Mac : sous Windows, le bash de Git ne lit pas un PATH séparé par « : » ni .venv/bin (CI de la 1.14.11)
+@unittest.skipIf(sys.platform == "win32", "scripts de publication macOS")
 @unittest.skipUnless(shutil.which("git") and shutil.which("bash"), "git et bash requis")
 class Scripts(unittest.TestCase):
     def setUp(self):
