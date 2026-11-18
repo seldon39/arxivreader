@@ -1,5 +1,6 @@
 """PDF importés depuis l'ordinateur : import, métadonnées, texte pour l'assistant, version arXiv, garde-fous."""
 
+import io
 import json
 import pathlib
 import shutil
@@ -9,6 +10,7 @@ import zlib
 from unittest import mock
 
 from fastapi.testclient import TestClient
+from pypdf import PdfReader
 
 from app import ai, db, export, library, localpdf, main, zotero
 
@@ -126,6 +128,20 @@ class InvisiblePdfText(unittest.TestCase):
         found = localpdf.read_pdf(build_pdf("BT /F1 12 Tf 72 700 Td (Visible text) Tj ET 1 g BT /F1 12 Tf 72 680 Td (123 456) Tj ET",
                                             font=font))
         self.assertEqual((found["pages"][0].strip(), found["hidden"]), ("Visible text", 0))
+
+    def test_font_decoded_only_for_hidden_text_once_per_document(self):
+        """Lire le codage d'une police coûte (256 codes) : jamais pour du texte visible, une fois par police et par
+        document (pas à chaque page ; amsmath.pdf, 98 pages : 0,5 s, et non 2,7 s)."""
+        visible = build_pdf("BT /F1 12 Tf 72 700 Td (Visible text) Tj ET")
+        hidden = build_pdf("BT /F1 12 Tf 72 700 Td (Visible) Tj ET 1 g BT /F1 12 Tf 72 680 Td (one) Tj ET "
+                           "BT /F1 12 Tf 72 660 Td (two) Tj ET")
+        with mock.patch.object(localpdf, "_decoding", wraps=localpdf._decoding) as decoding:
+            localpdf.read_pdf(visible)
+            self.assertEqual(decoding.call_count, 0)
+            reader = PdfReader(io.BytesIO(hidden))
+            for _ in range(2):  # deux lectures de la page du même document : une seule table
+                localpdf._page_text(reader.pages[0])
+            self.assertEqual(decoding.call_count, 1)
 
     def test_invisible_shapes_are_no_background(self):
         """Fond foncé transparent, ou dans un calque masqué : le papier blanc reste dessous, le texte blanc est retiré ;

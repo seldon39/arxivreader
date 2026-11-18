@@ -538,7 +538,8 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   displayed alone) for the invisible rendering mode, clipped text and hidden layers, removed all the same (a text
   layer with an invisible mode, clipped labels, as in an ordinary course exported from Keynote, are no attack). A show that is both
   goes in `hiddenText`; `_refresh_text` rewrites both counts, also when the warning falls to zero. The letters are looked for in the text decoded with the font (`_decoding`: the 256 codes
-  of the font shown one by one in a blank page and read by pypdf, kept per font), since a subset font can put letters on
+  of the font shown one by one in a blank page and read by pypdf; costly, so only for text already judged hidden, and
+  kept per font for the whole document in `_TABLES`), since a subset font can put letters on
   punctuation codes; a CID font counts any non-zero byte. The rewritten stream is parsed again as bytes (`ContentStream(…, "bytes")`): pypdf would reuse an
   already parsed stream with strings decoded without the fonts' encodings and `ToUnicode`, and the whole page would
   come out wrong (ligatures, math symbols, CID fonts). A `text.json` older than `TEXT_VERSION` is redone once

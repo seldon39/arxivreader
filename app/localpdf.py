@@ -15,6 +15,7 @@ import logging
 import math
 import re
 import unicodedata
+import weakref
 from pathlib import Path
 from urllib.parse import quote
 
@@ -195,7 +196,8 @@ class _Visible:
         self.shapes, self.grid, self.big, self.strip = [], {}, [], None
         self.passages, self.unshown, self.running = 0, 0, None
         self.scanned, self.steps, self.lookups, self.covered = False, 0, 0, 0.0
-        self.walking, self.copies, self.off, self.tables = set(), {}, _off_groups(reader), {}
+        self.walking, self.copies, self.off = set(), {}, _off_groups(reader)
+        self.tables = _TABLES.setdefault(reader, {})  # tables de décodage gardées pour tout le document
 
     @staticmethod
     def start_state():
@@ -489,17 +491,18 @@ class _Visible:
     def _letters(self, raw, font):
         """Le texte affiché contient-il des lettres ? Lu avec le codage de sa police (un sous-ensemble peut mettre les
         lettres sur des codes de ponctuation) ; police illisible : les octets eux-mêmes."""
+        reference = getattr(font, "indirect_reference", None)
+        key = (reference.idnum, reference.generation) if reference is not None else id(font)
         try:
-            if id(font) not in self.tables:
-                self.tables[id(font)] = (font, _decoding(font))
-            return any(ch.isalpha() for code in raw for ch in self.tables[id(font)][1].get(code, ""))
+            if key not in self.tables:
+                self.tables[key] = (font, _decoding(font))  # (police gardée : son id ne sert pas à une autre)
+            return any(ch.isalpha() for code in raw for ch in self.tables[key][1].get(code, ""))
         except Exception:
             return bool(re.search(rb"[A-Za-z\x80-\xff]", raw))
 
     def _hidden(self, args, state, tm):
         raw = _raw(args[-1] if args else b"")
         blank = not raw.strip(b"\x00 ") if state.get("cid") else not raw.strip()
-        letters = bool(raw.strip(b"\x00")) if state.get("cid") else self._letters(raw, state["font"])
         m = _mult(tm, state["ctm"])
         size = state.get("size")
         body = None if size is None else size * state["glyph"]
@@ -520,7 +523,8 @@ class _Visible:
                                            for x, y in points)
         alert = tiny or white or clear  # ce qu'une attaque emploie : compté à part de ce qui n'est simplement pas affiché
         hidden = not blank and (alert or clipped or state["hiddenLayer"] or render in (3, 7) and not (self.scan or self.scanned))
-        if hidden and letters:
+        # lettres cherchées seulement dans un texte caché (lire le codage d'une police coûte)
+        if hidden and (bool(raw.strip(b"\x00")) if state.get("cid") else self._letters(raw, state["font"])):
             kind = "passages" if alert else "unshown"
             if self.running != kind:
                 setattr(self, kind, getattr(self, kind) + 1)
@@ -528,6 +532,9 @@ class _Visible:
         elif not blank and not hidden:
             self.running = None
         return hidden
+
+
+_TABLES = weakref.WeakKeyDictionary()  # document lu → {police: table de décodage}
 
 
 def _decoding(font):
