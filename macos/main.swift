@@ -959,7 +959,19 @@ final class Tab: NSObject, NSWindowDelegate, NSToolbarDelegate, WKNavigationDele
         window.tabbingIdentifier = "arXivReader"
         window.tabbingMode = .automatic
         window.registerForDraggedTypes(TabWindow.dragTypes) // article glissé sur un onglet : l'ouvre (TabWindow)
-        window.contentView = webView
+        // la page dans un conteneur, arrêtée sous la barre de titre et d'onglets (contentLayoutGuide) : voir
+        // windowWillEnterFullScreen
+        let container = NSView()
+        window.contentView = container
+        webView.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(webView)
+        NSLayoutConstraint.activate([
+            webView.topAnchor.constraint(equalTo: (window.contentLayoutGuide as? NSLayoutGuide)?.topAnchor ?? container.topAnchor),
+            webView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            webView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+        window.initialFirstResponder = webView
         window.delegate = self
         // barre d'outils réduite à la ligne du titre : le bouton « Tous les onglets » (comme Safari), et en plein écran
         // la barre des onglets reste en place, opaque, au-dessus de la page au lieu de la recouvrir par transparence
@@ -1105,6 +1117,13 @@ final class Tab: NSObject, NSWindowDelegate, NSToolbarDelegate, WKNavigationDele
         proposedOptions.subtracting(.autoHideToolbar)
     }
 
+    // Plein écran : la fenêtre prend toute la hauteur et la barre (titre, onglets) se pose dessus, la page restant
+    // sous la barre (contentLayoutGuide). Sinon la fenêtre commence sous la barre, et quand on choisit un onglet dans
+    // « Tous les onglets », macOS remplit la bande de la barre avec le bas de l'image de la fenêtre pendant
+    // l'animation (fin de la page affichée en haut, vidéo du 18/11/2026) ; là, seulement le fond de la fenêtre.
+    func windowWillEnterFullScreen(_ notification: Notification) { window.styleMask.insert(.fullSizeContentView) }
+    func windowDidExitFullScreen(_ notification: Notification) { window.styleMask.remove(.fullSizeContentView) }
+
     func windowDidBecomeKey(_ notification: Notification) {
         app.showTabBar(window)
         if !app.restoring { loadIfLazy() }
@@ -1152,7 +1171,7 @@ final class Tab: NSObject, NSWindowDelegate, NSToolbarDelegate, WKNavigationDele
             "titles=\(window.tabGroup?.windows.map(\.title) ?? [])",
             "menus=\(NSApp.mainMenu?.items.map { "\($0.title): " + ($0.submenu?.items.map { $0.isSeparatorItem ? "—" : $0.title } ?? []).joined(separator: " | ") } ?? [])",
             "items=\(items)",
-            "fullScreen=\(window.styleMask.contains(.fullScreen)) options=\(NSApp.currentSystemPresentationOptions.rawValue) frame=\(window.frame) web=\(window.contentView?.frame ?? .zero)",
+            "fullScreen=\(window.styleMask.contains(.fullScreen)) options=\(NSApp.currentSystemPresentationOptions.rawValue) frame=\(window.frame) content=\(window.contentView?.frame ?? .zero) web=\(webView.frame) layout=\(window.contentLayoutRect)",
             "views=\(viewTree(window.contentView?.superview, depth: 0))",
         ]
         try? lines.joined(separator: "\n").write(toFile: path + ".txt", atomically: true, encoding: .utf8)

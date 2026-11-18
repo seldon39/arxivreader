@@ -279,6 +279,13 @@ hand, in the installed app:
   "Related papers"; drag types: `application/x-arxivreader-paper` and `text/uri-list`
   (`util.js`, `selection.js`, `TabWindow` in `main.swift`, which locates tabs through the `NSTabButton` views of
   the Mac's tab bar);
+- full screen and "Show All Tabs": the page sits in a container, below the title and tab bar
+  (`contentLayoutGuide`). In full screen the window takes the whole height (`fullSizeContentView`, added in
+  `windowWillEnterFullScreen`, removed in `windowDidExitFullScreen`) and the bar lies over its top. Without it the
+  window starts below the bar, and when a tab is chosen in "Show All Tabs" macOS fills the bar's band with the bottom
+  of the window's image during the animation (the end of the page shown above the red bar). To recheck: full screen, two
+  tabs, Show All Tabs, choose the paper's tab: nothing of the page above the red bar; window mode unchanged
+  (`ARXIVREADER_FULLSCREEN=1` report: `web=` stops at the bar, `layout=` the same);
 - SVG colors (the related-papers graph puts its colors in `style`, because WebKit rejects `var()` in the
   `fill` attribute), `color-mix`, `<dialog>` and `inert`, `ResizeObserver`;
 - the PDF reader (pdf.js frozen in `static/vendor/pdfjs`) and the formulas (MathJax frozen in `static/vendor/mathjax`);
