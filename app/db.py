@@ -129,25 +129,27 @@ CREATE TABLE IF NOT EXISTS feed_status (
 JSON_COLUMNS = ("authors", "categories")
 
 
+def _add_columns(db, table, columns):
+    """Ajoute les colonnes qui manquent, une à une : une interruption entre deux ALTER (le DDL n'est pas dans une
+    transaction) laisse une paire à moitié faite, que le prochain démarrage achève. Noms écrits dans le code."""
+    present = {row["name"] for row in db.execute(f"PRAGMA table_info({table})")}
+    for name, declaration in columns.items():
+        if name not in present:
+            db.execute(f"ALTER TABLE {table} ADD COLUMN {name} {declaration}")
+
+
 def init():
     LIBRARY.mkdir(parents=True, exist_ok=True)
     safety.prepare(DB_PATH)  # base trop récente : refus clair ; base abîmée : mise de côté, copie remise en place
     with connect() as db:
         db.executescript(SCHEMA)
         # Colonnes ajoutées après la création de la base
-        columns = {row["name"] for row in db.execute("PRAGMA table_info(feed_items)")}
-        if "followed" not in columns:
-            db.execute("ALTER TABLE feed_items ADD COLUMN followed INTEGER DEFAULT 0")
-        if "journal_ref" not in columns:  # revue indiquée sur arXiv par les auteurs (Journal-ref), DOI
-            db.execute("ALTER TABLE feed_items ADD COLUMN journal_ref TEXT")
-            db.execute("ALTER TABLE feed_items ADD COLUMN doi TEXT")
-        if "citing" not in columns:  # article qui cite les vôtres : titres de vos articles cités (JSON)
-            db.execute("ALTER TABLE feed_items ADD COLUMN citing TEXT")
-            db.execute("ALTER TABLE feed_items ADD COLUMN cited_found TEXT")
-        columns = {row["name"] for row in db.execute("PRAGMA table_info(profile_items)")}
-        if "only_categories" not in columns:  # auteur suivi : homonymes écartés (catégories gardées, articles écartés)
-            db.execute("ALTER TABLE profile_items ADD COLUMN only_categories TEXT")
-            db.execute("ALTER TABLE profile_items ADD COLUMN not_papers TEXT")
+        _add_columns(db, "feed_items", {
+            "followed": "INTEGER DEFAULT 0",
+            "journal_ref": "TEXT", "doi": "TEXT",  # revue indiquée sur arXiv par les auteurs (Journal-ref), DOI
+            "citing": "TEXT", "cited_found": "TEXT"})  # article qui cite les vôtres : titres de vos articles cités (JSON)
+        # auteur suivi : homonymes écartés (catégories gardées, articles écartés)
+        _add_columns(db, "profile_items", {"only_categories": "TEXT", "not_papers": "TEXT"})
         columns = {row["name"] for row in db.execute("PRAGMA table_info(papers)")}
         if "in_library" not in columns:
             db.execute("ALTER TABLE papers ADD COLUMN in_library INTEGER DEFAULT 1")

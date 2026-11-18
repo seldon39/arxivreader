@@ -80,7 +80,7 @@ cited paper, "Theorem 3.1 of [12]", "[12, Theorem 3.1]"; hover preview through `
 | Windows application | `windows/launcher.py` (windowless server, Edge fallback) | `windows/shell/` (C# window: `MainForm.cs`, `TabStrip.cs`, `Program.cs`), `windows/smoke.ps1`, `.github/workflows/windows.yml` |
 
 Database: `app/db.py` (`SCHEMA` as `CREATE TABLE IF NOT EXISTS`, columns added by `ALTER TABLE` after
-`PRAGMA table_info` in `init()`); modules that have their own tables: `related.py`, `zotero.py`, `journals.py`
+`PRAGMA table_info` in `init()`, one column at a time: `_add_columns`, so a start interrupted between two columns of a pair finishes it next time); modules that have their own tables: `related.py`, `zotero.py`, `journals.py`
 (`_ensure`). The `papers` table also holds the archived versions of a paper (`archived_of` not null, section 9):
 any new query that lists papers filters `archived_of IS NULL`, as `db.list_all_papers`, `feed.list_items`,
 `profile.author_categories`, `related.annotate` and `search.annotate_status` do.

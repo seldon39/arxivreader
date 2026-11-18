@@ -307,6 +307,18 @@ class Update(Base):
         with db.connect() as connection:
             self.assertIn("archived_of", {row["name"] for row in connection.execute("PRAGMA table_info(papers)")})
 
+    def test_migration_finishes_a_pair_left_half_done(self):
+        """Arrêt entre les deux ALTER d'une paire : le démarrage suivant ajoute la colonne qui manque."""
+        connection = sqlite3.connect(db.DB_PATH)
+        connection.execute("ALTER TABLE feed_items DROP COLUMN doi")
+        connection.execute("ALTER TABLE feed_items DROP COLUMN cited_found")
+        connection.execute("ALTER TABLE profile_items DROP COLUMN not_papers")
+        connection.close()
+        db.init()
+        with db.connect() as connection:
+            for table, column in (("feed_items", "doi"), ("feed_items", "cited_found"), ("profile_items", "not_papers")):
+                self.assertIn(column, {row["name"] for row in connection.execute(f"PRAGMA table_info({table})")})
+
 
 class Interrupted(Base):
     """Arrêt brutal pendant une mise à jour : états que laissent les renommages, faits hors de la transaction."""
