@@ -1,0 +1,21 @@
+app/check.py
+  s_2e78fe3aad7ffd::t_045d8c87a8256c 42
+macos/main.swift
+  s_2e78fe3aad7ffd::t_e0ea337fb43bd8 962,1155
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "df0ec733a4111c796cfe7e66f21fa2161c85c436",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
