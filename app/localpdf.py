@@ -81,6 +81,7 @@ MAX_FORM_DEPTH = 12     # formulaires imbriqués plus profond : vidés (aucun ar
 MAX_STEPS = 2_000_000   # opérations parcourues par page, formulaires compris ; au-delà, formulaires laissés tels quels
 FORM_COST = 200         # un formulaire affiché compte pour autant d'opérations (le relire coûte, même s'il est court)
 MAX_LOOKUPS = 5_000_000 # fonds examinés par page pour juger le texte blanc ; au-delà, le texte blanc est gardé
+MAX_CLIPPED_DARK = 2_000  # formes foncées découpées gardées par page (fond du blanc découpé) ; au-delà, ce blanc reste une alerte
 GRID = 64               # côté des cases de l'index des fonds (points)
 DEVICE_SPACES = {"/DeviceGray", "/DeviceRGB", "/DeviceCMYK", "/CalGray", "/CalRGB", "/ICCBased", "/G", "/RGB", "/CMYK"}
 COMPONENTS = {"/DeviceGray": 1, "/CalGray": 1, "/G": 1, "/DeviceRGB": 3, "/CalRGB": 3, "/RGB": 3, "/DeviceCMYK": 4, "/CMYK": 4}
@@ -187,7 +188,8 @@ def _off_groups(reader):
 class _Visible:
     """Parcours d'un flux de contenu qui retire les affichages de texte invisibles et les compte (suites de texte
     invisible avec des lettres : `passages` pour le texte blanc, minuscule ou transparent, `unshown` pour le texte
-    en mode invisible, découpé ou en calque masqué, qui est retiré aussi mais n'a rien d'une attaque). État graphique suivi : q/Q, cm, couleurs de remplissage et de trait (espaces
+    en mode invisible, découpé ou en calque masqué, qui est retiré aussi mais n'a rien d'une attaque ; blanc découpé
+    posé sur une forme foncée elle aussi découpée, `clipped_dark` : `unshown`). État graphique suivi : q/Q, cm, couleurs de remplissage et de trait (espaces
     de couleur, palettes), opacité (gs), découpe (W), calques masqués (BDC /OC), Tf, Tz, Tr, TL, matrices de texte ;
     fonds foncés (formes, traits épais, bandes fines à la suite, dégradés, images) et aplats clairs, dans l'ordre où
     ils sont peints : la dernière forme sous un point dit s'il est sur un fond foncé. Formulaires (Do) jugés à chaque affichage, avec l'état du moment : copie nettoyée sous un autre nom
@@ -196,6 +198,7 @@ class _Visible:
     def __init__(self, reader, scan, page_box):
         self.reader, self.scan, self.page_box = reader, scan, page_box
         self.shapes, self.grid, self.big, self.strip = [], {}, [], None
+        self.clipped_dark = []  # formes foncées découpées en tout ou partie (boîte entière) : fond du blanc découpé
         self.passages, self.unshown, self.running = 0, 0, None
         self.scanned, self.steps, self.lookups, self.covered = False, 0, 0, 0.0
         self.walking, self.copies, self.off = set(), {}, _off_groups(reader)
@@ -320,6 +323,9 @@ class _Visible:
             clip = state["clip"]
             if operator in FILLS and points:
                 box = _clipped(_box(points), clip)
+                if (clip is not None and box != _box(points) and not state["hiddenLayer"] and state["alpha"] >= MIN_BACKGROUND_ALPHA
+                        and (state["fill"] is None or state["fill"] < DARK) and len(self.clipped_dark) < MAX_CLIPPED_DARK):
+                    self.clipped_dark.append(_box(points))
                 if box is None or state["hiddenLayer"]:  # rien de peint dans un calque masqué
                     pass
                 elif state["fill"] is None or state["fill"] < DARK:
@@ -427,6 +433,11 @@ class _Visible:
                 return index
         return -1
 
+    def _on_clipped_dark(self, points):
+        """Points tous sur une même forme foncée découpée (`clipped_dark`) : le blanc découpé y était lisible."""
+        return any(all(x0 - 1 <= x <= x1 + 1 and y0 - 1 <= y <= y1 + 1 for x, y in points)
+                   for x0, y0, x1, y1 in self.clipped_dark)
+
     def _on_dark(self, points):
         for x, y in points:
             cell = (int(math.floor(x / GRID)), int(math.floor(y / GRID)))
@@ -528,9 +539,9 @@ class _Visible:
         clip = state["clip"]
         clipped = clip is not None and all(not (clip[0] - height <= x <= clip[2] + height and clip[1] - height <= y <= clip[3] + height)
                                            for x, y in points)
-        # ce qu'une attaque emploie : compté à part de ce qui n'est simplement pas affiché. Blanc découpé : son fond l'est
-        # aussi (pas enregistré, `_clipped`), « blanc sur blanc » ne se juge pas ; retiré, compté non affiché
-        alert = tiny or clear or white and not clipped
+        if white and clipped and self._on_clipped_dark(points):
+            white = False  # posé sur une forme foncée découpée avec lui (diapositive recadrée) : pas blanc sur blanc
+        alert = tiny or white or clear  # ce qu'une attaque emploie : compté à part de ce qui n'est simplement pas affiché
         hidden = not blank and (alert or clipped or state["hiddenLayer"] or render in (3, 7) and not (self.scan or self.scanned))
         # lettres cherchées seulement dans un texte caché (lire le codage d'une police coûte)
         if hidden and (bool(raw.strip(b"\x00")) if state.get("cid") else self._letters(raw, state["font"])):
