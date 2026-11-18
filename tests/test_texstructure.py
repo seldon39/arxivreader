@@ -73,6 +73,14 @@ class TexStructure(unittest.TestCase):
         self.assertEqual(self.structure["labels"]["lem:two"], self.nodes["Lemma 1.4"]["id"])
 
 
+class MissingArguments(unittest.TestCase):
+    def test_command_without_its_argument(self):
+        """« \\section » cité dans une phrase (sans argument) : ignoré, l'analyse continue (ValueError avant)."""
+        structure = texstructure.extract(r"\documentclass{article}\begin{document}Use \section and \subsection here."
+                                         r"\section{Real} A. \section{Other} B. \cite \end{document}")
+        self.assertEqual([s["title"] for s in structure["sections"]], ["1. Real", "2. Other"])
+
+
 class InvisibleTex(unittest.TestCase):
     """Texte que LaTeX imprime invisible (blanc, minuscule) : ni dans le texte transmis à l'IA, ni dans l'analyse ;
     compté pour le lecteur. Blanc sur fond coloré, \\phantom de chiffres, fond de page foncé : rien de signalé."""

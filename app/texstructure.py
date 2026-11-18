@@ -63,13 +63,14 @@ def _group(text, pos, opening):
 
 
 def _args(text, pos, pattern):
-    """Arguments selon un motif (« {[{[ » : obligatoire, optionnel…) ; None pour un optionnel absent."""
+    """Arguments selon un motif (« {[{[ » : obligatoire, optionnel…) ; None pour un optionnel absent, et pour tous ceux qui
+    suivent un obligatoire absent (« \\section and \\subsection » dans une phrase : autant de valeurs que le motif)."""
     values = []
     for kind in pattern:
         found = _group(text, pos, "{" if kind == "{" else "[")
         if found is None:
             if kind == "{":
-                return values, pos
+                return values + [None] * (len(pattern) - len(values)), pos
             values.append(None)
             continue
         values.append(found[0])
