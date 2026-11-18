@@ -28,6 +28,12 @@ class Names(unittest.TestCase):
         self.assertEqual(bibtex.author_tex("Jan van Den Bergh"), "van Den Bergh, Jan")
         self.assertEqual(bibtex.author_tex("G. 't Hooft"), "'t Hooft, G.")
 
+    def test_capital_van_is_not_a_particle(self):
+        self.assertEqual(bibtex.author_tex("Nguyen Van Minh"), "{Nguyen Van Minh}")  # « Van » : nom du milieu, pas particule
+        self.assertEqual(bibtex.author_tex("Vincent Van Gogh"), "{Vincent Van Gogh}")
+        self.assertEqual(bibtex.author_tex("Jan van Gogh"), "van Gogh, Jan")  # écrit en minuscules : particule
+        self.assertEqual(bibtex._last_name("Nguyen Van Minh"), "Minh")
+
     def test_kept_as_written(self):
         self.assertEqual(bibtex.author_tex("Plato"), "{Plato}")                       # un seul mot
         self.assertEqual(bibtex.author_tex("ATLAS Collaboration"), "{ATLAS Collaboration}")

@@ -1022,7 +1022,7 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   history of jumps (`trail.js`) stores anchors (element and offset, or PDF page and height), never raw pixels, since the layout changes with the
   text size. `j` / `k` in the PDF of an arXiv paper stop only on statements whose page is known.
 - **BibTeX** (`app/bibtex.py`): a wrong entry is worse than none. `@article` only when the journal is known, no volume,
-  pages or year invented, a name split into "Last, First" only when the split is certain; the button on a bibliography
+  pages or year invented, a name split into "Last, First" only when the split is certain (a capitalised "Van" is not taken for a particle: "Nguyen Van Minh" stays whole; "De", "Von"… are); the button on a bibliography
   entry is shown only when `crossrefs.match_by` returns `id` or `doi`, never `title`. The WebKit clipboard takes a write
   only after a gesture: `copyBibtex` passes the answer as a promise to `ClipboardItem`.
 - **Subject-class identifiers** (`math.DG/0211159`): normalised without the class (`math/0211159`) on entry

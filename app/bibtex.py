@@ -16,8 +16,8 @@ ARXIV_DOI = re.compile(r"^10\.(48550|1101|2139|5281|13140|21203|20944|31219|3123
 PARTICLES = {"de", "van", "von", "der", "den", "la", "le", "di", "da", "du", "del", "della", "des", "dos", "das", "do",
              "ter", "ten", "al", "el", "zu", "af", "av", "'t"}
 # particules qu'on reconnaît aussi écrites avec une capitale (« Camillo De Lellis ») ; « Le », « Do », « La »… peuvent être
-# des prénoms : coupure pas sûre
-CAPITAL_PARTICLES = {"de", "van", "von", "der", "den", "del", "della", "di", "du", "da", "ter", "ten", "dos", "das", "des"}
+# des prénoms, et « Van » un nom du milieu (« Nguyen Van Minh », nom de famille « Nguyen ») : coupure pas sûre
+CAPITAL_PARTICLES = {"de", "von", "der", "den", "del", "della", "di", "du", "da", "ter", "ten", "dos", "das", "des"}
 SUFFIXES = {"jr", "jr.", "sr", "sr.", "ii", "iii", "iv", "phd", "ph.d."}
 # mentions après le nom (« Michael Atiyah FRS », « Smith et al. ») : BibTeX les prendrait pour le nom de famille ; pas de coupure
 HONORIFICS = {"frs", "frse", "al.", "obe", "cbe", "md"}
