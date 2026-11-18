@@ -803,7 +803,8 @@ app/            serveur Python (FastAPI)
   synctex.py    lecture du fichier SyncTeX (ligne de la source <-> page et position du PDF)
   latexml.py    version HTML expérimentale faite par LaTeXML (fichiers TeX, articles d'arXiv sans HTML)
   library.py    import d'un article, ses mises à jour et ses versions ; db.py : base SQLite ; main.py : routes web
-macos/          application Mac : main.swift (fenêtre, onglets, serveur), icon.swift, build.sh, release.sh
+macos/          application Mac : main.swift (fenêtre, onglets, serveur), icon.swift, build.sh, release.sh, build-beta.sh (copies d'essai,
+                jamais installées dans /Applications)
 windows/        application Windows : shell/ (fenêtre à onglets en C#, WebView2), launcher.py (serveur, construit
                 par PyInstaller), smoke.ps1 (essai de l'application construite), build-requirements.txt
 .github/        workflows : construction, tests et publication Windows (windows.yml), tests Linux (linux.yml)

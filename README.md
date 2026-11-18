@@ -764,7 +764,8 @@ app/            Python server (FastAPI)
   synctex.py    reading the SyncTeX file (source line <-> PDF page and position)
   latexml.py    experimental HTML version made by LaTeXML (TeX files, arXiv papers without HTML)
   library.py    importing a paper, its updates and versions; db.py: SQLite database; main.py: web routes
-macos/          Mac app: main.swift (window, tabs, server), icon.swift, build.sh, release.sh
+macos/          Mac app: main.swift (window, tabs, server), icon.swift, build.sh, release.sh, build-beta.sh (test copies, never
+                installed in /Applications)
 windows/        Windows app: shell/ (C# window with tabs, WebView2), launcher.py (server, built with PyInstaller),
                 smoke.ps1 (test of the built app), build-requirements.txt
 .github/        workflows: Windows build, tests and release (windows.yml), Linux tests (linux.yml)
