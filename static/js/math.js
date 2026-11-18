@@ -27,27 +27,54 @@ const MACROS = {
 export const DEFAULT_MACROS = Object.entries(MACROS).map(([name, value]) =>
   Array.isArray(value) ? `\\def\\${name}#1{${value[0]}}` : `\\def\\${name}{${value}}`);
 
+// \fcolorbox{red;position:fixed;…}{…}{…} (style « border: 2px solid <couleur> » recopié tel quel) et
+// \unicode[…][x;position:fixed;…]{…} (police recopiée dans le style) poseraient un style CSS libre : un calque
+// invisible sur toute la fenêtre, qui capte les clics. Sur l'arbre produit par le TeX (titres, résumés, notes,
+// réponses de l'IA ; pas le MathML de LaTeXML), seuls restent le cadre de \fcolorbox d'une couleur simple (nom,
+// #hex) et une police sans ponctuation CSS ; href, class et id (que seuls \href, \class, \cssId, retirés,
+// poseraient) sont enlevés aussi. Exécuté sur le MathJax livré par tests/test_mathjax.py
+const FRAME = /^border: [\d.]+(?:px|pt|em|ex) solid (?:#[0-9a-f]{3,8}|[a-z]+);?$/i;
+const PLAIN_FONT = /^[\w ,-]+$/;
+export function cleanTexMath({ data }) {
+  data.root.walkTree((node) => {
+    const attributes = node.attributes.getAllAttributes();
+    for (const name of ["href", "class", "id"]) delete attributes[name];
+    if ("style" in attributes && !FRAME.test(String(attributes.style).trim())) delete attributes.style;
+    if ("fontfamily" in attributes && !PLAIN_FONT.test(String(attributes.fontfamily))) delete attributes.fontfamily;
+  });
+}
+
+// Options de MathJax ; resolve reçoit MathJax une fois prêt (aussi lues par tests/test_mathjax.py)
+export function mathJaxOptions(resolve) {
+  return {
+    loader: { load: [], paths: { mathjax: BASE } },
+    // TeX des titres et résumés du feed ($L^2$, \(\mathbb{C}^n\)…)
+    tex: { inlineMath: [["$", "$"], ["\\(", "\\)"]], displayMath: [["$$", "$$"], ["\\[", "\\]"]], processEscapes: true,
+      macros: MACROS,
+      noundefined: { color: "" },  // macro propre à l'auteur (\db…) : affichée telle quelle, sans rouge
+      // \href, \style, \class, \cssId désactivés : un résumé ou un titre (texte venu d'arXiv) pourrait y
+      // cacher un lien vers n'importe quelle adresse, invisible et étendu à toute la fenêtre. Ni chargés à la
+      // demande (autoload), ni par \require{html} : le paquet require est retiré, et html.js n'est pas livré
+      // \bbox de même : son style CSS est libre (position: fixed, fond, marge sur toute la fenêtre). \mmlToken (paquet
+      // de base, pas retirable) pose des attributs MathML quelconques (href, style) : neutralisé dans le texte (rawMml)
+      packages: { "[-]": ["require", "html", "bbox"] },
+      autoload: { html: [], bbox: [] } },
+    startup: { typeset: false, ready: () => {
+      const { startup } = window.MathJax;
+      startup.defaultReady();
+      startup.input.filter((jax) => jax.name === "TeX").forEach((jax) => jax.postFilters.add(cleanTexMath));
+      resolve(window.MathJax);
+    } },
+    options: { enableMenu: false, menuOptions: { settings: { assistiveMml: false } } },
+    // adaptiveCSS: false : les règles de tous les caractères posées au départ, d'un coup. Sinon MathJax en ajoute à
+    // chaque caractère nouveau (première réponse de l'IA affichée…) et WebKit recalcule tout l'article (~1 s)
+    chtml: { fontURL: `${BASE}/fonts/woff-v2`, scale: 1, matchFontHeight: false, mtextInheritFont: true, adaptiveCSS: false },
+  };
+}
+
 function loadMathJax() {
   loading ||= new Promise((resolve, reject) => {
-    window.MathJax = {
-      loader: { load: [], paths: { mathjax: BASE } },
-      // TeX des titres et résumés du feed ($L^2$, \(\mathbb{C}^n\)…)
-      tex: { inlineMath: [["$", "$"], ["\\(", "\\)"]], displayMath: [["$$", "$$"], ["\\[", "\\]"]], processEscapes: true,
-        macros: MACROS,
-        noundefined: { color: "" },  // macro propre à l'auteur (\db…) : affichée telle quelle, sans rouge
-        // \href, \style, \class, \cssId désactivés : un résumé ou un titre (texte venu d'arXiv) pourrait y
-        // cacher un lien vers n'importe quelle adresse, invisible et étendu à toute la fenêtre. Ni chargés à la
-        // demande (autoload), ni par \require{html} : le paquet require est retiré, et html.js n'est pas livré
-        // \bbox de même : son style CSS est libre (position: fixed, fond, marge sur toute la fenêtre). \mmlToken (paquet
-        // de base, pas retirable) pose des attributs MathML quelconques (href, style) : neutralisé dans le texte (rawMml)
-        packages: { "[-]": ["require", "html", "bbox"] },
-        autoload: { html: [], bbox: [] } },
-      startup: { typeset: false, ready: () => { window.MathJax.startup.defaultReady(); resolve(window.MathJax); } },
-      options: { enableMenu: false, menuOptions: { settings: { assistiveMml: false } } },
-      // adaptiveCSS: false : les règles de tous les caractères posées au départ, d'un coup. Sinon MathJax en ajoute à
-      // chaque caractère nouveau (première réponse de l'IA affichée…) et WebKit recalcule tout l'article (~1 s)
-      chtml: { fontURL: `${BASE}/fonts/woff-v2`, scale: 1, matchFontHeight: false, mtextInheritFont: true, adaptiveCSS: false },
-    };
+    window.MathJax = mathJaxOptions(resolve);
     const script = document.createElement("script");
     script.src = `${BASE}/tex-mml-chtml.js`;
     script.async = true;

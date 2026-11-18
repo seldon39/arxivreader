@@ -530,7 +530,13 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   macros go through `_guard`.
 - MathJax and the paper's TeX (`math.js`): the packages `require`, `html` and `bbox` are removed (no `\href`,
   `\style`, `\class`, `\bbox`), and `\mmlToken` is replaced before typesetting (`rawMml`, before `slashLetters`):
-  a paper could otherwise draw an overlay or a link over the page.
+  a paper could otherwise draw an overlay or a link over the page. `\fcolorbox` and `\unicode` (autoloaded `color`,
+  `unicode`) still copy their argument into a style, so a TeX postFilter (`cleanTexMath`, added in
+  `mathJaxOptions().startup.ready`) cleans the tree built from TeX (titles, abstracts, notes, AI answers; not
+  LaTeXML's MathML): a `style` is kept only as `border: <width> solid <name or #hex>` (frame of `\fcolorbox`), a
+  `fontfamily` only without CSS punctuation, `href`/`class`/`id` always removed. A legitimate `\bbox` shows as raw
+  text (package removed). `tests/test_mathjax.py` runs the shipped MathJax with these options in Node
+  (`tests/mathjax_in_node.mjs`, minimal DOM): no `position: fixed` from either command, colours and frames kept.
 - Slashed letter (`\not{\mathcal{D}}`, `\not D`, `\slashed{D}`: Dirac operator): LaTeXML leaves the letter followed by
   U+0338, a combining slash that **Chrome draws on the letter and WebKit after it** (on the subscript). `math.slashedLetters`
   replaces it with the font's same non-combining slash, ⧸ U+29F8 (slash of `\not` and of ≠: height 0,716 em,

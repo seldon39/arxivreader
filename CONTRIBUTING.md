@@ -125,7 +125,8 @@ review checked on demand, `tests/test_notes_reliability.py` notes between comput
 
 Since 1.14, `tests/test_texexport.py` covers the annotated `.tex` copy (placement of notes, comment blocks, margin
 notes, the LaTeX of notes, references turned into `\eqref` / `\ref` / `\cite`, the zip) and `tests/test_synctex.py`
-the reader of `.synctex.gz` files.
+the reader of `.synctex.gz` files. `tests/test_mathjax.py` runs the shipped MathJax with the options of `math.js` in Node (styles the TeX of
+titles, abstracts and answers may produce).
 
 There are no automated interface tests yet ([#9](https://github.com/seldon39/arxivreader/issues/9)): check
 interface changes by hand in WebKit (Safari or the Mac app), in light and dark mode, below 900 px and on wide
