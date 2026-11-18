@@ -500,7 +500,7 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   of the document: a setting of the whole document); white on a dark background (`_Context.on_dark`): last
   `\pagecolor` (outside definitions, readable and dark), dark `\colorbox` (also opened by `\bgroup` in an
   environment's opening code), the arguments of an author macro (calls looked up by a running maximum of their ends, `_Context.reach`: linear in the number of calls) or the body of an author environment whose
-  definition draws a dark box or fill (also in an environment's closing code: `\end{lrbox}\colorbox{black}{…}`; or opens an author's dark box: `\begin{mybox}` after `\newtcolorbox{mybox}{colback=black}`), `\todo[color=…]` and `\hl` after `\sethlcolor` when dark, the option list of a
+  definition draws a dark box or fill (also in an environment's closing code around its boxed content: `\begin{lrbox}` or `\savebox` opening, `\end{lrbox}\colorbox{black}{\usebox…}` closing; another `\colorbox` of the closing code is not a background; or opens an author's dark box: `\begin{mybox}` after `\newtcolorbox{mybox}{colback=black}`), `\todo[color=…]` and `\hl` after `\sethlcolor` when dark, the option list of a
   box (title, title font: on the title bar), colored box around it, however far or deep (tcolorbox, mdframed,
   shaded: its own fill option if it has one, otherwise its definition `\newtcolorbox{name}{…}`, `\newmdenv`, or a dark `\tcbset`/`\mdfsetup`;
   `shadecolor` dark), a tikz picture, pgfplots axis or tikzcd that draws an image, a plot, a background layer or a
