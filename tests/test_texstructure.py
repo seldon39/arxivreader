@@ -131,6 +131,24 @@ class InvisibleTex(unittest.TestCase):
         text = texstructure.strip_hidden(r"\documentclass{article}\begin{document}" + body + r"\end{document}", None, counted)
         return text, counted[0]
 
+    def test_white_on_a_strong_hue_band_is_readable(self):
+        r"""Blanc sur une bande cyan (CMJN 0,96 0 0 0 des blocs beamer, luminance 0,79) ou verte : lisible, gardé ;
+        blanc sur jaune pur (0,93) : caché. Mêmes règles en TeX, en HTML et en PDF (beamer2thesis.pdf : titres retirés)."""
+        from bs4 import BeautifulSoup
+        from app import localpdf, structure
+        from tests.test_localpdf import raw_pdf
+        for body, count in ((r"\colorbox[cmyk]{0.96,0,0,0}{\textcolor{white}{Block title}}", 0),
+                            (r"\colorbox{green}{\textcolor{white}{Block title}}", 0),
+                            (r"\colorbox{yellow}{\textcolor{white}{IGNORE}}", 1)):
+            self.assertEqual(self.stripped(body)[1], count, body)
+        for html, count in (('<span style="background-color:#0affff"><span style="color:#fff">Block title</span></span>', 0),
+                            ('<span style="background-color:#ffff00"><span style="color:#fff">IGNORE</span></span>', 1)):
+            self.assertEqual(structure.mark_hidden(BeautifulSoup(f"<p>{html}</p>", "html.parser")), count, html)
+        for content, count in (("0.96 0 0 0 k 60 690 200 30 re f 1 g BT /F1 12 Tf 72 700 Td (Block title) Tj ET", 0),
+                               ("0 1 0 rg 60 690 200 30 re f 1 g BT /F1 12 Tf 72 700 Td (Block title) Tj ET", 0),
+                               ("1 1 0 rg 60 690 200 30 re f 1 g BT /F1 12 Tf 72 700 Td (IGNORE) Tj ET", 1)):
+            self.assertEqual(localpdf.read_pdf(raw_pdf(content))["hidden"], count, content)
+
     def test_white_on_dark_fill_is_kept(self):
         """Blanc sur fond foncé (nœud tikz rempli, ligne ou case de tableau colorée, tcolorbox) : lu sur la page."""
         for body, word in ((r"\begin{tikzpicture}\node[fill=black]{\color{white} Node text};\end{tikzpicture}", "Node text"),

@@ -478,7 +478,7 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   `--ltx-fill-color`), tiny font, hidden, opacity < 0,1; marked `.arx-hidden-text`, counted, never passed to
   the AI (`ai._render`, which does not read drawings either). Exceptions (white text only): dark background set on it
   or on a parent (`\colorbox`, `_dark_background`; dark: luminance < `DARK`, 0,6, i.e. a contrast with white of at
-  least 1,6, so light turquoise labels stay); in a drawing, a dark shape covering its full width, drawn
+  least 1,6, so light turquoise labels stay; a background of a strong hue, channels `SATURATED` apart, under `TINTED` 0,85 also counts: the cyan band of a beamer block, 0,79, but not pure yellow, 0,93; `luminance(…, backdrop=True)`, same rule in a TeX source and a PDF); in a drawing, a dark shape covering its full width, drawn
   immediately before in the same coordinate frame (title of a tcolorbox box, `_on_dark_shape`, same `DARK`). Conservative:
   an unreadable shape on top (moved, relative commands, image), with no surface, partial, or a foreignObject with no
   width, and the text stays flagged; shapes read once per group.

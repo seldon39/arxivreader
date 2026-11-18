@@ -110,15 +110,17 @@ def _box(points):
 
 
 def _luminance(values):
-    """Luminance d'une couleur (gris, RVB, CMJN selon le nombre de composantes), None si on ne sait pas la lire."""
+    """Luminance d'une couleur (gris, RVB, CMJN selon le nombre de composantes), None si on ne sait pas la lire. Lue
+    comme celle d'un fond (`backdrop`) : la même couleur sert au texte (blanc ou non : une teinte franche ne l'est jamais)
+    et aux aplats (une teinte franche soutenue, le cyan d'un bandeau beamer, porte un texte blanc lisible)."""
     if not values or len(values) not in (1, 3, 4):
         return None
     if len(values) == 1:
-        return luminance(values * 3)
+        return luminance(values * 3, backdrop=True)
     if len(values) == 3:
-        return luminance(values)
+        return luminance(values, backdrop=True)
     c, m, y, k = values
-    return luminance([(1 - c) * (1 - k), (1 - m) * (1 - k), (1 - y) * (1 - k)])
+    return luminance([(1 - c) * (1 - k), (1 - m) * (1 - k), (1 - y) * (1 - k)], backdrop=True)
 
 
 def _space(name, resources):

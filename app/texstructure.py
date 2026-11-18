@@ -487,7 +487,7 @@ def _is_dark(model, value, names, unknown=True):
     if not model and value.lower() in _NO_FILL:
         return False
     color = _channels(model, value) if model else _xcolor(value, names)
-    return unknown if color is None else luminance(color) < DARK
+    return unknown if color is None else luminance(color, backdrop=True) < DARK
 
 
 def _length_pt(value):

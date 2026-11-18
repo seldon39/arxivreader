@@ -74,7 +74,7 @@ TRANSLATION = re.compile(rf"^\s*matrix\(\s*1(?:\.0+)?\s+0(?:\.0+)?\s+0(?:\.0+)?\
 SHAPES = {"path", "rect", "circle", "ellipse", "polygon", "polyline", "line", "image", "use"}  # <text> ne couvre rien
 
 
-def _color(value):
+def _color(value, backdrop=False):
     """(luminance relative WCAG, opacité) d'une couleur CSS (#rgb, #rgba, #rrggbb, #rrggbbaa, rgb(), rgba(), quelques
     noms) ; None si on ne sait pas la lire."""
     value = NAMED_COLORS.get((value or "").strip().lower(), (value or "").strip().lower()).replace("!important", "").strip()
@@ -100,22 +100,26 @@ def _color(value):
                 alpha = float(parts[3][:-1]) / 100 if parts[3].endswith("%") else float(parts[3])
         except ValueError:
             return None
-    return luminance(channels), alpha
+    return luminance(channels, backdrop), alpha
 
 
 WHITE = 0.9  # luminance d'un texte qu'on ne voit pas sur la page blanche
 DARK = 0.6   # fond assez foncé pour qu'un texte blanc s'y lise : contraste ≥ 1,6 (orange, turquoise clair à 0,54)
 SATURATED = 0.5  # écart entre canaux d'une teinte franche (jaune pur : 1) : lisible sur blanc, jamais « presque blanche »
+TINTED = 0.85  # fond d'une teinte franche en deçà : un texte blanc s'y lit (cyan 0,79, vert 0,72 ; pas le jaune pur, 0,93)
 
 
-def luminance(channels):
+def luminance(channels, backdrop=False):
     """Luminance relative WCAG d'une couleur (r, v, b) entre 0 et 1 : texte « blanc » à partir de 0,9 (ici, dans un
     source TeX et dans un PDF), fond foncé en deçà de 0,6. Une teinte franche (jaune pur : 0,93, contraste 1,07 avec la
-    page mais lisible) est ramenée juste sous WHITE : jamais tenue pour du blanc."""
+    page mais lisible) est ramenée juste sous WHITE : jamais tenue pour du blanc ; `backdrop` (couleur d'un fond) : une
+    teinte franche sous TINTED (bandeau cyan de beamer) est ramenée sous DARK, un texte blanc s'y lit."""
     channels = [min(max(c, 0), 1) for c in channels]
     r, g, b = (c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels)
     value = 0.2126 * r + 0.7152 * g + 0.0722 * b
-    return min(value, WHITE - 0.001) if max(channels) - min(channels) >= SATURATED else value
+    if max(channels) - min(channels) < SATURATED:
+        return value
+    return min(value, DARK - 0.001) if backdrop and value < TINTED else min(value, WHITE - 0.001)
 
 
 def _hiding(style):
@@ -136,7 +140,7 @@ def _dark_background(element, stop):
         if node is stop or not isinstance(node, Tag) or node.name in ("svg", "body", "article"):
             return False
         for match in BACKGROUND.finditer(node.get("style", "")):
-            color = _color(match.group(1).split()[0] if match.group(1).split() else "")
+            color = _color(match.group(1).split()[0] if match.group(1).split() else "", backdrop=True)
             if color and color[1] >= 0.5:
                 return color[0] < DARK
     return False
@@ -260,7 +264,7 @@ def _on_dark_shape(element, cache):
                 if box[0] < x + width and x < box[2] and box[1] <= y <= box[3]:
                     return False  # couvre une partie seulement : on ne sait pas
                 continue
-            color = _color(fill)
+            color = _color(fill, backdrop=True)
             return color is not None and color[1] >= 0.5 and color[0] < DARK
     return False
 
