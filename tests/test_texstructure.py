@@ -292,6 +292,19 @@ class InvisibleTex(unittest.TestCase):
             text, count = self.stripped(source.replace("\\newif\\ifhidden", r"\newif\ifhidden\hiddentrue", 1))
             self.assertIn("KEPT", text, source)
 
+    def test_many_calls_of_a_dark_macro_take_linear_time(self):
+        """30 000 appels d'une macro à fond foncé (1 Mo) : près de 0,3 s ; 9 s quand chaque passage blanc parcourait toutes les
+        plages d'appel (temps quadratique, recalculé à chaque question posée à l'IA). Borne large."""
+        import time
+        source = (r"\documentclass{article}\usepackage{xcolor}\newcommand{\badge}[1]{\colorbox{black}{#1}}\begin{document}"
+                  + "Words here. " * 20 + r"\badge{\textcolor{white}{x}} y " * 30000 + r"\end{document}")
+        begin = time.monotonic()
+        counted = []
+        text = texstructure.strip_hidden(source, None, counted)
+        self.assertLess(time.monotonic() - begin, 5)
+        self.assertEqual(counted, [0])
+        self.assertEqual(text.count(r"\textcolor{white}{x}"), 30000)
+
     def test_readable_colors_and_whole_document_settings_kept(self):
         for body in (r"\textcolor{black!50}{VISIBLE} ok", r"\colorbox{black}{\color{white} VISIBLE}",
                      r"\color{white} VISIBLE " + "word " * 5000,                           # tout le document : un réglage

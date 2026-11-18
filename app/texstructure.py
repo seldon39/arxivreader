@@ -13,6 +13,7 @@ import bisect
 import colorsys
 import functools
 import io
+import itertools
 import posixpath
 import re
 import unicodedata
@@ -803,6 +804,7 @@ class _Context:
             if before and before[-1] and content:
                 self.ranges.append((found.start(), content[1]))
         self.ranges.sort()
+        self.reach = list(itertools.accumulate((end for _, end in self.ranges), max))  # fin la plus lointaine des premières plages
 
     def _box_options(self, begin):
         """Options […] d'une boîte ouverte en `begin` (\\begin{tcolorbox}[…]), ou ""."""
@@ -823,7 +825,8 @@ class _Context:
         page = [dark for start, dark in self.pages if start < pos]
         if page and page[-1] or _in_box(text, pos, names):
             return True
-        if any(start <= pos < end for start, end in self.ranges[:bisect.bisect_right(self.ranges, (pos, len(text)))]):
+        before = bisect.bisect_right(self.ranges, (pos, len(text)))
+        if before and self.reach[before - 1] > pos:
             return True
         options = _option_list(text, pos, self.work)
         if options and options[2] in self.boxes:
