@@ -490,15 +490,20 @@ class _Visible:
 
     def _letters(self, raw, font):
         """Le texte affiché contient-il des lettres ? Lu avec le codage de sa police (un sous-ensemble peut mettre les
-        lettres sur des codes de ponctuation) ; police illisible : les octets eux-mêmes."""
+        lettres sur des codes de ponctuation) ; police absente, illisible ou qui ne connaît aucun de ces codes : les octets eux-mêmes."""
+        if not hasattr(font, "get"):
+            return bool(re.search(rb"[A-Za-z\x80-\xff]", raw))  # pas de police (absente, nulle, aucun Tf) : les octets
         reference = getattr(font, "indirect_reference", None)
         key = (reference.idnum, reference.generation) if reference is not None else id(font)
         try:
             if key not in self.tables:
                 self.tables[key] = (font, _decoding(font))  # (police gardée : son id ne sert pas à une autre)
-            return any(ch.isalpha() for code in raw for ch in self.tables[key][1].get(code, ""))
+            decoded = "".join(self.tables[key][1].get(code, "") for code in raw)
+            if decoded.strip("\ufffd \x00"):
+                return any(ch.isalpha() for ch in decoded)
         except Exception:
-            return bool(re.search(rb"[A-Za-z\x80-\xff]", raw))
+            pass
+        return bool(re.search(rb"[A-Za-z\x80-\xff]", raw))  # police qui ne décode aucun de ces codes : les octets
 
     def _hidden(self, args, state, tm):
         raw = _raw(args[-1] if args else b"")

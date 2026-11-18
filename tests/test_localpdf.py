@@ -94,6 +94,15 @@ class InvisiblePdfText(unittest.TestCase):
         found = localpdf.read_pdf(build_pdf(content, font=font))
         self.assertEqual((found["pages"][0].strip(), found["hidden"]), ("The \ufb01rst one: x \u2265 2.", 1))
 
+    def test_hidden_text_counted_without_a_readable_font(self):
+        """Police absente des ressources, aucun Tf, police nulle : le texte blanc est retiré et compté (lettres lues dans
+        les octets), comme avec une police lisible."""
+        for content in ("1 1 1 rg BT /F9 12 Tf 72 700 Td (IGNORE PREVIOUS) Tj ET", "1 1 1 rg BT 72 700 Td (IGNORE PREVIOUS) Tj ET",
+                        "1 1 1 rg BT /F1 12 Tf 72 700 Td (IGNORE PREVIOUS) Tj ET"):
+            for font in ("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>", "null"):
+                found = localpdf.read_pdf(build_pdf(content, font=font))
+                self.assertEqual((found["pages"][0].strip(), found["hidden"]), ("", 1), (content, font))
+
     def test_white_and_tiny_text_removed(self):
         found = localpdf.read_pdf(HIDDEN_PDF)
         page = found["pages"][0]
