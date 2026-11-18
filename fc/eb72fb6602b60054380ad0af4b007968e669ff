@@ -1,0 +1,27 @@
+MAINTENANCE.md
+  s_2e78fe3aad7ffd::t_6ff96b9a8fbea0 1027-1030
+app/sanitize.py
+  s_2e78fe3aad7ffd::t_ece5be53fe7e6e 75-80,123-124,235-243
+static/js/settings.js
+  s_2e78fe3aad7ffd::t_c098f0a6ddd779 106,153,247
+static/js/util.js
+  s_2e78fe3aad7ffd::t_ea2b8491be1ae3 97
+tests/test_import.py
+  s_2e78fe3aad7ffd::t_eff866c19e5d5f 68-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "fceb72fb6602b60054380ad0af4b007968e669ff",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
