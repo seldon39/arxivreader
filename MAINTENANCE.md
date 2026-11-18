@@ -558,7 +558,12 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   `content.html`; a selection in the PDF of a paper that also has an HTML version is sent as it is.
 - Known limits of both (heuristics, by design): other conditionals (`\ifdefined`, `\ifx`, `\if`, `\ifcase`, a flag set true by a class option or another way, mdwtools `\if@leqno`), a font size combined with a scale (`\tiny\scalebox{0.15}`), TeX indirection beyond simple definitions (`\let`, styles of other
   packages, `\pdfcolorstack`, `\special`, fontspec `Color=`), text covered by a shape or placed off the page, colors
-  behind Separation or pattern color spaces and shading colors (counted as dark), near-white just under 0,9. Leaning
+  behind Separation or pattern color spaces and shading colors (counted as dark), near-white just under 0,9. In HTML,
+  `hiddenText` counts marked elements, not passages: one prompt that LaTeXML splits into list items (each item its own
+  paragraph, the visible labels `1.`, `(a)` in `ltx_tag_item` between them) counts once per item (2505.16211: 13 in
+  HTML, 1 in TeX and PDF), and "Next" stops once per paragraph; everything stays marked and removed. Left as is
+  (decided on 18/11/2026): grouping would have to skip item labels, could merge two distinct prompts, and would have to
+  change the reader's navigation the same way. Leaning
   towards keeping readable text: in TeX, white text in a tikz picture that has a dark fill elsewhere, or in a box
   whose title or definition is dark, is kept; white text after a dark tikz overlay already closed (title page) is
   removed. In a PDF, a dark shape under the start and middle of a white line keeps the whole line; light shapes that
