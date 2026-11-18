@@ -310,6 +310,19 @@ class InvisibleTex(unittest.TestCase):
             self.assertEqual((text.count("KEPT"), count), (body.count("KEPT"), 0), body)
         self.assertNotIn("GONE", self.stripped(r"\ifnum 0<1\relax KEPT \fi \ifnum 9<1 GONE \fi")[0])
 
+    def test_author_macro_applies_after_its_definition_in_its_group(self):
+        """La règle d'une macro de l'auteur ne vaut qu'après sa définition, dans son groupe, jusqu'à sa redéfinition
+        (e-french, faq.tex : \def\footnote#1{} à la fin du document effaçait les notes de bas de page d'avant)."""
+        for body in (r"Text\footnote{KEPT one} more.\def\footnote#1{}",
+                     r"\def\a#1#2{#2}\a{GONE}{KEPT one}\def\a#1#2{#1}\a{KEPT two}{GONE}",
+                     r"{\def\note#1#2{#1}\note{KEPT one}{GONE}} Later \note{KEPT two}{KEPT three}",
+                     r"{\gdef\ign#1{}}\ign{GONE} KEPT one",
+                     r"\begin{abstract}\renewcommand{\hide}[1]{\textcolor{white}{#1}}\end{abstract} \hide{KEPT one}"):
+            text, count = self.stripped(body)
+            self.assertEqual((text.count("KEPT"), "GONE" in text, count), (body.count("KEPT"), False, 0), body)
+        text, count = self.stripped(r"Opening words. \newcommand{\hide}[1]{\textcolor{white}{#1}} \hide{GONE}")
+        self.assertEqual(("GONE" in text, count), (False, 1))
+
     def test_many_calls_of_a_dark_macro_take_linear_time(self):
         """30 000 appels d'une macro à fond foncé (1 Mo) : près de 0,3 s ; 9 s quand chaque passage blanc parcourait toutes les
         plages d'appel (temps quadratique, recalculé à chaque question posée à l'IA). Borne large."""

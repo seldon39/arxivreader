@@ -893,17 +893,46 @@ def _signature(found, header):
     return ""
 
 
+_GROUPING = re.compile(r"\\verb\*?([^A-Za-z\s*]).*?\1|\\(?:begin|end)\s*\{\s*document\s*\}|(\\begin\s*\{[^{}]*\}|\\bgroup(?![A-Za-z])"
+                       r"|\\begingroup(?![A-Za-z])|\{)|(\\end\s*\{[^{}]*\}|\\egroup(?![A-Za-z])|\\endgroup(?![A-Za-z])|\})|\\.", re.S)
+
+
+def _group_ends(text, positions):
+    """Fin du groupe ({…}, \\begingroup, environnement) qui contient chacune des `positions` (triées) : liste ; la fin
+    du texte hors de tout groupe."""
+    ends, stack, index = [len(text)] * len(positions), [[]], 0
+    for token in _GROUPING.finditer(text):
+        while index < len(positions) and positions[index] < token.start():
+            stack[-1].append(index)
+            index += 1
+        if token.group(2):
+            stack.append([])
+        elif token.group(3) and len(stack) > 1:
+            for waiting in stack.pop():
+                ends[waiting] = token.start()
+    return ends
+
+
 def _hiding_macros(text, colors):
-    """Macros et environnements de l'auteur qui cachent : {nom: (genre, {numéro d'argument caché: (selon le fond, compté)}, par couleur, paramètres)} —
+    """Macros et environnements de l'auteur qui cachent : [(nom, genre, {numéro d'argument caché: (selon le fond, compté)}, par couleur, paramètres,
+    début, fin)] — la règle vaut de la fin de la définition à la fin de son groupe (sauf \\gdef, \\global) ou à la
+    définition suivante du même nom ;
     « argument » (« \\newcommand{\\hide}[1]{\\textcolor{white}{#1}} »), « declaration » (« \\newcommand{\\wh}
     {\\color{white}} »), « environment » (clé « \\begin{nom} ») ; et la place des définitions [(début, début du corps,
     fin)]. Une définition qui pose elle-même un fond foncé (\\cellcolor{black}\\textcolor{white}{#1}) ne cache rien."""
-    macros, definitions = {}, []
-    for found in _DEFINITION.finditer(text):
+    definitions, found_all = [], list(_DEFINITION.finditer(text))
+    group_ends = _group_ends(text, [found.start() for found in found_all])
+    names_at = [found.group(1) or found.group(3) or found.group(5) or found.group(6) or found.group(7) for found in found_all]
+    rules, later, seen = [], [None] * len(found_all), {}
+    for index in reversed(range(len(found_all))):  # définition suivante du même nom
+        later[index], seen[names_at[index]] = seen.get(names_at[index]), found_all[index].start()
+    for index, found in enumerate(found_all):
+        name = names_at[index]
+        glob = re.match(r"\\[gx]def", found.group()) or re.search(r"\\global\s*$", text[max(0, found.start() - 30):found.start()])
+        stop = min(len(text) if glob else group_ends[index], len(text) if later[index] is None else later[index])
         body = _group(text, found.end(), "{")
         if body is None:
             continue
-        name = found.group(1) or found.group(3) or found.group(5) or found.group(6) or found.group(7)
         if found.group(6) or found.group(7):  # environnement : code d'ouverture
             definitions.append((found.start(), found.end(), body[1]))
             closing = _group(text, body[1], "{")
@@ -915,7 +944,7 @@ def _hiding_macros(text, colors):
                  if not (span[3] and (_fill_dark(body[0][:span[0]], names, True, True) or _in_box(body[0], span[0], names)))]
         if found.group(6) or found.group(7):
             if any(not closed for *_, closed in spans):
-                macros["\\begin{" + name + "}"] = ("environment", (), all(span[3] for span in spans if not span[4]), "")
+                rules.append(("\\begin{" + name + "}", "environment", (), all(span[3] for span in spans if not span[4]), "", definitions[-1][2], stop))
             continue
         # un argument n'est caché que si chacun de ses emplois l'est (\phantom{#1}\llap{#1} l'imprime) : (selon le fond, compté) ;
         # un argument que le corps n'emploie jamais (\newcommand{\ign}[2]{#2}) n'est jamais imprimé : (sans condition, pas compté)
@@ -929,10 +958,10 @@ def _hiding_macros(text, colors):
         if name not in SECTIONS and name not in ("paragraph", "subparagraph"):  # \renewcommand{\section}[1]{…} reste un titre pour l'analyse
             hidden.update({k: (False, False) for k, kind in enumerate(kinds, 1) if k not in numbers and kind != "s"})
         if hidden:
-            macros[name] = ("argument", hidden, None, kinds)
+            rules.append((name, "argument", hidden, None, kinds, body[1], stop))
         elif not re.search(r"#\d", body[0]) and any(not closed for *_, closed in spans):
-            macros[name] = ("declaration", (), all(span[3] for span in spans if not span[4]), "")
-    return macros, definitions
+            rules.append((name, "declaration", (), all(span[3] for span in spans if not span[4]), "", body[1], stop))
+    return rules, definitions
 
 
 def _candidates(text, names, macros):
@@ -1036,15 +1065,19 @@ def _candidates(text, names, macros):
         content = _group(text, found.end(), "{")
         if content:
             spans.append((found.start(), content[1], None, False, True))  # jamais compté : aligne souvent des chiffres
-    for name, (kind, hidden, colored, params) in macros.items():
+    for name, kind, hidden, colored, params, reach, until in macros:
         if kind == "environment":
             close = re.compile(r"\\end\s*\{\s*" + re.escape(name[7:-1]) + r"\s*\}")
             for found in re.finditer(re.escape(name), text):
+                if not reach <= found.start() < until:
+                    continue
                 end = close.search(text, found.end())
                 if end:
                     spans.append((found.start(), end.end(), found.end(), colored, True))
             continue
         for found in re.finditer(r"\\" + name + r"(?![A-Za-z])\s*", text):
+            if not reach <= found.start() < until:
+                continue  # avant la définition, hors de son groupe, après une redéfinition : une autre macro
             if kind == "declaration":
                 end, closed = _scope_end(text, found.end(), "color|normalcolor|" + _SIZES, work, cells(found.start()))
                 spans.append((found.start(), end, found.end(), colored, closed))
