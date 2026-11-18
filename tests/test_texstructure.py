@@ -255,6 +255,23 @@ class InvisibleTex(unittest.TestCase):
             self.assertIn(word, run(body)[0], body)
         self.assertNotIn("SECRET", run(r"\begin{tabular}{ll}\color{white} SECRET & b\end{tabular}")[0])
 
+    def test_never_executed_text_is_ignored(self):
+        """\verb, \lstinline, verbatim, branche fausse d'une conditionnelle : ni texte caché, ni réglage d'ensemble
+        (beamer, \pagecolor) ; le reste de l'article est gardé."""
+        visible = "Visible paper text that matters. " * 10
+        def run(body):
+            counted = []
+            text = texstructure.strip_hidden(r"\documentclass{article}\begin{document}" + "Opening words. " * 10 + body
+                                             + visible + r"\end{document}", None, counted)
+            return "matters" in text, "SECRET" in text, counted[0]
+        for body in (r"we write \verb|\color{white}| for labels ", r"\verb+\color{black!3}+ ", r"\lstinline|\color{white}| ",
+                     r"\begin{verbatim}\color{white}\end{verbatim} ", r"\iffalse \color{white}\fi ", r"\ifnum0=1 \color{white}\fi "):
+            self.assertEqual(run(body), (True, False, 0), body)
+        for body in (r"\verb|\documentclass{beamer}| \textcolor{white}{SECRET} ", r"\ifnum0=1 \documentclass{beamer}\fi \textcolor{white}{SECRET} ",
+                     r"\verb|\pagecolor{black}| \textcolor{white}{SECRET} ", r"\verb|%| \textcolor{white}{SECRET} ",
+                     r"\ifnum0=1 x\else \textcolor{white}{SECRET}\fi ", r"\ifnum1=1 \textcolor{white}{SECRET}\fi "):
+            self.assertEqual(run(body), (True, False, 1), body)
+
     def test_nested_declarations_stay_fast(self):
         import time
         for body in (r"{\color{white}" * 4000 + "x" + "}" * 4000, r"\color{white}{" * 4000 + "x" + "}" * 4000,

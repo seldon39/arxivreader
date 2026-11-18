@@ -277,6 +277,11 @@ _UNITS = {"pt": 1, "bp": 1, "": 1, "mm": 2.85, "cm": 28.5, "in": 72.3, "ex": 4.3
 _SCAN = 200000            # portée d'une déclaration cherchée jusque-là au plus
 _SCAN_BUDGET = 3_000_000  # caractères parcourus en tout pour les portées d'un texte ; au-delà, déclarations ouvertes
 _COMMENT = re.compile(r"(?<!\\)%[^\n]*")
+# jamais exécuté : commentaire, \verb, \lstinline, environnements verbatim (masqués avant de chercher le texte caché)
+_UNEXECUTED = re.compile(r"(?<!\\)%[^\n]*|\\verb\*?([^A-Za-z\s*])[^\n]*?\1"
+                         r"|\\lstinline\s*(?:\[[^\]\n]*\])?\s*(?:\{[^{}\n]*\}|([^A-Za-z\s{\[])[^\n]*?\2)"
+                         r"|\\begin\s*\{\s*(verbatim\*?|Verbatim\*?|BVerbatim|lstlisting|minted|alltt)\s*\}.*?\\end\s*\{\s*\3\s*\}", re.S)
+_CONDITIONAL = re.compile(r"\\iffalse\b|\\ifnum\s*(-?\d+)\s*([<=>])\s*(-?\d+)\s*(?![\d.])")
 _COLOR_USE = re.compile(r"\\(textcolor|mathcolor|color)\s*(?:\[\s*([A-Za-z]+)\s*\])?\s*\{([^{}]*)\}")
 _COLOR_DEFINITION = re.compile(r"\\(?:definecolor|providecolor)\s*(?:\[[^\]]*\])?\s*\{\s*([^{}]+?)\s*\}\s*\{\s*([^{}]+?)\s*\}"
                                r"\s*\{([^{}]*)\}|\\colorlet\s*(?:\[[^\]]*\])?\s*\{\s*([^{}]+?)\s*\}\s*(?:\[[^\]]*\])?\s*\{([^{}]*)\}")
@@ -304,6 +309,34 @@ _DEFINITION = re.compile(
     r"|\\(?:New|Renew|Provide|Declare)DocumentEnvironment\s*\{\s*([^{}]+?)\s*\}\s*\{[^{}]*\}\s*(?=\{)")
 _TIKZ_STYLE = re.compile(r"(?<![\w ])([\w][\w ]{0,40}?)\s*/\.style\s*=\s*\{([^{}]*)\}|\\tikzstyle\s*\{([^{}]+)\}\s*=\s*\[([^\]]*)\]")
 _NODE = re.compile(r"\bnode\s*(?:\([^()]*\)\s*)?\[([^\[\]]*)\]\s*(?:\([^()]*\)\s*)?(?:at\s*\([^()]*\)\s*)?(?=\{)")
+
+
+def _blank(found):
+    return re.sub(r"[^\n]", " ", found.group())
+
+
+def _unexecuted(text):
+    """`text` (même longueur) où ce que TeX n'exécute jamais est blanchi : commentaires, \\verb|…|, \\lstinline,
+    verbatim / lstlisting / minted, branche fausse de \\iffalse et de \\ifnum entre deux nombres (jusqu'au \\else
+    ou au \\fi de même niveau)."""
+    text = _UNEXECUTED.sub(_blank, text)
+    pieces, cursor = [], 0
+    for found in _CONDITIONAL.finditer(text):
+        if found.start() < cursor:
+            continue
+        if found.group(1) is not None:
+            a, op, b = int(found.group(1)), found.group(2), int(found.group(3))
+            if (a < b, a == b, a > b)["<=>".index(op)]:
+                continue
+        depth, start = 1, found.end()
+        for token in re.finditer(r"\\(if[A-Za-z]*|fi|else)(?![A-Za-z])", text[start:start + _SCAN]):
+            depth += {"fi": -1, "else": 0}.get(token.group(1), 1)
+            if depth == 0 or depth == 1 and token.group(1) == "else":
+                stop = start + token.start()
+                pieces += [text[cursor:found.start()], re.sub(r"[^\n]", " ", text[found.start():stop])]
+                cursor = stop
+                break
+    return "".join(pieces) + text[cursor:]
 
 
 def _channels(model, value):
@@ -953,14 +986,14 @@ def invisible(text):
     \\texttransparent{<0.1}, \\transparent{<0.1} ; nœud, figure ou scope tikz [opacity=0] ; \\phantom{…} (retiré, jamais compté) ; macros et environnements
     de l'auteur qui font de même (`_hiding_macros`), et ce qu'une définition cache sans paramètre. Une déclaration
     qui court jusqu'à \\end{document} sans texte lisible avant elle (préambule, début du document) règle tout le
-    document : gardée. Commentaires ignorés."""
-    masked = _COMMENT.sub(lambda found: " " * len(found.group()), text)
+    document : gardée. Ce que TeX n'exécute jamais est ignoré (`_unexecuted`)."""
+    masked = _unexecuted(text)
     colors = _Colors(masked)
     macros, definitions = _hiding_macros(masked, colors)
     outside = lambda pos: not any(head <= pos < end for head, _, end in definitions)
     context = _Context(masked, colors, outside)
-    beamer = re.search(r"\\documentclass\s*(?:\[[^\]]*\])?\s*\{\s*beamer\s*\}", masked)
     begin = masked.find("\\begin{document}")
+    beamer = re.search(r"\\documentclass\s*(?:\[[^\]]*\])?\s*\{\s*beamer\s*\}", masked[:max(begin, 0)])  # préambule
     body = begin + len("\\begin{document}") if begin >= 0 else 0
     readable = len(masked)  # place de la 80e lettre du document : une déclaration ouverte avant elle règle tout
     letters = (found for found in re.finditer(r"\\[A-Za-z]+|[^\W\d_]", masked[body:]) if not found.group().startswith("\\"))
