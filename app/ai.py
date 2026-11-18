@@ -1487,7 +1487,7 @@ def _other_version(paper, number):
         if number > known:
             return None, None
         try:
-            row = library.ensure_ready(library.ensure_version(main, number))
+            row = library.ensure_ready(library.ensure_version(main, number), timeout=45)  # la demande reste muette tant que build_prompt n'a pas fini : 45 s au plus
         except Exception as error:
             log.info("version %s de %s indisponible : %s", number, main["id"], error)
             row = None

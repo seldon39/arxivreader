@@ -979,8 +979,8 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   subcollection, folder deleted during an addition, trash, mass removals).
 - **No request from the page may wait for long** (WebKit may abandon a request that has gone about
   one minute without a response): an import always goes to the background (`POST /api/papers`, update
-  `POST /api/papers/{id}/refresh` tracked through `…/importing`), a server-side wait is capped at 45 s
-  (`ensure_ready`) and the page asks again; the arXiv API has a patient second attempt (`arxiv.patient_get`,
+  `POST /api/papers/{id}/refresh` tracked through `…/importing`), a server-side wait is capped at 45 s (`ensure_ready(..., timeout=45)`, also in `ai._other_version`: the question to the AI is silent until the prompt is built)
+  and the page asks again; the arXiv API has a patient second attempt (`arxiv.patient_get`,
   `search._fetch`); the daily feed comes from RSS, the rest (followed authors, journals, citations) in the background; the graph of related papers is
   built in the background (`POST /api/related`, tracked by `GET /api/related/status`, stopped by `POST /api/related/cancel`:
   checkpoints `related._step` and `related._wait` between two requests).

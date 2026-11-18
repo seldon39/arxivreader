@@ -1518,11 +1518,12 @@ class OtherVersion(unittest.TestCase):
         main = {**self.paper, "id": "P"}
         with unittest.mock.patch.object(ai.library, "main_of", return_value=main), unittest.mock.patch.object(ai.db, "archives_of", return_value=[]), \
                 unittest.mock.patch.object(ai.library, "ensure_version", return_value="Pv1") as ensure, \
-                unittest.mock.patch.object(ai.library, "ensure_ready", return_value={"id": "Pv1", "version": 1, "source": "arxiv-html"}), \
+                unittest.mock.patch.object(ai.library, "ensure_ready", return_value={"id": "Pv1", "version": 1, "source": "arxiv-html"}) as ready, \
                 unittest.mock.patch.object(ai, "_load", return_value=(None, {}, "text v1")):
             self.assertEqual(ai._other_version(main, 1), ({"id": "Pv1", "version": 1, "source": "arxiv-html"}, "text v1"))
             self.assertEqual(ai._other_version(main, 7), (None, None))  # n'existe pas
         ensure.assert_called_once_with(main, 1)
+        ready.assert_called_once_with("Pv1", timeout=45)  # la demande à l'IA ne répond rien pendant l'attente : jamais 180 s
 
 
 class OutputLimit(unittest.TestCase):
