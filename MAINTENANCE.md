@@ -537,6 +537,11 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   (`_refresh_text`), at startup (`redetect_all`) or at the AI's first reading.
   The reader shows the count without a reveal button when only the PDF is displayed (`reader.hiddenTextSource`,
   `reader.unshownText`).
+  A quote taken in the PDF (pdf.js selection, text of a zone, note, quote of an earlier exchange) keeps the hidden text, which pdf.js
+  reads: `ai.visible_quote` (called by `build_prompt`, `_annotations_block`, `_describe`) keeps only the words that follow one another in
+  the `text.json` text, runs of at least three (the whole quote if it is shorter), so the AI never gets hidden text; the price is that
+  a quote that pdf.js and pypdf split differently loses the words that do not align. Limit: only papers that have a `text.json` and no
+  `content.html`; a selection in the PDF of a paper that also has an HTML version is sent as it is.
 - Known limits of both (heuristics, by design): other conditionals (`\ifdefined`, `\ifx`, `\if`, `\ifcase`, a flag set true somewhere), a font size combined with a scale (`\tiny\scalebox{0.15}`), TeX indirection beyond simple definitions (`\let`, styles of other
   packages, `\pdfcolorstack`, `\special`, fontspec `Color=`), text covered by a shape or placed off the page, colors
   behind Separation or pattern color spaces and shading colors (counted as dark), near-white just under 0,9. Leaning

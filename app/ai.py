@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import threading
 import time
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -803,6 +804,62 @@ def _find(text, snippet):
     return found.start() if found else None
 
 
+_visible_index = (None, None)  # (clé, {mots du texte visible, index des trios de mots}) du dernier PDF lu
+
+
+def _word_key(token):
+    return "".join(c for c in unicodedata.normalize("NFKC", token).casefold() if c.isalnum())
+
+
+def visible_quote(paper_id, quote):
+    """Citation d'un PDF (sélection pdf.js, texte d'une zone, note) réduite à ce que le texte visible de la page
+    contient (text.json : le texte invisible en est déjà retiré, la couche de texte de pdf.js, elle, le garde). Mots
+    alignés sur le texte par suites d'au moins trois (deux ou un si la citation n'en a pas plus : la suite entière doit
+    s'y trouver) ; les autres sont retirés, les signes sans lettre ni chiffre gardés à côté d'un mot gardé. Citation
+    d'un article avec HTML, ou sans text.json : telle quelle."""
+    global _visible_index
+    folder = library.paper_dir(paper_id)
+    if not quote or (folder / "content.html").exists() or not (folder / "text.json").exists():
+        return quote
+    stamp = (paper_id, (folder / "text.json").stat().st_mtime)
+    if _visible_index[0] != stamp:
+        words = [k for k in map(_word_key, PAGE_MARK.sub("", localpdf.text(paper_id)).split()) if k]
+        trios = {}
+        for i in range(len(words) - 2):
+            trios.setdefault(tuple(words[i:i + 3]), []).append(i)
+        _visible_index = (stamp, (words, trios))
+    words, trios = _visible_index[1]
+    tokens = quote.split()
+    keys = [(n, _word_key(t)) for n, t in enumerate(tokens)]
+    keys = [(n, k) for n, k in keys if k]
+    keep = set()
+    if len(keys) < 3:
+        wanted = [k for _, k in keys]
+        if any(words[i:i + len(wanted)] == wanted for i in range(len(words))):
+            return quote
+    else:
+        i = 0
+        while i < len(keys):
+            best = 0
+            for start in trios.get(tuple(k for _, k in keys[i:i + 3]), ())[:200]:
+                size = 3
+                while i + size < len(keys) and start + size < len(words) and words[start + size] == keys[i + size][1]:
+                    size += 1
+                best = max(best, size)
+            if best:
+                keep.update(n for n, _ in keys[i:i + best])
+                i += best
+            else:
+                i += 1
+    for n, token in enumerate(tokens):
+        if n not in keep and not _word_key(token):  # signe seul : gardé à côté d'un mot gardé
+            if (n - 1) in keep or (n + 1) in keep:
+                keep.add(n)
+    if len(keep) == len(tokens):
+        return quote
+    return " ".join(t for n, t in enumerate(tokens) if n in keep)
+
+
 def _focus(text, soup, index, structure, node, quote, page):
     """Endroit du texte où porte la question : page (texte d'un PDF, repéré « [page n] »), sinon énoncé visé, sinon
     passage cité, sinon l'énoncé le plus proche de la page (source TeX) ; None si rien ne le situe."""
@@ -1215,7 +1272,7 @@ def _annotations_block(version, current=False):
         attributes = " ".join(f'{key}="{html.escape(str(value), quote=True)}"' for key, value in fields.items() if value)
         lines.append(f"<annotation {attributes}>")
         if item["quote"] and not bookmark:
-            lines.append(f"<quote>{_neutral(item['quote'])}</quote>")
+            lines.append(f"<quote>{_neutral(visible_quote(version['id'], item['quote']))}</quote>")
         pinned = index.get(target.get("id")) if item["kind"] == "note" and not pdf else None
         if pinned is not None:  # note épinglée au HTML : début du paragraphe, pour la retrouver (dans le PDF aussi)
             anchor = element_text(pinned)
@@ -1551,6 +1608,7 @@ def build_prompt(paper, structure, task, target=None, quote=None, question=None,
         raise AIError("Unknown task")
     if task in ("zone", "transcribe") and not zone:
         raise AIError("No image")
+    quote = visible_quote(paper["id"], quote)  # PDF : jamais de texte invisible (la sélection pdf.js le contient)
     structure = _prompt_structure(structure)  # étiquettes et macros de l'auteur : jamais une balise de l'invite
     soup, index, text = _load(paper["id"])
     if task == "transcribe":  # transcription d'une image : l'article n'y sert pas (réponse rapide, peu coûteuse)
@@ -1853,7 +1911,8 @@ def _describe(exchange, structure, language="en"):
     what = DESCRIBE.get(language, DESCRIBE["en"]).get(exchange["task"], "").format(label=label).strip()
     if exchange["task"] in ("summary", "review") and exchange.get("target") in chapters:  # livre : un chapitre
         what = f"{what} — {chapters[exchange['target']]}"
-    return " — ".join(x for x in (what, exchange.get("question") or "", exchange.get("quote") or "") if x)
+    quote = visible_quote(exchange["paper_id"], exchange.get("quote") or "") if exchange.get("paper_id") else exchange.get("quote")
+    return " — ".join(x for x in (what, exchange.get("question") or "", quote or "") if x)
 
 
 # ---------- Export vers une conversation (application Claude, ou autre assistant) ----------
