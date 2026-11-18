@@ -2,6 +2,8 @@ app/zotero.py
   s_2e78fe3aad7ffd::t_2d8a43e75b28c4 308-311,415,419
 tests/test_zotero.py
   s_2e78fe3aad7ffd::t_ded523125e8fa5 245-246,248,250,312,328,331-334
+MAINTENANCE.md
+  s_2e78fe3aad7ffd::t_bf83caf23cb4c1 1009-1013
 ---
 {
   "schema_version": "authorship/3.0.0",
