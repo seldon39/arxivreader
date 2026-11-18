@@ -2,6 +2,7 @@
 
 import pathlib
 import tempfile
+import threading
 import unittest
 
 from fastapi.testclient import TestClient
@@ -54,6 +55,17 @@ class Folders(unittest.TestCase):
         self.assertIsNotNone(db.get_paper("2601.00002"))  # l'article reste
         restored = self.client.post("/api/folders", json={"name": removed["name"], "papers": removed["papers"]}).json()
         self.assertEqual(restored["papers"], ["2601.00002"])
+
+    def test_erasing_waits_for_the_paper_lock(self):
+        done = threading.Event()
+        with library.paper_lock("2601.00001"):  # un import de cet article est en cours
+            thread = threading.Thread(target=lambda: (library.remove_paper("2601.00001"), done.set()))
+            thread.start()
+            self.assertFalse(done.wait(0.3))
+            self.assertIsNotNone(db.get_paper("2601.00001"))
+        thread.join(5)
+        self.assertTrue(done.is_set())
+        self.assertIsNone(db.get_paper("2601.00001"))
 
     def test_erased_paper_leaves_folders(self):
         folder = folders.create("Toeplitz", ["2601.00001", "2601.00002"])

@@ -918,10 +918,11 @@ def clean_cache(days=30):
 def remove_paper(paper_id):
     from . import ai, annotations, bookjob, folders
     for archive in db.archives_of(paper_id):
-        remove_paper(archive["id"])
-    bookjob.forget(paper_id)  # livre : relecture ou résumé des chapitres en cours arrêtés
-    shutil.rmtree(paper_dir(paper_id), ignore_errors=True)
-    db.delete_paper(paper_id)
-    folders.forget_paper(paper_id)
-    annotations.delete_for(paper_id)
-    ai.delete_for(paper_id)
+        remove_paper(archive["id"])  # chaque archive prend son verrou : jamais deux verrous imbriqués
+    with paper_lock(paper_id):  # un import ou une ré-analyse en cours de cet article finit d'abord (un verrou par article)
+        bookjob.forget(paper_id)  # livre : relecture ou résumé des chapitres en cours arrêtés
+        shutil.rmtree(paper_dir(paper_id), ignore_errors=True)
+        db.delete_paper(paper_id)
+        folders.forget_paper(paper_id)
+        annotations.delete_for(paper_id)
+        ai.delete_for(paper_id)

@@ -821,7 +821,8 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   `GET /api/papers/{id}/versions`, `POST /api/papers/{id}/versions/{version}` (502 with code `offline` on `ArxivError`);
   refresh refused for an archive; `GET /api/papers/{id}` adds `mainVersion` for an archive and answers 404 for a failed
   one. An archive never enters the library (`set_in_library` refuses), is never repaired by re-import and is removed with its
-  paper (`remove_paper`); `clean_cache` keeps a main paper whose archive has notes. Notes imported from another computer go
+  paper (`remove_paper`, which takes the paper's `paper_lock` like an import or a re-analysis, so a deletion waits for them; never call it
+  from inside a `paper_lock` block: plain `Lock`; the archives are removed before, each under its own lock); `clean_cache` keeps a main paper whose archive has notes. Notes imported from another computer go
   to their version (`notesync._version_of_notes`, `archived_of` in `PAPER_FIELDS`); an archive's export is named after its id
   (`export.filename`). Tab left open on a replaced version: the page sends `X-ArXivReader-Version` on the reader's writes
   (`api.setReadingVersion`, `versioned()`); `main._same_version` (`READER_WRITE`: annotation POST, proofs PUT/DELETE, `ai`,
