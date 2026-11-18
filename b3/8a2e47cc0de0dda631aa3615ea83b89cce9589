@@ -1,0 +1,26 @@
+static/css/app.css
+  s_2e78fe3aad7ffd::t_55fa9b2503048d 400-401
+MAINTENANCE.md
+  s_2e78fe3aad7ffd::t_582c2f028bfc3a 609-610
+static/js/reader.js
+  s_2e78fe3aad7ffd::t_55fa9b2503048d 611-612,632-634,1379-1381,1408,1411
+tests/test_reader_layout.py
+  s_2e78fe3aad7ffd::t_1ae35f12028177 2-66
+  s_2e78fe3aad7ffd::t_0074c703b211a6 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "b38a2e47cc0de0dda631aa3615ea83b89cce9589",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
