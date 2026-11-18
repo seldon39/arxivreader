@@ -544,6 +544,14 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   removed. In a PDF, a dark shape under the start and middle of a white line keeps the whole line; light shapes that
   are neither rectangles nor axis-aligned outlines do not cover. A luminosity soft mask (`/SMask` of a `gs`) is not evaluated (it only stops light fills from covering), so text hidden by a black mask is kept: judging it means rendering the mask group, and a mask is common on legitimate images and shadows. The decoded text is whatever the font's `ToUnicode` says: a visible glyph (a dagger) whose `ToUnicode` maps to a sentence reaches the AI as that sentence. Checking it means comparing the glyph drawings with the map, out of reach of a text reader; the prompt's other defences apply. Dark text on a dark shape of the same tone (black on black) is kept: shapes record only "dark or not", and black text on a mid-tone fill is ordinary (a contrast test would need the luminance of each shape). The
   prompt keeps its other defences (`ai._guard`, tagged blocks, instructions).
+- Importing a PDF (`POST /api/papers/pdf`) is one request that waits for the analysis (`localpdf.read_pdf`, in a thread of
+  the pool: the server and the other requests are not held). Left as it is, on purpose: an ordinary paper takes a few
+  seconds, the page shows the import under way, and moving it to a polled job (as for TeX files) would mean a new
+  route, a job table and a progress state in `library.js` for a delay that only a crafted file reaches (a 525 KB PDF
+  made of nested forms and shapes took over a minute). The bounds already in place (`MAX_STEPS`, `MAX_LOOKUPS`,
+  `MAX_FORM_DEPTH`, `PAGE_CHARS`, `TOTAL_CHARS`) limit memory and the work per page, not the total time; a time budget
+  per file, with the text of the remaining pages kept as it is, is the fix if it ever matters. The page-level pre-pass
+  (`_has_images`) only skips work that cannot matter, it is no bound.
 - Author text in the prompt: `ai._prompt_structure` (called by `build_prompt`) gives the AI a copy of the structure
   whose statement and equation labels are plain text (`_plain_label`: no `<`, `>`, quotes, 120 characters) and whose
   macros go through `_guard`.
