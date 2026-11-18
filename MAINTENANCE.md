@@ -481,7 +481,7 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   `\textcolor`, `\mathcolor` (argument in braces or `\bgroup…\egroup`), `\color` — scope (`_scope_end`) up to its
   group (braces, `\bgroup`, `\begingroup`), its environment, the end of the math it sits in (`$`, `$$`, `\)`, `\]`),
   the closing `]` of an option list (`fonttitle=\color{white}`, `_option_list`), the end of its cell in a table or an
-  alignment (`&`, `\\`), the next `\color`/`\normalcolor` at its level (not inside `\verb` nor after `\string`);
+  alignment (`&`, `\\`), the next `\color`/`\normalcolor` at its level (not inside `\verb` nor after `\string`); a `\color` that is the value of `backgroundcolor=`, `rulecolor=`, `fillcolor=` (`\lstset`) is a color, not text;
   at most `_SCAN_BUDGET` characters scanned per text (`_Work`), then open —
   or a tikz node `[text=white]`; `\fontsize` under 1 pt (scope up to `\normalsize`, `\small`…), `\scalebox` under
   0,1 on either axis, `\resizebox` under 1 pt, `\texttransparent` and `\transparent` under 0,1, tikz node, picture

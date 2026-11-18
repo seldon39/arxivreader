@@ -283,6 +283,7 @@ _UNEXECUTED = re.compile(r"(?<!\\)%[^\n]*|\\verb\*?([^A-Za-z\s*])[^\n]*?\1"
                          r"|\\begin\s*\{\s*(verbatim\*?|Verbatim\*?|BVerbatim|lstlisting|minted|alltt)\s*\}.*?\\end\s*\{\s*\3\s*\}", re.S)
 _CONDITIONAL = re.compile(r"\\iffalse\b|\\ifnum\s*(-?\d+)\s*([<=>])\s*(-?\d+)\s*(?![\d.])")
 _COLOR_USE = re.compile(r"\\(textcolor|mathcolor|color)\s*(?:\[\s*([A-Za-z]+)\s*\])?\s*\{([^{}]*)\}")
+_COLOR_VALUE = re.compile(r"(?:background|rule|fill)color\s*=\s*$")
 _COLOR_DEFINITION = re.compile(r"\\(?:definecolor|providecolor)\s*(?:\[[^\]]*\])?\s*\{\s*([^{}]+?)\s*\}\s*\{\s*([^{}]+?)\s*\}"
                                r"\s*\{([^{}]*)\}|\\colorlet\s*(?:\[[^\]]*\])?\s*\{\s*([^{}]+?)\s*\}\s*(?:\[[^\]]*\])?\s*\{([^{}]*)\}")
 _FONTSIZE = re.compile(r"\\fontsize\s*\{([^{}]*)\}\s*\{[^{}]*\}(?:\s*\\(?!selectfont\b)[A-Za-z]+)*\s*\\selectfont\b")
@@ -888,6 +889,8 @@ def _candidates(text, names, macros):
     for found in _COLOR_USE.finditer(text):
         if not _is_white(found.group(2), found.group(3), at(found.start())):
             continue
+        if _COLOR_VALUE.search(text, max(0, found.start() - 20), found.start()):
+            continue  # « backgroundcolor=\color{white} » (listings) : une couleur de fond, pas un texte blanc
         if found.group(1) in ("textcolor", "mathcolor"):
             content = _argument(text, found.end())
             if content:

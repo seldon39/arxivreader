@@ -192,6 +192,16 @@ class InvisibleTex(unittest.TestCase):
                                     + "Opening words and more words here. " * 30 + r"\begin{inv}Gone words\end{inv}")
         self.assertNotIn("Gone words", text)
 
+    def test_color_value_of_a_listings_key_is_not_hidden_text(self):
+        """\\lstset{backgroundcolor=\\color{white}, …} : une couleur de fond ; rien de retiré ni de compté (une seule
+        consigne comptait pour deux)."""
+        for setup in (r"\lstset{backgroundcolor=\color{white},basicstyle=\ttfamily\small,frame=single}",
+                      r"\lstdefinestyle{py}{backgroundcolor=\color{white},basicstyle=\ttfamily,numbers=left}"):
+            text, count = self.stripped(setup + " Visible text")
+            self.assertIn("basicstyle", text, setup)
+            self.assertEqual(count, 0, setup)
+        self.assertEqual(self.stripped(r"\lstset{basicstyle=\color{white}\ttfamily,frame=single} Visible text")[1], 1)  # témoin
+
     def test_readable_colors_and_whole_document_settings_kept(self):
         for body in (r"\textcolor{black!50}{VISIBLE} ok", r"\colorbox{black}{\color{white} VISIBLE}",
                      r"\color{white} VISIBLE " + "word " * 5000,                           # tout le document : un réglage
