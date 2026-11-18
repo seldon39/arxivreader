@@ -128,6 +128,7 @@ text coming from arXiv, Semantic Scholar, Zotero or an AI goes through text or `
   command name or its exact title; the report of `ARXIVREADER_WINDOWSHOT` (`fichier.png.txt`) has an `items=` dump
   of every menu item (menu > title [shortcut], with `off` when greyed out and `hidden`), to check labels and states.
   A run with one of these variables set opens a single start page and leaves the user's saved session alone.
+  Other variables: `ARXIVREADER_BUILD=<folder>` (`macos/build.sh`: where the application is built, default `~/Library/Caches/arXivReader-build`; `macos/build-beta.sh` sets its own); `ARXIVREADER_WATCH_PARENT=1` (set by `macos/main.swift`: the server stops by itself when the application disappears without stopping it, `main._watch_parent`; do not set it for a server started by hand); `ARXIVREADER_DEVTOOLS=1` (Windows: enables the WebView2 developer tools in `MainForm.cs`); `ARXIVREADER_TOAST` is internal (JSON passed by `alerts.py` to the PowerShell notification script), never set it by hand.
   `ARXIVREADER_NO_SNAPSHOT=1` skips the daily copy of the database (tests). `ARXIVREADER_FULLSCREEN=1` puts the window
   in full screen at 2 s (this does take over the screen for the run: say so first); the report then gives
   `fullScreen=… frame=… web=…` and a `views=` tree of the title bar, toolbar and tab bar (the cached capture does not
