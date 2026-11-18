@@ -20,7 +20,7 @@ def declarations(css, selector):
     """Déclarations (propriété → valeur) des règles dont la liste de sélecteurs contient exactement `selector`."""
     found = {}
     for selectors, body in re.findall(r"([^{}]+)\{([^{}]*)\}", re.sub(r"/\*.*?\*/", "", css, flags=re.S)):
-        if selector in [s.strip() for s in selectors.split(",")]:
+        if selector in [s.strip() for s in re.split(r",(?![^()]*\))", selectors)]:  # virgules hors de :has(…), :where(…)
             for item in body.split(";"):
                 if ":" in item:
                     name, value = item.split(":", 1)
@@ -87,6 +87,27 @@ class LatexmlBoxes(unittest.TestCase):
 
     def test_no_automatic_hyphenation_in_cells(self):
         self.assertEqual(declarations(LATEXML_CSS, ".ltx_td").get("hyphens"), "manual")
+
+
+class SpanBlocks(unittest.TestCase):
+    """Énoncé encadré (\\fbox, framed : théorèmes 3.1, 3.4, 4.1 de 2506.03074v1) : LaTeXML l'écrit tout en <span>."""
+
+    def test_frame_is_a_box_not_a_border_on_each_line(self):
+        rule = declarations(LATEXML_CSS, "span.ltx_framed:has(.ltx_theorem, .ltx_proof, .ltx_para, .ltx_eqn_table)")
+        self.assertEqual(rule.get("display"), "block")
+        self.assertNotIn("display", declarations(LATEXML_CSS, "span.ltx_framed"))  # \fbox{mot} : reste en ligne
+
+    def test_statement_and_paragraphs_inside_are_blocks(self):
+        """Spécificité nulle : le titre d'énoncé en tête de ligne (.ltx_runin + .ltx_para) reste en ligne."""
+        rule = declarations(LATEXML_CSS, ":where(.ltx_inline-logical-block, span.ltx_framed) "
+                                         ":where(span.ltx_theorem, span.ltx_proof, span.ltx_para, span.ltx_p)")
+        self.assertEqual(rule.get("display"), "block")
+        self.assertEqual(declarations(LATEXML_CSS, ".ltx_runin + .ltx_para").get("display"), "inline")
+
+    def test_span_equation_is_a_table(self):
+        for selector, display in (("span.ltx_eqn_table", "table"), ("span.ltx_eqn_table > span:not([class])", "table-row-group"),
+                                  ("span.ltx_eqn_row", "table-row"), ("span.ltx_eqn_cell", "table-cell")):
+            self.assertEqual(declarations(LATEXML_CSS, selector).get("display"), display, selector)
 
 
 if __name__ == "__main__":

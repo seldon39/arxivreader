@@ -1003,6 +1003,15 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
 - Equations aligned left or right (`latexml.css`): `.ltx_eqn_left_padleft` and `.ltx_eqn_right_padright` are 1px wide, not
   0. With every fixed-width column at 0, WebKit divides by zero when sharing the shrink and the column jumps to 2^25 px
   (blank in place of the equation; theorem 2.3 of arXiv 2611.10775). Do not set them back to 0.
+- Blocks written as `<span>` (`latexml.css`, "Blocs écrits en <span>"): inside an inline box (`\fbox` or framed around a
+  theorem, minipage in a drawing), LaTeXML writes the statement, its paragraphs and its equations as `<span>`. Inline,
+  the frame's border repeats on every line (rules through the text, a "]" at the end) and the equations flow in the
+  text (theorems 3.1, 3.4, 4.1 of 2506.03074v1). A `span.ltx_framed` that holds blocks (statement, paragraph, equation)
+  is a block of full width; `\fbox{word}` stays inline (as an inline-block its border would push the lines apart; arXiv
+  makes every `span.ltx_framed` an inline-block). Statements and paragraphs inside are blocks with zero specificity
+  (`:where`, so that `.ltx_runin + .ltx_para` keeps the theorem title on the first line), span equations are tables
+  (the classless `<span>` between table and rows is the row group). Checked in WebKit on 2506.03074v1 and 2506.01324v1
+  (equation numbers back at the right of their equation), and on 2506.13901v1 figure 5 (unchanged).
 - Tables and boxes of LaTeXML (`latexml.css`, `enhanceContent`): a tabular inside a box (`\resizebox`, author block,
   `\makebox`) is made of `<span>`: shown as a table (`display: table…`, as arXiv does), otherwise its text flows inline
   and, in a zero-width box, each word breaks letter by letter. A span table cannot do `colspan`/`rowspan` (header

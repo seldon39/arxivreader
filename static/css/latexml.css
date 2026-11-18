@@ -145,6 +145,22 @@ table.ltx_eqn_table { width: 100%; border-collapse: collapse; margin: .55em 0; d
 .ltx_leqno .ltx_eqn_eqno.ltx_align_left { text-align: left; padding: 0 1em 0 0; }
 .eq-scroll { overflow-x: auto; overflow-y: hidden; max-width: 100%; scrollbar-width: thin; }
 
+/* ---- Blocs écrits en <span> (énoncé encadré : \fbox, framed ; minipage dans un dessin) ----
+   LaTeXML y écrit énoncé, paragraphes et équations en <span> : en ligne, le cadre se répète sur chaque ligne (traits
+   en travers du texte, « ] » à la fin) et les équations coulent dans le texte. Le cadre qui contient des blocs est un
+   bloc de toute la largeur, sur sa propre ligne (sinon, après un titre de section en tête de paragraphe, ce titre est
+   justifié sur toute la ligne) ; \fbox{mot} reste en ligne (en bloc en ligne, sa bordure écarterait les lignes).
+   Paragraphes et énoncés : des blocs, l'équation un tableau, comme sur arXiv. Spécificité nulle (:where) : le titre
+   d'énoncé en tête de ligne (.ltx_runin + .ltx_para) reste en ligne. */
+span.ltx_framed:has(.ltx_theorem, .ltx_proof, .ltx_para, .ltx_eqn_table) {
+  display: block; margin: .9em 0; padding: .35em .6em; text-indent: 0;
+}
+:where(.ltx_inline-logical-block, span.ltx_framed) :where(span.ltx_theorem, span.ltx_proof, span.ltx_para, span.ltx_p) { display: block; }
+span.ltx_eqn_table { width: 100%; border-collapse: collapse; margin: .55em 0; display: table; text-align: left; }
+span.ltx_eqn_table > span:not([class]) { display: table-row-group; }
+span.ltx_eqn_row { display: table-row; }
+span.ltx_eqn_cell { display: table-cell; }
+
 /* ---- Listes ---- */
 .ltx_itemize, .ltx_enumerate, .ltx_description { padding-left: 2.2em; margin: .35em 0; }
 .ltx_item { margin: .15em 0; list-style: none; }
