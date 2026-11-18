@@ -986,7 +986,7 @@ def _candidates(text, names, macros):
     for found in _COLOR_USE.finditer(text):
         if not _is_white(found.group(2), found.group(3), at(found.start())):
             continue
-        if _COLOR_VALUE.search(text, max(0, found.start() - 20), found.start()):
+        if found.group(1) == "color" and _COLOR_VALUE.search(text, max(0, found.start() - 20), found.start()):
             continue  # « backgroundcolor=\color{white} » (listings) : une couleur de fond, pas un texte blanc
         if found.group(1) in ("textcolor", "mathcolor"):
             content = _argument(text, found.end())
