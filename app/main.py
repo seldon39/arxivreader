@@ -1333,8 +1333,8 @@ async def feed_refresh(body: RefreshRequest):
 def _quietly(function, *args):
     try:
         function(*args)
-    except Exception:
-        pass  # tâche de fond : un échec se rattrape au prochain passage
+    except Exception as error:  # tâche de fond : un échec se rattrape au prochain passage, mais reste dans server.log
+        log.warning("tâche de fond %s impossible : %s", getattr(function, "__name__", function), error)
 
 
 class SearchTerm(BaseModel):

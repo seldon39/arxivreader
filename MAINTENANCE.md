@@ -1033,7 +1033,10 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
 
 ## 10. Logs and diagnostics
 
-- Server: `server.log` in the library (`~/Library/Application Support/arXivReader`).
+- Server: `server.log` in the library (`~/Library/Application Support/arXivReader`). No logging configuration: only `WARNING` and
+  above reach it (`log.info` is invisible). A background step that fails and is retried later (`feed._complete_refresh`,
+  `feed._quietly`, `main._quietly`, `journals.fetch_later`) is swallowed but leaves one `log.warning` line (type and message,
+  never a key).
 - Services check: `check.json` (same folder) and `~/Library/Logs/arXivReader-check.log`.
 - Zotero synchronisation: last state in the settings (`zoteroLastSync`, `zoteroLastError`,
   `zoteroLastErrorCode`, `zoteroReport`), visible in Settings > Zotero.

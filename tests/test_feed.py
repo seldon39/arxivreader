@@ -1,9 +1,12 @@
 """Feed : lecture du flux RSS d'arXiv, nettoyage du TeX hors formules."""
 
+import pathlib
 import sys
+import tempfile
 import unittest
+from unittest import mock
 
-from app import feed
+from app import db, feed, journals, main
 from app.feed import parse_rss, tex_text
 
 RSS = """<?xml version='1.0' encoding='UTF-8'?>
@@ -60,6 +63,54 @@ class Feed(unittest.TestCase):
 
     def test_tex_text_keeps_math(self):
         self.assertEqual(tex_text(r"Poincar\'e--Lelong, $\"a--b$ and {\em see}"), r'Poincaré–Lelong, $\"a--b$ and see')
+
+
+class BackgroundFailures(unittest.TestCase):
+    """Une étape de fond en panne ne bloque pas les autres, mais laisse une ligne dans server.log (niveau WARNING)."""
+
+    def setUp(self):
+        self.saved = (db.DB_PATH, db.LIBRARY)
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        db.DB_PATH, db.LIBRARY = tmp / "test.db", tmp
+        db.init()
+
+    def tearDown(self):
+        db.DB_PATH, db.LIBRARY = self.saved
+
+    def test_complete_refresh_logs_each_failed_step(self):
+        with mock.patch.object(feed.profile, "followed_author_papers", side_effect=RuntimeError("boom-auteurs")), \
+             mock.patch.object(feed.journals, "fetch", side_effect=RuntimeError("boom-revues")), \
+             mock.patch.object(feed, "repair_abstracts", side_effect=RuntimeError("boom-resumes")), \
+             self.assertLogs("arxivreader.feed", "WARNING") as logs:
+            feed._complete_refresh([], [], None)
+        text = "\n".join(logs.output)
+        for word in ("boom-auteurs", "boom-revues", "boom-resumes"):
+            self.assertIn(word, text)
+        self.assertIn("feed.followedRefreshed", db.get_settings())  # les étapes restent indépendantes
+
+    def test_quietly_logs(self):
+        def broken():
+            raise RuntimeError("boom-feed")
+        with self.assertLogs("arxivreader.feed", "WARNING") as logs:
+            feed._quietly(broken)
+        self.assertIn("boom-feed", logs.output[0])
+        with self.assertLogs("app.main", "WARNING") as logs:
+            main._quietly(broken)
+        self.assertIn("boom-feed", logs.output[0])
+
+    def test_journals_in_background_logs(self):
+        class Now:
+            def __init__(self, target, daemon=None):
+                self.target = target
+
+            def start(self):
+                self.target()
+        with mock.patch.object(journals, "BACKGROUND", True), \
+             mock.patch.object(journals, "fetch", side_effect=RuntimeError("boom-s2")), \
+             mock.patch.object(journals.threading, "Thread", Now), \
+             self.assertLogs("arxivreader.journals", "WARNING") as logs:
+            journals.fetch_later(["ArXiv:2601.00001"])
+        self.assertIn("boom-s2", logs.output[0])
 
 
 if __name__ == "__main__":

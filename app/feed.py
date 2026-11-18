@@ -2,6 +2,7 @@
 et repérage d'articles arXiv dans un texte collé (e-mail Scholar Inbox, export BibTeX…)."""
 
 import json
+import logging
 import os
 import re
 import threading
@@ -19,6 +20,8 @@ import httpx
 from . import db, journals, profile, relevance, s2
 from .arxiv import ATOM, ARXIV_NS, extract_ids, with_retry
 from .config import FEED_CATEGORIES, USER_AGENT
+
+log = logging.getLogger("arxivreader.feed")
 
 RSS_URL = "https://rss.arxiv.org/rss/{categories}"
 S2_RECOMMEND = "https://api.semanticscholar.org/recommendations/v1/papers"
@@ -177,8 +180,8 @@ EMBEDDING_WAIT = 4  # secondes d'attente des vecteurs de sens avant de rendre le
 def _quietly(function, *args):
     try:
         function(*args)
-    except Exception:
-        pass
+    except Exception as error:  # tâche de fond : rattrapée au prochain passage, mais laissée dans server.log (texte seul, pas de clé)
+        log.warning("tâche de fond %s impossible : %s", getattr(function, "__name__", function), error)
 
 
 def latest_announcement_day(now=None):
@@ -257,16 +260,16 @@ def _complete_refresh(items, categories, api_key):
                     item["title"], item["abstract"] = tex_text(item["title"]), tex_text(item["abstract"])
                     _store(connection, item, followed=True)
             relevance.fetch_embeddings([relevance.s2_key(i["arxiv_id"]) for i in followed], api_key)
-        except Exception:
-            pass
+        except Exception as error:
+            log.warning("mise à jour du feed : étape %s impossible : %s", "auteurs suivis", error)
         try:  # revue des articles annoncés (surtout utile pour les nouvelles versions)
             journals.fetch([relevance.s2_key(i["arxiv_id"]) for i in items + followed], api_key)
-        except Exception:
-            pass
+        except Exception as error:
+            log.warning("mise à jour du feed : étape %s impossible : %s", "revues", error)
         try:
             repair_abstracts()
-        except Exception:
-            pass
+        except Exception as error:
+            log.warning("mise à jour du feed : étape %s impossible : %s", "résumés", error)
         db.save_settings({"feed.followedRefreshed": now()})
     finally:
         _enriching.release()

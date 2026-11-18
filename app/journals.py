@@ -5,6 +5,7 @@ Semantic Scholar est interrogé par lots (500 articles par requête) ; la répon
 après 30 jours pour un article qu'il ne connaît pas encore comme publié (la parution vient souvent plus tard).
 """
 
+import logging
 import re
 import threading
 import time
@@ -14,6 +15,8 @@ import httpx
 from . import db, s2
 from .arxiv import with_retry
 from .relevance import S2_BATCH, s2_key
+
+log = logging.getLogger("arxivreader.journals")
 
 # DOI de dépôts de prépublications ou d'archives (arXiv, bioRxiv/medRxiv, SSRN, Zenodo, ResearchGate, Research
 # Square, Preprints.org, OSF) : pas une parution en revue
@@ -120,8 +123,8 @@ def fetch_later(keys, api_key=None):
     def run():
         try:
             fetch(keys, api_key)
-        except Exception:
-            pass
+        except Exception as error:  # arrière-plan : rattrapé au prochain passage, mais laissé dans server.log
+            log.warning("revues en arrière-plan impossibles : %s", error)
     threading.Thread(target=run, daemon=True).start()
 
 
