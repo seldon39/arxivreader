@@ -487,7 +487,7 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   0,1 on either axis (nested ones multiply), `\resizebox` under 1 pt or with a width under half a point per letter of its longest line, `\texttransparent` and `\transparent` under 0,1, tikz node, picture
   or scope `[opacity=0]`, `\phantom`
   (removed, never counted); the author's macros and environments that do the same (`_hiding_macros`: `\newcommand`,
-  `\def`, `\NewDocumentCommand`, environments; each argument `#k` whose every use is hidden, and each argument the body never uses, `\newcommand{\ign}[2]{#2}`: removed, never counted, as for `\newcommand{\x}[1]{}`; not for a redefined sectioning command, which stays a heading), and what a definition hides without a
+  `\def`, `\NewDocumentCommand`, environments; each argument `#k` whose every use is hidden, and each argument the body never uses, `\newcommand{\ign}[2]{#2}`: removed, never counted, as for `\newcommand{\x}[1]{}`; not for a redefined sectioning command, which stays a heading; arguments are read as declared: the optional `[…]` of `\newcommand{\x}[2][default]` or xparse `o`, the `*` of `s`), and what a definition hides without a
   parameter. Kept: a declaration that runs to `\end{document}` with no readable text before it (preamble, start
   of the document: a setting of the whole document); white on a dark background (`_Context.on_dark`): last
   `\pagecolor` (outside definitions, readable and dark), dark `\colorbox` (also opened by `\bgroup` in an

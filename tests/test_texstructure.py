@@ -264,6 +264,19 @@ class InvisibleTex(unittest.TestCase):
         text, count = self.stripped(r"\newcommand{\ign}[2]{#1#2} Opening words. \ign{KEPT}{KEPT} end")
         self.assertEqual((text.count("KEPT"), count), (2, 0))
 
+    def test_hidden_argument_after_an_optional_one(self):
+        """\\newcommand{\\hide}[2][a]{…#2} et xparse {o m} : #1 est le […] optionnel, absent ou non ; #2 la première {…}."""
+        for definition in (r"\newcommand{\hide}[2][a]{\textcolor{white}{#2}}", r"\NewDocumentCommand{\hide}{o m}{\textcolor{white}{#2}}"):
+            for use in (r"\hide{GONE}", r"\hide[x]{GONE}"):
+                text, count = self.stripped(definition + " Opening words. " + use + " REAL TEXT")
+                self.assertNotIn("GONE", text, (definition, use))
+                self.assertIn("REAL TEXT", text, (definition, use))
+                self.assertEqual(count, 1, (definition, use))
+        text, count = self.stripped(r"\newcommand{\hide}[2][a]{\textcolor{white}{#1}#2} Opening words. \hide[GONE]{KEPT} \hide{KEPT}")
+        self.assertEqual((text.count("KEPT"), "GONE" in text, count), (2, False, 1))
+        text, count = self.stripped(r"\NewDocumentCommand{\hide}{s m}{\textcolor{white}{#2}} Opening words. \hide*{GONE} \hide{GONE} REAL")
+        self.assertEqual(("GONE" in text, count), (False, 2))
+
     def test_readable_colors_and_whole_document_settings_kept(self):
         for body in (r"\textcolor{black!50}{VISIBLE} ok", r"\colorbox{black}{\color{white} VISIBLE}",
                      r"\color{white} VISIBLE " + "word " * 5000,                           # tout le document : un réglage

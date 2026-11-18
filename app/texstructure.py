@@ -858,17 +858,21 @@ class _Context:
         return _fill_dark(window, names, tables, tikz) or tables and _fill_dark(text[pos:stop], names, True, False)
 
 
-def _parameters(found, header):
-    """Nombre de paramètres d'une définition de macro (`found` : _DEFINITION, `header` : son texte jusqu'au corps)."""
-    if found.group(1):  # \newcommand{\x}[n]…
-        return int(found.group(2) or 0)
+def _signature(found, header):
+    """Paramètres d'une définition de macro, un caractère chacun : « m » obligatoire, « o » optionnel […], « s » étoile
+    (`found` : _DEFINITION, `header` : son texte jusqu'au corps). #k est le k-ième caractère."""
+    if found.group(1):  # \newcommand{\x}[n][défaut]
+        count = re.search(r"\[\s*(\d)\s*\]\s*(\[[^\]]*\])?\s*$", header)
+        return "o" * bool(count and count.group(2)) + "m" * (int(count.group(1)) - bool(count.group(2))) if count else ""
     if found.group(3):  # \def\x#1#2
-        return len(re.findall(r"#\d", found.group(4) or ""))
-    return len(re.findall(r"[A-Za-z]", re.search(r"\{([^{}]*)\}\s*$", header).group(1))) if found.group(5) else 0  # {o m}
+        return "m" * len(re.findall(r"#\d", found.group(4) or ""))
+    if found.group(5):  # \NewDocumentCommand{\x}{o m}
+        return "".join({"m": "m", "s": "s"}.get(c, "o") for c in re.search(r"\{([^{}]*)\}\s*$", header).group(1) if c.isalpha())
+    return ""
 
 
 def _hiding_macros(text, colors):
-    """Macros et environnements de l'auteur qui cachent : {nom: (genre, {numéro d'argument caché: (selon le fond, compté)}, par couleur)} —
+    """Macros et environnements de l'auteur qui cachent : {nom: (genre, {numéro d'argument caché: (selon le fond, compté)}, par couleur, paramètres)} —
     « argument » (« \\newcommand{\\hide}[1]{\\textcolor{white}{#1}} »), « declaration » (« \\newcommand{\\wh}
     {\\color{white}} »), « environment » (clé « \\begin{nom} ») ; et la place des définitions [(début, début du corps,
     fin)]. Une définition qui pose elle-même un fond foncé (\\cellcolor{black}\\textcolor{white}{#1}) ne cache rien."""
@@ -889,7 +893,7 @@ def _hiding_macros(text, colors):
                  if not (span[3] and (_fill_dark(body[0][:span[0]], names, True, True) or _in_box(body[0], span[0], names)))]
         if found.group(6) or found.group(7):
             if any(not closed for *_, closed in spans):
-                macros["\\begin{" + name + "}"] = ("environment", (), all(span[3] for span in spans if not span[4]))
+                macros["\\begin{" + name + "}"] = ("environment", (), all(span[3] for span in spans if not span[4]), "")
             continue
         # un argument n'est caché que si chacun de ses emplois l'est (\phantom{#1}\llap{#1} l'imprime) : (selon le fond, compté) ;
         # un argument que le corps n'emploie jamais (\newcommand{\ign}[2]{#2}) n'est jamais imprimé : (sans condition, pas compté)
@@ -899,13 +903,13 @@ def _hiding_macros(text, colors):
             uses = [place.start() for place in re.finditer("#" + str(k), body[0])]
             if all(any(start <= use < stop for start, stop, *_ in spans) for use in uses):
                 hidden[k] = (all(span[3] for span in spans if any(span[0] <= use < span[1] for use in uses)), True)
-        count = _parameters(found, text[found.start():found.end()])
+        kinds = _signature(found, text[found.start():found.end()])
         if name not in SECTIONS and name not in ("paragraph", "subparagraph"):  # \renewcommand{\section}[1]{…} reste un titre pour l'analyse
-            hidden.update({k: (False, False) for k in range(1, count + 1) if k not in numbers})
+            hidden.update({k: (False, False) for k, kind in enumerate(kinds, 1) if k not in numbers and kind != "s"})
         if hidden:
-            macros[name] = ("argument", hidden, None)
+            macros[name] = ("argument", hidden, None, kinds)
         elif not re.search(r"#\d", body[0]) and any(not closed for *_, closed in spans):
-            macros[name] = ("declaration", (), all(span[3] for span in spans if not span[4]))
+            macros[name] = ("declaration", (), all(span[3] for span in spans if not span[4]), "")
     return macros, definitions
 
 
@@ -1010,7 +1014,7 @@ def _candidates(text, names, macros):
         content = _group(text, found.end(), "{")
         if content:
             spans.append((found.start(), content[1], None, False, True))  # jamais compté : aligne souvent des chiffres
-    for name, (kind, hidden, colored) in macros.items():
+    for name, (kind, hidden, colored, params) in macros.items():
         if kind == "environment":
             close = re.compile(r"\\end\s*\{\s*" + re.escape(name[7:-1]) + r"\s*\}")
             for found in re.finditer(re.escape(name), text):
@@ -1024,14 +1028,19 @@ def _candidates(text, names, macros):
                 spans.append((found.start(), end, found.end(), colored, closed))
                 continue
             cursor, parts = found.end(), {}
-            for number in range(1, max(hidden) + 1):
-                optional = re.match(r"\s*\[[^\]]*\]", text[cursor:cursor + 500])
-                cursor += optional.end() if optional else 0
-                content = _argument(text, cursor)
-                if not content:
-                    break
-                parts[number] = content
-                cursor = content[1]
+            for number, param in enumerate(params[:max(hidden)], 1):
+                optional = re.match(r"\s*\[[^\]]*\]", text[cursor:cursor + 500]) if param == "o" else None
+                if param == "o" and optional:
+                    parts[number] = (cursor + optional.start() + optional.group().index("[") + 1, cursor + optional.end())
+                    cursor += optional.end()
+                elif param == "s":
+                    cursor += len(re.match(r"\s*\*?", text[cursor:cursor + 20]).group())
+                elif param == "m":
+                    content = _argument(text, cursor)
+                    if not content:
+                        break
+                    parts[number] = content
+                    cursor = content[1]
             runs = []  # arguments cachés qui se suivent, de même nature : [premier, dernier, (selon le fond, compté)]
             for number in sorted(hidden.keys() & parts.keys()):
                 if runs and runs[-1][1] == number - 1 and runs[-1][2] == hidden[number]:
