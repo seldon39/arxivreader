@@ -1,0 +1,25 @@
+MAINTENANCE.md
+  s_2e78fe3aad7ffd::t_999a35dbf73a00 143-145,192
+macos/build-beta.sh
+  s_2e78fe3aad7ffd::t_b121550f74cfc1 10-13
+macos/release.sh
+  s_2e78fe3aad7ffd::t_a1de5309090333 16-21,25
+tests/test_release_scripts.py
+  s_2e78fe3aad7ffd::t_e4ddaa680b0db2 1-125
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "b6e213777356dac65d42633366dea2e5d42978e9",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
