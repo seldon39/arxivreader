@@ -91,7 +91,7 @@ ARXIVREADER_PORT=8711 ARXIVREADER_LIBRARY=/tmp/test-library ARXIVREADER_NO_ALERT
 ```
 
 (`ARXIVREADER_PORT` must match `--port`: the server refuses any other `Host`.) When copying a real library,
-remove the keys first: `DELETE FROM settings WHERE key LIKE '%ApiKey%'` in the copy's `arxivreader.db` — the
+remove the keys and the Zotero settings first: `DELETE FROM settings WHERE key LIKE '%ApiKey%' OR key LIKE 'zotero%'` in the copy's `arxivreader.db` — the
 Zotero sync starts 30 s after launch.
 
 The Mac app is built with `macos/build.sh` (into `~/Library/Caches/arXivReader-build`, outside iCloud-synced

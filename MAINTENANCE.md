@@ -100,7 +100,7 @@ text coming from arXiv, Semantic Scholar, Zotero or an AI goes through text or `
   ```bash
   LIB=$(mktemp -d)   # private folder (0700): the copy contains their data
   sqlite3 -readonly ~/Library/Application\ Support/arXivReader/arxivreader.db ".backup $LIB/arxivreader.db"
-  sqlite3 "$LIB/arxivreader.db" "DELETE FROM settings WHERE key LIKE 'zotero%' OR key IN ('s2ApiKey', 'geminiApiKey')"
+  sqlite3 "$LIB/arxivreader.db" "DELETE FROM settings WHERE key LIKE '%ApiKey%' OR key LIKE 'zotero%'"
   ARXIVREADER_LIBRARY=$LIB ARXIVREADER_PORT=8711 ARXIVREADER_NO_ALERTS=1 .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8711
   ```
   `ARXIVREADER_NO_ALERTS=1` is **mandatory for every test run** (server as well as application): it cuts the
