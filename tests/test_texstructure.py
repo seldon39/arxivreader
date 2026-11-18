@@ -331,24 +331,32 @@ class InvisibleTex(unittest.TestCase):
             self.assertEqual((text.count("KEPT"), count), (1, 0), body)
         self.assertNotIn("GONE", self.stripped(r"\newif\iffoo \iffoo GONE\fi KEPT")[0])
 
-    def test_unclosed_conditionals_and_font_sizes_take_linear_time(self):
-        """50 ko de \ifa ouverts, de \iffalse ou de \fontsize : 23 s, 13 s et 3 s quand chaque \if… rouvrait la suite du
-        texte et que \fontsize la reparcourait ; quelques dixièmes de seconde en une passe. Borne large."""
-        import time
-        for body in (r"\fontsize{1}{1}" * 3300,):
-            begin = time.monotonic()
-            self.stripped(body)
-            self.assertLess(time.monotonic() - begin, 2, body[:30])
+    def test_dead_branch_of_any_length_and_nested_expandafter(self):
+        r"""Une branche morte se ferme à son \fi, si loin soit-il (plus de 200 000 caractères), et un \expandafter\ifx…\fi
+        qu'elle contient y compte (sinon la fin de la branche, texte d'une attaque compris, partait à l'IA)."""
+        for body in (r"A \iffalse GONE " + "x " * 125000 + r"\fi B",):
+            text, count = self.stripped(body)
+            self.assertNotIn("GONE", text)
+            self.assertIn("B", text[-20:])
+
+    def test_flag_set_through_csname_if(self):
+        r"""\expandafter\let\csname ifdraft\endcsname\iftrue met le drapeau à vrai : sa branche est imprimée."""
+        text, _ = self.stripped(r"\newif\ifdraft \expandafter\let\csname ifdraft\endcsname\iftrue \ifdraft KEPT \fi")
+        self.assertIn("KEPT", text)
 
     def test_huge_ifnum_operand(self):
-        """\ifnum à plus de 4300 chiffres : pas d'exception (int() de Python les refuse), rien de retiré."""
+        r"""\ifnum à plus de 4300 chiffres : pas d'exception (int() de Python les refuse), rien de retiré."""
         text, _ = self.stripped(r"\ifnum 1=" + "1" * 5000 + r"x KEPT \fi B")
         self.assertIn("KEPT", text)
 
-    def test_flag_set_through_csname_if(self):
-        """\expandafter\let\csname ifdraft\endcsname\iftrue met le drapeau à vrai : sa branche est imprimée."""
-        text, _ = self.stripped(r"\newif\ifdraft \expandafter\let\csname ifdraft\endcsname\iftrue \ifdraft KEPT \fi")
-        self.assertIn("KEPT", text)
+    def test_unclosed_conditionals_and_font_sizes_take_linear_time(self):
+        r"""50 ko de \ifa ouverts, de \iffalse ou de \fontsize : 23 s, 13 s et 3 s quand chaque \if… rouvrait la suite du
+        texte et que \fontsize la reparcourait ; quelques dixièmes de seconde en une passe. Borne large."""
+        import time
+        for body in (r"\newif\ifa " + r"\ifa x " * 7000, r"\iffalse x " * 5500, r"\fontsize{1}{1}" * 3300):
+            begin = time.monotonic()
+            self.stripped(body)
+            self.assertLess(time.monotonic() - begin, 2, body[:30])
 
     def test_many_calls_of_a_dark_macro_take_linear_time(self):
         """30 000 appels d'une macro à fond foncé (1 Mo) : près de 0,3 s ; 9 s quand chaque passage blanc parcourait toutes les

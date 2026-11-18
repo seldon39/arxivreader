@@ -335,23 +335,31 @@ def _dead_branches(text):
         r"\\([A-Za-z@]+)true(?![A-Za-z@])|\\csname\s*([A-Za-z@]+)true\s*\\endcsname|\\let\s*\\if([A-Za-z@]+)|\\csname\s*if([A-Za-z@]+)\s*\\endcsname", text)}
     flags = {found.group(1) for found in re.finditer(r"\\newif\s*\\if([A-Za-z@]+)", text)} - set_true
     conditional = re.compile(_CONDITIONAL.pattern + (r"|\\if(" + "|".join(map(re.escape, flags)) + r")(?![A-Za-z@])" if flags else ""))
+    # une seule passe : chaque \if… ouvert trouve son \else et son \fi (pile), sans borne de longueur
+    ends = {}  # début d'un \if… ouvert : (place de son premier \else ou None, place de son \fi)
+    stack = []
+    for token in re.finditer(r"\\(if[A-Za-z@]*|fi|else)(?![A-Za-z@])", text):
+        word = token.group(1)
+        if word.startswith("if"):
+            if not _ASSIGNED.search(text, max(0, token.start() - 60), token.start()):
+                stack.append([token.start(), None])
+        elif word == "else":
+            if stack and stack[-1][1] is None:
+                stack[-1][1] = token.start()
+        elif stack:
+            opened, other = stack.pop()
+            ends[opened] = (other, token.start())
     branches, cursor = [], 0
     for found in conditional.finditer(text):
-        if found.start() < cursor or _ASSIGNED.search(text, max(0, found.start() - 60), found.start()):
+        if found.start() < cursor or found.start() not in ends or _ASSIGNED.search(text, max(0, found.start() - 60), found.start()):
             continue
         if found.group(1) is not None:
             a, op, b = int(found.group(1)), found.group(2), int(found.group(3))
             if (a < b, a == b, a > b)["<=>".index(op)]:
                 continue
-        depth, start = 1, found.end()
-        for token in re.finditer(r"\\(if[A-Za-z]*|fi|else)(?![A-Za-z])", text[start:start + _SCAN]):
-            if token.group(1).startswith("if") and _ASSIGNED.search(text, max(0, start + token.start() - 60), start + token.start()):
-                continue  # \if… nommé (\let\ifx=\iffalse, \newif\ifx), pas ouvert
-            depth += {"fi": -1, "else": 0}.get(token.group(1), 1)
-            if depth == 0 or depth == 1 and token.group(1) == "else":
-                cursor = start + token.start()
-                branches.append((found.start(), cursor, token.group(1) == "fi"))
-                break
+        other, fi = ends[found.start()]
+        cursor = fi if other is None else other
+        branches.append((found.start(), cursor, other is None))
     return branches
 
 
