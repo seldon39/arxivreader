@@ -251,6 +251,19 @@ class InvisibleTex(unittest.TestCase):
             self.assertIn("KEPT", text, color)
             self.assertEqual(count, 0, color)
 
+    def test_argument_never_used_by_the_macro_is_not_printed(self):
+        """\\newcommand{\\ign}[2]{#2} : le premier argument n'est jamais imprimé (ni compté : comme \\newcommand{\\x}[1]{}) ;
+        les arguments employés restent."""
+        for definition, use in ((r"\newcommand{\ign}[2]{#2}", r"\ign{GONE}{KEPT}"), (r"\def\ign#1#2{#1}", r"\ign{KEPT}{GONE}"),
+                                (r"\NewDocumentCommand{\ign}{m m}{#2}", r"\ign{GONE}{KEPT}"),
+                                (r"\newcommand{\ign}[3]{#2}", r"\ign{GONE}{KEPT}{GONE too}")):
+            text, count = self.stripped(definition + " Opening words. " + use + " end")
+            self.assertNotIn("GONE", text, definition)
+            self.assertIn("KEPT", text, definition)
+            self.assertEqual(count, 0, definition)
+        text, count = self.stripped(r"\newcommand{\ign}[2]{#1#2} Opening words. \ign{KEPT}{KEPT} end")
+        self.assertEqual((text.count("KEPT"), count), (2, 0))
+
     def test_readable_colors_and_whole_document_settings_kept(self):
         for body in (r"\textcolor{black!50}{VISIBLE} ok", r"\colorbox{black}{\color{white} VISIBLE}",
                      r"\color{white} VISIBLE " + "word " * 5000,                           # tout le document : un réglage

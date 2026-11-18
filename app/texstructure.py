@@ -858,8 +858,17 @@ class _Context:
         return _fill_dark(window, names, tables, tikz) or tables and _fill_dark(text[pos:stop], names, True, False)
 
 
+def _parameters(found, header):
+    """Nombre de paramètres d'une définition de macro (`found` : _DEFINITION, `header` : son texte jusqu'au corps)."""
+    if found.group(1):  # \newcommand{\x}[n]…
+        return int(found.group(2) or 0)
+    if found.group(3):  # \def\x#1#2
+        return len(re.findall(r"#\d", found.group(4) or ""))
+    return len(re.findall(r"[A-Za-z]", re.search(r"\{([^{}]*)\}\s*$", header).group(1))) if found.group(5) else 0  # {o m}
+
+
 def _hiding_macros(text, colors):
-    """Macros et environnements de l'auteur qui cachent : {nom: (genre, numéros d'arguments cachés, par couleur)} —
+    """Macros et environnements de l'auteur qui cachent : {nom: (genre, {numéro d'argument caché: (selon le fond, compté)}, par couleur)} —
     « argument » (« \\newcommand{\\hide}[1]{\\textcolor{white}{#1}} »), « declaration » (« \\newcommand{\\wh}
     {\\color{white}} »), « environment » (clé « \\begin{nom} ») ; et la place des définitions [(début, début du corps,
     fin)]. Une définition qui pose elle-même un fond foncé (\\cellcolor{black}\\textcolor{white}{#1}) ne cache rien."""
@@ -882,12 +891,19 @@ def _hiding_macros(text, colors):
             if any(not closed for *_, closed in spans):
                 macros["\\begin{" + name + "}"] = ("environment", (), all(span[3] for span in spans if not span[4]))
             continue
-        # un argument n'est caché que si chacun de ses emplois l'est (\phantom{#1}\llap{#1} l'imprime)
-        hidden = sorted({int(k) for k in re.findall(r"#(\d)", body[0])
-                         if all(any(start <= place.start() < stop for start, stop, *_ in spans)
-                                for place in re.finditer("#" + k, body[0]))})
+        # un argument n'est caché que si chacun de ses emplois l'est (\phantom{#1}\llap{#1} l'imprime) : (selon le fond, compté) ;
+        # un argument que le corps n'emploie jamais (\newcommand{\ign}[2]{#2}) n'est jamais imprimé : (sans condition, pas compté)
+        numbers = {int(k) for k in re.findall(r"#(\d)", body[0])}
+        hidden = {}
+        for k in sorted(numbers):
+            uses = [place.start() for place in re.finditer("#" + str(k), body[0])]
+            if all(any(start <= use < stop for start, stop, *_ in spans) for use in uses):
+                hidden[k] = (all(span[3] for span in spans if any(span[0] <= use < span[1] for use in uses)), True)
+        count = _parameters(found, text[found.start():found.end()])
+        if name not in SECTIONS and name not in ("paragraph", "subparagraph"):  # \renewcommand{\section}[1]{…} reste un titre pour l'analyse
+            hidden.update({k: (False, False) for k in range(1, count + 1) if k not in numbers})
         if hidden:
-            macros[name] = ("argument", hidden, all(span[3] for span in spans))
+            macros[name] = ("argument", hidden, None)
         elif not re.search(r"#\d", body[0]) and any(not closed for *_, closed in spans):
             macros[name] = ("declaration", (), all(span[3] for span in spans if not span[4]))
     return macros, definitions
@@ -1007,19 +1023,24 @@ def _candidates(text, names, macros):
                 end, closed = _scope_end(text, found.end(), "color|normalcolor|" + _SIZES, work, cells(found.start()))
                 spans.append((found.start(), end, found.end(), colored, closed))
                 continue
-            cursor, first, end = found.end(), None, None
+            cursor, parts = found.end(), {}
             for number in range(1, max(hidden) + 1):
                 optional = re.match(r"\s*\[[^\]]*\]", text[cursor:cursor + 500])
                 cursor += optional.end() if optional else 0
                 content = _argument(text, cursor)
                 if not content:
                     break
-                if number in hidden:
-                    first = content[0] if first is None else first
-                    end = content[1]
+                parts[number] = content
                 cursor = content[1]
-            if end is not None:
-                spans.append((found.start(), end, first, colored, True))
+            runs = []  # arguments cachés qui se suivent, de même nature : [premier, dernier, (selon le fond, compté)]
+            for number in sorted(hidden.keys() & parts.keys()):
+                if runs and runs[-1][1] == number - 1 and runs[-1][2] == hidden[number]:
+                    runs[-1][1] = number
+                else:
+                    runs.append([number, number, hidden[number]])
+            for first, last, (by_color, counted) in runs:
+                spans.append((found.start() if first == 1 else parts[first][0] - 1, parts[last][1],
+                              parts[first][0] if counted else None, by_color, True))
     return spans
 
 
