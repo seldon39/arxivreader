@@ -73,6 +73,26 @@ class Import(unittest.TestCase):
         self.structure = extract_structure(self.fragment)
         self.html = str(self.fragment)
 
+    def test_cdata_and_obfuscated_styles(self):
+        """CDATA (faux commentaire en HTML5), commentaires et échappements CSS ne passent pas les filtres."""
+        html = ('<article class="ltx_document"><p>a<![CDATA[ x><style>*{display:none}</style> ]]>b</p>'
+                '<div style="position:/**/fixed;top:0">1</div><div style="position:fi\\78 ed">2</div>'
+                '<div style="background:u\\72l(http://x/y)">3</div><div style="position:relative">4</div></article>')
+        fragment, _ = sanitize_document(html, "https://arxiv.org/html/2101.00002v1/")
+        out = str(fragment)
+        self.assertNotIn("CDATA", out)
+        self.assertNotIn("<style", out)
+        for text in ("fixed", "fi\\78", "u\\72l", "/**/"):
+            self.assertNotIn(text, out)
+        self.assertIn("position:relative", out)
+        # contenu déjà enregistré : même défense à la lecture
+        from app.sanitize import clean_stored
+        again = clean_stored(html)
+        self.assertNotIn("CDATA", again)
+        self.assertNotIn("fixed", again)
+        self.assertNotIn("u\\72l", again)
+        self.assertEqual(clean_stored("<p>simple</p>"), "<p>simple</p>")
+
     def test_sanitize(self):
         self.assertNotIn("<script", self.html)
         self.assertNotIn("onclick", self.html)

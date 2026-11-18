@@ -1039,6 +1039,11 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   in `latexml._extract`).
 - **Cached cross-reference index**: `crossrefs.nodes_of` reads another paper's `structure.json` as stored, cached by
   (date, size); it never re-analyses, which would rewrite every other paper's structure when one is opened.
+- **Sanitiser** (`app/sanitize.py`): every `PreformattedString` is removed (comments, but also `<![CDATA[…]]>`, which
+  HTML5 reads as a comment closed at the first `>`), and the `style` filters (`UNSAFE_STYLE`, `PINNED`) look at the
+  style as the browser reads it (`_normal_css`: CSS comments removed, escapes such as `fi\78 ed` resolved). A
+  `content.html` stored before these rules gets the same treatment when read (`clean_stored`, in the `/content` route;
+  a page without `<!`, `<?` or an escaped style is returned as is, without parsing).
 
 ## 10. Logs and diagnostics
 

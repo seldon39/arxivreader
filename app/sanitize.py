@@ -8,7 +8,8 @@ import hashlib
 import re
 from urllib.parse import urljoin, urlparse
 
-from bs4 import BeautifulSoup, Comment
+from bs4 import BeautifulSoup
+from bs4.element import PreformattedString
 
 
 def arxiv_host(url):
@@ -67,6 +68,8 @@ UNSAFE_STYLE = re.compile(r"url\s*\(|expression|javascript|@import|behavior", re
 # position fixe ou collante : un élément de l'article pourrait couvrir l'interface (et ses liens s'ouvrir dehors) ;
 # position relative ou absolue (texte remonté, \raisebox de LaTeXML) : gardée, elle reste dans l'article
 PINNED = re.compile(r"position\s*:\s*(fixed|sticky)\s*(!important)?\s*;?", re.I)
+CSS_ESCAPE = re.compile(r"\\(?:([0-9a-fA-F]{1,6})[ \t\r\n\f]?|(.))", re.S)
+CSS_COMMENT = re.compile(r"/\*.*?(?:\*/|$)", re.S)
 DATA_IMAGE = re.compile(r"^data:image/(png|jpeg|gif|webp|svg\+xml)[;,]", re.I)
 
 # Éléments de la page LaTeXML qui ne font pas partie de l'article.
@@ -74,6 +77,40 @@ NOISE_SELECTORS = [
     ".ltx_page_logo", ".ltx_page_navbar", ".ltx_page_footer", ".ltx_TOC", ".ltx_role_footer",
     ".package-alerts", ".ltx_ERROR",
 ]
+
+
+def _normal_css(value):
+    """Style tel que le navigateur le lit : commentaires CSS retirés, échappements résolus (« fi\\78 ed » = « fixed »,
+    « u\\72l( » = « url( »). Les filtres PINNED et UNSAFE_STYLE ne s'appliquent qu'à cette forme."""
+    value = CSS_COMMENT.sub("", value)
+    return CSS_ESCAPE.sub(lambda m: chr(int(m.group(1), 16) or 0xFFFD) if m.group(1) else m.group(2), value)
+
+
+def _clean_style(value):
+    """Style nettoyé, ou None s'il est à retirer entièrement."""
+    normal = _normal_css(value)
+    if UNSAFE_STYLE.search(normal):
+        return None
+    if PINNED.search(normal):
+        return PINNED.sub("", normal)
+    return value
+
+
+def clean_stored(html):
+    """Défense à la lecture d'un content.html déjà enregistré (avant ce nettoyage) : retire CDATA, déclarations et
+    instructions, et reprend les styles. Le plus souvent rien à faire : le texte est rendu tel quel, sans analyse."""
+    if "<!" not in html and "<?" not in html and not re.search(r"style\s*=\s*(\"[^\"]*|'[^']*)(\\|/\*)", html, re.I):
+        return html
+    soup = BeautifulSoup(html, "html.parser")
+    for node in soup.find_all(string=lambda s: isinstance(s, PreformattedString)):
+        node.extract()
+    for element in soup.find_all(style=True):
+        cleaned = _clean_style(str(element["style"]))
+        if cleaned is None:
+            del element.attrs["style"]
+        else:
+            element.attrs["style"] = cleaned
+    return str(soup)
 
 
 def _safe_href(href):
@@ -163,7 +200,7 @@ def sanitize_document(html, base_url):
     fragment = BeautifulSoup("", "html.parser")
     fragment.append(article)
 
-    for comment in fragment.find_all(string=lambda s: isinstance(s, Comment)):
+    for comment in fragment.find_all(string=lambda s: isinstance(s, PreformattedString)):
         comment.extract()
     for selector in NOISE_SELECTORS:
         for element in fragment.select(selector):
@@ -187,10 +224,12 @@ def sanitize_document(html, base_url):
             key = attr.lower()
             if key not in ALLOWED_ATTRS:
                 del element.attrs[attr]
-            elif key == "style" and UNSAFE_STYLE.search(str(value)):
-                del element.attrs[attr]
-            elif key == "style" and PINNED.search(str(value)):
-                element.attrs[attr] = PINNED.sub("", str(value))
+            elif key == "style":
+                cleaned = _clean_style(str(value))
+                if cleaned is None:
+                    del element.attrs[attr]
+                else:
+                    element.attrs[attr] = cleaned
             elif key == "href":
                 safe = _safe_href(str(value).strip())
                 if safe is None:

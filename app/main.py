@@ -32,6 +32,7 @@ from . import (ai, alerts, annotations, bibtex, bookjob, check, notesync, safety
                relevance, search, texexport, updates, zotero)
 from .arxiv import ArxivError, fetch_metadata, paper_key, parse_arxiv_id, strip_subject_class
 from .config import HOST, PORT, STATIC, TOKEN, TOKEN_FILE
+from .sanitize import clean_stored
 
 # Types des fichiers servis fixés ici : sous Windows, le registre en donne parfois d'autres (.js en
 # text/plain), et le navigateur refuse alors de charger les modules de la page
@@ -507,7 +508,7 @@ def content(paper_id: str):
         path = latexml.html_dir(paper_id) / "content.html"  # version faite par LaTeXML
     if not path.exists():
         raise HTTPException(404, "No HTML version")
-    return PlainTextResponse(path.read_text(encoding="utf-8"))
+    return PlainTextResponse(clean_stored(path.read_text(encoding="utf-8")))
 
 
 @app.get("/api/papers/{paper_id}/figures")
