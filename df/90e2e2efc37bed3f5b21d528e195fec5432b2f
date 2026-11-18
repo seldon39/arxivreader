@@ -1,0 +1,23 @@
+app/safety.py
+  s_2e78fe3aad7ffd::t_705ea15cf5b341 124,126
+tests/test_safety.py
+  s_2e78fe3aad7ffd::t_38c9a7b2992cc3 71-79
+tests/test_server.py
+  s_2e78fe3aad7ffd::t_289300db2bbaba 3,78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "df90e2e2efc37bed3f5b21d528e195fec5432b2f",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
