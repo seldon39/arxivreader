@@ -881,8 +881,12 @@ class Reader {
     const base = `/api/papers/${encodeURIComponent(this.paper.id)}/`;
     this.content.querySelectorAll('img[src^="assets/"]').forEach((img) => { img.src = base + img.getAttribute("src"); });
 
-    // Formules et tableaux larges : défilement horizontal plutôt que débordement
-    this.content.querySelectorAll("table.ltx_eqn_table, table.ltx_tabular").forEach((table) => {
+    // Formules et tableaux larges : défilement horizontal plutôt que débordement ; tableau dans un \resizebox
+    // (boîte transformée, affichée à sa taille naturelle : latexml.css) compris
+    const resized = [...this.content.querySelectorAll(".ltx_transformed_outer")]
+      .filter((box) => box.querySelector(".ltx_tabular") && !box.parentElement.closest(".ltx_transformed_outer"));
+    const tables = [...this.content.querySelectorAll("table.ltx_eqn_table, table.ltx_tabular")].filter((table) => !resized.some((box) => box.contains(table)));
+    [...tables, ...resized].forEach((table) => {
       if (table.parentElement.classList.contains("eq-scroll")) return;
       const wrap = h("div", { class: "eq-scroll" });
       table.replaceWith(wrap);

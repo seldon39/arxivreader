@@ -156,7 +156,33 @@ table.ltx_eqn_table { width: 100%; border-collapse: collapse; margin: .55em 0; d
 .ltx_figure, .ltx_table { margin: 1.4em 0; text-align: center; }
 .ltx_caption { font-size: .9em; margin-top: .5em; text-align: center; }
 .ltx_tabular { margin: 0 auto; border-collapse: collapse; text-align: left; }
-.ltx_tabular td, .ltx_tabular th { padding: .15em .55em; }
+.ltx_tabular td, .ltx_tabular th, span.ltx_td, span.ltx_th { padding: .15em .55em; }
+/* Tableau fait de <span> (dans une boîte, un \resizebox, un bloc d'auteurs) : affiché en tableau, comme sur arXiv ;
+   sinon son texte coule en ligne, et dans une boîte de largeur nulle chaque mot est coupé lettre par lettre */
+span.ltx_tabular { display: inline-table; }
+span.ltx_thead { display: table-header-group; }
+span.ltx_tbody { display: table-row-group; }
+span.ltx_tfoot { display: table-footer-group; }
+span.ltx_tr { display: table-row; }
+span.ltx_td, span.ltx_th { display: table-cell; }
+/* Cellule de tableau en <span> (bloc d'auteurs, tableau d'un \resizebox) : pas coupée, comme une colonne l, c, r en
+   LaTeX ; un tableau trop large défile (reader.js). Colonne p{…} (paragraphe) ou tableau de largeur fixée : coupés. */
+span.ltx_td, span.ltx_th { white-space: nowrap; }
+.ltx_td .ltx_p, .ltx_th .ltx_p, .ltx_tabular[style*="width"] .ltx_td { white-space: normal; }
+/* Dans toute cellule, pas de césure automatique (« Gem-ini-1.5 » sur trois lignes) : seulement aux espaces et tirets */
+.ltx_td, .ltx_th { hyphens: manual; -webkit-hyphens: manual; }
+/* Bloc d'auteurs en boîtes de largeur nulle (\makebox[0pt]) espacées sur une largeur fixe : dans une colonne plus étroite
+   que le PDF, noms et affiliations se chevauchent ou sortent à droite. Chaque boîte prend sa taille, la ligne passe à
+   la suivante et ne dépasse pas la colonne. */
+.ltx_inline-block[style*="width:0.0pt"] { width: auto !important; }
+.ltx_p > .ltx_inline-block[style*="width"]:only-child { max-width: 100%; }
+.ltx_p:has(> .ltx_inline-block[style*="width"]:only-child) { text-indent: 0; }
+/* \resizebox, \scalebox, \rotatebox : LaTeXML donne à la boîte extérieure la taille transformée, mais la transformation
+   (sur un <span> en ligne) ne s'applique pas : taille naturelle, sinon le contenu déborde sur le texte qui suit */
+.ltx_transformed_outer { width: auto !important; height: auto !important; vertical-align: baseline !important; }
+/* sidewaystable : le tableau entier est la boîte transformée, et la rotation (sur un <div>) s'applique ; à l'écran
+   on le lit droit, comme sur arXiv (largeur de la colonne, défilement horizontal du tableau : reader.js) */
+.ltx_table.ltx_transformed_outer > .ltx_transformed_inner { transform: none !important; width: auto !important; }
 .ltx_border_t { border-top: 1px solid currentColor; }
 .ltx_border_b { border-bottom: 1px solid currentColor; }
 .ltx_border_l { border-left: 1px solid currentColor; }

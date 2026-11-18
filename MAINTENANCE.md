@@ -1003,6 +1003,17 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
 - Equations aligned left or right (`latexml.css`): `.ltx_eqn_left_padleft` and `.ltx_eqn_right_padright` are 1px wide, not
   0. With every fixed-width column at 0, WebKit divides by zero when sharing the shrink and the column jumps to 2^25 px
   (blank in place of the equation; theorem 2.3 of arXiv 2611.10775). Do not set them back to 0.
+- Tables and boxes of LaTeXML (`latexml.css`, `enhanceContent`): a tabular inside a box (`\resizebox`, author block,
+  `\makebox`) is made of `<span>`: shown as a table (`display: table…`, as arXiv does), otherwise its text flows inline
+  and, in a zero-width box, each word breaks letter by letter. A span table cannot do `colspan`/`rowspan` (header
+  shifted, 2403.08142 table II, same on arXiv). `\resizebox`/`\scalebox`: the outer box carries the transformed size
+  but the transform (inline span) does not apply: natural size, and the table scrolls horizontally (`eq-scroll`, the
+  outermost transformed box). `sidewaystable`: the table is the transformed box and the rotation (on a `<div>`)
+  applies: cancelled, read upright. Span cells do not wrap (l, c, r columns); `p{…}` paragraphs and tables with a fixed
+  width do; no automatic hyphenation in any cell. Author block of zero-width boxes spread over a fixed width (2506.03074v5):
+  each box takes its size, the line wraps, never wider than the column (names and affiliations no longer overlap,
+  but are no longer aligned in columns). Checked in Chrome on 8 arXiv papers (no float over the next text, no
+  table past the column outside a scroll) and in WebKit.
 - Statement titles as plain text (`util.texToText`): accents become combining characters (`TEX_ACCENTS`), and `accented()`
   draws each one as a separate, absolutely positioned span (`SPACING_ACCENTS`, `.tex-accent`, `.tex-accent-mark`): math
   fonts misplace combining characters (the tilde of ∇̃ disappeared). `\left`/`\right`/`\big…` dropped, `\frac` → a/b.
