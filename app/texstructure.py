@@ -282,7 +282,11 @@ _COMMENT = re.compile(r"(?<!\\)%[^\n]*")
 _UNEXECUTED = re.compile(r"(?<!\\)%[^\n]*|\\verb\*?([^A-Za-z\s*])[^\n]*?\1"
                          r"|\\lstinline\s*(?:\[[^\]\n]*\])?\s*(?:\{[^{}\n]*\}|([^A-Za-z\s{\[])[^\n]*?\2)"
                          r"|\\begin\s*\{\s*(verbatim\*?|Verbatim\*?|BVerbatim|lstlisting|minted|alltt)\s*\}.*?\\end\s*\{\s*\3\s*\}", re.S)
-_CONDITIONAL = re.compile(r"\\iffalse\b|\\ifnum\s*(-?\d+)\s*([<=>])\s*(-?\d+)\s*(?![\d.])")
+# \ifnum entre deux nombres écrits : le second se termine par une espace, \relax ou un caractère (une macro pourrait
+# le prolonger : \ifnum9<1\@gobbleminus#1 n'est pas une constante)
+_CONDITIONAL = re.compile(r"\\iffalse\b|\\ifnum\s*(-?\d+)\s*([<=>])\s*(-?\d+)(?=\s|\\relax(?![A-Za-z@])|[^\d.\\])")
+# \if… nommé sans être exécuté : \newif\ifx, \let\ifx=\iffalse (les deux), \def\ifx…
+_ASSIGNED = re.compile(r"\\(?:newif|let|[gex]?def|expandafter)\s*$|\\let\s*\\[A-Za-z@]+\s*=?\s*$")
 _COLOR_USE = re.compile(r"\\(textcolor|mathcolor|color)\s*(?:\[\s*([A-Za-z]+)\s*\])?\s*\{([^{}]*)\}")
 _COLOR_VALUE = re.compile(r"(?:background|rule|fill)color\s*=\s*$")
 _COLOR_DEFINITION = re.compile(r"\\(?:definecolor|providecolor)\s*(?:\[[^\]]*\])?\s*\{\s*([^{}]+?)\s*\}\s*\{\s*([^{}]+?)\s*\}"
@@ -329,7 +333,7 @@ def _dead_branches(text):
     conditional = re.compile(_CONDITIONAL.pattern + (r"|\\if(" + "|".join(map(re.escape, flags)) + r")(?![A-Za-z@])" if flags else ""))
     branches, cursor = [], 0
     for found in conditional.finditer(text):
-        if found.start() < cursor or found.lastindex == 4 and re.search(r"\\(?:newif|let|[gex]?def|expandafter)\s*$", text[max(0, found.start() - 20):found.start()]):
+        if found.start() < cursor or _ASSIGNED.search(text, max(0, found.start() - 60), found.start()):
             continue
         if found.group(1) is not None:
             a, op, b = int(found.group(1)), found.group(2), int(found.group(3))
@@ -337,6 +341,8 @@ def _dead_branches(text):
                 continue
         depth, start = 1, found.end()
         for token in re.finditer(r"\\(if[A-Za-z]*|fi|else)(?![A-Za-z])", text[start:start + _SCAN]):
+            if token.group(1).startswith("if") and _ASSIGNED.search(text, max(0, start + token.start() - 60), start + token.start()):
+                continue  # \if… nommé (\let\ifx=\iffalse, \newif\ifx), pas ouvert
             depth += {"fi": -1, "else": 0}.get(token.group(1), 1)
             if depth == 0 or depth == 1 and token.group(1) == "else":
                 cursor = start + token.start()

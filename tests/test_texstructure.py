@@ -292,6 +292,16 @@ class InvisibleTex(unittest.TestCase):
             text, count = self.stripped(source.replace("\\newif\\ifhidden", r"\newif\ifhidden\hiddentrue", 1))
             self.assertIn("KEPT", text, source)
 
+    def test_named_or_open_ended_conditionals_are_not_dead(self):
+        """\let\ifx=\iffalse nomme une conditionnelle sans l'ouvrir ; \ifnum9<1\macro… : le nombre continue peut-être
+        (eplain : \ifinteger) ; rien n'est retiré."""
+        for body in (r"\def\xoff{\let\ifxref = \iffalse} KEPT one \else KEPT two \fi KEPT three",
+                     r"\def\ifinteger#1{\ifcat_\ifnum9<1\gobbleminus#1 _\else A\fi} KEPT one \fi",
+                     r"\newif\ifdraft \drafttrue \let\ifold\iffalse KEPT one KEPT two KEPT three"):
+            text, count = self.stripped(body)
+            self.assertEqual((text.count("KEPT"), count), (body.count("KEPT"), 0), body)
+        self.assertNotIn("GONE", self.stripped(r"\ifnum 0<1\relax KEPT \fi \ifnum 9<1 GONE \fi")[0])
+
     def test_many_calls_of_a_dark_macro_take_linear_time(self):
         """30 000 appels d'une macro à fond foncé (1 Mo) : près de 0,3 s ; 9 s quand chaque passage blanc parcourait toutes les
         plages d'appel (temps quadratique, recalculé à chaque question posée à l'IA). Borne large."""
