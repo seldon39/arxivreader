@@ -11,7 +11,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 def source_of(path, name):
     """Texte de `function name(…) { … }` (de la colonne 0 à la première « } » seule sur sa ligne) dans static/js/<path>."""
     text = (ROOT / "static/js" / path).read_text(encoding="utf-8")
-    match = re.search(rf"^(?:async )?function {name}\(.*?^}}$", text, re.S | re.M)
+    match = re.search(rf"^(?:export )?(?:async )?function {name}\(.*?^}}$", text, re.S | re.M)
     if match is None:
         raise LookupError(name)
     return match.group(0)

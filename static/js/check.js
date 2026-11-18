@@ -6,8 +6,9 @@ import { copyFromMenu } from "./commands.js";
 import { t } from "./i18n.js";
 import { h, toast, toastError } from "./util.js";
 
-export async function renderCheck(view) {
+export async function renderCheck(view, isCurrent = () => true) {
   const { text } = await api.checkReport();
+  if (!isCurrent()) return;  // page déjà quittée pendant la lecture du rapport
   const page = h("section", { class: "library check-page" }, h("h2", {}, t("check.title")), h("p", { class: "hint" }, t("check.intro")));
   if (!text) {
     page.append(h("p", {}, t("check.none")));

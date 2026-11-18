@@ -52,6 +52,8 @@ export function bookmarkBox({ heading, value, rect, onSave, onDelete = null, sav
 let closeMenu = null;
 export function contextMenuAt(point, items) {
   closeMenu?.();
+  const opener = document.activeElement;  // le focus lui est rendu à la fermeture par Échap ou par un choix (pas par un clic ailleurs)
+  const giveBack = () => opener?.focus?.({ preventScroll: true });
   const close = () => {
     menu.remove();
     document.removeEventListener("mousedown", outside, true);
@@ -60,8 +62,8 @@ export function contextMenuAt(point, items) {
   closeMenu = close;
   const outside = (event) => { if (!menu.contains(event.target)) close(); };
   const menu = h("div", { class: "context-menu bookmark-menu", role: "menu" }, items.map(([label, action]) =>
-    h("button", { type: "button", class: "context-menu-item", role: "menuitem", onclick: () => { close(); action(); } }, label)));
-  menu.addEventListener("keydown", (event) => { if (event.key === "Escape") close(); });
+    h("button", { type: "button", class: "context-menu-item", role: "menuitem", onclick: () => { close(); giveBack(); action(); } }, label)));
+  menu.addEventListener("keydown", (event) => { if (event.key === "Escape") { close(); giveBack(); } });
   document.body.append(menu);
   menu.style.left = `${Math.max(8, Math.min(point.left, innerWidth - menu.offsetWidth - 8))}px`;
   menu.style.top = `${Math.max(8, Math.min(point.top, innerHeight - menu.offsetHeight - 8))}px`;

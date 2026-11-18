@@ -1043,6 +1043,10 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
 - **LaTeX 2.09 sources** (`\documentstyle[12pt]{article}`, most arXiv papers before about 2000): `texsource.DOCUMENTCLASS` accepts
   `\documentstyle` as `\documentclass` (main file, layout analysis, import of a local `.tex` in `texfile.main_file`, single gzipped file
   in `latexml._extract`).
+- **Pages and menus** (`app.js`, `check.js`, `bookmarks.js`): every `render…` of a route that waits for the network checks
+  that its page is still the current one before drawing (`isCurrent` = `token === routeToken`; `renderCheck` too);
+  `contextMenuAt` gives the focus back to the element that opened it when it closes by Escape or by a choice (never after
+  a click elsewhere: that click chooses the new focus).
 - **Cached cross-reference index**: `crossrefs.nodes_of` reads another paper's `structure.json` as stored, cached by
   (date, size); it never re-analyses, which would rewrite every other paper's structure when one is opened.
 - **Sanitiser** (`app/sanitize.py`): every `PreformattedString` is removed (comments, but also `<![CDATA[…]]>`, which

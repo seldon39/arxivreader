@@ -102,6 +102,72 @@ console.log(JSON.stringify(saved));
         self.assertLess(text.index("this.positionSaver?.flush();"), text.index("this.savePosition = () => {};"))
 
 
+def node(code):
+    done = subprocess.run(["node", "--input-type=module", "-e", code], capture_output=True, text=True, check=True)
+    return json.loads(done.stdout)
+
+
+@unittest.skipUnless(shutil.which("node"), "Node absent")
+class CheckPage(unittest.TestCase):
+    def test_page_left_during_the_report_is_not_drawn(self):
+        code = """
+const api = { checkReport: async () => ({ text: "rapport" }) }, t = (key) => key, toast = () => {}, toastError = () => {}, copyFromMenu = () => {};
+const h = (tag, props, ...kids) => ({ tag, append() {} });
+%s
+const drawn = [];
+const view = { replaceChildren: (page) => drawn.push(page) };
+await renderCheck(view, () => false);
+const left = drawn.length;
+await renderCheck(view, () => true);
+await renderCheck(view);
+console.log(JSON.stringify([left, drawn.length]));
+""" % jsfunction.source_of("check.js", "renderCheck")
+        self.assertEqual(node(code), [0, 2])
+
+
+@unittest.skipUnless(shutil.which("node"), "Node absent")
+class ContextMenuFocus(unittest.TestCase):
+    """contextMenuAt de bookmarks.js : le focus revient à l'élément qui avait ouvert le menu (Échap, choix), pas après un clic ailleurs."""
+
+    SCRIPT = """
+const log = [];
+const opener = { focus: () => log.push("focus opener") };
+let outside = null;
+const element = (tag, props, kids) => {
+  const el = { tag, props, kids, handlers: {}, style: {}, offsetWidth: 10, offsetHeight: 10, remove() {}, contains: () => false,
+    addEventListener(name, fn) { this.handlers[name] = fn; }, querySelector: () => ({ focus: () => log.push("focus first") }) };
+  return el;
+};
+const h = (tag, props, kids) => element(tag, props, kids);
+globalThis.document = { activeElement: opener, body: { append() {} }, removeEventListener() {},
+  addEventListener: (name, fn) => { outside = fn; } };
+globalThis.innerWidth = 800; globalThis.innerHeight = 600;
+globalThis.setTimeout = (fn) => fn();
+let closeMenu = null;
+%(source)s
+let menu = null;
+const open = () => {
+  const appended = [];
+  document.body.append = (el) => appended.push(el);
+  contextMenuAt({ left: 1, top: 1 }, [["a", () => log.push("action")]]);
+  log.length = 0;
+  return appended[0];
+};
+const out = {};
+menu = open(); menu.kids[0].props.onclick();
+out.choice = [...log];
+menu = open(); menu.handlers.keydown({ key: "Escape" });
+out.escape = [...log];
+menu = open(); outside({ target: {} });
+out.outside = [...log];
+console.log(JSON.stringify(out));
+"""
+
+    def test_focus_returns_to_the_opener(self):
+        result = node(self.SCRIPT % {"source": jsfunction.source_of("bookmarks.js", "contextMenuAt")})
+        self.assertEqual(result, {"choice": ["focus opener", "action"], "escape": ["focus opener"], "outside": []})
+
+
 @unittest.skipUnless(shutil.which("node"), "Node absent")
 class Markdown(unittest.TestCase):
     PRELUDE = ('globalThis.window = globalThis; globalThis.document = {addEventListener() {}, querySelectorAll: () => [],'
