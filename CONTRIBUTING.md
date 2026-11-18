@@ -149,8 +149,10 @@ screens, and on several papers — a fix for one paper's LaTeXML output often br
   `_failed(error)` (502 when an outside service fails) and `_s2_key()`.
 - **Dependencies**: `requirements.txt` lists what is wanted, `requirements.lock` the exact tested versions. Add
   or update one deliberately, run the tests, then `./arxivreader lock`.
-- **Settings**: a new value of a setting must also be accepted by the server (`SETTING_CHOICES` in
-  `app/main.py`, or `BOOLEAN_SETTINGS` for an on/off setting), otherwise it is silently not saved.
+- **Settings**: a new setting must be added to the `allowed` list of `/api/settings` in `app/main.py` (a key that is
+  not listed is silently ignored), and a new value must be accepted by `_valid_setting` (`SETTING_CHOICES`, or
+  `BOOLEAN_SETTINGS` for an on/off setting): a known key with a rejected value answers 400 "Bad setting" and the
+  whole request is refused, other settings included.
 - **Paper versions**: an older arXiv version of a paper is a full row of `papers`, with id `<paper>v<k>`
   (`library.archive_key`), `in_library = 0` and `archived_of` set to the main paper, which always holds the latest
   installed version. A query that lists papers (feed, search, profile, related papers…) filters
