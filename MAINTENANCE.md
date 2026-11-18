@@ -510,7 +510,7 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   `\cellcolor` of its cell, a `\\` inside `{…}` not ending the row; also after the color in its own scope), tikz shapes `\fill`… and dark tikz styles, also through another style (in a
   tikz picture); a definition that sets its own dark background; beamer documents (`\documentclass` of the preamble).
   What TeX never executes is blanked first (`_unexecuted`): comments, `\verb`, `\lstinline`, verbatim, lstlisting
-  and minted environments, the false branch of `\iffalse`, of `\ifnum` between two written numbers (the second ended by a space, `\relax` or a character: a macro could extend it) and of a `\newif\ifname` flag that no `\nametrue` ever sets (up to its `\else`; a conditional only named, `\let\ifx=\iffalse`, `\newif\ifx`, neither opens nor nests); `strip_hidden` removes those branches from the text (`_dead_branches`). Past ten times `_SCAN_BUDGET`
+  and minted environments, the false branch of `\iffalse`, of `\ifnum` between two written numbers (the second ended by a space, `\relax` or a character: a macro could extend it) and of a `\newif\ifname` flag that nothing sets (no `\nametrue`, `\csname nametrue\endcsname` or `\let\ifname`) (up to its `\else`; a conditional only named, `\let\ifx=\iffalse`, `\newif\ifx`, neither opens nor nests); `strip_hidden` removes those branches from the text (`_dead_branches`). Past ten times `_SCAN_BUDGET`
   characters of windows on a text (tens of thousands of white passages), white text is judged without background. Count in `hiddenText` of `structure.json`; papers analysed before are
   analysed again when loaded (`STRUCTURE_VERSION` 21), so their statements (`node["tex"]`, sent to the AI) lose it too.
 - Invisible text in a PDF (`localpdf._page_text`, class `_Visible`): the content stream is walked with its graphics
@@ -551,7 +551,7 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   the `text.json` text, runs of at least three (the whole quote if it is shorter), so the AI never gets hidden text; the price is that
   a quote that pdf.js and pypdf split differently loses the words that do not align. Limit: only papers that have a `text.json` and no
   `content.html`; a selection in the PDF of a paper that also has an HTML version is sent as it is.
-- Known limits of both (heuristics, by design): other conditionals (`\ifdefined`, `\ifx`, `\if`, `\ifcase`, a flag set true somewhere), a font size combined with a scale (`\tiny\scalebox{0.15}`), TeX indirection beyond simple definitions (`\let`, styles of other
+- Known limits of both (heuristics, by design): other conditionals (`\ifdefined`, `\ifx`, `\if`, `\ifcase`, a flag set true by a class option or another way, mdwtools `\if@leqno`), a font size combined with a scale (`\tiny\scalebox{0.15}`), TeX indirection beyond simple definitions (`\let`, styles of other
   packages, `\pdfcolorstack`, `\special`, fontspec `Color=`), text covered by a shape or placed off the page, colors
   behind Separation or pattern color spaces and shading colors (counted as dark), near-white just under 0,9. Leaning
   towards keeping readable text: in TeX, white text in a tikz picture that has a dark fill elsewhere, or in a box

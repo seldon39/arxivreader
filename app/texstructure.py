@@ -328,9 +328,12 @@ def _blank(found):
 def _dead_branches(text):
     """Branches que TeX n'exécute jamais, dans `text` (commentaires, \\verb, verbatim déjà blanchis) :
     [(début du \\if…, fin de la branche, vrai si elle s'arrête à un \\fi)]. Branche fausse de \\iffalse, de \\ifnum entre deux
-    nombres et d'un drapeau \\newif\\ifnom jamais mis à vrai (aucun \\nomtrue dans le texte), jusqu'au \\else ou au \\fi de même
+    nombres et d'un drapeau \\newif\\ifnom jamais mis à vrai (ni \\nomtrue, ni \\csname nomtrue, ni \\let\\ifnom), jusqu'au \\else ou au \\fi de même
     niveau."""
-    flags = {found.group(1) for found in re.finditer(r"\\newif\s*\\if([A-Za-z@]+)", text)} - set(re.findall(r"\\([A-Za-z@]+)true(?![A-Za-z@])", text))
+    # mis à vrai : \nomtrue, \csname nomtrue\endcsname, ou \let\ifnom… (\let\ifnom\iftrue)
+    set_true = {"".join(names) for names in re.findall(
+        r"\\([A-Za-z@]+)true(?![A-Za-z@])|\\csname\s*([A-Za-z@]+)true\s*\\endcsname|\\let\s*\\if([A-Za-z@]+)", text)}
+    flags = {found.group(1) for found in re.finditer(r"\\newif\s*\\if([A-Za-z@]+)", text)} - set_true
     conditional = re.compile(_CONDITIONAL.pattern + (r"|\\if(" + "|".join(map(re.escape, flags)) + r")(?![A-Za-z@])" if flags else ""))
     branches, cursor = [], 0
     for found in conditional.finditer(text):

@@ -323,6 +323,14 @@ class InvisibleTex(unittest.TestCase):
         text, count = self.stripped(r"Opening words. \newcommand{\hide}[1]{\textcolor{white}{#1}} \hide{GONE}")
         self.assertEqual(("GONE" in text, count), (False, 1))
 
+    def test_flag_set_by_let_or_csname_is_not_dead(self):
+        """\newif\ifx mis à vrai par \let\ifx\iftrue ou \csname xtrue\endcsname : sa branche est imprimée."""
+        for body in (r"\newif\iffoo \let\iffoo\iftrue \iffoo KEPT one\fi",
+                     r"\newif\iffoo \csname footrue\endcsname \iffoo KEPT one\fi"):
+            text, count = self.stripped(body)
+            self.assertEqual((text.count("KEPT"), count), (1, 0), body)
+        self.assertNotIn("GONE", self.stripped(r"\newif\iffoo \iffoo GONE\fi KEPT")[0])
+
     def test_many_calls_of_a_dark_macro_take_linear_time(self):
         """30 000 appels d'une macro à fond foncé (1 Mo) : près de 0,3 s ; 9 s quand chaque passage blanc parcourait toutes les
         plages d'appel (temps quadratique, recalculé à chaque question posée à l'IA). Borne large."""
