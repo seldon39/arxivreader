@@ -1,0 +1,35 @@
+MAINTENANCE.md
+  s_2e78fe3aad7ffd::t_6f274d01c42422 527-531,537-538
+README.fr.md
+  s_2e78fe3aad7ffd::t_a46814c75a9f04 178-180
+README.md
+  s_2e78fe3aad7ffd::t_f10db5d7ad76be 171-173
+app/library.py
+  s_2e78fe3aad7ffd::t_88485faceda2f8 247,298,307-308,312,314,316,854,856,858
+app/localpdf.py
+  s_2e78fe3aad7ffd::t_03dd59ffa5f110 49,182-184,193-194,514-515,517-520,522,583,588-590,592,614,630-631,690,692,736,781,817,819,822,824
+static/css/app.css
+  s_2e78fe3aad7ffd::t_9f5f6e0c2852ca 398
+static/js/i18n.js
+  s_2e78fe3aad7ffd::t_fd75d56813ba19 602-603,1667-1668
+static/js/reader.js
+  s_2e78fe3aad7ffd::t_ea5abf8c9e7138 596-599
+tests/test_localpdf.py
+  s_2e78fe3aad7ffd::t_a040c9ccfaa792 85,102,112,139,151,180-196,231,258,300,391-408
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "5ee84a40acd2741c48a230d7c842be028443a4ae",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
