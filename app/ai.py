@@ -2402,7 +2402,7 @@ async def cross_review(paper, structure, first, second, language="fr", pages=(),
         except AIError as error:
             if not second_role:
                 raise
-            raise AIError(f"{assistant_name(second)}: {error}", error.code if error.code in ("limit", "offline", "reasoning") else "other")
+            raise AIError(f"{assistant_name(second)}: {error}", error.code if error.code in ("limit", "offline", "network", "reasoning") else "other")
 
     # section d'un article : tout l'article est joint, la comparaison et la synthèse restent sur cette section
     title = next((s["title"] for s in parts_of(structure) if s["id"] == chapter), "") if chapter and not structure.get("chapters") else ""
@@ -2479,7 +2479,7 @@ async def verify_review(paper, structure, review, first, checker, language="fr",
         more = {"effort": effort} if effort else {}  # absent : celui des réglages (les doublures de test l'ignorent)
         check = "".join([part async for part in stream_answer(*built, checker, None, images(checker), mine, **more)])
     except AIError as error:  # l'erreur vise le vérificateur ; « login » ou « missing » ne visent pas l'assistant choisi
-        raise AIError(f"{assistant_name(checker)}: {error}", error.code if error.code in ("limit", "offline", "reasoning") else "other")
+        raise AIError(f"{assistant_name(checker)}: {error}", error.code if error.code in ("limit", "offline", "network", "reasoning") else "other")
     if not check.strip():
         raise AIError(f"{assistant_name(checker)}: empty answer", "other")
     yield {"step": {"kind": "verify", "model": checker, "answer": check, **({"cut": True} if mine.get("cut") else {}),

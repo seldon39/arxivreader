@@ -1052,6 +1052,10 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   classes `cross-open`, `cross-badge`, `ai-ref`; hrefs beginning with `#/`): an article must never address the
   application's own elements or routes. `toast()` and `openSettingsDialog()` look their element up as `body > #id`,
   for an article stored before this rule.
+- **Error codes of an AI provider** (`ProviderError.code`, kept by `AIError` and by the cross-review of `ai.py`): `login`,
+  `missing`, `limit`, `reasoning`, `offline` (local server not running: "start Ollama or LM Studio") and `network`
+  (Gemini unreachable: only the network is blamed). Each code has a key in `ERROR_KEYS` (`ai.js`) and a text in both
+  languages (`ai.error.*`); a test checks it.
 
 ## 10. Logs and diagnostics
 

@@ -5,7 +5,9 @@ import json
 import os
 import pathlib
 import plistlib
+import re
 import shlex
+import socket
 import stat
 import subprocess
 import sys
@@ -411,6 +413,27 @@ class Gemini(unittest.TestCase):
         self.assertIn("/models/gemini-flash-latest:streamGenerateContent", self.handler.path_seen)
         self.assertEqual(self.handler.body["systemInstruction"]["parts"][0]["text"], "SYSTEM")
         self.assertNotIn("tools", self.handler.body)       # aucun outil
+
+    def test_unreachable_is_a_network_error_not_the_local_server(self):
+        """Gemini injoignable : code « network » (le message « lancez Ollama » est celui du serveur local, « offline »)."""
+        probe = socket.socket()
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+        probe.close()  # port fermé : connexion refusée
+        providers.GEMINI_API = f"http://127.0.0.1:{port}/v1beta"
+        with self.assertRaises(providers.ProviderError) as caught:
+            asyncio.run(collect(providers.stream_gemini("S", "P", "gemini-flash-latest", "good")))
+        self.assertEqual(caught.exception.code, "network")
+
+    def test_every_error_code_has_a_message_in_both_languages(self):
+        root = pathlib.Path(__file__).resolve().parent.parent
+        codes = set(re.findall(r'ProviderError\([^\n]*?, "(\w+)"\)', (root / "app/providers.py").read_text(encoding="utf-8")))
+        keys = dict(re.findall(r"(\w+): \"(ai\.error\.\w+)\"", re.search(r"const ERROR_KEYS = \{.*?\};", (root / "static/js/ai.js").read_text(encoding="utf-8"), re.S).group(0)))
+        i18n = (root / "static/js/i18n.js").read_text(encoding="utf-8")
+        self.assertIn("network", codes)
+        for code in codes:
+            self.assertIn(code, keys, code)
+            self.assertEqual(i18n.count(f'"{keys[code]}":'), 2, code)  # français et anglais
 
     def test_blocked_answer(self):
         with self.assertRaises(providers.ProviderError) as caught:  # pas une réponse vide enregistrée comme terminée

@@ -1889,7 +1889,7 @@ async function copyLater(textPromise) {
     return false;
   }
 }
-const ERROR_KEYS = { login: "ai.error.login", missing: "ai.error.login", limit: "ai.error.limit", offline: "ai.error.offline",
+const ERROR_KEYS = { login: "ai.error.login", missing: "ai.error.login", limit: "ai.error.limit", offline: "ai.error.offline", network: "ai.error.network",
   reasoning: "ai.error.reasoning" };
 
 // Rendu progressif : les paragraphes terminés sont mis en forme (MathJax) une seule fois,

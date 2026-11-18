@@ -634,7 +634,7 @@ async def _gemini_request(model, key, body):
                 if blocked or cut:  # longueur maximale ou filtre en cours de route : le texte reçu n'est pas toute la réponse
                     yield CUT
     except httpx.ConnectError:
-        raise ProviderError("Google's Gemini API cannot be reached (network?)", "offline")
+        raise ProviderError("Google's Gemini API cannot be reached (network?)", "network")  # « offline » = serveur local
     except (httpx.HTTPError, httpx.InvalidURL) as error:
         raise ProviderError(f"{type(error).__name__}: {error}")
 
