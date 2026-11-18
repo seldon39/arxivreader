@@ -7,7 +7,7 @@ import { Assistant } from "./ai.js";
 import { addButton, allButton, askDestination, destinationFolder } from "./biblibrary.js";
 import { copyBibtex } from "./bibtex.js";
 import { copyPaperBibtex, releaseMenuReader, reportMenu, setMenuReader, showKeys as showKeyList } from "./commands.js";
-import { alignNumberColumns, amsBibliography, dropMacroDebris, fixMathML, texQuotes, splitLongInlineMath, markItalicStatements, moveTitleNotes, normalizeFontScale, placeEquationNumbers, relabelLists } from "./amsfix.js";
+import { alignNumberColumns, amsBibliography, dropMacroDebris, fixMathML, texQuotes, splitLongInlineMath, markItalicStatements, moveTitleNotes, normalizeFontScale, placeEquationNumbers, relabelLists, renumberAlgorithms } from "./amsfix.js";
 import { currentModel } from "./aiproviders.js";
 import { emptyPictures, layoutFigures, openFigure, prepareFigures, sizeToText } from "./figures.js";
 import { findBar, setFindHandler } from "./find.js";
@@ -925,6 +925,7 @@ class Reader {
       relabelLists(this.content, tex.enumerate);
     }
     alignNumberColumns(this.content); // après le placement des numéros (source TeX ou non)
+    renumberAlgorithms(this.content);
     markItalicStatements(this.content);
     amsBibliography(this.content);
     this.linkArxivReferences();

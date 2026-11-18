@@ -1023,6 +1023,13 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   each box takes its size, the line wraps, never wider than the column (names and affiliations no longer overlap,
   but are no longer aligned in columns). Checked in Chrome on 8 arXiv papers (no float over the next text, no
   table past the column outside a scroll) and in WebKit.
+- algorithm2e algorithms (`amsfix.renumberAlgorithms`, `latexml.css` "Algorithmes"): LaTeXML writes the number of a line
+  at the start of the next one, sometimes two numbers on one line (2506.03074v5, algorithm 1: "7 8" on line 8). Not a
+  uniform shift, so the numbers are given again, 1…N in order, to the lines that take one in the PDF (not empty, not a
+  `/* */` or `//` comment), and only when the HTML numbers are exactly 1…N and N or N+1 such lines exist; otherwise
+  nothing is changed. `algorithmic` ("1:") is not touched. `ltx_framed_top`, `_bottom`, `_topbottom`… keep only their
+  sides (`ruled`: three rules, not two rectangles). Checked against the PDF of 2506.03074 v1 (algorithms 1–3) and v5
+  (algorithms 1–2), in WebKit.
 - Statement titles as plain text (`util.texToText`): accents become combining characters (`TEX_ACCENTS`), and `accented()`
   draws each one as a separate, absolutely positioned span (`SPACING_ACCENTS`, `.tex-accent`, `.tex-accent-mark`): math
   fonts misplace combining characters (the tilde of ∇̃ disappeared). `\left`/`\right`/`\big…` dropped, `\frac` → a/b.

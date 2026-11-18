@@ -87,6 +87,50 @@ export function relabelLists(content, formats) {
   });
 }
 
+// Numéros des lignes d'un algorithme (algorithm2e, linesnumbered). LaTeXML écrit le numéro d'une ligne au début de la
+// suivante, parfois deux sur la même ligne : la première ligne n'a pas de numéro, les autres ont celui d'avant (comparé
+// au PDF : 2506.03074 v1, algorithmes 1 à 3 ; v5, algorithme 1). `lines` : pour chaque ligne, ses numéros et si elle en
+// prend un (ni commentaire /* */ ou //, ni vide). Les numéros 1…N, dans l'ordre, sont redonnés un à un aux lignes qui
+// en prennent ; seulement si celles-ci sont N ou N + 1 (le dernier numéro manque). Sinon, ou si tout est juste : null.
+export function algorithmLineNumbers(lines) {
+  const tags = lines.flatMap((line) => line.tags);
+  if (!tags.length || tags.some((number, index) => number !== index + 1)) return null;
+  const count = lines.filter((line) => line.numbered).length;
+  if (count !== tags.length && count !== tags.length + 1) return null;
+  let next = 1;
+  const numbers = lines.map((line) => (line.numbered ? next++ : null));
+  const unchanged = lines.every((line, index) =>
+    numbers[index] === null ? !line.tags.length : line.tags.length === 1 && line.tags[0] === numbers[index]);
+  return unchanged ? null : numbers;
+}
+
+// Application aux listings d'algorithme de la page ; le numéro est mis en tête de ligne, avant les traits verticaux
+// des blocs (vlined), comme dans le PDF.
+export function renumberAlgorithms(content) {
+  content.querySelectorAll(".ltx_algorithm .ltx_listing.ltx_lst_numbers_left").forEach((listing) => {
+    const rows = [...listing.querySelectorAll(":scope > .ltx_listingline")];
+    const tagsOf = (row) => [...row.querySelectorAll(":scope > .ltx_tag_listingline")];
+    if (rows.some((row) => tagsOf(row).some((tag) => !/^\d+$/.test(tag.textContent.trim())))) return; // « 1: » : algorithmic
+    const lines = rows.map((row) => {
+      const tags = tagsOf(row);
+      const text = [...row.childNodes].filter((node) => !tags.includes(node)).map((node) => node.textContent).join("").trim();
+      return { tags: tags.map((tag) => Number(tag.textContent.trim())), numbered: Boolean(text) && !/^(\/\*|\/\/)/.test(text) };
+    });
+    const numbers = algorithmLineNumbers(lines);
+    rows.forEach((row, index) => {
+      const tags = tagsOf(row);
+      if (numbers) {
+        tags.forEach((tag) => tag.remove());
+        if (numbers[index] !== null) {
+          row.prepend(h("span", { class: "ltx_tag ltx_tag_listingline" }, h("span", { class: "ltx_text ltx_font_bold" }, String(numbers[index]))));
+        }
+      } else if (tags.length === 1) {
+        row.prepend(tags[0]);
+      }
+    });
+  });
+}
+
 // amsthm (style plain) : dans un énoncé en italique, les étiquettes de liste sont aussi en italique.
 export function markItalicStatements(content) {
   content.querySelectorAll(".ltx_theorem").forEach((theorem) => {

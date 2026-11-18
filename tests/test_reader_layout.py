@@ -110,5 +110,38 @@ class SpanBlocks(unittest.TestCase):
             self.assertEqual(declarations(LATEXML_CSS, selector).get("display"), display, selector)
 
 
+
+@unittest.skipUnless(shutil.which("node"), "Node absent")
+class AlgorithmNumbers(unittest.TestCase):
+    """algorithm2e : LaTeXML écrit le numéro d'une ligne au début de la suivante. Données réelles (numéros du HTML
+    d'arXiv, ligne par ligne ; « c » commentaire /* */, « e » ligne vide) et numéros attendus, lus dans le PDF."""
+
+    def numbers(self, html):
+        lines = [{"tags": [] if tag in "-ce" else [int(n) for n in tag.split("+")], "numbered": tag not in "ce"}
+                 for tag in html.split()]
+        return jsfunction.run("amsfix.js", "algorithmLineNumbers", f"algorithmLineNumbers({json.dumps(lines)})")
+
+    def test_shifted_by_one_line(self):
+        # 2506.03074v1, algorithme 2 (ECaD) : PDF 1 Compute … 6 Return
+        self.assertEqual(self.numbers("- 1 2 3 4 5 e"), [1, 2, 3, 4, 5, 6, None])
+        # algorithme 1 : Input (1), commentaire, for (2) … ; Return (10)
+        self.assertEqual(self.numbers("- c 1 2 3 c 4 5 6 7 8 9 e"),
+                         [1, None, 2, 3, 4, None, 5, 6, 7, 8, 9, 10, None])
+
+    def test_two_numbers_on_one_line(self):
+        # 2506.03074v5, algorithme 1 : « 7 8 » sur la ligne Compute ; PDF : Compute 8, puis 9, 10, 11 (Return)
+        self.assertEqual(self.numbers("- c 1 2 3 4 c 5 6 7+8 9 10 11 e"),
+                         [1, None, 2, 3, 4, 5, None, 6, 7, 8, 9, 10, 11, None])
+
+    def test_left_alone_when_right_or_unclear(self):
+        self.assertIsNone(self.numbers("1 2 3 e"))           # déjà juste
+        self.assertIsNone(self.numbers("- - - 1 2 e"))       # trois lignes sans numéro pour deux : on ne devine pas
+        self.assertIsNone(self.numbers("- 1 3 e"))           # numéros qui sautent
+        self.assertIsNone(self.numbers("- - e"))             # aucun numéro
+
+    def test_frames_of_a_ruled_algorithm(self):
+        self.assertEqual(declarations(LATEXML_CSS, ".ltx_framed_top").get("border-width"), "1px 0 0")
+        self.assertEqual(declarations(LATEXML_CSS, ".ltx_framed_topbottom").get("border-width"), "1px 0")
+
 if __name__ == "__main__":
     unittest.main()

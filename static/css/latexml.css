@@ -145,6 +145,20 @@ table.ltx_eqn_table { width: 100%; border-collapse: collapse; margin: .55em 0; d
 .ltx_leqno .ltx_eqn_eqno.ltx_align_left { text-align: left; padding: 0 1em 0 0; }
 .eq-scroll { overflow-x: auto; overflow-y: hidden; max-width: 100%; scrollbar-width: thin; }
 
+/* ---- Algorithmes (algorithm2e) ----
+   Cadre partiel de LaTeXML (style ruled : filet au-dessus du titre, filets au-dessus et au-dessous des lignes) : seuls
+   ces côtés, pas un rectangle autour de l'algorithme et un autre autour de ses lignes. Numéro de ligne (amsfix.js,
+   renumberAlgorithms) en colonne. */
+.ltx_framed_top { border-width: 1px 0 0; }
+.ltx_framed_bottom { border-width: 0 0 1px; }
+.ltx_framed_topbottom { border-width: 1px 0; }
+.ltx_framed_left { border-width: 0 0 0 1px; }
+.ltx_framed_right { border-width: 0 1px 0 0; }
+.ltx_framed_leftright { border-width: 0 1px; }
+.ltx_algorithm.ltx_framed { padding: .2em 0 0; }
+.ltx_algorithm .ltx_listing { margin-top: .3em; padding: .3em 0; text-align: left; }
+.ltx_listing .ltx_tag_listingline { display: inline-block; min-width: 1.6em; text-indent: 0; }
+
 /* ---- Blocs écrits en <span> (énoncé encadré : \fbox, framed ; minipage dans un dessin) ----
    LaTeXML y écrit énoncé, paragraphes et équations en <span> : en ligne, le cadre se répète sur chaque ligne (traits
    en travers du texte, « ] » à la fin) et les équations coulent dans le texte. Le cadre qui contient des blocs est un
