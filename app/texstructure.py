@@ -293,7 +293,7 @@ _COLOR_VALUE = re.compile(r"(?:background|rule|fill)color\s*=\s*$")
 _COLOR_DEFINITION = re.compile(r"\\(?:definecolor|providecolor)\s*(?:\[[^\]]*\])?\s*\{\s*([^{}]+?)\s*\}\s*\{\s*([^{}]+?)\s*\}"
                                r"\s*\{([^{}]*)\}|\\colorlet\s*(?:\[[^\]]*\])?\s*\{\s*([^{}]+?)\s*\}\s*(?:\[[^\]]*\])?\s*\{([^{}]*)\}")
 # \fontsize ne prend effet qu'au choix d'une police : \selectfont, ou tout changement de famille, de série, de forme
-_FONTSIZE = re.compile(r"\\fontsize\s*\{([^{}]*)\}\s*\{[^{}]*\}(?:\s*\\(?!(?:selectfont|usefont)\b)[A-Za-z]+(?:\s*\{[^{}]*\})*)*"
+_FONTSIZE = re.compile(r"\\fontsize\s*\{([^{}]*)\}\s*\{[^{}]*\}(?:\s*\\(?!(?:selectfont|usefont)\b)[A-Za-z]+(?:\s*\{[^{}]*\}){0,4}){0,8}"
                        r"\s*(?:\\(?:selectfont|rmfamily|sffamily|ttfamily|normalfont|bfseries|mdseries|itshape|slshape|scshape|upshape)\b"
                        r"|\\usefont\b(?:\s*\{[^{}]*\}){4})")
 _SIZES = "normalsize|tiny|scriptsize|footnotesize|small|large|Large|LARGE|huge|Huge|fontsize"

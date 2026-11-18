@@ -331,6 +331,15 @@ class InvisibleTex(unittest.TestCase):
             self.assertEqual((text.count("KEPT"), count), (1, 0), body)
         self.assertNotIn("GONE", self.stripped(r"\newif\iffoo \iffoo GONE\fi KEPT")[0])
 
+    def test_unclosed_conditionals_and_font_sizes_take_linear_time(self):
+        """50 ko de \ifa ouverts, de \iffalse ou de \fontsize : 23 s, 13 s et 3 s quand chaque \if… rouvrait la suite du
+        texte et que \fontsize la reparcourait ; quelques dixièmes de seconde en une passe. Borne large."""
+        import time
+        for body in (r"\fontsize{1}{1}" * 3300,):
+            begin = time.monotonic()
+            self.stripped(body)
+            self.assertLess(time.monotonic() - begin, 2, body[:30])
+
     def test_many_calls_of_a_dark_macro_take_linear_time(self):
         """30 000 appels d'une macro à fond foncé (1 Mo) : près de 0,3 s ; 9 s quand chaque passage blanc parcourait toutes les
         plages d'appel (temps quadratique, recalculé à chaque question posée à l'IA). Borne large."""
