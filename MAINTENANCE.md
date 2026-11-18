@@ -247,7 +247,9 @@ services must be *as strict* as the real ones: an overly permissive fake has alr
 test for the case; check that the fallback works if the service goes down.
 
 **Caches to invalidate** when their computation changes: `STRUCTURE_VERSION` (`structure.py`, re-analysis of the imported
-papers), `PAGES_VERSION` (`library.py`, pages of the statements in the PDF), `FORMAT` (`related.py`, graphs kept for fifteen days), Zotero index (`zoteroIndexVersion`, reset
+papers), `PAGES_VERSION` (`library.py`, pages of the statements in the PDF), `TEXT_VERSION` (`localpdf.py`, text.json of
+PDF papers, redone at startup by `redetect_all`), `META_VERSION` (`localpdf.py`, title and authors guessed from an
+imported PDF), `FORMAT` (`related.py`, graphs kept for fifteen days), Zotero index (`zoteroIndexVersion`, reset
 by `_forget_all`), new versions of the library (setting `feed.newVersions`: shape of its items). The text extracted by the
 full-text search (`fulltext._extracted`, `_read_labels`) is cached in memory only, keyed on the file's path and `mtime_ns`:
 a restart is enough.
@@ -508,7 +510,10 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   `MAX_FORM_DEPTH` are emptied, a form that draws itself has that call emptied; each draw counts `FORM_COST` operations, and beyond `MAX_STEPS` operations on a
   page, forms are left as they are. Shapes are indexed in a grid (`GRID`); beyond `MAX_LOOKUPS` shapes examined on a
   page, only the last 64 shapes of a grid cell are examined. Hidden shows are removed from the stream in memory before pypdf extracts the text;
-  counted (`hidden`, then `hiddenText`). A `text.json` older than `TEXT_VERSION` is re-read once (`_refresh_text`).
+  counted (`hidden`, then `hiddenText`). The rewritten stream is parsed again as bytes (`ContentStream(…, "bytes")`): pypdf would reuse an
+  already parsed stream with strings decoded without the fonts' encodings and `ToUnicode`, and the whole page would
+  come out wrong (ligatures, math symbols, CID fonts). A `text.json` older than `TEXT_VERSION` is redone once
+  (`_refresh_text`), at startup (`redetect_all`) or at the AI's first reading.
   The reader shows the count without a reveal button when only the PDF is displayed (`reader.hiddenTextSource`).
 - Known limits of both (heuristics, by design): TeX indirection beyond simple definitions (`\let`, styles of other
   packages, `\pdfcolorstack`, `\special`, fontspec `Color=`), text covered by a shape or placed off the page, colors

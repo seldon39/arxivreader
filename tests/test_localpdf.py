@@ -48,12 +48,12 @@ def raw_pdf(content):
     return out.encode("latin-1")
 
 
-def build_pdf(content, resources="", extra=(), catalog=""):
-    """PDF d'une page : flux `content`, ressources en plus de la police F1, objets 6, 7… (`extra`), entrées du catalogue."""
+def build_pdf(content, resources="", extra=(), catalog="", font="<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"):
+    """PDF d'une page : flux `content`, ressources en plus de la police F1 (`font`), objets 6, 7… (`extra`), entrées
+    du catalogue."""
     objects = [f"<< /Type /Catalog /Pages 2 0 R {catalog} >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
                f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> "
-               f"{resources} >> >>", f"<< /Length {len(content)} >>\nstream\n{content}\nendstream",
-               "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>", *extra]
+               f"{resources} >> >>", f"<< /Length {len(content)} >>\nstream\n{content}\nendstream", font, *extra]
     out, offsets = "%PDF-1.4\n", []
     for number, body in enumerate(objects, 1):
         offsets.append(len(out.encode("latin-1")))
@@ -83,6 +83,14 @@ class InvisiblePdfText(unittest.TestCase):
     def page(content):
         found = localpdf.read_pdf(raw_pdf(content))
         return found["pages"][0], found["hidden"]
+
+    def test_kept_text_read_with_its_font(self):
+        """Une page dont on retire un passage garde le codage de ses polices (ligatures, symboles des formules)."""
+        font = ("<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman /Encoding << /Type /Encoding "
+                "/BaseEncoding /WinAnsiEncoding /Differences [12 /fi 21 /greaterequal] >> >>")
+        content = "BT /F1 12 Tf 72 700 Td (The \\014rst one: x \\025 2.) Tj ET 1 g BT /F1 12 Tf 72 650 Td (SECRET) Tj ET"
+        found = localpdf.read_pdf(build_pdf(content, font=font))
+        self.assertEqual((found["pages"][0].strip(), found["hidden"]), ("The \ufb01rst one: x \u2265 2.", 1))
 
     def test_white_and_tiny_text_removed(self):
         found = localpdf.read_pdf(HIDDEN_PDF)
@@ -445,6 +453,17 @@ class LocalPdf(unittest.TestCase):
         (folder / "text.json").write_text(json.dumps({"pages": stored["pages"]}), encoding="utf-8")
         localpdf.redetect_all()  # corrigé à la main : jamais écrasé
         self.assertEqual((db.get_paper(paper["id"])["title"], db.get_paper(paper["id"])["authors"]), ("Mine", ["Me"]))
+
+    def test_old_text_refreshed_at_startup(self):
+        """text.json d'avant TEXT_VERSION : refait au démarrage, pour la recherche plein texte comme pour l'IA."""
+        paper = self.upload(make_pdf(["Spectral asymptotics", "Some visible words"])).json()["paper"]
+        folder = library.paper_dir(paper["id"])
+        stored = json.loads((folder / "text.json").read_text(encoding="utf-8"))
+        (folder / "text.json").write_text(json.dumps({**stored, "pages": ["garbled \x0c"], "textVersion": 2}), encoding="utf-8")
+        localpdf.redetect_all()
+        stored = json.loads((folder / "text.json").read_text(encoding="utf-8"))
+        self.assertEqual(stored["textVersion"], localpdf.TEXT_VERSION)
+        self.assertIn("Some visible words", stored["pages"][0])
 
     def test_reference_arxiv(self):
         """« Chercher sur arXiv » d'une référence : version arXiv par DOI, sinon par titre (qui doit figurer dans la

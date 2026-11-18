@@ -519,7 +519,7 @@ def _page_text(page, hidden=None):
     mode de rendu invisible (Tr 3) sauf sur une page scannée (une image en couvre au moins la moitié : la couche de
     texte reconnu est le texte de la page). `hidden` (liste) : y ajoute le nombre de passages invisibles avec des
     lettres. Le contenu de la page est remplacé en mémoire (rien n'est écrit)."""
-    from pypdf.generic import NameObject
+    from pypdf.generic import ContentStream, NameObject
     passages = 0
     try:
         contents = page.get_contents()
@@ -543,8 +543,10 @@ def _page_text(page, hidden=None):
             if walk.steps > MAX_STEPS:
                 log.info("page très chargée : formulaires au-delà de %d opérations laissés tels quels", MAX_STEPS)
             if changed:
+                # relu en octets : un flux déjà analysé serait repris tel quel par pypdf, chaînes décodées sans le
+                # codage ni le ToUnicode des polices (ligatures, formules, polices CID : texte de toute la page faux)
                 contents.operations = kept
-                page[NameObject("/Contents")] = contents
+                page[NameObject("/Contents")] = ContentStream(contents, page.pdf, "bytes")
     except Exception:  # flux illisible pour ce parcours : pypdf en tire ce qu'il peut
         log.debug("texte invisible non cherché", exc_info=True)
     try:
@@ -710,7 +712,8 @@ def _import(pid, data, filename):
     return db.get_paper(pid)
 
 
-TEXT_VERSION = 2  # 2 : texte invisible retiré ; un text.json plus ancien est refait à sa première lecture par l'IA
+TEXT_VERSION = 3  # 2 : texte invisible retiré ; 3 : texte gardé lu avec le codage des polices. Un text.json plus
+                  # ancien est refait au démarrage (redetect_all), ou à sa première lecture par l'IA
 
 
 def text(pid):
@@ -758,15 +761,19 @@ def update_meta(pid, title, authors):
 
 
 def redetect_all():
-    """Au démarrage : titre et auteurs des PDF importés avant la dernière amélioration du repérage, relus du PDF
-    (sauf ceux corrigés à la main). Résumé repris seulement s'il manquait."""
+    """Au démarrage : texte des PDF (importés, ou articles d'arXiv en PDF seul) extrait avant TEXT_VERSION, refait
+    (la recherche plein texte et l'IA lisent text.json) ; titre et auteurs des PDF importés avant la dernière
+    amélioration du repérage, relus du PDF (sauf ceux corrigés à la main). Résumé repris seulement s'il manquait."""
     with db.connect() as connection:
-        rows = connection.execute("SELECT id FROM papers WHERE source = ?", (SOURCE,)).fetchall()
+        rows = connection.execute("SELECT id, source FROM papers WHERE source IN (?, 'none')", (SOURCE,)).fetchall()
     for row in rows:
         folder = paper_dir(row["id"])
         try:
             stored = json.loads((folder / "text.json").read_text(encoding="utf-8"))
-            if stored.get("metaVersion", 1) >= META_VERSION or (folder / "meta-edited").exists():
+            if stored.get("textVersion", 1) < TEXT_VERSION and (folder / "paper.pdf").exists():
+                _refresh_text(row["id"])
+                stored = json.loads((folder / "text.json").read_text(encoding="utf-8"))
+            if row["source"] != SOURCE or stored.get("metaVersion", 1) >= META_VERSION or (folder / "meta-edited").exists():
                 continue
             paper = db.get_paper(row["id"])
             found = read_pdf((folder / "paper.pdf").read_bytes(), paper.get("comment") or "")
