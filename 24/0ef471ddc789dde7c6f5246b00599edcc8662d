@@ -1,0 +1,23 @@
+MAINTENANCE.md
+  s_2e78fe3aad7ffd::t_20e10fa716c51e 515-516
+app/localpdf.py
+  s_2e78fe3aad7ffd::t_49861c364a0597 347,366-368,373-376,548-562
+tests/test_localpdf.py
+  s_2e78fe3aad7ffd::t_e7f1acaacac7d6 197-212
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "240ef471ddc789dde7c6f5246b00599edcc8662d",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
