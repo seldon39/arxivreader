@@ -140,8 +140,9 @@ text coming from arXiv, Semantic Scholar, Zotero or an AI goes through text or `
 3. Release notes in English in a file **outside the repository** (one line per visible change), for example
    `$(mktemp -d)/notes.md`: inside the repository, the file would make it "modified" and the script would refuse.
 4. `macos/release.sh /chemin/absolu/notes.md`: it requires the `main` branch, a repository with no uncommitted
-   changes, `gh` connected to GitHub and a `vX.Y.Z` tag that is still free; then tests, build (refused
-   if `.venv` differs from `requirements.lock`), tag, push, release of the `.dmg` on GitHub.
+   changes, `gh` connected to GitHub, a `VERSION` without a beta suffix, a `HEAD` that contains `origin/main`
+   (fetched first) and a `vX.Y.Z` tag that is free locally **and on GitHub**; then tests, build (refused
+   if `.venv` differs from `requirements.lock`), tag, atomic push of the branch and the tag, release of the `.dmg` on GitHub.
 5. Install: `rm -rf /Applications/arXivReader.app && ditto ~/Library/Caches/arXivReader-build/arXivReader.app /Applications/arXivReader.app`,
    then check `defaults read /Applications/arXivReader.app/Contents/Info.plist CFBundleShortVersionString` and
    `codesign --verify --deep --strict /Applications/arXivReader.app`.
@@ -188,7 +189,7 @@ pre-releases `windows-v1.9.15`… `windows-v1.9.21` and `windows-latest` remain 
 ### Betas
 
 For future betas: work on a local `beta` branch, with `VERSION` = `X.Y.Z-beta.N` (never compared with the published
-versions, so no update is offered). `macos/build-beta.sh` builds a separate `~/Applications/arXivReader Beta.app`
+versions, so no update is offered). `macos/build-beta.sh` (refuses `main` and a `VERSION` that is not `X.Y.Z-beta.N`) builds a separate `~/Applications/arXivReader Beta.app`
 (**never `/Applications`**), with its own settings, library and port. Never `macos/release.sh` for a beta; a GitHub
 pre-release, if any, uses a tag that does not start with `v` (a `v*` tag starts the Windows workflow). Documentation is
 updated when the beta is merged into `main`, and `VERSION` goes back to `X.Y.Z` before the release.

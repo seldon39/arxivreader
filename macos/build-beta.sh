@@ -7,6 +7,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
+# une bêta se construit hors de main, avec VERSION = X.Y.Z-beta.N (section 5 de MAINTENANCE.md)
+VERSION=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' app/version.py)
+case "$VERSION" in *-beta.*) ;; *) echo "VERSION doit être X.Y.Z-beta.N (branche beta) : $VERSION."; exit 1;; esac
+[ "$(git rev-parse --abbrev-ref HEAD)" != main ] || { echo "Une bêta se construit hors de la branche main."; exit 1; }
 BUILD=$HOME/Library/Caches/arXivReader-beta-build
 STABLE=$HOME/Library/Caches/arXivReader-build
 DEST=$HOME/Applications/arXivReader\ Beta.app
