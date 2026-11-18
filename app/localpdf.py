@@ -441,6 +441,13 @@ class _Visible:
             return None
         self.steps += FORM_COST
         inner = dict(state, ctm=_mult(_numbers(target.get("/Matrix", IDENTITY)) or IDENTITY, state["ctm"]))
+        bbox = _numbers(target.get("/BBox") or [])
+        if bbox and len(bbox) == 4:  # le cadre du formulaire découpe ce qu'il affiche
+            x0, y0, x1, y1 = _box([_point(inner["ctm"], x, y) for x in (bbox[0], bbox[2]) for y in (bbox[1], bbox[3])])
+            if state["clip"]:
+                c0, d0, c1, d1 = state["clip"]
+                x0, y0, x1, y1 = max(x0, c0), max(y0, d0), min(x1, c1), min(y1, d1)
+            inner["clip"] = (x0, y0, x1, y1)
         if "/OC" in target:
             inner["hiddenLayer"] = state["hiddenLayer"] or self._layer_off(target.raw_get("/OC"), resources)
         if depth >= MAX_FORM_DEPTH:

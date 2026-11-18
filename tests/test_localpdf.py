@@ -143,6 +143,18 @@ class InvisiblePdfText(unittest.TestCase):
         self.assertEqual(page("/OC /L0 BDC q 612 0 0 792 0 0 cm BI /W 1 /H 1 /CS /G /BPC 8 ID \x00 EI Q EMC" + white), ("", 1))
         self.assertEqual(page("q /G2 gs 0 g 0 0 612 792 re f Q" + white), ("IGNORE", 0))
 
+    def test_form_bbox_clips(self):
+        """Le /BBox d'un formulaire découpe ce qu'il affiche : texte hors du cadre (ou cadre vide) retiré, dans le cadre gardé."""
+        def page(bbox, show):
+            form = form_object(show).replace("/BBox [0 -100 300 50]", f"/BBox [{bbox}]")
+            found = localpdf.read_pdf(build_pdf("q 1 0 0 1 72 700 cm /Fm Do Q", "/XObject << /Fm 6 0 R >>", (form,)))
+            return found["pages"][0].strip(), found["hidden"]
+        inside, outside = "BT /F1 12 Tf 0 0 Td (INSIDE) Tj ET", "BT /F1 12 Tf 0 -300 Td (OUTSIDE) Tj ET"
+        self.assertEqual(page("0 -100 300 50", inside), ("INSIDE", 0))
+        self.assertEqual(page("0 -100 300 50", outside), ("", 1))
+        self.assertEqual(page("0 0 0 0", inside.replace("0 0 Td", "100 0 Td")), ("", 1))
+        self.assertEqual(page("0 -100 300 50", outside + " " + inside), ("INSIDE", 1))
+
     def test_state_of_each_show(self):
         """Couleur changée entre deux affichages d'un même bloc de texte : chacun jugé avec la sienne."""
         start = "BT /F1 12 Tf 72 700 Td "

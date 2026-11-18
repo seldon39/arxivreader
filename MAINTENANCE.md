@@ -515,7 +515,7 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   opacity, or in a hidden layer, paints nothing) (an opaque light fill, rectangle
   or axis-aligned outline, in normal blend mode without soft mask, painted later covers it); size under `MIN_VISIBLE_PT` on
   either axis (`Tf` size, times `1000 × FontMatrix` for a Type3 font: the bitmap fonts of dvips + Ghostscript have a unit matrix
-  and size 1, the pixels being scaled down by `cm`), opacity under 0,05 (both for `Tr` 2/6), outside the clip, hidden layer (membership dictionaries by
+  and size 1, the pixels being scaled down by `cm`), opacity under 0,05 (both for `Tr` 2/6), outside the clip (the `/BBox` of a form is a clip for what it draws), hidden layer (membership dictionaries by
   their `/P` policy; a `/VE` expression is not read: visible), invisible mode (`Tr` 3/7) except on a scanned page
   (images, whole or in strips, cover at least `SCAN_SHARE` of it: text layer of a recognized scan; a first pass finds
   it when the image comes after the text, also when the page draws forms). Form XObjects are judged at each draw with the state of that moment: a
