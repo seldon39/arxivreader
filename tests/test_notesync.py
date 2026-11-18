@@ -165,6 +165,14 @@ class ReplacementPreview(unittest.TestCase):
             connection.execute("DELETE FROM papers")
         self.assertEqual(notesync.preview_files([self.file(self.markdown)], accept=set(report["untrusted"]))["n"], 0)
 
+    def test_paper_that_is_not_an_object(self):
+        """Fichier signé dont « paper » n'est pas un objet : l'aperçu l'ignore, comme l'import (pas d'erreur 500)."""
+        for paper in ("x", 3, ["x"]):
+            data = notesync._signed({"paper": paper, "annotations": []})
+            self.assertEqual(self.preview()["n"], 0)
+            self.assertEqual(notesync.preview_files([self.file(data)])["n"], 0)
+            notesync.import_files([self.file(data)])
+
     def test_route(self):
         from fastapi.testclient import TestClient
         from app import main

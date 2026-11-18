@@ -231,7 +231,9 @@ def _notes_paper_here(paper):
     """Identifiant, ici, de l'article qui recevrait les notes de `paper` (cf. _ensure_paper et _version_of_notes), sans
     rien créer ni télécharger ; None s'il n'est pas là."""
     from .arxiv import ArxivError, parse_arxiv_id
-    paper_id = paper.get("id") if isinstance(paper, dict) else None
+    if not isinstance(paper, dict):
+        return None  # comme _ensure_paper : entrée ignorée
+    paper_id = paper.get("id")
     here = db.get_paper(paper_id) if isinstance(paper_id, str) else None
     if not here and paper.get("arxiv_id"):
         try:
