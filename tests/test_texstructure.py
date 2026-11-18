@@ -202,6 +202,16 @@ class InvisibleTex(unittest.TestCase):
             self.assertEqual(count, 0, setup)
         self.assertEqual(self.stripped(r"\lstset{basicstyle=\color{white}\ttfamily,frame=single} Visible text")[1], 1)  # témoin
 
+    def test_fontsize_takes_effect_with_any_font_switch(self):
+        """\\fontsize{0.1}{0.1} sans \\selectfont : tout changement de famille, de série ou de forme choisit la police."""
+        for switch in (r"\rmfamily", r"\normalfont", r"\ttfamily", r"\bfseries", r"\usefont{T1}{cmr}{m}{n}",
+                       r"\fontfamily{cmr}\selectfont", r"\selectfont"):
+            text, count = self.stripped(r"A {\fontsize{0.1}{0.1}" + switch + " GONE} REAL TEXT")
+            self.assertNotIn("GONE", text, switch)
+            self.assertIn("REAL TEXT", text, switch)
+            self.assertEqual(count, 1, switch)
+        self.assertIn("KEPT", self.stripped(r"{\fontsize{9}{11}\rmfamily KEPT}")[0])
+
     def test_readable_colors_and_whole_document_settings_kept(self):
         for body in (r"\textcolor{black!50}{VISIBLE} ok", r"\colorbox{black}{\color{white} VISIBLE}",
                      r"\color{white} VISIBLE " + "word " * 5000,                           # tout le document : un réglage
