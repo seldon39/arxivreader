@@ -552,7 +552,7 @@ notification is shown under PowerShell's name and a click does not open the app 
   when the paper has framed PDF regions; Settings > Reading, "Export library and notes (.zip)": all notes, one
   file per paper, with these images, in a .zip archive (Downloads folder).
 - **Notes between computers**: the images of PDF regions are imported too, deletions are carried over (the most recent
-  change wins) and there is only one row per statement (duplicates are merged without loss).
+  change wins) and there is only one row per statement, the most recent version wins (the app warns before replacing a note written on this computer).
 
 ## Claude on the paper
 

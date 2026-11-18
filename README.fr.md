@@ -583,7 +583,7 @@ de PowerShell et un clic n'ouvre pas encore l'application.
   notes (.zip) » : toutes les notes, un fichier par article, avec ces images, dans une archive .zip (dossier
   Téléchargements).
 - **Notes entre ordinateurs** : les images des zones du PDF sont importées aussi, les suppressions sont transmises (la
-  modification la plus récente gagne) et il n'y a qu'une ligne par énoncé (doublons fusionnés sans perte).
+  modification la plus récente gagne) et il n'y a qu'une ligne par énoncé, la version la plus récente l'emporte (l'application prévient avant de remplacer une note écrite sur cet ordinateur).
 
 ## Claude sur l'article (étape 4)
 

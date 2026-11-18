@@ -300,6 +300,10 @@ hand, in the installed app:
 - exported notes: signed data block at the end of the file (`notesync.py`, Ed25519 from `cryptography`), the
   installation's key in `notes-signing.key` (library folder, never exported), accepted devices in
   `notes-trusted.json`; any change to the block's content goes through `FORMAT` (old files remain readable);
+- notes import: `POST /api/notes/import-preview` (`notesync.preview_files`) runs first, without writing or fetching anything,
+  and counts the local reading sheet / statement / proof rows that the file would replace (another `uid`, older, different
+  content; `annotations.would_replace`, same matching as `import_one` through `_local_match`); `importNotes` (`settings.js`)
+  warns when it is not 0. Same `uid` and older is normal sync, not counted;
 - the browser's right-click menu is suppressed (`app.js`) except on a selection, a field, a link or an image;
   right-click on the paper (`annotations.js`) and on the PDF (`pdfnotes.js`) offers the bookmarks (`bookmarks.js`);
 - downloads (notes export: Downloads folder, `WKDownloadDelegate`; once saved, the shell sends the page an

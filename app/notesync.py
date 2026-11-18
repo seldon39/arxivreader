@@ -203,14 +203,11 @@ def _verify(text):
     return payload, key_id(raw), str(payload["signer"].get("device") or "")[:100], fingerprint(raw)
 
 
-def import_files(files, accept=()):
-    """Importe des notes exportées. `accept` : identifiants de clés d'appareils que l'utilisateur vient d'accepter.
-    Renvoie le bilan ; `untrusted` y liste les appareils inconnus, {identifiant: {device, fingerprint}} (rien n'est
-    importé de leurs fichiers tant qu'ils ne sont pas acceptés)."""
+def _verified(files, accept, report, persist=True):
+    """Charges utiles signées des fichiers ; les rejets et les appareils inconnus vont dans `report`. `persist` faux :
+    un appareil accepté n'est pas encore retenu (aperçu)."""
     own = key_id(_raw(_private_key().public_key()))
     known = trusted()
-    report = {"papers": 0, "folders": 0, "added": 0, "updated": 0, "unchanged": 0, "deleted": 0, "missing": [], "rejected": [], "untrusted": {},
-              "changed": []}  # articles dont les notes ont changé (la page affichée se recharge si c'est le sien)
     verified = []
     for name, text in _texts(files):
         try:
@@ -220,12 +217,59 @@ def import_files(files, accept=()):
             continue
         if signer != own and signer not in known:
             if signer in accept:
-                trust({signer: device})
+                if persist:
+                    trust({signer: device})
                 known[signer] = device
             else:
                 report["untrusted"][signer] = {"device": device, "fingerprint": short}
                 continue
         verified.append(payload)
+    return verified
+
+
+def _notes_paper_here(paper):
+    """Identifiant, ici, de l'article qui recevrait les notes de `paper` (cf. _ensure_paper et _version_of_notes), sans
+    rien créer ni télécharger ; None s'il n'est pas là."""
+    from .arxiv import ArxivError, parse_arxiv_id
+    paper_id = paper.get("id") if isinstance(paper, dict) else None
+    here = db.get_paper(paper_id) if isinstance(paper_id, str) else None
+    if not here and paper.get("arxiv_id"):
+        try:
+            here = db.get_paper(library.stored_key(parse_arxiv_id(str(paper["arxiv_id"]))[0]))
+        except (ArxivError, ValueError):
+            return None
+    version = paper.get("version")
+    if here and type(version) is int and version >= 1 and not here.get("archived_of") and here["version"] != version \
+            and not (here["version"] is None and not paper.get("archived_of")):
+        here = db.get_paper(library.archive_key(here["id"], version))
+    return here
+
+
+def preview_files(files, accept=()):
+    """Aperçu d'un import, sans rien écrire ni rien chercher sur arXiv : même vérification des signatures, puis les
+    notes d'ici (fiche, énoncés, preuves) que l'import remplacerait par une autre, plus récente, écrite ailleurs.
+    Renvoie {"replaced": [{"title", "n"}], "n", "rejected", "untrusted"}."""
+    report = {"replaced": [], "n": 0, "rejected": [], "untrusted": {}}
+    verified = _verified(files, accept, report, persist=False)
+    if report["untrusted"]:
+        return report
+    for payload in verified:
+        here = None if "library" in payload else _notes_paper_here(payload["paper"])
+        count = sum(annotations.would_replace(here["id"], item) for item in payload.get("annotations") or []
+                    if isinstance(item, dict)) if here else 0
+        if count:
+            report["replaced"].append({"title": here["title"], "n": count})
+            report["n"] += count
+    return report
+
+
+def import_files(files, accept=()):
+    """Importe des notes exportées. `accept` : identifiants de clés d'appareils que l'utilisateur vient d'accepter.
+    Renvoie le bilan ; `untrusted` y liste les appareils inconnus, {identifiant: {device, fingerprint}} (rien n'est
+    importé de leurs fichiers tant qu'ils ne sont pas acceptés)."""
+    report = {"papers": 0, "folders": 0, "added": 0, "updated": 0, "unchanged": 0, "deleted": 0, "missing": [], "rejected": [], "untrusted": {},
+              "changed": []}  # articles dont les notes ont changé (la page affichée se recharge si c'est le sien)
+    verified = _verified(files, accept, report)
     if report["untrusted"]:
         return report  # la page demande d'abord : rien n'est importé à moitié
     # bibliothèque (articles, même non annotés) d'abord, puis les notes, puis les dossiers (articles alors présents)

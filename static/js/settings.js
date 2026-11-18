@@ -570,12 +570,15 @@ export async function importNotes(list) {
   if (!list.length) return null;
   try {
     const files = await Promise.all(list.map(asBase64));
-    let report = await api.importNotes(files);
-    const unknown = Object.entries(report.untrusted || {});
+    let accept = [], check = await api.previewNotes(files);  // aperçu : rien n'est importé avant les accords
+    const unknown = Object.entries(check.untrusted || {});
     if (unknown.length) {  // notes d'un autre ordinateur : l'accepter une fois, ses fichiers passent ensuite
       if (!(await trustDialog(unknown))) return null;
-      report = await api.importNotes(files, unknown.map(([key]) => key));
+      accept = unknown.map(([key]) => key);
+      check = await api.previewNotes(files, accept);
     }
+    if (check.n && !(await replaceDialog(check))) return null;
+    const report = await api.importNotes(files, accept);
     const parts = [t("settings.notesImported", { added: report.added, updated: report.updated })];
     if (report.deleted) parts.push(t("settings.notesImportedDeleted", { n: report.deleted }));
     if (report.papers) parts.push(t("settings.notesImportedPapers", { n: report.papers }));
@@ -588,6 +591,23 @@ export async function importNotes(list) {
     toast(t("error.generic", { message: error.message }), { error: true });
     return null;
   }
+}
+
+// Notes écrites ici que l'import remplacerait par une version plus récente du fichier
+function replaceDialog({ n, replaced }) {
+  return new Promise((resolve) => {
+    const dialog = h("dialog", { class: "meta-dialog" },
+      h("form", { method: "dialog" },
+        h("h3", { class: "meta-heading" }, t("settings.notesReplaceTitle")),
+        h("p", {}, t("settings.notesReplaceText", { n })),
+        h("ul", {}, replaced.map(({ title, n: count }) => h("li", {}, h("strong", {}, title), " ", h("span", { class: "muted small" }, `(${count})`)))),
+        h("div", { class: "dialog-actions" },
+          h("button", { class: "button", type: "button", onclick: () => dialog.close("no") }, t("library.folder.cancel")),
+          h("button", { class: "button primary", value: "yes" }, t("settings.notesReplaceAccept")))));
+    dialog.addEventListener("close", () => { dialog.remove(); resolve(dialog.returnValue === "yes"); });
+    document.body.append(dialog);
+    dialog.showModal();
+  });
 }
 
 function trustDialog(devices) {

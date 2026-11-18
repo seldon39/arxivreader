@@ -126,6 +126,7 @@ export const api = {
   onboardingApply: (body) => request("POST", "/api/onboarding/apply", body),
   notesCount: () => request("GET", "/api/notes"),
   importNotes: (files, accept = []) => request("POST", "/api/notes/import", { files, accept }),
+  previewNotes: (files, accept = []) => request("POST", "/api/notes/import-preview", { files, accept }),
   authorRule: (id, body) => request("PUT", `/api/profile/items/${id}/rule`, body),
   authorCategories: (id, paper) => request("GET", `/api/profile/items/${id}/categories${paper ? `?paper=${encodeURIComponent(paper)}` : ""}`),
   notesDevice: () => request("GET", "/api/notes/device"),

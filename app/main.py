@@ -1765,15 +1765,25 @@ class NotesImport(BaseModel):
     accept: list[str] = []  # empreintes d'appareils que l'utilisateur vient d'accepter
 
 
+def _notes_call(body, action):
+    try:
+        files = [{"name": f.name[:300], "data": base64.b64decode(f.data, validate=True)} for f in body.files[:500]]
+        return action(files, set(body.accept[:50]))
+    except (ValueError, notesync.ImportError_, zipfile.BadZipFile, zlib.error, EOFError, RuntimeError, NotImplementedError) as error:
+        raise HTTPException(400, f"Notes: {type(error).__name__}: {error}")  # archive abîmée, chiffrée…
+
+
 @app.post("/api/notes/import")
 def import_notes(body: NotesImport):
     """Notes exportées par arXivReader (signées) : recréées ici ; articles absents importés d'arXiv. Appareil inconnu :
     bilan avec `untrusted`, rien d'importé tant que l'utilisateur ne l'a pas accepté."""
-    try:
-        files = [{"name": f.name[:300], "data": base64.b64decode(f.data, validate=True)} for f in body.files[:500]]
-        return notesync.import_files(files, set(body.accept[:50]))
-    except (ValueError, notesync.ImportError_, zipfile.BadZipFile, zlib.error, EOFError, RuntimeError, NotImplementedError) as error:
-        raise HTTPException(400, f"Notes: {type(error).__name__}: {error}")  # archive abîmée, chiffrée…
+    return _notes_call(body, notesync.import_files)
+
+
+@app.post("/api/notes/import-preview")
+def import_notes_preview(body: NotesImport):
+    """Ce que l'import remplacerait parmi les notes écrites ici (rien n'est écrit ni téléchargé)."""
+    return _notes_call(body, notesync.preview_files)
 
 
 @app.get("/api/notes/device")

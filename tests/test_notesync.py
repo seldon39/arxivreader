@@ -103,6 +103,78 @@ class NotesSync(unittest.TestCase):
         self.assertEqual((added, report["papers"], report["added"]), ([("0806.2370", "Toeplitz operators", True)], 1, 6))
 
 
+class ReplacementPreview(unittest.TestCase):
+    """Aperçu de l'import : notes d'ici écrites à part (autre identifiant) que le fichier remplacerait. Rien n'est écrit
+    ni cherché sur arXiv ; une même note plus ancienne n'est que la synchronisation normale."""
+
+    file = NotesSync.file
+
+    def setUp(self):
+        NotesSync.setUp(self)
+        setup_library(self)  # autre ordinateur, article déjà là
+        notesync.trust({notesync.key_id(__import__("base64").b64decode(
+            json.loads(notesync.DATA.search(self.markdown).group(1))["signer"]["key"])): "Mac"})
+        self.old = "2000-01-01 00:00:00"
+
+    def local(self, kind, target=None, note=None, state=None, updated=None):
+        row = annotations.create("0806.2370", kind, target, note=note, state=state)
+        with db.connect() as connection:
+            connection.execute("UPDATE annotations SET updated_at = ? WHERE id = ?", (updated or self.old, row["id"]))
+        return row
+
+    def dump(self):
+        with db.connect() as connection:
+            return [tuple(r) for r in connection.execute("SELECT * FROM annotations ORDER BY id")]
+
+    def preview(self):
+        before = self.dump()
+        with mock.patch.object(library, "quick_add", side_effect=AssertionError("arXiv")), \
+                mock.patch.object(library, "ensure_version", side_effect=AssertionError("arXiv")):
+            report = notesync.preview_files([self.file(self.markdown)])
+        self.assertEqual(self.dump(), before)  # rien d'écrit
+        return report
+
+    def test_other_uid_older_and_different_is_counted(self):
+        self.local("general", note="Écrit ici")
+        self.local("block", {"id": "S1.Thm1"}, note="Mon énoncé", state="verified")
+        report = self.preview()
+        self.assertEqual((report["n"], report["replaced"]), (2, [{"title": "Toeplitz operators", "n": 2}]))
+        self.assertEqual(notesync.import_files([self.file(self.markdown)])["updated"], 2)  # c'est bien ce que l'import fait
+
+    def test_same_content_newer_local_and_same_uid_are_not_counted(self):
+        self.local("general", note="Fiche de lecture")  # même contenu : rien de perdu
+        self.local("block", {"id": "S1.Thm1"}, note="À relire", state="review", updated="2999-01-01 00:00:00")  # plus récente : gardée
+        self.assertEqual(self.preview()["n"], 0)
+        with db.connect() as connection:
+            connection.execute("DELETE FROM annotations")
+        notesync.import_files([self.file(self.markdown)])  # ici avec les mêmes identifiants
+        with db.connect() as connection:  # même identifiant, plus ancienne et modifiée : la même note, synchronisation normale
+            connection.execute("UPDATE annotations SET note = 'ancienne', updated_at = ? WHERE kind = 'general'", (self.old,))
+        self.assertEqual(self.preview()["n"], 0)
+
+    def test_untrusted_device_and_missing_paper(self):
+        self.local("general", note="Écrit ici")
+        (db.LIBRARY / "notes-trusted.json").unlink()
+        report = self.preview()
+        self.assertEqual((report["n"], len(report["untrusted"])), (0, 1))  # appareil inconnu : même traitement que l'import
+        self.assertFalse((db.LIBRARY / "notes-trusted.json").exists())  # et l'accepter pour l'aperçu ne le retient pas
+        notesync.preview_files([self.file(self.markdown)], accept=set(report["untrusted"]))
+        self.assertFalse((db.LIBRARY / "notes-trusted.json").exists())
+        with db.connect() as connection:
+            connection.execute("DELETE FROM annotations")
+            connection.execute("DELETE FROM papers")
+        self.assertEqual(notesync.preview_files([self.file(self.markdown)], accept=set(report["untrusted"]))["n"], 0)
+
+    def test_route(self):
+        from fastapi.testclient import TestClient
+        from app import main
+        self.local("general", note="Écrit ici")
+        client = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}")
+        data = __import__("base64").b64encode(self.markdown.encode()).decode()
+        reply = client.post("/api/notes/import-preview", json={"files": [{"name": "a.md", "data": data}]})
+        self.assertEqual((reply.status_code, reply.json()["n"]), (200, 1))
+
+
 if __name__ == "__main__":
     unittest.main()
 

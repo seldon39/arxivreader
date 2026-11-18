@@ -306,43 +306,76 @@ def stats():
 
 # ---- Import (notes exportées par arXivReader, bloc de données signé : notesync.py) ----
 
-def import_one(paper_id, item):
-    """Annotation importée : ajoutée, remplacée si elle est plus récente que la nôtre, sinon laissée. Rapprochement
-    par identifiant stable ; énoncé, preuve, fiche de lecture et emplacement de preuve : par leur cible (un seul par
-    article). Renvoie "added", "updated" ou "unchanged"."""
+def _imported_values(item):
+    """Annotation importée nettoyée : (genre, cible, valeurs à écrire), ou None si elle est inutilisable."""
     kind = item.get("kind")
     target = item.get("target") if isinstance(item.get("target"), dict) else None
     if kind not in KINDS + ("proof",) or not isinstance(item.get("uid"), str) or not 8 <= len(item["uid"]) <= 64:
-        return "unchanged"
+        return None
     if kind in ("proof", "block") and not isinstance((target or {}).get("id"), str):
-        return "unchanged"  # (anciennes notes d'énoncé sans cible : rien à quoi les rattacher)
+        return None  # (anciennes notes d'énoncé sans cible : rien à quoi les rattacher)
     if not re.fullmatch(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d", str(item.get("updated_at") or "")):
-        return "unchanged"  # date au format de la base, sinon une entrée pourrait l'emporter sur toutes les suivantes
+        return None  # date au format de la base, sinon une entrée pourrait l'emporter sur toutes les suivantes
     try:
         if zone_of(target):
             _check_zone(zone_of(target))
         if kind in ("bookmark", "note"):
             _check_bookmark(target or {})
     except ValueError:
-        return "unchanged"
+        return None
     clean = lambda value, size: value[:size] if isinstance(value, str) else None  # noqa: E731
-    values = {"target": json.dumps(target) if target else None,
-              "color": item.get("color") if item.get("color") in COLORS else None,
-              "quote": clean(item.get("quote"), 5000), "note": clean(item.get("note"), 100000),
-              "state": item.get("state") if item.get("state") in STATES else None,
-              "author": item.get("author") if item.get("author") in AUTHORS else None,
-              "updated_at": clean(item.get("updated_at"), 30) or "1970-01-01 00:00:00"}
+    return kind, target, {"target": json.dumps(target) if target else None,
+                          "color": item.get("color") if item.get("color") in COLORS else None,
+                          "quote": clean(item.get("quote"), 5000), "note": clean(item.get("note"), 100000),
+                          "state": item.get("state") if item.get("state") in STATES else None,
+                          "author": item.get("author") if item.get("author") in AUTHORS else None,
+                          "updated_at": clean(item.get("updated_at"), 30) or "1970-01-01 00:00:00"}
+
+
+def _local_match(connection, paper_id, uid, kind, target):
+    """Ligne d'ici que l'annotation importée remplacerait : même identifiant, sinon (fiche, énoncé, preuve) la ligne
+    unique de la même cible, même écrite ici indépendamment."""
+    existing = connection.execute("SELECT * FROM annotations WHERE uid = ?", (uid,)).fetchone()
+    if existing:
+        return existing
+    if kind == "general":
+        return connection.execute("SELECT * FROM annotations WHERE paper_id = ? AND kind = 'general'", (paper_id,)).fetchone()
+    if kind in ("block", "proof"):
+        return connection.execute(
+            "SELECT * FROM annotations WHERE paper_id = ? AND kind = ? AND json_extract(target, '$.id') = ?",
+            (paper_id, kind, target["id"])).fetchone()
+    return None
+
+
+def would_replace(paper_id, item):
+    """Vrai si l'importer remplacerait une note écrite ici à part (autre identifiant, plus ancienne, autre contenu) :
+    sa version d'ici serait perdue. Même identifiant plus ancien = la même note modifiée ailleurs : synchronisation
+    normale. Ne touche à rien."""
+    prepared = _imported_values(item)
+    if not prepared:
+        return False
+    kind, target, values = prepared
     with db.connect() as connection:
-        existing = connection.execute("SELECT id, paper_id, updated_at FROM annotations WHERE uid = ?", (item["uid"],)).fetchone()
-        if existing and existing["paper_id"] != paper_id:
+        existing = _local_match(connection, paper_id, item["uid"], kind, target)
+    if not existing or existing["paper_id"] != paper_id or existing["uid"] == item["uid"]:
+        return False
+    return values["updated_at"] > (existing["updated_at"] or "") and any(
+        (values[key] or "") != (existing[key] or "") for key in ("target", "color", "quote", "note", "state"))
+
+
+def import_one(paper_id, item):
+    """Annotation importée : ajoutée, remplacée si elle est plus récente que la nôtre, sinon laissée. Rapprochement
+    par identifiant stable ; énoncé, preuve, fiche de lecture et emplacement de preuve : par leur cible (un seul par
+    article). Renvoie "added", "updated" ou "unchanged"."""
+    prepared = _imported_values(item)
+    if not prepared:
+        return "unchanged"
+    kind, target, values = prepared
+    clean = lambda value, size: value[:size] if isinstance(value, str) else None  # noqa: E731
+    with db.connect() as connection:
+        existing = _local_match(connection, paper_id, item["uid"], kind, target)
+        if existing and existing["uid"] == item["uid"] and existing["paper_id"] != paper_id:
             return "unchanged"  # même identifiant sur un autre article (annotation copiée) : on n'y touche pas
-        if not existing and kind == "general":
-            existing = connection.execute("SELECT id, updated_at FROM annotations WHERE paper_id = ? AND kind = 'general'",
-                                          (paper_id,)).fetchone()
-        elif not existing and kind in ("block", "proof"):
-            existing = connection.execute(
-                "SELECT id, updated_at FROM annotations WHERE paper_id = ? AND kind = ? AND json_extract(target, '$.id') = ?",
-                (paper_id, kind, target["id"])).fetchone()
         if existing:
             if values["updated_at"] <= (existing["updated_at"] or ""):
                 return "unchanged"
