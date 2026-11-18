@@ -1,5 +1,6 @@
 """Serveur : protections des requêtes, ré-analyse des articles enregistrés, petites fonctions sensibles."""
 
+import contextlib
 import gzip
 import json
 import pathlib
@@ -74,7 +75,7 @@ class Settings(unittest.TestCase):
 
     def test_migration_of_an_old_database(self):
         import sqlite3
-        with sqlite3.connect(db.DB_PATH) as connection:  # schéma d'avant : sans author ni applied
+        with contextlib.closing(sqlite3.connect(db.DB_PATH)) as connection, connection:  # schéma d'avant : sans author ni applied
             connection.execute("DROP TABLE annotations")
             connection.execute("CREATE TABLE annotations (id INTEGER PRIMARY KEY, paper_id TEXT, kind TEXT, target TEXT, "
                                "color TEXT, quote TEXT, note TEXT, state TEXT, created_at TEXT, updated_at TEXT)")
