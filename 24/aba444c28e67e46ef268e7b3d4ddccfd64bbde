@@ -1,0 +1,26 @@
+static/css/latexml.css
+  s_2e78fe3aad7ffd::t_20aeac66857f32 159-185
+static/js/reader.js
+  s_2e78fe3aad7ffd::t_20aeac66857f32 884-889
+MAINTENANCE.md
+  s_2e78fe3aad7ffd::t_20aeac66857f32 1006-1016
+tests/test_reader_layout.py
+  s_2e78fe3aad7ffd::t_20aeac66857f32 1,16,66-89
+  s_2e78fe3aad7ffd::t_b5644ab0a2c8f3 90-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "24aba444c28e67e46ef268e7b3d4ddccfd64bbde",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
