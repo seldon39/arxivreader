@@ -279,6 +279,11 @@ hand, in the installed app:
   "Related papers"; drag types: `application/x-arxivreader-paper` and `text/uri-list`
   (`util.js`, `selection.js`, `TabWindow` in `main.swift`, which locates tabs through the `NSTabButton` views of
   the Mac's tab bar);
+- known limit, full screen: when a tab is chosen in "Show All Tabs", the band of the title and tab bar shows the
+  bottom of the page for the length of the zoom animation, then the bar comes back. Not fixed: a page pinned below
+  the bar in a full-height window (`fullSizeContentView`, 6b37d58, reverted) changed nothing; the remaining lever is
+  the bar that hides itself in full screen (`.autoHideToolbar`, set aside on 11/11/2026 because, transparent, it took
+  the red of the page as it slid down), not tried: the user keeps the limit (18/11/2026);
 - SVG colors (the related-papers graph puts its colors in `style`, because WebKit rejects `var()` in the
   `fill` attribute), `color-mix`, `<dialog>` and `inert`, `ResizeObserver`;
 - the PDF reader (pdf.js frozen in `static/vendor/pdfjs`) and the formulas (MathJax frozen in `static/vendor/mathjax`);
