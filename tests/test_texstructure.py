@@ -182,6 +182,16 @@ class InvisibleTex(unittest.TestCase):
             self.assertIn("Kept words", text, definition)
             self.assertEqual(count, 0, definition)
 
+    def test_colorbox_in_closing_code_of_an_environment(self):
+        """\\begin{lrbox}{0}\\color{white} … \\end{lrbox}\\colorbox{black}{\\usebox{0}} : le fond est dans le code de fermeture."""
+        text, count = self.stripped(r"\newenvironment{inv}{\begin{lrbox}{0}\color{white}}{\end{lrbox}\colorbox{black}{\usebox{0}}}"
+                                    + "Opening words and more words here. " * 30 + r"\begin{inv}Kept words\end{inv}")
+        self.assertIn("Kept words", text)
+        self.assertEqual(count, 0)
+        text, count = self.stripped(r"\newenvironment{inv}{\begin{lrbox}{0}\color{white}}{\end{lrbox}\colorbox{white}{\usebox{0}}}"
+                                    + "Opening words and more words here. " * 30 + r"\begin{inv}Gone words\end{inv}")
+        self.assertNotIn("Gone words", text)
+
     def test_readable_colors_and_whole_document_settings_kept(self):
         for body in (r"\textcolor{black!50}{VISIBLE} ok", r"\colorbox{black}{\color{white} VISIBLE}",
                      r"\color{white} VISIBLE " + "word " * 5000,                           # tout le document : un réglage

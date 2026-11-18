@@ -742,7 +742,10 @@ class _Context:
             names = colors.at(found.start())
             # ouvre une boîte foncée de l'auteur (\newtcolorbox{nom}{colback=black} puis \begin{nom}) : fond foncé aussi
             around = self.dark_envs and re.search(r"\\begin\s*\{(?:" + "|".join(map(re.escape, self.dark_envs)) + r")\}", body[0])
-            if not (_dark_colorbox(body[0], names) or around or _fill_dark(body[0], names, True, "tikz" in body[0])):
+            # \colorbox posé dans le code de fermeture d'un environnement (\end{lrbox}\colorbox{black}{\usebox0})
+            closing = _group(text, body[1], "{") if found.group(6) or found.group(7) else None
+            if not (_dark_colorbox(body[0], names) or around or closing and _dark_colorbox(closing[0], names)
+                    or _fill_dark(body[0], names, True, "tikz" in body[0])):
                 continue
             if found.group(6) or found.group(7):
                 self.dark_envs.add((found.group(6) or found.group(7)).strip())
