@@ -608,6 +608,11 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   `X-ArXivReader-Token` header. The server writes it to `server.token` (readable by the user only, removed on
   shutdown) so that a launcher can reopen a window. Without the variable (tests, test runs), the API does not require it. Test run
   in a copy of the app: `curl` without the token must respond 403.
+  Left by design (audit M1): in browser mode (`./arxivreader`, Windows fallback) the cookie is host-only, and
+  cookies ignore the port, so the browser also sends it to any other server listening on 127.0.0.1 (a link to
+  `http://127.0.0.1:<port>/` opened from a paper); that server would get the whole API. It takes a hostile program
+  already running on the computer; the Mac and Windows windows send the header and are not concerned. A fix would
+  carry the token in the URL fragment and send it as the header only.
 - API keys in the keychain (`app/keystore.py`, only with `ARXIVREADER_KEYCHAIN=1`): macOS through the
   `security` tool (write command on standard input, never as an argument), Windows through CredWriteW; one entry
   per key and per library (path digest), so a test copy never touches the real keys. `db`
