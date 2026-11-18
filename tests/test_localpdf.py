@@ -115,6 +115,18 @@ class InvisiblePdfText(unittest.TestCase):
         self.assertEqual(page("[0.001 0 0 0.001 0 0]", "BT /F1 0.5 Tf 72 700 Td (aaa) Tj ET"), ("", 1))
         self.assertEqual(page("[1 0 0 1 0 0]", "q 0.0005 0 0 0.0005 72 700 cm BT /F1 1 Tf (aaa) Tj ET Q"), ("", 1))
 
+    def test_passages_counted_on_decoded_text(self):
+        """Sous-ensemble de police dont les lettres sont sur des codes de ponctuation : le passage retiré est compté
+        (les octets seuls n'ont pas de lettres) ; des chiffres cachés ne comptent pas."""
+        font = ("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding << /Type /Encoding "
+                "/Differences [33 /I /g /n /o /r /e] >> >>")
+        found = localpdf.read_pdf(build_pdf("BT /F1 12 Tf 72 700 Td (Visible text) Tj ET 1 g BT /F1 12 Tf 72 680 Td (!\"#$%&) Tj ET",
+                                            font=font))
+        self.assertEqual((found["pages"][0].strip(), found["hidden"]), ("Visible text", 1))
+        found = localpdf.read_pdf(build_pdf("BT /F1 12 Tf 72 700 Td (Visible text) Tj ET 1 g BT /F1 12 Tf 72 680 Td (123 456) Tj ET",
+                                            font=font))
+        self.assertEqual((found["pages"][0].strip(), found["hidden"]), ("Visible text", 0))
+
     def test_state_of_each_show(self):
         """Couleur changée entre deux affichages d'un même bloc de texte : chacun jugé avec la sienne."""
         start = "BT /F1 12 Tf 72 700 Td "

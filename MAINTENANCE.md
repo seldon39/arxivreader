@@ -522,7 +522,9 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   `MAX_FORM_DEPTH` are emptied, a form that draws itself has that call emptied; each draw counts `FORM_COST` operations, and beyond `MAX_STEPS` operations on a
   page, forms are left as they are. Shapes are indexed in a grid (`GRID`); beyond `MAX_LOOKUPS` shapes examined on a
   page, only the last 64 shapes of a grid cell are examined. Hidden shows are removed from the stream in memory before pypdf extracts the text;
-  counted (`hidden`, then `hiddenText`). The rewritten stream is parsed again as bytes (`ContentStream(…, "bytes")`): pypdf would reuse an
+  counted (`hidden`, then `hiddenText`) when they hold letters: judged on the text decoded with the font (`_decoding`: the 256 codes
+  of the font shown one by one in a blank page and read by pypdf, kept per font), since a subset font can put letters on
+  punctuation codes; a CID font counts any non-zero byte. The rewritten stream is parsed again as bytes (`ContentStream(…, "bytes")`): pypdf would reuse an
   already parsed stream with strings decoded without the fonts' encodings and `ToUnicode`, and the whole page would
   come out wrong (ligatures, math symbols, CID fonts). A `text.json` older than `TEXT_VERSION` is redone once
   (`_refresh_text`), at startup (`redetect_all`) or at the AI's first reading.

@@ -189,13 +189,13 @@ class _Visible:
         self.reader, self.scan, self.page_box = reader, scan, page_box
         self.shapes, self.grid, self.big, self.strip = [], {}, [], None
         self.passages, self.running, self.scanned, self.steps, self.lookups, self.covered = 0, False, False, 0, 0, 0.0
-        self.walking, self.copies, self.off = set(), {}, _off_groups(reader)
+        self.walking, self.copies, self.off, self.tables = set(), {}, _off_groups(reader), {}
 
     @staticmethod
     def start_state():
         return {"ctm": IDENTITY, "fill": 0.0, "stroke": 0.0, "fillSpace": ("device", None), "strokeSpace": ("device", None),
                 "size": None, "scale": 1.0, "render": 0, "leading": 0.0, "cid": False, "alpha": 1.0, "strokeAlpha": 1.0,
-                "clip": None, "hiddenLayer": False, "lineWidth": 1.0, "plain": True, "glyph": 1.0}
+                "clip": None, "hiddenLayer": False, "lineWidth": 1.0, "plain": True, "glyph": 1.0, "font": None}
 
     def run(self, operations, resources, state, depth=0):
         """(opérations gardées, flux changé) ; `state` (dict) : état graphique au départ, mis à jour."""
@@ -275,14 +275,13 @@ class _Visible:
             state["size"] = abs(float(args[1]))
             try:
                 font = resources["/Font"][args[0]].get_object()
-                state["cid"] = font.get("/Subtype") == "/Type0"
+                state["cid"], state["font"] = font.get("/Subtype") == "/Type0", font
                 # Type3 : le corps vaut size × FontMatrix (un glyphe de 1000 unités avec 0,001 : le corps tel quel) ;
                 # polices bitmap de dvips + Ghostscript : matrice unité et corps 1, pixels mis à l'échelle par cm
                 matrix = _numbers(font.get("/FontMatrix") or []) if font.get("/Subtype") == "/Type3" else None
                 state["glyph"] = 1000 * math.hypot(matrix[2], matrix[3]) if matrix and len(matrix) >= 4 else 1.0
             except Exception:
-                state["cid"] = False
-                state["glyph"] = 1.0
+                state["cid"], state["font"], state["glyph"] = False, None, 1.0
         elif operator == b"Tz" and args:
             state["scale"] = float(args[0]) / 100
         elif operator == b"Tr" and args:
@@ -465,10 +464,20 @@ class _Visible:
         owner[fresh] = copy
         return fresh
 
+    def _letters(self, raw, font):
+        """Le texte affiché contient-il des lettres ? Lu avec le codage de sa police (un sous-ensemble peut mettre les
+        lettres sur des codes de ponctuation) ; police illisible : les octets eux-mêmes."""
+        try:
+            if id(font) not in self.tables:
+                self.tables[id(font)] = (font, _decoding(font))
+            return any(ch.isalpha() for code in raw for ch in self.tables[id(font)][1].get(code, ""))
+        except Exception:
+            return bool(re.search(rb"[A-Za-z\x80-\xff]", raw))
+
     def _hidden(self, args, state, tm):
         raw = _raw(args[-1] if args else b"")
         blank = not raw.strip(b"\x00 ") if state.get("cid") else not raw.strip()
-        letters = bool(raw.strip(b"\x00")) if state.get("cid") else bool(re.search(rb"[A-Za-z\x80-\xff]", raw))
+        letters = bool(raw.strip(b"\x00")) if state.get("cid") else self._letters(raw, state["font"])
         m = _mult(tm, state["ctm"])
         size = state.get("size")
         body = None if size is None else size * state["glyph"]
@@ -495,6 +504,21 @@ class _Visible:
         elif not blank and not hidden:
             self.running = False
         return hidden
+
+
+def _decoding(font):
+    """{code: texte} d'une police à un octet : chacun des 256 codes affiché seul (sa hauteur le repère) dans une page vide,
+    lu par pypdf avec le codage et le ToUnicode de la police."""
+    from pypdf import PageObject
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+    page = PageObject.create_blank_page(None, 100, 100)
+    page[NameObject("/Resources")] = DictionaryObject({NameObject("/Font"): DictionaryObject({NameObject("/F"): font})})
+    stream = DecodedStreamObject()
+    stream.set_data(b" ".join(b"BT /F 12 Tf 0 %d Td (\\%03o) Tj ET" % (code * 20, code) for code in range(256)))
+    page[NameObject("/Contents")] = stream
+    table = {}
+    page.extract_text(visitor_text=lambda text, cm, tm, font_dict, size: text not in ("", "\n") and table.update({round(tm[5] / 20): text}))
+    return table
 
 
 def _clipped(box, clip):
