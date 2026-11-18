@@ -46,7 +46,7 @@ NOISY_TITLE = re.compile(r"(\.(pdf|dvi|tex|docx?)$)|^(microsoft word|untitled|do
 
 # pas de source TeX : ni table des matières, ni énoncés, ni bibliographie (le lecteur attend ces clés)
 EMPTY_STRUCTURE = {"version": STRUCTURE_VERSION, "source": SOURCE, "toc": [], "nodes": [], "bibliography": [], "labels": {},
-                   "hiddenText": 0}
+                   "hiddenText": 0, "unshownText": 0}
 
 
 class PdfError(ValueError):
@@ -179,8 +179,9 @@ def _off_groups(reader):
 
 
 class _Visible:
-    """Parcours d'un flux de contenu qui retire les affichages de texte invisibles et les compte (`passages` : suites
-    de texte invisible avec des lettres). État graphique suivi : q/Q, cm, couleurs de remplissage et de trait (espaces
+    """Parcours d'un flux de contenu qui retire les affichages de texte invisibles et les compte (suites de texte
+    invisible avec des lettres : `passages` pour le texte blanc, minuscule ou transparent, `unshown` pour le texte
+    en mode invisible, découpé ou en calque masqué, qui est retiré aussi mais n'a rien d'une attaque). État graphique suivi : q/Q, cm, couleurs de remplissage et de trait (espaces
     de couleur, palettes), opacité (gs), découpe (W), calques masqués (BDC /OC), Tf, Tz, Tr, TL, matrices de texte ;
     fonds foncés (formes, traits épais, bandes fines à la suite, dégradés, images) et aplats clairs, dans l'ordre où
     ils sont peints : la dernière forme sous un point dit s'il est sur un fond foncé. Formulaires (Do) jugés à chaque affichage, avec l'état du moment : copie nettoyée sous un autre nom
@@ -189,7 +190,8 @@ class _Visible:
     def __init__(self, reader, scan, page_box):
         self.reader, self.scan, self.page_box = reader, scan, page_box
         self.shapes, self.grid, self.big, self.strip = [], {}, [], None
-        self.passages, self.running, self.scanned, self.steps, self.lookups, self.covered = 0, False, False, 0, 0, 0.0
+        self.passages, self.unshown, self.running = 0, 0, None
+        self.scanned, self.steps, self.lookups, self.covered = False, 0, 0, 0.0
         self.walking, self.copies, self.off, self.tables = set(), {}, _off_groups(reader), {}
 
     @staticmethod
@@ -509,13 +511,15 @@ class _Visible:
         clip = state["clip"]
         clipped = clip is not None and all(not (clip[0] - height <= x <= clip[2] + height and clip[1] - height <= y <= clip[3] + height)
                                            for x, y in points)
-        hidden = not blank and (tiny or white or clear or clipped or state["hiddenLayer"]
-                                or render in (3, 7) and not (self.scan or self.scanned))
+        alert = tiny or white or clear  # ce qu'une attaque emploie : compté à part de ce qui n'est simplement pas affiché
+        hidden = not blank and (alert or clipped or state["hiddenLayer"] or render in (3, 7) and not (self.scan or self.scanned))
         if hidden and letters:
-            self.passages += not self.running
-            self.running = True
+            kind = "passages" if alert else "unshown"
+            if self.running != kind:
+                setattr(self, kind, getattr(self, kind) + 1)
+            self.running = kind
         elif not blank and not hidden:
-            self.running = False
+            self.running = None
         return hidden
 
 
@@ -576,15 +580,16 @@ def _has_images(resources, seen=None, depth=0):
     return False
 
 
-def _page_text(page, hidden=None):
+def _page_text(page, hidden=None, unshown=None):
     """Texte de la page, sans le texte invisible, comme dans la version HTML (structure.mark_hidden) : il peut porter
     une injection d'invite et n'est jamais transmis à l'IA. Invisible : blanc ou presque (luminance ≥ WHITE) hors d'un
     fond foncé, dégradé ou image peints dessous, corps de moins de MIN_VISIBLE_PT, transparent, découpé, calque masqué,
     mode de rendu invisible (Tr 3) sauf sur une page scannée (une image en couvre au moins la moitié : la couche de
-    texte reconnu est le texte de la page). `hidden` (liste) : y ajoute le nombre de passages invisibles avec des
-    lettres. Le contenu de la page est remplacé en mémoire (rien n'est écrit)."""
+    texte reconnu est le texte de la page). `hidden` (liste) : y ajoute le nombre de passages blancs, minuscules ou
+    transparents avec des lettres ; `unshown` : celui des passages retirés sans être de ceux-là (mode invisible,
+    découpés, calque masqué). Le contenu de la page est remplacé en mémoire (rien n'est écrit)."""
     from pypdf.generic import ContentStream, NameObject
-    passages = 0
+    passages = hushed = 0
     try:
         contents = page.get_contents()
         if contents is not None:
@@ -606,7 +611,7 @@ def _page_text(page, hidden=None):
                         owner.pop(name, None)
             walk = _Visible(page.pdf, scan, box)
             kept, changed = walk.run(operations, resources, _Visible.start_state())
-            passages = walk.passages
+            passages, hushed = walk.passages, walk.unshown
             if walk.steps > MAX_STEPS:
                 log.info("page très chargée : formulaires au-delà de %d opérations laissés tels quels", MAX_STEPS)
             if changed:
@@ -622,6 +627,8 @@ def _page_text(page, hidden=None):
         return ""
     if hidden is not None:
         hidden.append(passages)
+    if unshown is not None:
+        unshown.append(hushed)
     return full[:PAGE_CHARS]
 
 
@@ -680,9 +687,9 @@ def read_pdf(data, filename=""):
         reader = PdfReader(io.BytesIO(data))
         if reader.is_encrypted and not reader.decrypt(""):
             raise PdfError("encrypted")
-        pages, total, hidden = [], 0, []
+        pages, total, hidden, unshown = [], 0, [], []
         for page in reader.pages[:MAX_PAGES]:
-            pages.append(_page_text(page, hidden) if total < TOTAL_CHARS else "")
+            pages.append(_page_text(page, hidden, unshown) if total < TOTAL_CHARS else "")
             total += len(pages[-1])
         try:
             info = reader.metadata or {}
@@ -726,7 +733,7 @@ def read_pdf(data, filename=""):
                 abstract = candidate
     doi = DOI.search(first)
     return {"title": title[:300], "authors": authors[:30], "abstract": abstract, "doi": doi.group(1) if doi else None,
-            "pages": pages, "hidden": sum(hidden)}
+            "pages": pages, "hidden": sum(hidden), "unshown": sum(unshown)}
 
 
 def arxiv_stamp(data):
@@ -771,7 +778,7 @@ def _import(pid, data, filename):
     write_atomic_bytes(folder / "paper.pdf", data)
     write_atomic(folder / "text.json", json.dumps({"pages": found["pages"], "metaVersion": META_VERSION, "textVersion": TEXT_VERSION},
                                                   ensure_ascii=False))
-    write_atomic(folder / "structure.json", json.dumps({**EMPTY_STRUCTURE, "hiddenText": found["hidden"]}))
+    write_atomic(folder / "structure.json", json.dumps({**EMPTY_STRUCTURE, "hiddenText": found["hidden"], "unshownText": found["unshown"]}))
     db.save_paper({"id": pid, "arxiv_id": "", "version": None, "title": found["title"], "authors": found["authors"],
                    "abstract": found["abstract"], "categories": [], "primary_category": "", "published": None,
                    "updated": None, "doi": found["doi"], "journal_ref": None, "comment": _clean(filename)[:200],
@@ -807,14 +814,14 @@ def _refresh_text(pid):
             return stored["pages"]
         try:
             found = read_pdf((folder / "paper.pdf").read_bytes())
-            stored["pages"], hidden = found["pages"], found["hidden"]
+            stored["pages"], counts = found["pages"], {"hiddenText": found["hidden"], "unshownText": found["unshown"]}
         except (OSError, PdfError):
-            hidden = 0  # illisible : texte gardé tel quel, pas relu à chaque fois
+            counts = None  # illisible : texte gardé tel quel, pas relu à chaque fois
         write_atomic(folder / "text.json", json.dumps({**stored, "textVersion": TEXT_VERSION}, ensure_ascii=False))
         saved = folder / "structure.json"
-        if hidden and saved.exists():
+        if counts and saved.exists():  # remis à jour même à zéro : le comptage a pu baisser
             structure = json.loads(saved.read_text(encoding="utf-8"))
-            write_atomic(saved, json.dumps({**structure, "hiddenText": hidden}, ensure_ascii=False))
+            write_atomic(saved, json.dumps({**structure, **counts}, ensure_ascii=False))
         return stored["pages"]
 
 

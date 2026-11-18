@@ -244,7 +244,7 @@ def _source(arxiv_id, version):
 def _fill(staging, arxiv_id, meta, pending_source, overrides, ar5iv=True):
     (staging / "assets").mkdir()
     source = "none"
-    structure = {"toc": [], "nodes": [], "equations": {}, "bibliography": [], "hiddenText": 0}
+    structure = {"toc": [], "nodes": [], "equations": {}, "bibliography": [], "hiddenText": 0, "unshownText": 0}
     fetched = fetch_html(arxiv_id, meta.version, ar5iv=ar5iv)
     if fetched is not None:
         html, base_url, source = fetched
@@ -295,7 +295,7 @@ def _fill(staging, arxiv_id, meta, pending_source, overrides, ar5iv=True):
             pdf = None
         if pdf:
             (staging / "paper.pdf").write_bytes(pdf)
-            structure["hiddenText"] = _write_pdf_text(staging, pdf)
+            structure.update(_write_pdf_text(staging, pdf))
     structure["source"] = source
     structure["tex"] = tex_options
     (staging / "structure.json").write_text(json.dumps(structure, ensure_ascii=False), encoding="utf-8")
@@ -304,15 +304,16 @@ def _fill(staging, arxiv_id, meta, pending_source, overrides, ar5iv=True):
 
 def _write_pdf_text(folder, data):
     """text.json (texte de chaque page) d'un article d'arXiv déposé en PDF seul, comme pour un PDF importé ;
-    PDF illisible : aucune page de texte. Renvoie le nombre de passages de texte invisible (retirés du texte)."""
+    PDF illisible : aucune page de texte. Renvoie le nombre de passages de texte invisible (retirés du texte) et celui des
+    passages non affichés (« hiddenText », « unshownText » de structure.json)."""
     from .localpdf import TEXT_VERSION, PdfError, read_pdf  # localpdf importe ce module
     try:
         found = read_pdf(data)
-        pages, hidden = found["pages"], found["hidden"]
+        pages, counts = found["pages"], {"hiddenText": found["hidden"], "unshownText": found["unshown"]}
     except PdfError:
-        pages, hidden = [], 0  # gardé quand même : pas relu à chaque ouverture ; l'assistant reçoit les pages en images (ai.without_text)
+        pages, counts = [], {"hiddenText": 0, "unshownText": 0}  # gardé quand même : pas relu à chaque ouverture ; l'assistant reçoit les pages en images (ai.without_text)
     write_atomic(folder / "text.json", json.dumps({"pages": pages, "textVersion": TEXT_VERSION}, ensure_ascii=False))
-    return hidden
+    return counts
 
 
 
@@ -850,11 +851,11 @@ def ensure_pdf(paper):
     with paper_lock(pid):
         # déposé en PDF seul, importé avant que son texte soit extrait (ou PDF manqué à l'import) : extrait maintenant
         if needs_text() and path.exists():
-            hidden = _write_pdf_text(path.parent, path.read_bytes())
+            counts = _write_pdf_text(path.parent, path.read_bytes())
             saved = path.parent / "structure.json"
-            if hidden and saved.exists():  # passages invisibles signalés au lecteur
+            if any(counts.values()) and saved.exists():  # passages invisibles signalés au lecteur
                 structure = json.loads(saved.read_text(encoding="utf-8"))
-                write_atomic(saved, json.dumps({**structure, "hiddenText": hidden}, ensure_ascii=False))
+                write_atomic(saved, json.dumps({**structure, **counts}, ensure_ascii=False))
     return path
 
 

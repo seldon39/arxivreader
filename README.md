@@ -168,7 +168,9 @@ sync, with `.venv` as a link to it. The address is http://127.0.0.1:8710/; the s
 - **Collapsible proofs**; handwritten proofs ("*Proof.* … □") are detected automatically.
 - **Structure panel**: list of statements (filtered by type), dependencies of a statement
   (uses / used by / cites, full chain), dependency **graph** (can be shown full screen).
-- Flags any **invisible text** (white, tiny, hidden) the paper may contain.
+- Flags any **invisible text** (white, tiny, hidden) the paper may contain. In a PDF, text that is simply not displayed (the
+  text layer of a scan, clipped text, a hidden layer) is left out of what the AI receives and mentioned in a quiet note,
+  without the warning.
 - Resumes reading where you left off; settings: French/English, light/dark/system theme,
   text size (up to 178 %, with a wider column on a large screen), reading width (from "Narrow" to "Full" for large screens), proofs collapsed by default; text
   size and width also in the reader's toolbar (A−/A+ and two width buttons).

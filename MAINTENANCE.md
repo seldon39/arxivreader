@@ -524,13 +524,18 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   `MAX_FORM_DEPTH` are emptied, a form that draws itself has that call emptied; each draw counts `FORM_COST` operations, and beyond `MAX_STEPS` operations on a
   page, forms are left as they are. Shapes are indexed in a grid (`GRID`); beyond `MAX_LOOKUPS` shapes examined on a
   page, only the last 64 shapes of a grid cell are examined. Hidden shows are removed from the stream in memory before pypdf extracts the text;
-  counted (`hidden`, then `hiddenText`) when they hold letters: judged on the text decoded with the font (`_decoding`: the 256 codes
+  counted when they hold letters, in two counts: `hidden` (then `hiddenText`, the reader's warning) for white, tiny
+  and transparent text, which is what an attack uses; `unshown` (then `unshownText`, a quiet note shown only when the PDF is
+  displayed alone) for the invisible rendering mode, clipped text and hidden layers, removed all the same (a text
+  layer with an invisible mode, clipped labels, as in an ordinary course exported from Keynote, are no attack). A show that is both
+  goes in `hiddenText`; `_refresh_text` rewrites both counts, also when the warning falls to zero. The letters are looked for in the text decoded with the font (`_decoding`: the 256 codes
   of the font shown one by one in a blank page and read by pypdf, kept per font), since a subset font can put letters on
   punctuation codes; a CID font counts any non-zero byte. The rewritten stream is parsed again as bytes (`ContentStream(…, "bytes")`): pypdf would reuse an
   already parsed stream with strings decoded without the fonts' encodings and `ToUnicode`, and the whole page would
   come out wrong (ligatures, math symbols, CID fonts). A `text.json` older than `TEXT_VERSION` is redone once
   (`_refresh_text`), at startup (`redetect_all`) or at the AI's first reading.
-  The reader shows the count without a reveal button when only the PDF is displayed (`reader.hiddenTextSource`).
+  The reader shows the count without a reveal button when only the PDF is displayed (`reader.hiddenTextSource`,
+  `reader.unshownText`).
 - Known limits of both (heuristics, by design): other conditionals (`\ifdefined`, `\ifx`, `\if`, `\ifcase`, a flag set true somewhere), a font size combined with a scale (`\tiny\scalebox{0.15}`), TeX indirection beyond simple definitions (`\let`, styles of other
   packages, `\pdfcolorstack`, `\special`, fontspec `Color=`), text covered by a shape or placed off the page, colors
   behind Separation or pattern color spaces and shading colors (counted as dark), near-white just under 0,9. Leaning

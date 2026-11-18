@@ -82,7 +82,7 @@ class InvisiblePdfText(unittest.TestCase):
     @staticmethod
     def page(content):
         found = localpdf.read_pdf(raw_pdf(content))
-        return found["pages"][0], found["hidden"]
+        return found["pages"][0], found["hidden"] + found["unshown"]
 
     def test_kept_text_read_with_its_font(self):
         """Une page dont on retire un passage garde le codage de ses polices (ligatures, symboles des formules)."""
@@ -99,7 +99,7 @@ class InvisiblePdfText(unittest.TestCase):
             self.assertIn(kept, page)
         for gone in ("IGNORE", "secret", "OCR layer"):  # mode 3 sans image : rien d'un scan
             self.assertNotIn(gone, page)
-        self.assertEqual(found["hidden"], 3)
+        self.assertEqual((found["hidden"], found["unshown"]), (2, 1))  # blanc et minuscule d'un côté, couche de texte (Tr 3) de l'autre
 
     def test_type3_font_size_uses_its_matrix(self):
         """Type3 : corps = Tf × FontMatrix. Polices bitmap de dvips + Ghostscript (matrice unité, corps 1, pixels réduits
@@ -109,7 +109,7 @@ class InvisiblePdfText(unittest.TestCase):
                     "/Encoding << /Type /Encoding /Differences [97 /a] >> /FirstChar 97 /LastChar 97 /Widths [500] >>")
             glyph = "<< /Length 8 >>\nstream\n500 0 d0\nendstream"
             found = localpdf.read_pdf(build_pdf(content, extra=(glyph,), font=font))
-            return found["pages"][0].strip(), found["hidden"]
+            return found["pages"][0].strip(), found["hidden"] + found["unshown"]
         self.assertEqual(page("[1 0 0 1 0 0]", "q 0.12 0 0 0.12 72 700 cm BT /F1 1 Tf (aaa) Tj ET Q"), ("aaa", 0))
         self.assertEqual(page("[0.001 0 0 0.001 0 0]", "BT /F1 12 Tf 72 700 Td (aaa) Tj ET"), ("aaa", 0))
         self.assertEqual(page("[0.001 0 0 0.001 0 0]", "BT /F1 0.5 Tf 72 700 Td (aaa) Tj ET"), ("", 1))
@@ -136,7 +136,7 @@ class InvisiblePdfText(unittest.TestCase):
 
         def page(content):
             found = localpdf.read_pdf(build_pdf(content, layer["resources"], layer["extra"], layer["catalog"]))
-            return found["pages"][0].strip(), found["hidden"]
+            return found["pages"][0].strip(), found["hidden"] + found["unshown"]
         self.assertEqual(page("q /G0 gs 0 g 0 0 612 792 re f Q" + white), ("", 1))
         self.assertEqual(page("q /G1 gs 0 g 0 0 612 792 re f Q" + white), ("", 1))
         self.assertEqual(page("/OC /L0 BDC 0 g 0 0 612 792 re f EMC" + white), ("", 1))
@@ -148,7 +148,7 @@ class InvisiblePdfText(unittest.TestCase):
         def page(bbox, show):
             form = form_object(show).replace("/BBox [0 -100 300 50]", f"/BBox [{bbox}]")
             found = localpdf.read_pdf(build_pdf("q 1 0 0 1 72 700 cm /Fm Do Q", "/XObject << /Fm 6 0 R >>", (form,)))
-            return found["pages"][0].strip(), found["hidden"]
+            return found["pages"][0].strip(), found["hidden"] + found["unshown"]
         inside, outside = "BT /F1 12 Tf 0 0 Td (INSIDE) Tj ET", "BT /F1 12 Tf 0 -300 Td (OUTSIDE) Tj ET"
         self.assertEqual(page("0 -100 300 50", inside), ("INSIDE", 0))
         self.assertEqual(page("0 -100 300 50", outside), ("", 1))
@@ -176,6 +176,23 @@ class InvisiblePdfText(unittest.TestCase):
         self.assertEqual(page(text + "/Fm Do", "/XObject << /Fm 6 0 R >>", (form,)), ("In form", 1))
         self.assertEqual(page(text + "q 612 0 0 792 0 0 cm /Im Do Q /Fm Do", "/XObject << /Fm 6 0 R /Im 7 0 R >>", (form, image)),
                          ("OCR layer\nIn form", 2))
+
+    def test_alert_count_only_for_white_tiny_and_transparent(self):
+        """Décompte d'alerte (`hidden`) : blanc, minuscule, transparent. Mode invisible (Tr 3), découpé, calque masqué :
+        retirés aussi, mais comptés à part (`unshown`), sans l'air d'une attaque."""
+        def counts(content, resources="", extra=(), catalog=""):
+            found = localpdf.read_pdf(build_pdf(content, resources, extra, catalog))
+            return found["pages"][0].strip(), (found["hidden"], found["unshown"])
+        show = "BT /F1 12 Tf 72 700 Td (SECRET) Tj ET"
+        self.assertEqual(counts("1 g " + show), ("", (1, 0)))
+        self.assertEqual(counts("BT /F1 0.2 Tf 72 700 Td (SECRET) Tj ET"), ("", (1, 0)))
+        self.assertEqual(counts("/G0 gs " + show, "/ExtGState << /G0 << /ca 0 >> >>"), ("", (1, 0)))
+        self.assertEqual(counts("BT 3 Tr /F1 12 Tf 72 700 Td (SECRET) Tj ET"), ("", (0, 1)))
+        self.assertEqual(counts("0 0 10 10 re W n " + show), ("", (0, 1)))
+        self.assertEqual(counts("/OC /L0 BDC " + show + " EMC", "/Properties << /L0 6 0 R >>", ("<< /Type /OCG /Name (x) >>",),
+                                "/OCProperties << /OCGs [6 0 R] /D << /OFF [6 0 R] >> >>"), ("", (0, 1)))
+        self.assertEqual(counts("1 g " + show + " 0 g BT 3 Tr /F1 12 Tf 72 600 Td (OCR) Tj ET"), ("", (1, 1)))
+        self.assertEqual(counts("1 g BT 3 Tr /F1 12 Tf 72 600 Td (BOTH) Tj ET"), ("", (0, 1)))  # Tr 3 : ni rempli ni tracé, la couleur ne joue pas
 
     def test_state_of_each_show(self):
         """Couleur changée entre deux affichages d'un même bloc de texte : chacun jugé avec la sienne."""
@@ -211,7 +228,7 @@ class InvisiblePdfText(unittest.TestCase):
     def test_second_review_cases(self):
         def page(*args):
             found = localpdf.read_pdf(build_pdf(*args))
-            return found["pages"][0].strip(), found["hidden"]
+            return found["pages"][0].strip(), found["hidden"] + found["unshown"]
         text = "BT /F1 12 Tf 72 615 Td (%s) Tj ET"
         # lisible : dégradé ou panneau foncé dessous, découpe qui contient le texte, calque affiché, palette noire
         self.assertEqual(page("q 50 600 300 40 re W n /Sh1 sh Q 1 g " + text % "On gradient"), ("On gradient", 0))
@@ -238,7 +255,7 @@ class InvisiblePdfText(unittest.TestCase):
     def test_third_review_cases(self):
         def page(*args):
             found = localpdf.read_pdf(build_pdf(*args))
-            return found["pages"][0].strip(), found["hidden"]
+            return found["pages"][0].strip(), found["hidden"] + found["unshown"]
         text = "BT /F1 12 Tf 72 615 Td (%s) Tj ET"
         image = ("/XObject << /Im0 6 0 R >>",
                  ["<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 8 /Length 1 >>"
@@ -280,7 +297,7 @@ class InvisiblePdfText(unittest.TestCase):
     def test_fourth_review_cases(self):
         def page(*args):
             found = localpdf.read_pdf(build_pdf(*args))
-            return found["pages"][0].strip(), found["hidden"]
+            return found["pages"][0].strip(), found["hidden"] + found["unshown"]
         banner, text = "0 0.2 0.5 rg 60 600 300 40 re f ", "1 g BT /F1 12 Tf 72 615 Td (%s) Tj ET"
         # lisible : aplat clair découpé ailleurs, aplat clair en mode Multiply, bandeau tracé épais, bord d'un cadre épais
         self.assertEqual(page(banner + "q 400 100 50 50 re W n 1 1 1 rg 0 0 612 792 re f Q " + text % "Banner"), ("Banner", 0))
@@ -371,7 +388,24 @@ class InvisiblePdfText(unittest.TestCase):
         self.assertNotIn("IGNORE", localpdf.text("pdf-x"))
         stored = json.loads((folder / "text.json").read_text())
         self.assertEqual((stored["textVersion"], stored["metaVersion"]), (localpdf.TEXT_VERSION, 2))
-        self.assertEqual(json.loads((folder / "structure.json").read_text())["hiddenText"], 3)
+        self.assertEqual(json.loads((folder / "structure.json").read_text())["hiddenText"], 2)
+        self.assertEqual(json.loads((folder / "structure.json").read_text())["unshownText"], 1)
+
+    def test_old_alert_count_lowered_on_refresh(self):
+        """Un PDF compté avant la séparation (couche de texte en Tr 3 comptée comme alerte) : l'alerte retombe à 0."""
+        saved = (db.DB_PATH, db.LIBRARY, library.PAPERS)
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        db.DB_PATH, db.LIBRARY, library.PAPERS = tmp / "test.db", tmp, tmp / "papers"
+        self.addCleanup(lambda: (setattr(db, "DB_PATH", saved[0]), setattr(db, "LIBRARY", saved[1]), setattr(library, "PAPERS", saved[2])))
+        db.init()
+        folder = library.paper_dir("pdf-y")
+        folder.mkdir(parents=True)
+        (folder / "paper.pdf").write_bytes(raw_pdf("BT /F1 12 Tf 72 720 Td (Visible words.) Tj ET BT 3 Tr /F1 12 Tf 72 560 Td (OCR layer) Tj ET"))
+        (folder / "text.json").write_text(json.dumps({"pages": ["Visible words."], "metaVersion": 2, "textVersion": 4}))
+        (folder / "structure.json").write_text(json.dumps({**localpdf.EMPTY_STRUCTURE, "hiddenText": 769}))
+        localpdf.text("pdf-y")
+        structure = json.loads((folder / "structure.json").read_text())
+        self.assertEqual((structure["hiddenText"], structure["unshownText"]), (0, 1))
 
 
 class LocalPdf(unittest.TestCase):

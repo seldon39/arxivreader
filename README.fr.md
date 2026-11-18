@@ -175,7 +175,9 @@ pas, avec `.venv` comme lien vers lui. L'adresse est http://127.0.0.1:8710/ ; le
 - **Preuves repliables** ; les preuves écrites à la main (« *Proof.* … □ ») sont repérées automatiquement.
 - **Panneau Structure** : liste des énoncés (filtres par type), dépendances d'un énoncé
   (utilise / utilisé par / cite, chaîne complète), **graphe** des dépendances (plein écran possible).
-- Signalement du **texte invisible** (blanc, minuscule, masqué) éventuellement présent dans l'article.
+- Signalement du **texte invisible** (blanc, minuscule, masqué) éventuellement présent dans l'article. Dans un PDF, le texte
+  simplement non affiché (couche de texte d'un scan, texte découpé, calque masqué) n'est pas transmis à l'IA et fait
+  l'objet d'une note discrète, sans l'avertissement.
 - Reprise de la lecture à l'endroit quitté ; réglages : langue FR/EN, thème clair/sombre/système,
   taille du texte (jusqu'à 178 %, avec une colonne plus large sur grand écran), largeur de lecture (de « Étroite » à « Pleine » pour les grands écrans), preuves repliées par
   défaut ; taille et largeur du texte aussi dans la barre du lecteur (A−/A+ et deux boutons de largeur).
