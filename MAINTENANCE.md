@@ -708,7 +708,9 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   `job.elapsed`, no estimate of the remaining time, often wrong; total duration in the final message), tracking `pollJobs` every 2 s as long
   as a job is running, 10 s after three failures, stop and panel rebuilt if the paper no longer exists (404); a change
   of state reloads the exchanges, `reloadExchanges`, which keeps the object of the request in progress and points the inputs
-  (`pending`, `docPending`: reply to, redone question) to the new objects, then rebuilds the panel; "chapter in progress"
+  (`pending`, `docPending`: reply to, redone question) to the new objects (it returns `false` when the list could not be
+  read: `pollJobs` then keeps the previous state of the jobs and tries again at the next tick, so the end of a task is
+  announced once, after a successful reload), then rebuilds the panel; "chapter in progress"
   notice only on an exchange of the job (`chapters[].exchange`, `synthesis.exchange`); `reusable` as on the server side; links to the chapters below the synthesis
   (`bookChips`). "Whole book" (a single send, truncated beyond `paper_limit`) has disappeared from books.
 

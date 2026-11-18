@@ -25,6 +25,49 @@ class Proposals(unittest.TestCase):
 
 
 @unittest.skipUnless(shutil.which("node"), "Node absent")
+class BookPolling(unittest.TestCase):
+    """pollJobs et reloadExchanges de ai.js, avec de faux objets aussi stricts que les vrais pour ce qu'ils touchent."""
+
+    SCRIPT = """
+const ERROR_KEYS = {}, SECTIONS = "@sections";
+const t = (key) => key, toast = (message) => toasts.push(message), toasts = [], timers = [];
+const setTimeout = (fn) => { timers.push(fn); return timers.length; };
+%(constants)s
+class Assistant {
+%(reload)s
+%(poll)s
+}
+let reads = 0;
+const api = {
+  aiBook: async () => ({ summary: { phase: "done", elapsed: 5, chapters: [] } }),
+  aiExchanges: async () => { if (++reads === 1) throw new Error("réseau"); return [{ id: 1 }]; },
+};
+const a = new Assistant();
+Object.assign(a, { paper: { id: "p" }, exchanges: [], running: null, pending: {}, docPending: {}, positions: {}, isArticle: false,
+  tb: (key) => key, onChange() {}, destroyed: false, jobsStamp: 0,
+  jobs: { summary: { phase: "synthesis", elapsed: 1, chapters: [] } } });
+a.pollJobs();
+const out = {};
+await timers.shift()();                       // relevé : la liste des échanges échoue
+out.afterFailure = { toasts: toasts.length, jobs: a.jobs.summary.phase, retry: timers.length, exchanges: a.exchanges.length };
+if (timers.length) await timers.shift()();    // relevé suivant : la liste est relue
+out.afterRetry = { toasts: toasts.length, jobs: a.jobs.summary.phase, retry: timers.length, exchanges: a.exchanges.length };
+console.log(JSON.stringify(out));
+"""
+
+    def test_failed_reload_is_retried_and_the_end_is_announced_once(self):
+        code = self.SCRIPT % {
+            "constants": jsfunction.lines_of("ai.js", "const BOOK_TASKS", "const duration"),
+            "reload": jsfunction.method_source("ai.js", "reloadExchanges"),
+            "poll": jsfunction.method_source("ai.js", "pollJobs"),
+        }
+        done = subprocess.run(["node", "--input-type=module", "-e", code], capture_output=True, text=True, check=True)
+        result = json.loads(done.stdout)
+        self.assertEqual(result["afterFailure"], {"toasts": 0, "jobs": "synthesis", "retry": 1, "exchanges": 0})
+        self.assertEqual(result["afterRetry"], {"toasts": 1, "jobs": "done", "retry": 0, "exchanges": 1})
+
+
+@unittest.skipUnless(shutil.which("node"), "Node absent")
 class Markdown(unittest.TestCase):
     PRELUDE = ('globalThis.window = globalThis; globalThis.document = {addEventListener() {}, querySelectorAll: () => [],'
                ' getElementById: () => null, createElement: () => ({})}; globalThis.localStorage = {getItem: () => null, setItem() {}};\n')

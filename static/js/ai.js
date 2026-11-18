@@ -196,7 +196,7 @@ export class Assistant {
   // objets : supprimer ou répondre vise toujours un échange de la liste
   async reloadExchanges() {
     let list;
-    try { list = await api.aiExchanges(this.paper.id); } catch { return; }
+    try { list = await api.aiExchanges(this.paper.id); } catch { return false; }
     const live = this.running?.exchange;
     if (live && this.exchanges.includes(live)) {
       const order = (e) => (typeof e.id === "number" ? e.id : Infinity);
@@ -209,6 +209,7 @@ export class Assistant {
         if (pending[key]) pending[key] = byId.get(pending[key].id) || null;  // supprimé ailleurs : la saisie le lâche
       }
     }
+    return true;  // faux : la liste n'a pas pu être relue (pollJobs réessaie)
   }
 
   async refreshStatus() {
@@ -772,6 +773,7 @@ export class Assistant {
     if (this.pollTimer || this.destroyed) return;
     const tick = async () => {
       let next = null;
+      let retry = false;
       const stamp = this.jobsStamp;
       try {
         next = await api.aiBook(this.paper.id);
@@ -791,10 +793,17 @@ export class Assistant {
       if (next) {
         const ended = BOOK_TASKS.filter((task) => jobRunning(this.jobs[task]) && !jobRunning(next[task]));
         const changed = jobSignature(next) !== jobSignature(this.jobs);
-        this.jobs = next;
         if (changed) {
-          await this.reloadExchanges();
+          const reloaded = await this.reloadExchanges();
           if (this.destroyed) return;
+          if (!reloaded || stamp !== this.jobsStamp) {  // liste non relue, ou lancement/arrêt pendant la relecture : l'ancien état
+            if (!reloaded) this.pollFailures = (this.pollFailures || 0) + 1;  // est gardé, le relevé suivant revoit le changement
+            retry = true;
+            next = null;
+          }
+        } else this.jobs = next;
+        if (next && changed) {
+          this.jobs = next;
           for (const task of ended) {
             const job = next[task];
             if (job?.phase === "error") toast(t(ERROR_KEYS[job.code] || "ai.error.other", { message: job.error || "" }), { error: true });
@@ -804,10 +813,10 @@ export class Assistant {
             }
           }
           this.onChange();
-        } else this.bookLive?.(next);
+        } else if (next) this.bookLive?.(next);
       }
       const wait = this.pollFailures >= 3 ? 10000 : 2000;
-      this.pollTimer = BOOK_TASKS.some((task) => jobRunning(this.jobs[task])) ? setTimeout(tick, wait) : null;
+      this.pollTimer = retry || BOOK_TASKS.some((task) => jobRunning(this.jobs[task])) ? setTimeout(tick, wait) : null;
     };
     this.pollTimer = setTimeout(tick, 2000);
   }
