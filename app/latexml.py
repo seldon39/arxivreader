@@ -667,7 +667,7 @@ def _extract(data, folder):
                 if index >= MAX_MEMBERS:
                     break
                 name = posixpath.normpath(member.name.lstrip("/"))
-                if not member.isfile() or name.startswith("..") or member.size > MAX_FILE_BYTES or total + member.size > MAX_TOTAL_BYTES:
+                if not member.isfile() or name == ".." or name.startswith("../") or member.size > MAX_FILE_BYTES or total + member.size > MAX_TOTAL_BYTES:
                     continue
                 if any(binding in name.lower() for binding in BINDINGS):  # n'importe où dans le nom : « x.latexml\n » est trouvé
                     continue  # par LaTeXML ($ de ses expressions régulières) ; sans casse (macOS, Windows)

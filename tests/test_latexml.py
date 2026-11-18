@@ -67,6 +67,26 @@ class Latexml(unittest.TestCase):
         self.assertTrue((folder / "sub" / "part.tex").exists())
         self.assertFalse((self.tmp / "evil.tex").exists())
 
+    def test_dots_inside_a_name_are_not_a_parent_directory(self):
+        """« .. » refusé comme composant du chemin seulement : fig..v2.tex et ..notes.tex sont des noms ordinaires."""
+        for name in ("fig..v2.tex", "..notes.tex", "sub/a..b/x.tex"):
+            self.assertTrue(texfile.in_project(name), name)
+        for name in ("../x.tex", "sub/../../x.tex", "a\\..\\x.tex", "..", "/x.tex"):
+            self.assertFalse(texfile.in_project(name), name)
+        data = io.BytesIO()
+        with tarfile.open(fileobj=data, mode="w:gz") as archive:
+            for name, text in (("paper.tex", "\\documentclass{article}\\begin{document}x\\end{document}"),
+                               ("..notes.tex", "y"), ("../evil.tex", "x")):
+                raw = text.encode()
+                info = tarfile.TarInfo(name)
+                info.size = len(raw)
+                archive.addfile(info, io.BytesIO(raw))
+        folder = self.tmp / "src2"
+        folder.mkdir()
+        self.assertEqual(latexml._extract(data.getvalue(), folder), "paper.tex")
+        self.assertTrue((folder / "..notes.tex").exists())
+        self.assertFalse((self.tmp / "evil.tex").exists())
+
     def test_extract_skips_latexml_bindings(self):
         """Perl exécuté par LaTeXML : jamais extrait d'une source téléchargée ; les fichiers TeX restent."""
         data = io.BytesIO()

@@ -382,6 +382,10 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   document: never extracted from a source downloaded from arXiv (`latexml._extract`, `BINDINGS`). Those of a TeX file the
   user imported are still honoured, like the folder's `latexmkrc` (README: import only documents you trust). The app's own
   extensions are written elsewhere (`_stubs`).
+- LaTeXML source copy (`latexml._source`) of a TeX file of the user: only the files that stay in the project folder are copied and prepared
+  (`texfile.in_project`: `..` refused as a path component, not inside a name such as `fig..v2.tex`). Known limit: a file read by absolute path
+  (`\input{/path/fig}`) is read by LaTeXML in place, never rewritten, hence without the pgfplots replacement (a long conversion if it holds
+  one); copying it would mean rewriting the `\input` of the copy and its nested relative inputs, not worth it for a rare, non-portable case.
 - HTML version by LaTeXML (`latexml.py`): stored in `papers/<id>/html/`, never in `content.html` at the root
   (its presence makes a paper an arXiv paper read as HTML: analysis, text for the assistant). The identifiers of the
   statements (matched in document order, type by type), of the sections, of the bibliography and of the numbered equations

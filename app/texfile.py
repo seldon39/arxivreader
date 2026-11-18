@@ -206,8 +206,9 @@ def _entries(path):
 
 def in_project(name):
     """Nom relatif au dossier du fichier principal, sans en sortir : ni « .. », ni chemin absolu
-    (\\input{/chemin/fig} ou C:/… : le fichier de l'utilisateur lui-même, jamais une destination d'écriture)."""
-    return bool(name) and ".." not in name and not posixpath.isabs(name) and not re.match(r"[A-Za-z]:", name) \
+    (\\input{/chemin/fig} ou C:/… : le fichier de l'utilisateur lui-même, jamais une destination d'écriture). « .. » : un
+    composant du chemin seulement (« fig..v2.tex » est un nom ordinaire)."""
+    return bool(name) and ".." not in re.split(r"[\\/]", name) and not posixpath.isabs(name) and not re.match(r"[A-Za-z]:", name) \
         and not name.startswith("\\")
 
 
