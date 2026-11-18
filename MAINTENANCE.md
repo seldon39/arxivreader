@@ -1047,6 +1047,11 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   that its page is still the current one before drawing (`isCurrent` = `token === routeToken`; `renderCheck` too);
   `contextMenuAt` gives the focus back to the element that opened it when it closes by Escape or by a choice (never after
   a click elsewhere: that click chooses the new focus).
+- **Colours**: text must reach 4.5:1 on its real background (tints included), non-text 3:1 (`tests/test_contrast.py`).
+  Light `--k-conjecture` and `--k-problem` are `#a35700` (5.36:1 on white, 4.67:1 on their own 10 % tint; `#c26a00`
+  gave 3.48:1 on the pressed `.kind-filter`). Known and accepted exceptions: `--border-strong` (about 2:1) on field
+  borders, and the dark `--accent` on `--surface-hover` (4.17:1) on hover states: changing them is a visual change to
+  make with the owner.
 - **Cached cross-reference index**: `crossrefs.nodes_of` reads another paper's `structure.json` as stored, cached by
   (date, size); it never re-analyses, which would rewrite every other paper's structure when one is opened.
 - **Sanitiser** (`app/sanitize.py`): every `PreformattedString` is removed (comments, but also `<![CDATA[…]]>`, which
