@@ -1,0 +1,21 @@
+tests/test_notesync.py
+  s_2e78fe3aad7ffd::t_a91e9b4173c897 168-175
+app/notesync.py
+  s_2e78fe3aad7ffd::t_7fdb3fce7b01f4 234-236
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "fbb249e7a3604063922cc0120dc9f71d7b42ad7a",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
