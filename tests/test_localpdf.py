@@ -101,6 +101,20 @@ class InvisiblePdfText(unittest.TestCase):
             self.assertNotIn(gone, page)
         self.assertEqual(found["hidden"], 3)
 
+    def test_type3_font_size_uses_its_matrix(self):
+        """Type3 : corps = Tf × FontMatrix. Polices bitmap de dvips + Ghostscript (matrice unité, corps 1, pixels réduits
+        par cm) : page lue, pas jugée minuscule ; 0,5 avec la matrice usuelle (0,001) reste minuscule."""
+        def page(matrix, content):
+            font = (f"<< /Type /Font /Subtype /Type3 /FontBBox [0 0 600 700] /FontMatrix {matrix} /CharProcs << /a 6 0 R >> "
+                    "/Encoding << /Type /Encoding /Differences [97 /a] >> /FirstChar 97 /LastChar 97 /Widths [500] >>")
+            glyph = "<< /Length 8 >>\nstream\n500 0 d0\nendstream"
+            found = localpdf.read_pdf(build_pdf(content, extra=(glyph,), font=font))
+            return found["pages"][0].strip(), found["hidden"]
+        self.assertEqual(page("[1 0 0 1 0 0]", "q 0.12 0 0 0.12 72 700 cm BT /F1 1 Tf (aaa) Tj ET Q"), ("aaa", 0))
+        self.assertEqual(page("[0.001 0 0 0.001 0 0]", "BT /F1 12 Tf 72 700 Td (aaa) Tj ET"), ("aaa", 0))
+        self.assertEqual(page("[0.001 0 0 0.001 0 0]", "BT /F1 0.5 Tf 72 700 Td (aaa) Tj ET"), ("", 1))
+        self.assertEqual(page("[1 0 0 1 0 0]", "q 0.0005 0 0 0.0005 72 700 cm BT /F1 1 Tf (aaa) Tj ET Q"), ("", 1))
+
     def test_state_of_each_show(self):
         """Couleur changée entre deux affichages d'un même bloc de texte : chacun jugé avec la sienne."""
         start = "BT /F1 12 Tf 72 700 Td "

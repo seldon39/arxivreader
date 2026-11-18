@@ -195,7 +195,7 @@ class _Visible:
     def start_state():
         return {"ctm": IDENTITY, "fill": 0.0, "stroke": 0.0, "fillSpace": ("device", None), "strokeSpace": ("device", None),
                 "size": None, "scale": 1.0, "render": 0, "leading": 0.0, "cid": False, "alpha": 1.0, "strokeAlpha": 1.0,
-                "clip": None, "hiddenLayer": False, "lineWidth": 1.0, "plain": True}
+                "clip": None, "hiddenLayer": False, "lineWidth": 1.0, "plain": True, "glyph": 1.0}
 
     def run(self, operations, resources, state, depth=0):
         """(opérations gardées, flux changé) ; `state` (dict) : état graphique au départ, mis à jour."""
@@ -274,9 +274,15 @@ class _Visible:
         elif operator == b"Tf" and len(args) >= 2:
             state["size"] = abs(float(args[1]))
             try:
-                state["cid"] = resources["/Font"][args[0]].get_object().get("/Subtype") == "/Type0"
+                font = resources["/Font"][args[0]].get_object()
+                state["cid"] = font.get("/Subtype") == "/Type0"
+                # Type3 : le corps vaut size × FontMatrix (un glyphe de 1000 unités avec 0,001 : le corps tel quel) ;
+                # polices bitmap de dvips + Ghostscript : matrice unité et corps 1, pixels mis à l'échelle par cm
+                matrix = _numbers(font.get("/FontMatrix") or []) if font.get("/Subtype") == "/Type3" else None
+                state["glyph"] = 1000 * math.hypot(matrix[2], matrix[3]) if matrix and len(matrix) >= 4 else 1.0
             except Exception:
                 state["cid"] = False
+                state["glyph"] = 1.0
         elif operator == b"Tz" and args:
             state["scale"] = float(args[0]) / 100
         elif operator == b"Tr" and args:
@@ -465,8 +471,9 @@ class _Visible:
         letters = bool(raw.strip(b"\x00")) if state.get("cid") else bool(re.search(rb"[A-Za-z\x80-\xff]", raw))
         m = _mult(tm, state["ctm"])
         size = state.get("size")
-        tiny = size is not None and (size * math.hypot(m[2], m[3]) < MIN_VISIBLE_PT
-                                     or size * state["scale"] * math.hypot(m[0], m[1]) < MIN_VISIBLE_PT)
+        body = None if size is None else size * state["glyph"]
+        tiny = body is not None and (body * math.hypot(m[2], m[3]) < MIN_VISIBLE_PT
+                                     or body * state["scale"] * math.hypot(m[0], m[1]) < MIN_VISIBLE_PT)
         render = state["render"] % 8
         sides = {0: ("fill",), 4: ("fill",), 1: ("stroke",), 5: ("stroke",), 2: ("fill", "stroke"), 6: ("fill", "stroke")}.get(render, ())
         alphas = {"fill": state["alpha"], "stroke": state["strokeAlpha"]}
@@ -712,7 +719,8 @@ def _import(pid, data, filename):
     return db.get_paper(pid)
 
 
-TEXT_VERSION = 4  # 2 : texte invisible retiré ; 3 : texte gardé lu avec le codage des polices ; 4 : jaune, turquoise. Un text.json plus
+TEXT_VERSION = 5  # 2 : texte invisible retiré ; 3 : texte gardé lu avec le codage des polices ; 4 : jaune, turquoise ; 5 : Type3,
+                  # passages comptés sur le texte décodé, fonds transparents ou en calque masqué, BBox des formulaires. Un text.json plus
                   # ancien est refait au démarrage (redetect_all), ou à sa première lecture par l'IA
 
 

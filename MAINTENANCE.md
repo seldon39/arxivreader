@@ -513,7 +513,8 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   straight bar, or the sides of a stroked rectangle), thin dark strips painted one after another (sliced gradient), a
   shading (`sh`) or an image, at least `MIN_BACKGROUND_PT`, cut to the clip in force (an opaque light fill, rectangle
   or axis-aligned outline, in normal blend mode without soft mask, painted later covers it); size under `MIN_VISIBLE_PT` on
-  either axis, opacity under 0,05 (both for `Tr` 2/6), outside the clip, hidden layer (membership dictionaries by
+  either axis (`Tf` size, times `1000 × FontMatrix` for a Type3 font: the bitmap fonts of dvips + Ghostscript have a unit matrix
+  and size 1, the pixels being scaled down by `cm`), opacity under 0,05 (both for `Tr` 2/6), outside the clip, hidden layer (membership dictionaries by
   their `/P` policy; a `/VE` expression is not read: visible), invisible mode (`Tr` 3/7) except on a scanned page
   (images, whole or in strips, cover at least `SCAN_SHARE` of it: text layer of a recognized scan; a first pass finds
   it when the image comes after the text, also when the page draws forms). Form XObjects are judged at each draw with the state of that moment: a
