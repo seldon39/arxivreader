@@ -377,6 +377,17 @@ def _xcolor(expression, names):
     """(r, v, b) d'une expression xcolor : nom (défini par l'auteur ou de base), mélange « red!30!blue », « black!5 »
     (5 % de noir dans du blanc), complément « -black » ; None si on ne sait pas la lire."""
     expression = (expression or "").strip()
+    mixed = re.fullmatch(r"(?:rgb|cmyk?|hsb|gray|Gray|RGB|HTML|Hsb|HSB):\s*([^;,]+,[^;,]+(?:;[^;,]+,[^;,]+)*)", expression)
+    if mixed:  # « rgb:white,1;black,2 » : mélange pondéré de couleurs (poids ramenés à leur somme)
+        parts = [part.split(",") for part in mixed.group(1).split(";")]
+        try:
+            weights = [float(weight) for _, weight in parts]
+        except ValueError:
+            return None
+        colors = [_xcolor(name, names) for name, _ in parts]
+        if None in colors or sum(weights) <= 0 or min(weights) < 0:
+            return None
+        return tuple(sum(w * color[i] for w, color in zip(weights, colors)) / sum(weights) for i in range(3))
     complement = expression.startswith("-")
     tokens = [token.strip() for token in expression.lstrip("-").split("!")]
     color = names.get(tokens[0], _XCOLORS.get(tokens[0].lower()))

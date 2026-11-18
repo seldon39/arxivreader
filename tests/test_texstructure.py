@@ -240,6 +240,17 @@ class InvisibleTex(unittest.TestCase):
             self.assertIn("KEPT", text, options)
             self.assertEqual(count, 0, options)
 
+    def test_xcolor_weighted_mix_expression(self):
+        """\\textcolor{rgb:white,1} : mélange pondéré (poids ramenés à leur somme) ; un mélange sombre reste lisible."""
+        for color in ("rgb:white,1", "rgb:white,2;black,0", "rgb:white,60;black,1", "cmy:white,3"):
+            text, count = self.stripped(r"\textcolor{" + color + r"}{GONE} REAL TEXT")
+            self.assertNotIn("GONE", text, color)
+            self.assertEqual(count, 1, color)
+        for color in ("rgb:white,1;black,1", "rgb:red,1;green,1;blue,1", "rgb:white,1;nosuchcolor,1", "rgb:white,x"):
+            text, count = self.stripped(r"\textcolor{" + color + r"}{KEPT}")
+            self.assertIn("KEPT", text, color)
+            self.assertEqual(count, 0, color)
+
     def test_readable_colors_and_whole_document_settings_kept(self):
         for body in (r"\textcolor{black!50}{VISIBLE} ok", r"\colorbox{black}{\color{white} VISIBLE}",
                      r"\color{white} VISIBLE " + "word " * 5000,                           # tout le document : un réglage

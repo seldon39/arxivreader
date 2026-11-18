@@ -477,7 +477,7 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
 - Invisible text in a TeX source (`texstructure.invisible`, used by `strip_hidden`, hence by `extract` and `ai.tex_body`;
   thresholds `structure.WHITE` / `DARK`, shared with the HTML and the PDF). Colors are evaluated where they are used
   (`_Colors`: a color redefined later does not change what precedes; `_xcolor`: names, mixes `white!95`, `black!3`,
-  complement `-black`, models `[rgb]`, `[HTML]`, `[hsb]`, `[named]`…). Hidden: white or nearly (same rule as the HTML) by
+  complement `-black`, weighted mixes `rgb:white,2;black,1`, models `[rgb]`, `[HTML]`, `[hsb]`, `[named]`…). Hidden: white or nearly (same rule as the HTML) by
   `\textcolor`, `\mathcolor` (argument in braces or `\bgroup…\egroup`), `\color` — scope (`_scope_end`) up to its
   group (braces, `\bgroup`, `\begingroup`), its environment, the end of the math it sits in (`$`, `$$`, `\)`, `\]`),
   the closing `]` of an option list (`fonttitle=\color{white}`, `_option_list`), the end of its cell in a table or an
