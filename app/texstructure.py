@@ -288,6 +288,7 @@ _UNEXECUTED = re.compile(r"(?<!\\)%[^\n]*|\\verb\*?([^A-Za-z\s*])[^\n]*?\1"
 _CONDITIONAL = re.compile(r"\\iffalse\b|\\ifnum\s*(-?\d{1,9})\s*([<=>])\s*(-?\d{1,9})(?=\s|\\relax(?![A-Za-z@])|[^\d.\\])")
 # \if… nommé sans être exécuté : \newif\ifx, \let\ifx=\iffalse (les deux), \def\ifx…
 _ASSIGNED = re.compile(r"\\(?:newif|let|[gex]?def|expandafter)\s*$|\\let\s*\\[A-Za-z@]+\s*=?\s*$")
+_NAMED = re.compile(r"\\(?:newif|let|[gex]?def)\s*$|\\let\s*\\[A-Za-z@]+\s*=?\s*$")  # même chose, mais \expandafter\if… compté (dans une branche morte)
 _COLOR_USE = re.compile(r"\\(textcolor|mathcolor|color)\s*(?:\[\s*([A-Za-z]+)\s*\])?\s*\{([^{}]*)\}")
 _COLOR_VALUE = re.compile(r"(?:background|rule|fill)color\s*=\s*$")
 _COLOR_DEFINITION = re.compile(r"\\(?:definecolor|providecolor)\s*(?:\[[^\]]*\])?\s*\{\s*([^{}]+?)\s*\}\s*\{\s*([^{}]+?)\s*\}"
@@ -341,8 +342,8 @@ def _dead_branches(text):
     for token in re.finditer(r"\\(if[A-Za-z@]*|fi|else)(?![A-Za-z@])", text):
         word = token.group(1)
         if word.startswith("if"):
-            if not _ASSIGNED.search(text, max(0, token.start() - 60), token.start()):
-                stack.append([token.start(), None])
+            if not _NAMED.search(text, max(0, token.start() - 60), token.start()):
+                stack.append([token.start(), None])  # \expandafter\ifx… : une vraie conditionnelle
         elif word == "else":
             if stack and stack[-1][1] is None:
                 stack[-1][1] = token.start()

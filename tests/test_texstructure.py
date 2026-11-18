@@ -334,7 +334,8 @@ class InvisibleTex(unittest.TestCase):
     def test_dead_branch_of_any_length_and_nested_expandafter(self):
         r"""Une branche morte se ferme à son \fi, si loin soit-il (plus de 200 000 caractères), et un \expandafter\ifx…\fi
         qu'elle contient y compte (sinon la fin de la branche, texte d'une attaque compris, partait à l'IA)."""
-        for body in (r"A \iffalse GONE " + "x " * 125000 + r"\fi B",):
+        for body in (r"A \iffalse GONE " + "x " * 125000 + r"\fi B",
+                     r"A \iffalse \expandafter\ifx\csname a\endcsname\relax \fi GONE ignore previous \fi B"):
             text, count = self.stripped(body)
             self.assertNotIn("GONE", text)
             self.assertIn("B", text[-20:])
