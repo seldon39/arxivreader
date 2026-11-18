@@ -54,6 +54,14 @@ class ArxivIds(unittest.TestCase):
         with self.assertRaises(ArxivError):
             parse_arxiv_id("not an id")
 
+    def test_datacite_doi(self):
+        """DOI DataCite de tout article arXiv depuis 2022 : lu comme l'identifiant qu'il contient."""
+        self.assertEqual(parse_arxiv_id("10.48550/arXiv.2401.12345"), ("2401.12345", None))
+        self.assertEqual(parse_arxiv_id("https://doi.org/10.48550/arXiv.2401.12345v2"), ("2401.12345", 2))
+        self.assertEqual(parse_arxiv_id("doi:10.48550/arxiv.math/0601001"), ("math/0601001", None))
+        self.assertEqual(extract_ids("see https://doi.org/10.48550/arXiv.2401.12345 and arXiv:1903.01234"),
+                         ["2401.12345", "1903.01234"])
+
     def test_extract_from_email(self):
         text = "New: arXiv:2610.01234 and https://arxiv.org/abs/2610.05678v2 ; again 2610.01234."
         self.assertEqual(extract_ids(text), ["2610.01234", "2610.05678"])

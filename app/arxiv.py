@@ -16,6 +16,9 @@ NEW_ID = r"\d{4}\.\d{4,5}"
 OLD_ID = r"[a-z][a-z\-]*(?:\.[A-Z]{2})?/\d{7}"
 ID_RE = re.compile(rf"(?<![\w.])({NEW_ID}|{OLD_ID})(v\d+)?(?![\w])")
 
+# DOI DataCite d'un article arXiv (10.48550/arXiv.2401.12345) : lu comme « arXiv:2401.12345 »
+DATACITE = re.compile(r"10\.48550/arxiv\.", re.I)
+
 ATOM = "{http://www.w3.org/2005/Atom}"
 ARXIV_NS = "{http://arxiv.org/schemas/atom}"
 
@@ -31,7 +34,7 @@ class ArxivUnavailable(ArxivError):
 
 def parse_arxiv_id(text):
     """Renvoie (identifiant sans version, version ou None) à partir d'un identifiant ou d'une URL."""
-    text = text.strip()
+    text = DATACITE.sub("arXiv:", text.strip())
     text = re.sub(r"^arxiv:\s*", "", text, flags=re.I)
     match = ID_RE.search(text)
     if not match:
@@ -48,7 +51,7 @@ def strip_subject_class(arxiv_id):
 def extract_ids(text):
     """Tous les identifiants arXiv distincts d'un texte, dans l'ordre d'apparition."""
     seen = []
-    for match in ID_RE.finditer(text):
+    for match in ID_RE.finditer(DATACITE.sub("arXiv:", text)):
         found = strip_subject_class(match.group(1))
         if found not in seen:
             seen.append(found)
