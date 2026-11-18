@@ -1,0 +1,29 @@
+MAINTENANCE.md
+  s_2e78fe3aad7ffd::t_7503ff36286f2e 282-288
+app/check.py
+  s_2e78fe3aad7ffd::t_7503ff36286f2e 42-43
+macos/main.swift
+  s_2e78fe3aad7ffd::t_7029b0f9c27813 968,970-973
+  s_2e78fe3aad7ffd::t_809edf34d4698b 964-967,974
+  s_2e78fe3aad7ffd::t_ca8fe2bd8642be 1174
+  s_2e78fe3aad7ffd::t_8519b1db2c34ae 962-963,969,1120-1125
+  s_2e78fe3aad7ffd::t_ad003dd6eaec4b 1126
+tests/test_shell_session.py
+  s_2e78fe3aad7ffd::t_7503ff36286f2e 36-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "6b37d5862db20c1dd091ecab64bcfe26ba131a99",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
