@@ -508,7 +508,11 @@ def content(paper_id: str):
         path = latexml.html_dir(paper_id) / "content.html"  # version faite par LaTeXML
     if not path.exists():
         raise HTTPException(404, "No HTML version")
-    return PlainTextResponse(clean_stored(path.read_text(encoding="utf-8")))
+    stored = path.read_text(encoding="utf-8")
+    cleaned = clean_stored(stored)
+    if cleaned is not stored:  # page enregistrée avant le nettoyage : réécrite une fois, lue ensuite sans analyse
+        library.write_atomic_bytes(path, cleaned.encode("utf-8"))
+    return PlainTextResponse(cleaned)
 
 
 @app.get("/api/papers/{paper_id}/figures")

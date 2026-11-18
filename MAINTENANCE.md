@@ -1107,8 +1107,9 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
 - **Sanitiser** (`app/sanitize.py`): every `PreformattedString` is removed (comments, but also `<![CDATA[…]]>`, which
   HTML5 reads as a comment closed at the first `>`), and the `style` filters (`UNSAFE_STYLE`, `PINNED`) look at the
   style as the browser reads it (`_normal_css`: CSS comments removed, escapes such as `fi\78 ed` resolved; `\0`, a surrogate `\D800` or a value past `\10FFFF` become U+FFFD). A
-  `content.html` stored before these rules gets the same treatment when read (`clean_stored`, in the `/content` route;
-  a page without `<!`, `<?` or an escaped style is returned as is, without parsing).
+  `content.html` stored before these rules gets the same treatment when read, reserved names below included
+  (`clean_stored`, in the `/content` route; a page with none of them, `_STORED_RISK`, is returned as is, without parsing;
+  a cleaned page is written back once, so a page of several MB is parsed only on its first opening).
   It also drops what belongs to the interface (ids `view`, `toast`, `settings-dialog`, `settings-button`, `setting-*`;
   classes `cross-open`, `cross-badge`, `ai-ref`; hrefs beginning with `#/`): an article must never address the
   application's own elements or routes. `toast()` and `openSettingsDialog()` look their element up as `body > #id`,

@@ -107,20 +107,42 @@ def _clean_style(value):
     return value
 
 
+# ce qui fait reprendre un content.html enregistré : CDATA, déclaration, style échappé ou commenté, nom réservé de l'interface
+_STORED_RISK = re.compile(r"<!|<\?|style\s*=\s*(\"[^\"]*|'[^']*)(\\|/\*)"
+                          r"|\bid\s*=\s*([\"'])\s*(?:" + "|".join(map(re.escape, RESERVED_IDS)) + r")\s*\2"
+                          r"|\bid\s*=\s*[\"']\s*" + re.escape(RESERVED_ID_PREFIX)
+                          + r"|\bclass\s*=\s*[\"'][^\"']*(?<![\w-])(?:" + "|".join(map(re.escape, RESERVED_CLASSES)) + r")(?![\w-])"
+                          r"|\bhref\s*=\s*[\"']\s*#/", re.I)
+
+
 def clean_stored(html):
     """Défense à la lecture d'un content.html déjà enregistré (avant ce nettoyage) : retire CDATA, déclarations et
-    instructions, et reprend les styles. Le plus souvent rien à faire : le texte est rendu tel quel, sans analyse."""
-    if "<!" not in html and "<?" not in html and not re.search(r"style\s*=\s*(\"[^\"]*|'[^']*)(\\|/\*)", html, re.I):
+    instructions, reprend les styles, et retire identifiants, classes et liens « #/ » réservés à l'interface (comme
+    sanitize_document). Le plus souvent rien à faire : le texte lui-même est rendu, sans analyse (même objet)."""
+    if not _STORED_RISK.search(html):
         return html
     soup = BeautifulSoup(html, "html.parser")
     for node in soup.find_all(string=lambda s: isinstance(s, PreformattedString)):
         node.extract()
-    for element in soup.find_all(style=True):
-        cleaned = _clean_style(str(element["style"]))
-        if cleaned is None:
-            del element.attrs["style"]
-        else:
-            element.attrs["style"] = cleaned
+    for element in soup.find_all(True):
+        for attr in [a for a in element.attrs if a.lower() in ("style", "id", "class", "href")]:
+            value, key = element.attrs[attr], attr.lower()
+            if key == "style":
+                cleaned = _clean_style(str(value))
+                if cleaned:
+                    element.attrs[attr] = cleaned
+                else:
+                    del element.attrs[attr]
+            elif key == "id" and (str(value).strip() in RESERVED_IDS or str(value).strip().startswith(RESERVED_ID_PREFIX)):
+                del element.attrs[attr]
+            elif key == "class":
+                kept = [token for token in (value.split() if isinstance(value, str) else value) if token not in RESERVED_CLASSES]
+                if kept:
+                    element.attrs[attr] = kept
+                else:
+                    del element.attrs[attr]
+            elif key == "href" and str(value).strip().startswith("#/"):
+                del element.attrs[attr]
     return str(soup)
 
 

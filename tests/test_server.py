@@ -118,6 +118,30 @@ class Reanalysis(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in folder.iterdir()), ["content.html", "structure.json"])  # pas de .part
 
 
+    def test_stored_content_cleaned_once_with_reserved_names(self):
+        """content.html enregistré avant le nettoyage : CDATA, styles échappés, identifiants, classes et liens « #/ » de
+        l'interface retirés à la lecture, et le fichier réécrit (une page de plusieurs Mo n'est analysée qu'une fois)."""
+        from unittest import mock
+        from app import sanitize
+        db.save_paper({"id": "2101.00002", "arxiv_id": "2101.00002", "version": 1, "title": "T", "authors": [],
+                       "abstract": "", "categories": []})
+        folder = library.paper_dir("2101.00002")
+        folder.mkdir(parents=True)
+        (folder / "content.html").write_text(
+            '<p>a<![CDATA[ x ]]>b</p><div style="position:fi\\78 ed">1</div><div id="toast" class="cross-open ltx_p">2</div>'
+            '<a href="#/settings">3</a><a class="ai-ref" href="#S1">4</a><p id="settings-dialog">5</p>', encoding="utf-8")
+        client = TestClient(main.app, base_url=main.BASE if hasattr(main, "BASE") else f"http://{main.HOST}:{main.PORT}")
+        with mock.patch.object(library, "ensure_ready"):
+            first = client.get("/api/papers/2101.00002/content").text
+            for text in ("CDATA", "fixed", 'id="toast"', "cross-open", "#/settings", "ai-ref", "settings-dialog"):
+                self.assertNotIn(text, first)
+            for text in ("ltx_p", 'href="#S1"', ">5<"):
+                self.assertIn(text, first)
+            self.assertEqual((folder / "content.html").read_text(encoding="utf-8"), first)  # réécrit
+            with mock.patch.object(sanitize, "BeautifulSoup", side_effect=AssertionError("analysé de nouveau")):
+                self.assertEqual(client.get("/api/papers/2101.00002/content").text, first)
+
+
 class Helpers(unittest.TestCase):
     def test_s2_key(self):
         self.assertEqual(relevance.s2_key(None, "math/0601001"), "ArXiv:math/0601001")
