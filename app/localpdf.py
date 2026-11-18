@@ -344,7 +344,7 @@ class _Visible:
             if state["alpha"] >= MIN_BACKGROUND_ALPHA and not state["hiddenLayer"]:
                 self._background(state["clip"] or self.page_box)
         elif operator == b"INLINE IMAGE":
-            self._image(state)
+            self._image(state, _inline_luminance(args))
 
     def _layer_off(self, ref, resources):
         """Calque masqué : `ref` est un nom de /Properties, ou la référence (ou le dictionnaire) du calque. Appartenance
@@ -363,13 +363,17 @@ class _Visible:
             return not visible
         return getattr(ref, "idnum", None) in self.off
 
-    def _image(self, state):
-        """Image : un fond ; les images qui couvrent ensemble au moins SCAN_SHARE de la page (scan d'un seul tenant
+    def _image(self, state, light=None):
+        """Image : un fond (clair, `light` : luminance moyenne d'une image en ligne, ≥ DARK : un aplat clair, comme le
+        fond de page des dvips) ; les images qui couvrent ensemble au moins SCAN_SHARE de la page (scan d'un seul tenant
         ou en bandes) en font une page scannée."""
         if state["alpha"] < MIN_BACKGROUND_ALPHA or state["hiddenLayer"]:
             return
         box = _box([_point(state["ctm"], x, y) for x in (0, 1) for y in (0, 1)])
-        self._background(box)
+        if light is None or light < DARK:
+            self._background(box)
+        elif state["plain"]:
+            self._paint(box, False)
         x0, y0, x1, y1 = self.page_box
         width = max(0.0, min(box[2], x1) - max(box[0], x0))
         height = max(0.0, min(box[3], y1) - max(box[1], y0))
@@ -539,6 +543,21 @@ def _decoding(font):
     table = {}
     page.extract_text(visitor_text=lambda text, cm, tm, font_dict, size: text not in ("", "\n") and table.update({round(tm[5] / 20): text}))
     return table
+
+
+def _inline_luminance(image):
+    """Luminance moyenne d'une image en ligne (gris ou RVB, 8 bits, sans filtre ni décodage), None si on ne sait pas la lire."""
+    try:
+        settings, data = image["settings"], bytes(image["data"])
+        setting = lambda *names: next((settings[name] for name in names if name in settings), None)  # noms abrégés ou complets
+        channels = {"/G": 1, "/DeviceGray": 1, "/RGB": 3, "/DeviceRGB": 3}.get(setting("/CS", "/ColorSpace"))
+        if (not channels or not data or setting("/BPC", "/BitsPerComponent") != 8 or setting("/F", "/Filter")
+                or setting("/D", "/Decode") or setting("/IM", "/ImageMask")):
+            return None
+        means = [sum(data[i::channels]) / len(data[i::channels]) / 255 for i in range(channels)]
+        return _luminance(means)
+    except Exception:
+        return None
 
 
 def _clipped(box, clip):

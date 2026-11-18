@@ -194,6 +194,22 @@ class InvisiblePdfText(unittest.TestCase):
         self.assertEqual(counts("1 g " + show + " 0 g BT 3 Tr /F1 12 Tf 72 600 Td (OCR) Tj ET"), ("", (1, 1)))
         self.assertEqual(counts("1 g BT 3 Tr /F1 12 Tf 72 600 Td (BOTH) Tj ET"), ("", (0, 1)))  # Tr 3 : ni rempli ni tracé, la couleur ne joue pas
 
+    def test_light_inline_image_is_no_dark_background(self):
+        """Fond de page en image en ligne (dvips) : clair, le texte blanc posé dessus est retiré ; foncé, ou d'une forme
+        qu'on ne lit pas (filtre, décodage), il est gardé."""
+        white = " 1 g BT /F1 12 Tf 72 700 Td (IGNORE) Tj ET"
+
+        def page(settings, data):
+            return self.page(f"q 612 0 0 792 0 0 cm BI {settings} ID {data} EI Q" + white)
+        self.assertEqual(page("/W 2 /H 1 /CS /G /BPC 8", "\xff\xf0"), ("", 1))
+        self.assertEqual(page("/W 1 /H 1 /CS /RGB /BPC 8", "\xff\xff\xfa"), ("", 1))
+        self.assertEqual(page("/W 1 /H 1 /CS /G /BPC 8", "\x10"), ("IGNORE", 0))
+        self.assertEqual(page("/W 1 /H 1 /CS /RGB /BPC 8", "\x10\x10\x10"), ("IGNORE", 0))
+        self.assertEqual(page("/W 1 /H 1 /CS /G /BPC 8 /D [1 0]", "\xff"), ("IGNORE", 0))  # inversé : pas lu, gardé
+        self.assertEqual(page("/W 1 /H 1 /CS /G /BPC 8 /F /AHx", "ff>"), ("IGNORE", 0))
+        dark = "0 g 0 0 612 792 re f q 612 0 0 792 0 0 cm BI /W 1 /H 1 /CS /G /BPC 8 ID \xff EI Q"  # blanc par-dessus un fond foncé
+        self.assertEqual(self.page(dark + white), ("", 1))
+
     def test_state_of_each_show(self):
         """Couleur changée entre deux affichages d'un même bloc de texte : chacun jugé avec la sienne."""
         start = "BT /F1 12 Tf 72 700 Td "

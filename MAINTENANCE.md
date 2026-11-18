@@ -512,7 +512,8 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   painted under its start and its estimated middle is dark: a dark (or unreadable) fill, a thick dark stroke (a
   straight bar, or the sides of a stroked rectangle), thin dark strips painted one after another (sliced gradient), a
   shading (`sh`) or an image, at least `MIN_BACKGROUND_PT`, cut to the clip in force (a shape under `MIN_BACKGROUND_ALPHA`
-  opacity, or in a hidden layer, paints nothing) (an opaque light fill, rectangle
+  opacity, or in a hidden layer, paints nothing); an inline image without filter, in 8-bit gray or RGB, whose mean luminance is light (`_inline_luminance`, the page background of dvips)
+  is a light flat shade instead; any other image, image XObject included, is a dark background, its pixels not being read (an opaque light fill, rectangle
   or axis-aligned outline, in normal blend mode without soft mask, painted later covers it); size under `MIN_VISIBLE_PT` on
   either axis (`Tf` size, times `1000 × FontMatrix` for a Type3 font: the bitmap fonts of dvips + Ghostscript have a unit matrix
   and size 1, the pixels being scaled down by `cm`), opacity under 0,05 (both for `Tr` 2/6), outside the clip (the `/BBox` of a form is a clip for what it draws), hidden layer (membership dictionaries by
