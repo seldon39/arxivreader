@@ -687,6 +687,8 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   rendered as the stream arrives); `markdownToHtml` handles nested lists (stack of lists, indent of at least two
   more spaces). A block that starts indented is the continuation of the list item of the previous block (paragraph
   of a review point): class `ai-continued`, same indent as the list.
+  In `markdown.js`, `inline` percent-encodes `` ` ``, `*` and `_` in the address of a link before the code, bold and
+  italic passes, which would otherwise write markup inside the `href`.
 
 - Book, all chapters in parallel (`app/bookjob.py`, routes `/api/papers/{id}/ai/book`, `…/book/stop`): background
   job of the server (`asyncio`), one per book and per kind, `PARALLEL` chapters at a time (cross-review:

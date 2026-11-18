@@ -10,6 +10,8 @@ const MATH = /(\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\$[^$\n]+?\$|\\\([\s\S]+?\\\))/
 
 function inline(text, math, refs) {
   let html = escapeHtml(text);
+  // le code, le gras et l'italique ne doivent pas toucher à l'adresse d'un lien : ` * _ y sont codés (%60 %2A %5F)
+  html = html.replace(/\]\((https?:\/\/[^\s)]+)\)/g, (_, url) => `](${url.replace(/[`*_]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase())})`);
   html = html.replace(/`([^`]+)`/g, (_, code) => `<code>${code}</code>`);
   html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   html = html.replace(/(^|[^\w*])\*([^*\s][^*]*?)\*(?!\w)/g, "$1<em>$2</em>");
