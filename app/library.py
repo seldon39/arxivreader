@@ -808,9 +808,10 @@ _pdf_unavailable = {}  # article → instant jusqu'auquel l'échec est redit tou
 
 
 def ensure_pdf(paper):
-    """Chemin du PDF de l'article, téléchargé depuis arXiv s'il manque ; None s'il est introuvable. Le téléchargement
-    (et ses nouveaux essais si arXiv ne répond pas) se fait hors du verrou de l'article : l'import, la mise à jour et
-    les autres pages ne l'attendent pas ; ArxivUnavailable redit sans nouvel essai pendant PDF_RETRY_AFTER."""
+    """Chemin du PDF de l'article, téléchargé depuis arXiv s'il manque ; None s'il est introuvable. Appelé par une
+    requête de la page (/pdf, /pages) : un seul essai (30 s au plus, MAINTENANCE §9), hors du verrou de l'article
+    (l'import, la mise à jour et les autres pages ne l'attendent pas) ; ArxivUnavailable redit sans nouvel essai
+    pendant PDF_RETRY_AFTER."""
     pid = paper["id"]
     path = paper_dir(pid) / "paper.pdf"
     needs_text = lambda: paper.get("source") == "none" and not (path.parent / "text.json").exists()
@@ -827,7 +828,7 @@ def ensure_pdf(paper):
         if _pdf_unavailable.get(pid, 0) > time.monotonic():
             raise ArxivUnavailable(f"PDF of {paper['arxiv_id']}: arXiv did not answer a moment ago")
         try:
-            data = fetch_pdf(paper["arxiv_id"], version)
+            data = fetch_pdf(paper["arxiv_id"], version, patient=False)
         except ArxivUnavailable:
             _pdf_unavailable[pid] = time.monotonic() + PDF_RETRY_AFTER
             raise

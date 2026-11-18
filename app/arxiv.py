@@ -258,9 +258,10 @@ def fetch_source(arxiv_id, version):
     return _download(f"https://arxiv.org/e-print/{arxiv_id}" + (f"v{version}" if version else ""))
 
 
-def fetch_pdf(arxiv_id, version):
-    """PDF de l'article (articles sans version HTML : lus dans le PDF), ou None. ArxivUnavailable : à redemander."""
-    data = _download(f"https://arxiv.org/pdf/{arxiv_id}v{version}")
+def fetch_pdf(arxiv_id, version, patient=True):
+    """PDF de l'article (articles sans version HTML : lus dans le PDF), ou None. ArxivUnavailable : à redemander.
+    `patient` : nouveaux essais (import, en arrière-plan) ; sinon un seul (une requête de la page n'attend pas)."""
+    data = _download(f"https://arxiv.org/pdf/{arxiv_id}v{version}", **({} if patient else {"delays": ()}))
     return data if data and data[:5] == b"%PDF-" else None
 
 

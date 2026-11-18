@@ -472,7 +472,7 @@ class NeverTheCurrentPaper(Base):
         old = {**db.get_paper(ID), "version": 1}  # fiche lue avant d'attendre le verrou d'une mise à jour
         with mock.patch.object(library, "fetch_pdf", return_value=b"PDF") as fetch:
             library.ensure_pdf(old)
-        fetch.assert_called_once_with(ID, 2)
+        fetch.assert_called_once_with(ID, 2, patient=False)
 
     def test_reader_gets_the_main_version(self):
         answer = TestClient(main.app, base_url=BASE).get(f"/api/papers/{ID}v1").json()
@@ -1046,6 +1046,26 @@ class Unavailable(Base):
         self.assertEqual((calls, waits), (4, 3))
         error, calls, _ = self.download([arxiv.httpx.ConnectTimeout("slow")])
         self.assertIsInstance(error, arxiv.ArxivUnavailable)
+
+    def test_pdf_route_answers_quickly(self):
+        """arXiv en panne (503, Retry-After: 60) quand la page demande le PDF : un seul essai, réponse sans attente."""
+        with mock.patch.object(library, "fetch_metadata", return_value=metadata(1)), \
+             mock.patch.object(library, "fetch_html", return_value=None), \
+             mock.patch.object(library, "fetch_source", return_value=None), \
+             mock.patch.object(library, "fetch_pdf", return_value=None):
+            library.import_paper(ID)
+        calls = []
+        self.addCleanup(library._pdf_unavailable.clear)
+        def answer(request):
+            calls.append(request.url)
+            return arxiv.httpx.Response(503, headers={"Retry-After": "60"})
+        client = lambda: arxiv.httpx.Client(transport=arxiv.httpx.MockTransport(answer))
+        with mock.patch.object(arxiv, "_client", client), mock.patch.object(arxiv.time, "sleep") as sleep:
+            for route in ("pdf", "pages"):
+                library._pdf_unavailable.clear()
+                response = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}").get(f"/api/papers/{ID}/{route}")
+                self.assertEqual(response.status_code, 502, route)
+        self.assertEqual((len(calls), sleep.call_count), (2, 0))
 
     def test_no_html_and_source_unavailable_fails_the_import(self):
         with mock.patch.object(library, "fetch_metadata", return_value=metadata(1)), \
