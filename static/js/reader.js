@@ -600,7 +600,7 @@ class Reader {
     if (this.structure.hiddenText > 0 && this.texOnly) {
       // lu dans le PDF : passages invisibles trouvés dans la source TeX ou le texte du PDF, rien à révéler ici
       this.article.append(h("div", { class: "notice" }, h("span", { class: "reason-icon", html: icons.warning }),
-        t("reader.hiddenTextSource", { n: this.structure.hiddenText })));
+        tn("reader.hiddenTextSource", this.structure.hiddenText)));
     } else if (this.structure.hiddenText > 0) {
       // « Afficher » : le texte invisible apparaît, encadré, et on y va (il peut être loin : bloc des adresses, fin de
       // l'article) ; « Suivant » passe aux autres endroits ; « Précédent » (barre) ramène où l'on lisait
@@ -633,7 +633,7 @@ class Reader {
       });
       next.addEventListener("click", () => { index = (index + 1) % spots.length; go(false); });
       this.article.append(h("div", { class: "notice" }, h("span", { class: "reason-icon", html: icons.warning }),
-        t("reader.hiddenText", { n: this.structure.hiddenText }), toggle, next));
+        tn("reader.hiddenText", this.structure.hiddenText), toggle, next));
     }
 
     if (this.texOnly) {

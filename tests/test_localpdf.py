@@ -408,6 +408,19 @@ class InvisiblePdfText(unittest.TestCase):
         self.assertEqual((structure["hiddenText"], structure["unshownText"]), (0, 1))
 
 
+class BannerStrings(unittest.TestCase):
+    """Bandeau du texte invisible : singulier et pluriel (`tn`, clés .one / .other), dans les deux langues."""
+
+    def test_singular_and_plural_forms(self):
+        root = pathlib.Path(__file__).resolve().parent.parent / "static" / "js"
+        i18n, reader = (root / "i18n.js").read_text(encoding="utf-8"), (root / "reader.js").read_text(encoding="utf-8")
+        for key in ("reader.hiddenText", "reader.hiddenTextSource", "reader.unshownText"):
+            for form in ("one", "other"):
+                self.assertEqual(i18n.count(f'"{key}.{form}":'), 2, f"{key}.{form}")  # français et anglais
+            self.assertNotIn(f'"{key}":', i18n)  # plus de « passage(s) »
+            self.assertIn(f'tn("{key}", this.structure.', reader)
+
+
 class LocalPdf(unittest.TestCase):
     def setUp(self):
         self.saved = (db.DB_PATH, db.LIBRARY, library.PAPERS)
