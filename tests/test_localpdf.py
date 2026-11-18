@@ -453,6 +453,13 @@ class BannerStrings(unittest.TestCase):
             self.assertIn(f'tn("{key}", this.structure.', reader)
 
 
+    def test_notes_replacement_dialog_forms(self):
+        root = pathlib.Path(__file__).resolve().parent.parent / "static" / "js"
+        i18n, settings = (root / "i18n.js").read_text(encoding="utf-8"), (root / "settings.js").read_text(encoding="utf-8")
+        for form in ("one", "other"):
+            self.assertEqual(i18n.count(f'"settings.notesReplaceText.{form}":'), 2)
+        self.assertIn('tn("settings.notesReplaceText", n)', settings)
+
 class LocalPdf(unittest.TestCase):
     def setUp(self):
         self.saved = (db.DB_PATH, db.LIBRARY, library.PAPERS)

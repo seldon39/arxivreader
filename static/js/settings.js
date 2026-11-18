@@ -2,7 +2,7 @@
 
 import { PROVIDERS, assistantName, authorName, setupNotice } from "./aiproviders.js";
 import { api } from "./api.js";
-import { applyStatic, setAIName, setLanguage, t } from "./i18n.js";
+import { applyStatic, setAIName, setLanguage, t, tn } from "./i18n.js";
 import { updatesSection } from "./updates.js";
 import { ZOTERO_KEY, zoteroSection } from "./zotero.js";
 import { chooseFolder, h, icons, toast, toastError } from "./util.js";
@@ -599,7 +599,7 @@ function replaceDialog({ n, replaced }) {
     const dialog = h("dialog", { class: "meta-dialog" },
       h("form", { method: "dialog" },
         h("h3", { class: "meta-heading" }, t("settings.notesReplaceTitle")),
-        h("p", {}, t("settings.notesReplaceText", { n })),
+        h("p", {}, tn("settings.notesReplaceText", n)),
         h("ul", {}, replaced.map(({ title, n: count }) => h("li", {}, h("strong", {}, title), " ", h("span", { class: "muted small" }, `(${count})`)))),
         h("div", { class: "dialog-actions" },
           h("button", { class: "button", type: "button", onclick: () => dialog.close("no") }, t("library.folder.cancel")),
