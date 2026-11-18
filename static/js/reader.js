@@ -593,10 +593,6 @@ class Reader {
         h("a", { href: `#/paper/${encodeURIComponent(paper.archived_of)}` }, t("reader.version", { v: paper.mainVersion }))));
     }
 
-    if (this.structure.unshownText > 0 && this.texOnly) {
-      // texte du PDF retiré sans être de ceux d'une attaque (couche d'un scan, découpé, calque masqué) : ton neutre
-      this.article.append(h("div", { class: "notice quiet" }, tn("reader.unshownText", this.structure.unshownText)));
-    }
     if (this.structure.hiddenText > 0 && this.texOnly) {
       // lu dans le PDF : passages invisibles trouvés dans la source TeX ou le texte du PDF, rien à révéler ici
       this.article.append(h("div", { class: "notice" }, h("span", { class: "reason-icon", html: icons.warning }),
@@ -634,6 +630,10 @@ class Reader {
       next.addEventListener("click", () => { index = (index + 1) % spots.length; go(false); });
       this.article.append(h("div", { class: "notice" }, h("span", { class: "reason-icon", html: icons.warning }),
         tn("reader.hiddenText", this.structure.hiddenText), toggle, next));
+    }
+    if (this.structure.unshownText > 0 && this.texOnly) {
+      // texte du PDF retiré sans être de ceux d'une attaque (couche d'un scan, découpé, calque masqué) : ton neutre
+      this.article.append(h("div", { class: "notice quiet" }, tn("reader.unshownText", this.structure.unshownText)));
     }
 
     if (this.texOnly) {
