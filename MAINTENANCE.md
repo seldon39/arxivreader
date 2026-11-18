@@ -492,8 +492,8 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   not `none`), table cells (`\columncolor`, `\rowcolors`, also just before the table; `\rowcolor` of its row,
   `\cellcolor` of its cell, a `\\` inside `{…}` not ending the row; also after the color in its own scope), tikz shapes `\fill`… and dark tikz styles, also through another style (in a
   tikz picture); a definition that sets its own dark background; beamer documents. Past ten times `_SCAN_BUDGET`
-  characters of windows on a text (tens of thousands of white passages), white text is judged without background. Comments are ignored. Count in `hiddenText` of `structure.json` (papers analysed
-  before: after a re-analysis).
+  characters of windows on a text (tens of thousands of white passages), white text is judged without background. Comments are ignored. Count in `hiddenText` of `structure.json`; papers analysed before are
+  analysed again when loaded (`STRUCTURE_VERSION` 19), so their statements (`node["tex"]`, sent to the AI) lose it too.
 - Invisible text in a PDF (`localpdf._page_text`, class `_Visible`): the content stream is walked with its graphics
   state (q/Q, `cm`, fill and stroke colors with their color spaces and Indexed palettes, `gs` opacity, clipping `W`,
   optional content `BDC /OC` hidden by default, `Tf`, `Tz`, `Tr`, text matrices), each text show judged with the

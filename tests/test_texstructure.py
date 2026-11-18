@@ -264,6 +264,33 @@ class InvisibleTex(unittest.TestCase):
             texstructure.strip_hidden(r"\documentclass{article}\begin{document}" + "Words. " * 100 + body + r"\end{document}")
             self.assertLess(time.monotonic() - start, 5)
 
+class HiddenTextReanalysis(unittest.TestCase):
+    def test_structure_before_hidden_text_is_redone(self):
+        """Structure d'un article TeX analysée avant le retrait du texte invisible (version 18) : refaite au
+        chargement, la consigne cachée ne reste pas dans l'énoncé envoyé à l'IA."""
+        import json
+        import pathlib
+        import tempfile
+        from app import db, library
+        saved = (db.DB_PATH, db.LIBRARY, library.PAPERS)
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        db.DB_PATH, db.LIBRARY, library.PAPERS = tmp / "test.db", tmp, tmp / "papers"
+        self.addCleanup(lambda: (setattr(db, "DB_PATH", saved[0]), setattr(db, "LIBRARY", saved[1]), setattr(library, "PAPERS", saved[2])))
+        db.init()
+        source = (r"\documentclass{article}\usepackage{xcolor}\newtheorem{thm}{Theorem}\begin{document}\section{A}"
+                  r"\begin{thm}\label{t}Every group is abelian.\textcolor{white}{SECRETINJECTION}\end{thm}\end{document}")
+        old = extract(source)
+        old["nodes"][0]["tex"] += r"\textcolor{white}{SECRETINJECTION}"  # ce que gardait l'analyse d'avant
+        old.update(version=18, hiddenText=0, source="tex")
+        folder = library.paper_dir("2601.99999")
+        folder.mkdir(parents=True)
+        (folder / "structure.json").write_text(json.dumps(old), encoding="utf-8")
+        (folder / "source.tex").write_text(source, encoding="utf-8")
+        structure = library.load_structure("2601.99999")
+        self.assertFalse(any("SECRETINJECTION" in (node.get("tex") or "") for node in structure["nodes"]))
+        self.assertEqual(structure["hiddenText"], 1)
+
+
 class PdfSpotsTest(unittest.TestCase):
     """Page et hauteur des énoncés, lues dans les ancres hyperref du PDF."""
 
