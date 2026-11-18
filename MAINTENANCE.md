@@ -750,8 +750,9 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   (`figures.shapesOf`, same margin on the right as on the left, font reduced by at most a quarter if it is too tall); drawings
   "remember picture, overlay" (1 × 1 with no stroke) hidden (`figure-overlay`), as on arXiv.
 
-- Imported TeX files (`texfile.py`): compiled in `<temp>/arxivreader-tex/<id>`, never in the user's
-  folder (latexmk `-outdir`). latexmk remembers that a `.bib` was missing and no longer reruns BibTeX: after a
+- Imported TeX files (`texfile.py`): compiled in `<temp>/arxivreader-tex-<uid>/<id>` (plain `arxivreader-tex` on Windows), never in the user's
+  folder (latexmk `-outdir`); the root is created with mode 0700 and refused (`TexError`) if it is a link or belongs to someone else
+  (shared `/tmp` on Linux: `build_dir`). latexmk remembers that a `.bib` was missing and no longer reruns BibTeX: after a
   missing `.bib`, its state (`.fdb_latexmk`) is erased. Statements that have a `\label` have an identifier derived from
   it, the others from their type and their text (`stable_ids`, also on re-analysis: `stableIds` in
   structure.json). The `.aux` files of the compilation give the printed numbers and the exact anchors of the `\label`s

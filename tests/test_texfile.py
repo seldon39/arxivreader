@@ -1,10 +1,13 @@
 """Fichiers TeX de l'ordinateur : lecture de la source, identifiants stables, bibliographie, compilation (quand TeX
 est installé), livres (numérotation par chapitre), place d'un passage retrouvé après recompilation."""
 
+import os
 import pathlib
 import shutil
+import stat
 import tempfile
 import time
+import types
 import unittest
 from unittest import mock
 
@@ -53,7 +56,44 @@ BOOK = r"""\documentclass{book}
 \begin{lemma}C.\end{lemma}
 \end{document}
 """
+REAL_BUILD_DIR = texfile.build_dir  # les tests de TexFile le remplacent : celui-ci reste le vrai
 HAS_TEX = bool(texfile.find_tool("latexmk") or texfile.find_tool("pdflatex"))
+
+
+@unittest.skipUnless(hasattr(os, "getuid"), "dossier temporaire partagé : POSIX seulement")
+class BuildDir(unittest.TestCase):
+    """Dossier de compilation dans un /tmp partagé : propre à l'utilisateur, en 0700, jamais un lien ni le dossier d'un autre."""
+
+    def setUp(self):
+        self.tmp = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        patcher = mock.patch.object(texfile.tempfile, "gettempdir", lambda: str(self.tmp))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.root = self.tmp / f"arxivreader-tex-{os.getuid()}"
+
+    def test_private_root(self):
+        folder = REAL_BUILD_DIR("tex-abc")
+        self.assertEqual(folder, self.root / "tex-abc")
+        self.assertTrue(folder.is_dir())
+        self.assertEqual(stat.S_IMODE(self.root.stat().st_mode), 0o700)
+        self.assertEqual(REAL_BUILD_DIR("tex-abc"), folder)  # d'une fois à l'autre : le même
+
+    def test_symlink_is_refused(self):
+        elsewhere = self.tmp / "elsewhere"
+        elsewhere.mkdir()
+        self.root.symlink_to(elsewhere)
+        with self.assertRaises(texfile.TexError):
+            REAL_BUILD_DIR("tex-abc")
+        self.assertEqual(list(elsewhere.iterdir()), [])  # rien écrit à travers le lien
+
+    def test_folder_of_someone_else_is_refused(self):
+        self.root.mkdir()
+        real = self.root.lstat()
+        foreign = types.SimpleNamespace(st_mode=real.st_mode, st_uid=real.st_uid + 1)  # la racine est celle d'un autre
+        with mock.patch.object(texfile.Path, "lstat", lambda path: foreign):
+            with self.assertRaises(texfile.TexError):
+                REAL_BUILD_DIR("tex-abc")
 
 
 class TexFile(unittest.TestCase):

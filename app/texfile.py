@@ -21,6 +21,7 @@ import posixpath
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -213,8 +214,23 @@ def in_project(name):
 def build_dir(pid):
     """Dossier de travail de la compilation (gardé d'une fois à l'autre : latexmk ne refait que le nécessaire) ;
     hors du dossier de l'utilisateur et sans espace dans le chemin (BibTeX s'y perd)."""
-    folder = Path(tempfile.gettempdir()) / "arxivreader-tex" / pid
-    folder.mkdir(parents=True, exist_ok=True)
+    if not hasattr(os, "getuid"):  # Windows : le dossier temporaire est déjà celui de l'utilisateur
+        folder = Path(tempfile.gettempdir()) / "arxivreader-tex" / pid
+        folder.mkdir(parents=True, exist_ok=True)
+        return folder
+    # /tmp partagé (Linux) : racine propre à l'utilisateur, créée en 0700 ; ni lien ni dossier d'un autre ne sont acceptés
+    # (un autre utilisateur y aurait glissé des .aux, .bbl ou .fls que l'application relit, ou un lien où latexmk écrit)
+    root = Path(tempfile.gettempdir()) / f"arxivreader-tex-{os.getuid()}"
+    try:
+        root.mkdir(mode=0o700)
+    except FileExistsError:
+        pass  # déjà là : vérifié ci-dessous
+    state = root.lstat()
+    if not stat.S_ISDIR(state.st_mode) or state.st_uid != os.getuid():
+        raise TexError("unsafe build folder")
+    os.chmod(root, 0o700)
+    folder = root / pid
+    folder.mkdir(exist_ok=True)
     return folder
 
 
