@@ -483,7 +483,7 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   the closing `]` of an option list (`fonttitle=\color{white}`, `_option_list`), the end of its cell in a table or an
   alignment (`&`, `\\`), the next `\color`/`\normalcolor` at its level (not inside `\verb` nor after `\string`); a `\color` that is the value of `backgroundcolor=`, `rulecolor=`, `fillcolor=` (`\lstset`) is a color, not text;
   at most `_SCAN_BUDGET` characters scanned per text (`_Work`), then open —
-  or a tikz node `[text=white]`; `\fontsize` under 1 pt, taking effect at `\selectfont` or at any font switch (`\rmfamily`, `\normalfont`, `\bfseries`, `\usefont{…}{…}{…}{…}`…) (scope up to `\normalsize`, `\small`…), `\scalebox` under
+  or a tikz node whose text color is white (`[text=white]`, `[color=white]`, a color alone `[white]`; the last one wins; `[fill opacity=0]` only clears the fill, the text stays readable); `\fontsize` under 1 pt, taking effect at `\selectfont` or at any font switch (`\rmfamily`, `\normalfont`, `\bfseries`, `\usefont{…}{…}{…}{…}`…) (scope up to `\normalsize`, `\small`…), `\scalebox` under
   0,1 on either axis (nested ones multiply), `\resizebox` under 1 pt or with a width under half a point per letter of its longest line, `\texttransparent` and `\transparent` under 0,1, tikz node, picture
   or scope `[opacity=0]`, `\phantom`
   (removed, never counted); the author's macros and environments that do the same (`_hiding_macros`: `\newcommand`,

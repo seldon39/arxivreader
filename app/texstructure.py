@@ -964,14 +964,20 @@ def _candidates(text, names, macros):
                     break
     for found in _NODE.finditer(text):
         options = found.group(1)
-        white = re.search(r"(?:^|,)\s*text\s*=\s*([\w!.\-]+)", options)
+        white = None  # couleur du texte : la dernière de « text=… », « color=… » ou d'une couleur seule (« [white] »)
+        for option in options.split(","):
+            key, equal, value = option.strip().partition("=")
+            if key.strip() in ("text", "color") and equal:
+                white = value.strip()
+            elif not equal and _xcolor(key, at(found.start())) is not None:
+                white = key.strip()
         clear = re.search(r"(?:^|,)\s*(?:text\s+)?opacity\s*=\s*0*(?:\.0\d*)?\s*(?:,|$)", options)
         content = _argument(text, found.end())
         if not content:
             continue
         if clear:
             spans.append((found.start(), content[1], content[0], False, True))
-        elif white and _is_white(None, white.group(1), at(found.start())) and not _fill_dark("[" + options, at(found.start()), False, False):
+        elif white and _is_white(None, white, at(found.start())) and not _fill_dark("[" + options, at(found.start()), False, False):
             spans.append((found.start(), content[1], content[0], True, True))
     for found in re.finditer(r"\\[hv]?phantom\s*(?=\{)", text):
         content = _group(text, found.end(), "{")

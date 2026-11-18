@@ -227,6 +227,19 @@ class InvisibleTex(unittest.TestCase):
             self.assertEqual(text.count("KEPT"), body.count("KEPT"), body)
             self.assertEqual(count, 1 if "0.05" in body else 0, body)
 
+    def test_tikz_node_colored_by_a_bare_color_or_color_key(self):
+        """\\node[white], \\node[color=white], \\node[draw, white!95] : le texte du nœud prend la couleur ; la dernière gagne,
+        sur fond foncé ou sans couleur blanche rien n'est retiré ; `fill opacity=0` ne cache que le fond, pas le texte."""
+        for options in ("white", "color=white", "draw, white!95", "red, text=white", "text=black, white"):
+            text, count = self.stripped(r"\tikz\node[" + options + "]{GONE}; REAL TEXT")
+            self.assertNotIn("GONE", text, options)
+            self.assertIn("REAL TEXT", text, options)
+            self.assertEqual(count, 1, options)
+        for options in ("red", "draw=white", "white, text=black", "white, fill=black", "fill opacity=0", "color=white, fill=blue!50!black"):
+            text, count = self.stripped(r"\tikz\node[" + options + "]{KEPT};")
+            self.assertIn("KEPT", text, options)
+            self.assertEqual(count, 0, options)
+
     def test_readable_colors_and_whole_document_settings_kept(self):
         for body in (r"\textcolor{black!50}{VISIBLE} ok", r"\colorbox{black}{\color{white} VISIBLE}",
                      r"\color{white} VISIBLE " + "word " * 5000,                           # tout le document : un réglage
