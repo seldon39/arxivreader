@@ -606,7 +606,8 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   page), `\rule` lines lightened like the text; never in drawings or their HTML labels (`.figure-card`, white
   background: black text there would become white on white). Verified on the 16 arXiv papers with hidden prompts listed by arXiv:2507.06185 (cited versions): each
   prompt flagged, none passed on, no other flag. The reader: "Show" goes to the first passage, "Next"
-  to the others. SVG figures inserted via `<object data>`: changed to `<img>` during sanitizing (`sanitize._objects_to_images`).
+  to the others; while shown, the banner stays under the toolbar (`.hidden-notice`, sticky) and each passage stops
+  below it (`navigateElement(…, { margin })`). SVG figures inserted via `<object data>`: changed to `<img>` during sanitizing (`sanitize._objects_to_images`).
 
 - Followed authors and homonyms: a single rule, `relevance.follows` (same person according to the name, paper not dismissed,
   categories kept), used by the feed (`score_items`), the search for recent papers

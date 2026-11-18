@@ -608,7 +608,8 @@ class Reader {
       const go = (remember) => {
         next.textContent = t("reader.nextHidden", { i: index + 1, n: spots.length });
         next.hidden = spots.length < 2;
-        if (spots[index]) this.navigateElement(spots[index], { remember });
+        // le bandeau reste en haut tant que le texte est affiché (CSS) : le passage s'arrête sous lui
+        if (spots[index]) this.navigateElement(spots[index], { remember, margin: notice.offsetHeight + 16 });
       };
       toggle.addEventListener("click", () => {
         let on;
@@ -628,8 +629,9 @@ class Reader {
         go(true);
       });
       next.addEventListener("click", () => { index = (index + 1) % spots.length; go(false); });
-      this.article.append(h("div", { class: "notice" }, h("span", { class: "reason-icon", html: icons.warning }),
-        tn("reader.hiddenText", this.structure.hiddenText), toggle, next));
+      const notice = h("div", { class: "notice hidden-notice" }, h("span", { class: "reason-icon", html: icons.warning }),
+        tn("reader.hiddenText", this.structure.hiddenText), toggle, next);
+      this.article.append(notice);
     }
     if (this.structure.unshownText > 0 && this.texOnly) {
       // texte du PDF retiré sans être de ceux d'une attaque (couche d'un scan, découpé, calque masqué) : ton neutre
@@ -1374,8 +1376,9 @@ class Reader {
   }
 
   // Défilement doux pour les petits sauts, immédiat pour les longs (plus lisible).
-  scrollToElement(element, smooth = true) {
-    const offset = element.getBoundingClientRect().top - this.viewTop() - 12;
+  // `margin` : hauteur en plus couverte en haut (bandeau du texte caché, collé sous la barre)
+  scrollToElement(element, smooth = true, margin = 0) {
+    const offset = element.getBoundingClientRect().top - this.viewTop() - 12 - margin;
     const near = Math.abs(offset) < innerHeight * 1.5;
     scrollTo({ top: Math.round(scrollY + offset), behavior: smooth && near ? "smooth" : "instant" });
   }
@@ -1402,10 +1405,10 @@ class Reader {
     if (!this.destroyed && !this.pdfMode && this.content.contains(element)) this.navigateElement(element);
   }
 
-  navigateElement(element, { remember = true } = {}) {
+  navigateElement(element, { remember = true, margin = 0 } = {}) {
     this.reveal(element);
     if (remember) this.rememberPlace();
-    this.scrollToElement(element);
+    this.scrollToElement(element, true, margin);
     element.classList.remove("flash");
     element.getBoundingClientRect(); // recalcul : l'animation repart (offsetWidth n'existe pas pour un élément SVG)
     element.classList.add("flash");
