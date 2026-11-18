@@ -72,7 +72,10 @@ cited paper, "Theorem 3.1 of [12]", "[12, Theorem 3.1]"; hover preview through `
 | AI on annotations (notes carried between views, versions or compilations; deletions; questions on another version) | `ai.py` (`asks_adaptation`, `_adapting`, `_annotations_block`, `asks_deletion`, `_deleting`, `version_asked`, `_versions_compared`), `texfile.py` (`track_lost_notes`, `notes_to_check`) | `ai.js` (`parseProposals`, `applyProposals`, `surfaceOf`, `prefill`), `annotations.js` (`addPin`, `setFreeNote`, `restore`), `pdfnotes.js`, `reader.js` (`pdfQuote`, `ensurePdf`) |
 | Zotero | `zotero.py` | `zotero.js`, `settings.js` |
 | First launch | `onboarding.py` | `onboarding.js` |
-| Updates, service checks | `updates.py`, `check.py` | `updates.js` (in Settings → About) |
+| Updates, service checks | `updates.py`, `check.py` | `updates.js` (in Settings → About), `check.js` (page `#/check`) |
+| Configuration, keys, versions | `config.py` (paths, `TOKEN`, `TOKEN_FILE`, fixed settings), `keystore.py` (API keys in the system keychain, `ARXIVREADER_KEYCHAIN=1`), `s2.py` (`headers`, `paced`, `GRAPH`: Semantic Scholar requests), `version.py` (`VERSION`, section 5) | `settings.js` (About, keys) |
+| Page skeleton, global styles | — | `app.js` (start, routes, global events, right-click menu suppression, middle click), `app.css` (all styles of the app; `latexml.css`: the paper's HTML) |
+| TikZ drawings and labels | — | `figures.js` (`shapesOf`, correction of the drawings made by LaTeXML) |
 | Formulas, DOM construction | `feed.tex_text` (TeX of titles and abstracts) | `math.js` (MathJax; `undefinedFonts`, `linksInText`), `amsfix.js`, `util.js` (`h`, `withMath`, `tidyTitle`, `texToText`: TeX of titles shown as plain text) |
 | Settings | `main.py` (`allowed` list and `_valid_setting` of `/api/settings`) | `settings.js` ("About" section: version, updates, copyright, license) |
 | Interface texts | — | `i18n.js` (FR and EN blocks: same keys) |
