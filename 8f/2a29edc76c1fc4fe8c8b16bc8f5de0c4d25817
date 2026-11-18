@@ -1,0 +1,23 @@
+MAINTENANCE.md
+  s_2e78fe3aad7ffd::t_e414566a92e379 753-755
+app/texfile.py
+  s_2e78fe3aad7ffd::t_5100f7f1afabeb 24,217-233
+tests/test_texfile.py
+  s_2e78fe3aad7ffd::t_3244cd2cf3d353 4,7,10,59,63-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "8f2a29edc76c1fc4fe8c8b16bc8f5de0c4d25817",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
