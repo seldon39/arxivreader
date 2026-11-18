@@ -880,7 +880,9 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   - Deletions: `asks_deletion` (`_DELETING`: `_DELETE_VERB` near `_DELETE_OBJECT`, per sentence); `_deleting` also applies
     when the previous question of the thread was a deletion (answer to a clarifying question); a deletion bypasses
     `_versions_compared`. `_annotations_block(version, current=True)` → `<current_annotations>` with the real ids, without
-    the `general` note, notes cut at `DELETE_NOTE` (600); `DELETE_PROMPT`.
+    the `general` note, notes cut at `DELETE_NOTE` (600); `DELETE_PROMPT`. In the page, `parseProposals` accepts a `delete` item only for an exchange of task `ask` (the only
+    one whose prompt carries `DELETE_PROMPT` and the numbers): anywhere else it could only come from the paper's text.
+    Tests of pure functions of `static/js` without loading the module (it imports the DOM): `tests/jsfunction.py`.
   - Questions on another version: `version_asked` (named version, "latest version", or the previous one when asking what
     changed; a bare "v1" only with a version or change word, `_VERSION_WORD`); `_other_version` downloads it
     (`library.ensure_version`, then `ensure_ready`, bounded wait); `_versions_compared` adds `<other_version>` and

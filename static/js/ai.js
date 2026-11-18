@@ -1386,7 +1386,7 @@ export class Assistant {
       if (exchange.status === "error" || exchange.error) {
         parts.push(h("div", { class: "notice small" }, t(ERROR_KEYS[exchange.errorCode] || "ai.error.other", { message: exchange.error || "" })));
       }
-      const proposals = parseProposals(exchange.answer || "").items;
+      const proposals = parseProposals(exchange.answer || "", { deletions: exchange.task === "ask" }).items;
       if (proposals.length && exchange.status === "done") parts.push(this.proposalBox(exchange, proposals));
       parts.push(this.answerActions(exchange, { reply, document }));
     }
@@ -1813,7 +1813,9 @@ export class Assistant {
 
 // Réponse de Claude : texte, et propositions d'annotations (bloc ```annotations``` en JSON, retiré du texte).
 // Pendant l'écriture, le bloc commencé est simplement masqué.
-function parseProposals(answer) {
+// Une suppression (`delete`) n'est reçue que d'un échange « ask » : seul celui dont la question la demande reçoit les numéros
+// des annotations ; ailleurs elle ne peut venir que d'un texte de l'article ou d'une invention du modèle.
+function parseProposals(answer, { deletions = false } = {}) {
   const match = answer.match(/```annotations[^\n]*\n([\s\S]*?)(```|$)/);
   if (!match) return { text: answer, items: [] };
   const text = answer.slice(0, match.index).trimEnd() + answer.slice(match.index + match[0].length);
@@ -1824,7 +1826,7 @@ function parseProposals(answer) {
     // ajout à la note générale : un texte non vide
     return { text, items: Array.isArray(items) ? items.filter((item) => item && ((item.quote && (!item.pin || item.note)) || (item.statement && item.note)
       || (typeof item.general === "string" && item.general.trim())
-      || (item.delete != null && /^\d+$/.test(String(item.delete))))) : [] };
+      || (deletions && item.delete != null && /^\d+$/.test(String(item.delete))))) : [] };
   } catch {
     return { text, items: [] };
   }
