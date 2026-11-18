@@ -297,6 +297,7 @@ _COLOR_DEFINITION = re.compile(r"\\(?:definecolor|providecolor)\s*(?:\[[^\]]*\])
 _FONTSIZE = re.compile(r"\\fontsize\s*\{([^{}]*)\}\s*\{[^{}]*\}(?:\s*\\(?!(?:selectfont|usefont)\b)[A-Za-z]+(?:\s*\{[^{}]*\}){0,4}){0,8}"
                        r"\s*(?:\\(?:selectfont|rmfamily|sffamily|ttfamily|normalfont|bfseries|mdseries|itshape|slshape|scshape|upshape)\b"
                        r"|\\usefont\b(?:\s*\{[^{}]*\}){4})")
+_DRAWING = re.compile(r"\\begin\s*\{\s*(?:tikzpicture|pgfpicture|picture|pspicture|tikzcd|axis)\s*\}|\\(?:tikz|includegraphics|input|xymatrix)(?![A-Za-z])")
 _SIZES = "normalsize|tiny|scriptsize|footnotesize|small|large|Large|LARGE|huge|Huge|fontsize"
 _ENV = re.compile(r"\\(begin|end)\s*\{([^{}]*)\}")
 _TABLES = re.compile(r"tabular|tabu|array|longtable|tblr|NiceTabular")
@@ -1032,8 +1033,8 @@ def _candidates(text, names, macros):
         content = _argument(text, found.end())
         if content and any(size is not None and size < 1 for size in sizes):
             spans.append((found.start(), content[1], content[0], False, True))
-        elif content and sizes[0] is not None:
-            # largeur par lettre de la plus longue ligne : une lettre fait environ la moitié du corps, moins d'un demi-point = corps sous 1 pt
+        elif content and sizes[0] is not None and not _DRAWING.search(text, content[0], content[1]):
+            # largeur par lettre (pas pour un dessin ou une image : leurs lettres sont du code, pas du texte imprimé) de la plus longue ligne : une lettre fait environ la moitié du corps, moins d'un demi-point = corps sous 1 pt
             lines = re.sub(r"\\[A-Za-z]+", "", text[content[0]:content[1] - 1]).split("\\\\")
             if max(len(re.findall(r"[^\W\d_]", line)) for line in lines) * 0.5 > sizes[0]:
                 spans.append((found.start(), content[1], content[0], False, True))
