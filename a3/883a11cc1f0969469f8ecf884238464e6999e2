@@ -1,0 +1,23 @@
+MAINTENANCE.md
+  s_2e78fe3aad7ffd::t_a0b11a50426508 1025
+app/bibtex.py
+  s_2e78fe3aad7ffd::t_66f59d5a7a6151 19-20
+tests/test_bibtex.py
+  s_2e78fe3aad7ffd::t_ed0d1f6a86ab20 31-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "a3883a11cc1f0969469f8ecf884238464e6999e2",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
