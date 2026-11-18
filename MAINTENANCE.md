@@ -751,7 +751,7 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   (`Assistant.draft`, key `place`); chapter choice kept when the structure is rebuilt (proof indicated).
 
 - TikZ drawings, labels made of a paragraph (minipage, `\parbox`: tcolorbox frame): the text wraps
-  (`white-space: normal`, box as `inline-block` even when LaTeXML makes it an `ltx_inline-sectional-block`; paragraphs
+  (`white-space: normal`, box as `inline-block` whatever block-level wrapper LaTeXML puts around the label (no selector names these wrappers); paragraphs
   and lists as blocks, bullet on the line of its text: everything in there is `span`), positioned by the top of its box and kept inside the smallest shape of the drawing that contains it
   (`figures.shapesOf`, same margin on the right as on the left, font reduced by at most a quarter if it is too tall); drawings
   "remember picture, overlay" (1 × 1 with no stroke) hidden (`figure-overlay`), as on arXiv.
