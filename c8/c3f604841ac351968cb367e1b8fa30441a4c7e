@@ -1,0 +1,27 @@
+app/library.py
+  s_2e78fe3aad7ffd::t_2ab776fee7eda1 811-814,831
+app/arxiv.py
+  s_2e78fe3aad7ffd::t_2ab776fee7eda1 261-264
+tests/test_versions.py
+  s_2e78fe3aad7ffd::t_4b86181ea0476c 475
+  s_2e78fe3aad7ffd::t_accd678db7a3f6 1050-1057,1059-1069
+  s_2e78fe3aad7ffd::t_833f0cd20c214f 1058
+MAINTENANCE.md
+  s_2e78fe3aad7ffd::t_ed2efbeab00ae9 227
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "c8c3f604841ac351968cb367e1b8fa30441a4c7e",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
