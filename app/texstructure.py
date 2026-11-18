@@ -284,8 +284,8 @@ _UNEXECUTED = re.compile(r"(?<!\\)%[^\n]*|\\verb\*?([^A-Za-z\s*])[^\n]*?\1"
                          r"|\\lstinline\s*(?:\[[^\]\n]*\])?\s*(?:\{[^{}\n]*\}|([^A-Za-z\s{\[])[^\n]*?\2)"
                          r"|\\begin\s*\{\s*(verbatim\*?|Verbatim\*?|BVerbatim|lstlisting|minted|alltt)\s*\}.*?\\end\s*\{\s*\3\s*\}", re.S)
 # \ifnum entre deux nombres écrits : le second se termine par une espace, \relax ou un caractère (une macro pourrait
-# le prolonger : \ifnum9<1\@gobbleminus#1 n'est pas une constante)
-_CONDITIONAL = re.compile(r"\\iffalse\b|\\ifnum\s*(-?\d+)\s*([<=>])\s*(-?\d+)(?=\s|\\relax(?![A-Za-z@])|[^\d.\\])")
+# le prolonger : \ifnum9<1\@gobbleminus#1 n'est pas une constante) ; neuf chiffres au plus (TeX : 2^31 - 1)
+_CONDITIONAL = re.compile(r"\\iffalse\b|\\ifnum\s*(-?\d{1,9})\s*([<=>])\s*(-?\d{1,9})(?=\s|\\relax(?![A-Za-z@])|[^\d.\\])")
 # \if… nommé sans être exécuté : \newif\ifx, \let\ifx=\iffalse (les deux), \def\ifx…
 _ASSIGNED = re.compile(r"\\(?:newif|let|[gex]?def|expandafter)\s*$|\\let\s*\\[A-Za-z@]+\s*=?\s*$")
 _COLOR_USE = re.compile(r"\\(textcolor|mathcolor|color)\s*(?:\[\s*([A-Za-z]+)\s*\])?\s*\{([^{}]*)\}")

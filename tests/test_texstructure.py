@@ -340,6 +340,11 @@ class InvisibleTex(unittest.TestCase):
             self.stripped(body)
             self.assertLess(time.monotonic() - begin, 2, body[:30])
 
+    def test_huge_ifnum_operand(self):
+        """\ifnum à plus de 4300 chiffres : pas d'exception (int() de Python les refuse), rien de retiré."""
+        text, _ = self.stripped(r"\ifnum 1=" + "1" * 5000 + r"x KEPT \fi B")
+        self.assertIn("KEPT", text)
+
     def test_many_calls_of_a_dark_macro_take_linear_time(self):
         """30 000 appels d'une macro à fond foncé (1 Mo) : près de 0,3 s ; 9 s quand chaque passage blanc parcourait toutes les
         plages d'appel (temps quadratique, recalculé à chaque question posée à l'IA). Borne large."""
