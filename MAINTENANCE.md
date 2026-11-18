@@ -518,7 +518,8 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   and size 1, the pixels being scaled down by `cm`), opacity under 0,05 (both for `Tr` 2/6), outside the clip (the `/BBox` of a form is a clip for what it draws), hidden layer (membership dictionaries by
   their `/P` policy; a `/VE` expression is not read: visible), invisible mode (`Tr` 3/7) except on a scanned page
   (images, whole or in strips, cover at least `SCAN_SHARE` of it: text layer of a recognized scan; a first pass finds
-  it when the image comes after the text, also when the page draws forms). Form XObjects are judged at each draw with the state of that moment: a
+  it when the image comes after the text, also when the page draws forms; it runs only if the page can hold an image: an inline
+  image, or an image XObject in its resources or those of its forms, `_has_images` — an inline image inside a form is not seen). Form XObjects are judged at each draw with the state of that moment: a
   cleaned copy is drawn under another name, the shared original is never changed; forms nested deeper than
   `MAX_FORM_DEPTH` are emptied, a form that draws itself has that call emptied; each draw counts `FORM_COST` operations, and beyond `MAX_STEPS` operations on a
   page, forms are left as they are. Shapes are indexed in a grid (`GRID`); beyond `MAX_LOOKUPS` shapes examined on a

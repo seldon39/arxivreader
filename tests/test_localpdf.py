@@ -155,6 +155,28 @@ class InvisiblePdfText(unittest.TestCase):
         self.assertEqual(page("0 0 0 0", inside.replace("0 0 Td", "100 0 Td")), ("", 1))
         self.assertEqual(page("0 -100 300 50", outside + " " + inside), ("INSIDE", 1))
 
+    def test_first_pass_only_when_a_scan_is_possible(self):
+        """Le premier parcours (page scannée ?) n'a lieu que si la page peut avoir une image : une page à formulaires
+        sans image n'est parcourue qu'une fois ; avec l'image (après le texte), la couche de texte est gardée."""
+        form = form_object("BT /F1 12 Tf 0 0 Td (In form) Tj ET")
+        image = ("<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 8 "
+                 "/Length 1 >>\nstream\n\x80\nendstream")
+        text = "BT 3 Tr /F1 12 Tf 72 560 Td (OCR layer) Tj 0 Tr ET "
+        original, walks = localpdf._Visible.__init__, []
+
+        def counting(self, *args, **kwargs):
+            walks.append(1)
+            original(self, *args, **kwargs)
+
+        def page(content, resources, extra):
+            walks.clear()
+            with mock.patch.object(localpdf._Visible, "__init__", counting):
+                found = localpdf.read_pdf(build_pdf(content, resources, extra))
+            return found["pages"][0].strip(), len(walks)
+        self.assertEqual(page(text + "/Fm Do", "/XObject << /Fm 6 0 R >>", (form,)), ("In form", 1))
+        self.assertEqual(page(text + "q 612 0 0 792 0 0 cm /Im Do Q /Fm Do", "/XObject << /Fm 6 0 R /Im 7 0 R >>", (form, image)),
+                         ("OCR layer\nIn form", 2))
+
     def test_state_of_each_show(self):
         """Couleur changée entre deux affichages d'un même bloc de texte : chacun jugé avec la sienne."""
         start = "BT /F1 12 Tf 72 700 Td "

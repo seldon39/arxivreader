@@ -556,6 +556,26 @@ def _has_forms(resources):
         return False
 
 
+def _has_images(resources, seen=None, depth=0):
+    """Une image (XObject) dans ces ressources ou dans celles des formulaires qu'elles contiennent (sans lire leurs flux)."""
+    seen = set() if seen is None else seen
+    try:
+        xobjects = resources["/XObject"].get_object()
+        for name in xobjects:
+            reference = xobjects[name]
+            target = reference.get_object()
+            if target.get("/Subtype") == "/Image":
+                return True
+            key = getattr(reference, "idnum", None) or id(target)
+            if target.get("/Subtype") == "/Form" and key not in seen and depth < MAX_FORM_DEPTH:
+                seen.add(key)
+                if _has_images(target.get("/Resources") or {}, seen, depth + 1):
+                    return True
+    except Exception:
+        return False
+    return False
+
+
 def _page_text(page, hidden=None):
     """Texte de la page, sans le texte invisible, comme dans la version HTML (structure.mark_hidden) : il peut porter
     une injection d'invite et n'est jamais transmis à l'IA. Invisible : blanc ou presque (luminance ≥ WHITE) hors d'un
@@ -573,7 +593,10 @@ def _page_text(page, hidden=None):
             resources = page.get("/Resources") or {}
             operations = contents.operations
             scan = False
-            if any(operator == b"Tr" and args and args[0] in (3, 7) for args, operator in operations) or _has_forms(resources):
+            # la page est scannée si des images la couvrent : sans image (en ligne, ou dans les ressources, formulaires compris),
+            # ce premier parcours ne peut rien changer ; il ne sert qu'au mode de rendu invisible, dans la page ou un formulaire
+            images = any(operator == b"INLINE IMAGE" for args, operator in operations) or _has_images(resources)
+            if images and (any(operator == b"Tr" and args and args[0] in (3, 7) for args, operator in operations) or _has_forms(resources)):
                 first = _Visible(page.pdf, False, box)  # page scannée ? les images peuvent venir après le texte
                 try:
                     first.run(operations, resources, _Visible.start_state())
