@@ -1062,14 +1062,41 @@ class Unavailable(Base):
             except ArxivError as error:
                 return error, len(calls), sleep.call_count
 
+    ERROR_FEED = b"""<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/" xmlns:arxiv="http://arxiv.org/schemas/atom" xmlns="http://www.w3.org/2005/Atom">
+  <id>https://arxiv.org/</id><title>arXiv Search Results</title><updated>2026-11-17T22:41:30Z</updated>
+  <opensearch:itemsPerPage>1</opensearch:itemsPerPage><opensearch:totalResults>1</opensearch:totalResults><opensearch:startIndex>0</opensearch:startIndex>
+  <entry><id>https://arxiv.org/api/errors#incorrect_id_format_for_math/9999999</id><title>Error</title><updated>2026-11-17T22:41:30Z</updated>
+    <link href="https://arxiv.org/api/errors#incorrect_id_format_for_math/9999999" rel="alternate" type="text/html"/>
+    <summary>incorrect id format for math/9999999</summary><author><name>arXiv api core</name></author></entry>
+</feed>"""  # réponse réelle de l'API (17/11/2026) : HTTP 400
+    EMPTY_FEED = b"""<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/" xmlns="http://www.w3.org/2005/Atom">
+  <id>https://arxiv.org/api/x</id><title>arXiv Query</title><updated>2026-11-17T22:40:46Z</updated>
+  <opensearch:itemsPerPage>1</opensearch:itemsPerPage><opensearch:totalResults>0</opensearch:totalResults><opensearch:startIndex>0</opensearch:startIndex>
+</feed>"""  # identifiant bien formé et inexistant : HTTP 200, aucune entrée
+
+    def api(self, status, feed):
+        client = lambda: arxiv.httpx.Client(transport=arxiv.httpx.MockTransport(lambda request: arxiv.httpx.Response(status, content=feed)))
+        return mock.patch.object(arxiv, "_client", client), mock.patch.object(arxiv.time, "sleep")
+
     def test_api_error_entry_is_not_a_paper(self):
-        """Identifiant inconnu : l'API d'arXiv répond 200 avec une entrée « Error », jamais importée comme article."""
-        feed = b"""<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>http://arxiv.org/api/errors#incorrect_id_format_for_2613.00001</id>
-<title>Error</title><summary>incorrect id format for 2613.00001</summary><author><name>arXiv api core</name></author></entry></feed>"""
-        client = lambda: arxiv.httpx.Client(transport=arxiv.httpx.MockTransport(lambda request: arxiv.httpx.Response(200, content=feed)))
-        with mock.patch.object(arxiv, "_client", client), mock.patch.object(arxiv.time, "sleep"):
-            with self.assertRaisesRegex(ArxivError, "introuvable"):
-                arxiv.fetch_metadata("2613.00001")
+        """Identifiant inconnu : l'API d'arXiv répond 400 avec une entrée « Error » (mal formé) ou 200 sans entrée
+        (bien formé, inexistant) ; jamais importé comme article, jamais une erreur HTTP brute."""
+        for status, feed, ident in ((400, self.ERROR_FEED, "math/9999999"), (200, self.EMPTY_FEED, "2613.00001")):
+            first, second = self.api(status, feed)
+            with first, second, self.assertRaisesRegex(ArxivError, "introuvable"):
+                arxiv.fetch_metadata(ident)
+        first, second = self.api(400, b"<html>Bad Request</html>")  # un autre 400 reste une erreur HTTP
+        with first, second, self.assertRaises(arxiv.httpx.HTTPStatusError):
+            arxiv.fetch_metadata("2613.00001")
+
+    def test_route_answers_400_for_an_unknown_id(self):
+        first, second = self.api(400, self.ERROR_FEED)
+        with first, second:
+            response = TestClient(main.app, base_url=f"http://{main.HOST}:{main.PORT}").post("/api/papers/quick", json={"query": "math/9999999"})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("introuvable", response.json()["error"])
 
     def test_download_retries_then_gives_up(self):
         self.assertEqual(self.download([503, 503, 200]), (b"%PDF-1.4 data", 3, 2))

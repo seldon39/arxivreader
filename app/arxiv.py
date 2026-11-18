@@ -145,9 +145,12 @@ def fetch_metadata(arxiv_id):
     # arXiv demande au plus une requête toutes les 3 s : nouvelle tentative si elle répond 429/503
     with _client() as client:
         response = _paced(lambda: patient_get(client, API, params={"id_list": arxiv_id}))
+    # identifiant mal formé (math/9999999) : l'API répond 400 avec une entrée « Error » (<id>…/api/errors#…</id>) ;
+    # identifiant bien formé mais inexistant (2613.00001) : 200 sans entrée
+    if response.status_code == 400 and "/api/errors" in response.text:
+        raise ArxivError(f"Article {arxiv_id} introuvable sur arXiv")
     response.raise_for_status()
     entry = ET.fromstring(response.text).find(f"{ATOM}entry")
-    # identifiant mal formé ou inexistant : l'API répond 200 avec une entrée « Error » (<id>…/api/errors#…</id>)
     if entry is None or not _text(entry, f"{ATOM}title") or "/api/errors" in _text(entry, f"{ATOM}id"):
         raise ArxivError(f"Article {arxiv_id} introuvable sur arXiv")
     return _metadata(arxiv_id, entry)
