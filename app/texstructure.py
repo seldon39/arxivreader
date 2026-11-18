@@ -909,21 +909,37 @@ def _candidates(text, names, macros):
         if size is not None and size < 1:
             end, closed = _scope_end(text, found.end(), _SIZES, work, cells(found.start()))
             spans.append((found.start(), end, found.end(), False, closed))
+    boxes = []  # \scalebox : (début, fin, début du contenu, échelle horizontale, verticale), les échelles se multiplient en s'emboîtant
     for found in re.finditer(r"\\scalebox\s*\{([^{}]*)\}\s*(?:\[([^\]]*)\])?", text):
         scales = []
         for value in (found.group(1), found.group(2)):
             try:
                 scales.append(abs(float(value)) if value is not None else None)
             except ValueError:
-                scales.append(None)
+                scales.append(1.0)  # \scalebox{\f} : on ne sait pas
         content = _argument(text, found.end())
-        if content and any(scale is not None and scale < 0.1 for scale in scales):
-            spans.append((found.start(), content[1], content[0], False, True))
+        if content:
+            x = 1.0 if scales[0] is None else scales[0]
+            boxes.append((found.start(), content[1], content[0], x, x if scales[1] is None else scales[1]))
+    outer = []  # boîtes ouvertes autour de la place courante : (fin, échelles avant elle)
+    for start, stop, first, x, y in boxes:
+        while outer and outer[-1][0] <= start:
+            outer.pop()
+        before = outer[-1][1:] if outer else (1.0, 1.0)
+        x, y = x * before[0], y * before[1]
+        outer.append((stop, x, y))
+        if min(x, y) < 0.1:
+            spans.append((start, stop, first, False, True))
     for found in re.finditer(r"\\resizebox\*?\s*\{([^{}]*)\}\s*\{([^{}]*)\}", text):
         sizes = [_length_pt(value) for value in found.groups()]
         content = _argument(text, found.end())
         if content and any(size is not None and size < 1 for size in sizes):
             spans.append((found.start(), content[1], content[0], False, True))
+        elif content and sizes[0] is not None:
+            # largeur par lettre de la plus longue ligne : une lettre fait environ la moitié du corps, moins d'un demi-point = corps sous 1 pt
+            lines = re.sub(r"\\[A-Za-z]+", "", text[content[0]:content[1] - 1]).split("\\\\")
+            if max(len(re.findall(r"[^\W\d_]", line)) for line in lines) * 0.5 > sizes[0]:
+                spans.append((found.start(), content[1], content[0], False, True))
     for found in re.finditer(r"\\(text)?transparent\s*\{\s*([0-9.]+)\s*\}", text):
         try:
             clear = float(found.group(2)) < 0.1

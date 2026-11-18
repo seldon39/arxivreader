@@ -484,7 +484,7 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   alignment (`&`, `\\`), the next `\color`/`\normalcolor` at its level (not inside `\verb` nor after `\string`); a `\color` that is the value of `backgroundcolor=`, `rulecolor=`, `fillcolor=` (`\lstset`) is a color, not text;
   at most `_SCAN_BUDGET` characters scanned per text (`_Work`), then open —
   or a tikz node `[text=white]`; `\fontsize` under 1 pt, taking effect at `\selectfont` or at any font switch (`\rmfamily`, `\normalfont`, `\bfseries`, `\usefont{…}{…}{…}{…}`…) (scope up to `\normalsize`, `\small`…), `\scalebox` under
-  0,1 on either axis, `\resizebox` under 1 pt, `\texttransparent` and `\transparent` under 0,1, tikz node, picture
+  0,1 on either axis (nested ones multiply), `\resizebox` under 1 pt or with a width under half a point per letter of its longest line, `\texttransparent` and `\transparent` under 0,1, tikz node, picture
   or scope `[opacity=0]`, `\phantom`
   (removed, never counted); the author's macros and environments that do the same (`_hiding_macros`: `\newcommand`,
   `\def`, `\NewDocumentCommand`, environments; each argument `#k` whose every use is hidden), and what a definition hides without a
@@ -526,7 +526,7 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   come out wrong (ligatures, math symbols, CID fonts). A `text.json` older than `TEXT_VERSION` is redone once
   (`_refresh_text`), at startup (`redetect_all`) or at the AI's first reading.
   The reader shows the count without a reveal button when only the PDF is displayed (`reader.hiddenTextSource`).
-- Known limits of both (heuristics, by design): TeX indirection beyond simple definitions (`\let`, styles of other
+- Known limits of both (heuristics, by design): a font size combined with a scale (`\tiny\scalebox{0.15}`), TeX indirection beyond simple definitions (`\let`, styles of other
   packages, `\pdfcolorstack`, `\special`, fontspec `Color=`), text covered by a shape or placed off the page, colors
   behind Separation or pattern color spaces and shading colors (counted as dark), near-white just under 0,9. Leaning
   towards keeping readable text: in TeX, white text in a tikz picture that has a dark fill elsewhere, or in a box

@@ -212,6 +212,21 @@ class InvisibleTex(unittest.TestCase):
             self.assertEqual(count, 1, switch)
         self.assertIn("KEPT", self.stripped(r"{\fontsize{9}{11}\rmfamily KEPT}")[0])
 
+    def test_nested_scaling_and_resizebox_per_letter(self):
+        """\\scalebox emboîtés : les échelles se multiplient ; \\resizebox à largeur fixe : une phrase entière dans 3 pt."""
+        for body in (r"\scalebox{0.2}{\scalebox{0.2}{GONE}}", r"\scalebox{0.4}{\scalebox{0.4}[1]{\scalebox{0.4}{GONE}}}",
+                     r"\resizebox{3pt}{!}{GONE words in a whole sentence}",
+                     r"\resizebox{20pt}{!}{GONE words in a whole sentence that cannot be read in twenty points}"):
+            text, count = self.stripped(body + " REAL TEXT")
+            self.assertNotIn("GONE", text, body)
+            self.assertIn("REAL TEXT", text, body)
+            self.assertEqual(count, 1, body)
+        for body in (r"\scalebox{0.5}{\scalebox{0.5}{KEPT}} \scalebox{0.05}{a}\scalebox{0.8}{KEPT}", r"\resizebox{8cm}{!}{KEPT words}",
+                     r"\resizebox{\textwidth}{!}{KEPT}", r"\resizebox{6cm}{!}{\begin{tabular}{ll}KEPT & more\\ and & cells\end{tabular}}"):
+            text, count = self.stripped(body)
+            self.assertEqual(text.count("KEPT"), body.count("KEPT"), body)
+            self.assertEqual(count, 1 if "0.05" in body else 0, body)
+
     def test_readable_colors_and_whole_document_settings_kept(self):
         for body in (r"\textcolor{black!50}{VISIBLE} ok", r"\colorbox{black}{\color{white} VISIBLE}",
                      r"\color{white} VISIBLE " + "word " * 5000,                           # tout le document : un réglage
