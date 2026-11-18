@@ -5,7 +5,7 @@ import io
 import tarfile
 import unittest
 
-from app.texsource import _label_format, analyze_source
+from app.texsource import _label_format, analyze_source, choose_main
 
 MAIN = r"""
 \documentclass[11pt,reqno]{amsart}
@@ -45,6 +45,15 @@ class TexSource(unittest.TestCase):
         self.assertEqual((result["eqno"], result["font"]), ("left", "lm"))
         result = analyze_source(gzip.compress(rb"\documentclass{article}\usepackage{mathpazo}\begin{document}\end{document}"))
         self.assertEqual((result["eqno"], result["font"]), ("right", "palatino"))
+
+    def test_latex_209_documentstyle(self):
+        """Anciens articles arXiv (LaTeX 2.09) : \\documentstyle tient lieu de \\documentclass."""
+        old = r"\documentstyle[12pt,leqno]{article}" + "\n" + r"\begin{document}x\end{document}"
+        result = analyze_source(tar_gz({"main.tex": old}))
+        self.assertEqual((result["documentclass"], result["eqno"]), ("article", "left"))
+        result = analyze_source(gzip.compress(old.encode()))
+        self.assertEqual((result["documentclass"], result["eqno"]), ("article", "left"))
+        self.assertEqual(choose_main({"a.tex": r"\documentstyle{article}\begin{document}\end{document}"}), "a.tex")
 
     def test_not_tex(self):
         self.assertIsNone(analyze_source(gzip.compress(b"%PDF-1.5 ...")))

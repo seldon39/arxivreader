@@ -680,7 +680,7 @@ def _extract(data, folder):
                 raw = compressed.read(MAX_FILE_BYTES + 1)
         except (OSError, EOFError):
             raw = data
-        if len(raw) > MAX_FILE_BYTES or b"\\documentclass" not in raw:
+        if len(raw) > MAX_FILE_BYTES or (b"\\documentclass" not in raw and b"\\documentstyle" not in raw):
             return None
         (folder / "main.tex").write_bytes(raw)
         return "main.tex"

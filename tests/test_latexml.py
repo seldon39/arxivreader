@@ -135,6 +135,13 @@ class Latexml(unittest.TestCase):
         readme = '{"sources": [{"filename": "cover.tex", "usage": "toplevel"}]}'
         self.assertEqual(choose_main(files, readme), "cover.tex")  # 00README.json d'arXiv : il fait foi
 
+    def test_single_gzipped_latex_209_file_is_extracted(self):
+        import gzip
+        folder = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder, True)
+        data = gzip.compress(b"\\documentstyle[12pt]{article}\\begin{document}x\\end{document}")
+        self.assertEqual(latexml._extract(data, folder), "main.tex")
+
     def test_contents_page_needs_a_heading(self):
         toc = [{"title": "1. Introduction"}, {"title": "2. Preliminaries"}, {"title": "3. Main results"}]
         outline = ["In Section 2 (Preliminaries) we recall... Main results come next... Introduction ends here."]

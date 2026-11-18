@@ -1030,6 +1030,9 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   (`arxiv.strip_subject_class`, `crossrefs._arxiv`); `library.stored_key` finds an older record stored with the class.
 - **DataCite DOI of an arXiv paper** (`10.48550/arXiv.2401.12345`, what Zotero, Crossref and bibliographies carry since 2022): read as
   `arXiv:2401.12345` (`arxiv.DATACITE`, in `parse_arxiv_id` and `extract_ids`; `ID_RE` itself is unchanged).
+- **LaTeX 2.09 sources** (`\documentstyle[12pt]{article}`, most arXiv papers before about 2000): `texsource.DOCUMENTCLASS` accepts
+  `\documentstyle` as `\documentclass` (main file, layout analysis, import of a local `.tex` in `texfile.main_file`, single gzipped file
+  in `latexml._extract`).
 - **Cached cross-reference index**: `crossrefs.nodes_of` reads another paper's `structure.json` as stored, cached by
   (date, size); it never re-analyses, which would rewrite every other paper's structure when one is opened.
 

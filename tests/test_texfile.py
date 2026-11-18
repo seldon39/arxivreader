@@ -203,6 +203,11 @@ class TexFile(unittest.TestCase):
         self.assertFalse(ai.asks_adaptation("Reprends mes notes de la compilation précédente."))
         self.assertTrue(ai.asks_adaptation("Adapte mes notes à la nouvelle compilation."))
 
+    def test_main_file_accepts_documentstyle(self):
+        old = self.tmp / "old.tex"
+        old.write_text(r"\documentstyle[12pt]{article}\begin{document}x\end{document}")
+        self.assertEqual(texfile.main_file(old), old.resolve())
+
     def test_rejects_non_main_files(self):
         with self.assertRaises(texfile.TexError):
             texfile.main_file(self.project / "sections" / "intro.tex")

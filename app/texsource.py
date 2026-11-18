@@ -18,7 +18,7 @@ MAX_MEMBERS = 5_000          # entrées parcourues dans l'archive (une archive p
 MAX_WALKED_BYTES = 400_000_000  # octets décompressés parcourus, fichiers ignorés compris
 
 COMMENT = re.compile(r"(?<!\\)%.*")
-DOCUMENTCLASS = re.compile(r"\\documentclass\s*(?:\[([^\]]*)\])?\s*\{([^}]+)\}")
+DOCUMENTCLASS = re.compile(r"\\document(?:class|style)\s*(?:\[([^\]]*)\])?\s*\{([^}]+)\}")
 USEPACKAGE = re.compile(r"\\usepackage\s*(?:\[[^\]]*\])?\s*\{([^}]+)\}")
 # \input{fichier}, et \input fichier (sans accolades, à la manière de TeX) ; cible : input_target(match)
 INPUT = re.compile(r"\\(?:input|include|subfile)\s*\{([^}]+)\}|\\input\s+([^\s{}%\\]+)")
@@ -69,7 +69,7 @@ def _read_archive(data, extensions=(".tex", ".ltx")):
     if raw[:4] == b"%PDF" or len(raw) > MAX_FILE_BYTES:
         return None
     text = raw.decode("utf-8", errors="replace")
-    return {"main.tex": text} if "\\documentclass" in text else None
+    return {"main.tex": text} if DOCUMENTCLASS.search(text) else None
 
 
 def _strip_comments(text):
