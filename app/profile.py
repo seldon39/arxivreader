@@ -350,18 +350,15 @@ def followed_author_papers(categories, per_author=30, days=60, stop=None):
                 "max_results": per_author}))
             if response.status_code != 200:
                 continue
-            full_name = _ascii(author).lower() if len(author.split()) > 1 and not re.match(r"^\w\.", author) else None
+            initials = _initials_only(author) or len(author.split()) < 2  # connu par l'initiale seulement : catégories du feed exigées en plus
             for entry in ET.fromstring(response.text).findall(f"{ATOM}entry"):
                 published = (entry.findtext(f"{ATOM}published") or "")[:10]
                 if published < since:
                     continue
                 names = [" ".join((a.findtext(f"{ATOM}name") or "").split()) for a in entry.findall(f"{ATOM}author")]
-                if full_name:
-                    matched = any(_ascii(n).lower() == full_name for n in names)
-                else:
-                    matched = any(same_person(n, author) for n in names)
+                matched = any(same_person(n, author) for n in names)  # la règle de relevance.follows (« George M. Marinescu »)
                 categories_here = [c.get("term") for c in entry.findall(f"{ATOM}category")]
-                if not matched or (not full_name and not any(c in categories for c in categories_here)):
+                if not matched or (initials and not any(c in categories for c in categories_here)):
                     continue
                 if not fields & {f for c in categories_here for f in _fields(c)}:
                     continue  # homonyme d'un autre domaine

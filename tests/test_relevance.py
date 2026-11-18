@@ -86,6 +86,25 @@ class FollowedAuthors(unittest.TestCase):
             physics = profile.followed_author_papers(["math-ph"])  # feed de physique mathématique seule
         self.assertEqual(sorted(p["arxiv_id"] for p in physics), ["2610.00001", "2610.00002", "2610.00003"])
 
+    def test_middle_initial_is_the_same_person(self):
+        """Une seule règle (relevance.same_person) : « George M. Marinescu » est « George Marinescu »."""
+        import time
+        from unittest import mock
+        from app import profile
+        today = time.strftime("%Y-%m-%d")
+        entry = lambda arxiv, name: (  # noqa: E731
+            f"<entry><id>http://arxiv.org/abs/{arxiv}v1</id><published>{today}T00:00:00Z</published>"
+            f"<title>T {arxiv}</title><summary>S</summary><author><name>{name}</name></author>"
+            '<category term="math.DG"/></entry>')
+        atom = ('<feed xmlns="http://www.w3.org/2005/Atom">' + entry("2610.00001", "George M. Marinescu")
+                + entry("2610.00002", "Georg Marinescu") + "</feed>")
+        client = mock.MagicMock()
+        client.__enter__.return_value.get.return_value = mock.Mock(status_code=200, text=atom)
+        with mock.patch.object(profile, "list_items", return_value=[{"kind": "author", "label": "George Marinescu"}]), \
+             mock.patch.object(profile.httpx, "Client", return_value=client):
+            papers = profile.followed_author_papers(["math.DG"])
+        self.assertEqual([p["arxiv_id"] for p in papers], ["2610.00001"])
+
 
 class FollowedAuthorReason(unittest.TestCase):
     """Raison « auteur suivi » du feed : la même personne, pas un homonyme de même initiale."""

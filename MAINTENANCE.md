@@ -560,7 +560,7 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
 
 - Followed authors and homonyms: a single rule, `relevance.follows` (same person according to the name, paper not dismissed,
   categories kept), used by the feed (`score_items`), the search for recent papers
-  (`profile.followed_author_papers`) and the alerts (`alerts._who`, `forget_unfollowed`). Any new way of
+  (`profile.followed_author_papers`, which no longer compares full names for equality: "George M. Marinescu" is "George Marinescu") and the alerts (`alerts._who`, `forget_unfollowed`). Any new way of
   recognizing a followed author goes through it. Categories normalized as arXiv writes them (`profile.clean_category`).
 
 - Assistant and documents without text or too long: a scanned PDF (`ai.without_text`) sends the pages around the
