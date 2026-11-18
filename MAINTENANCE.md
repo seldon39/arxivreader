@@ -746,7 +746,7 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   numbers them after the section of the HTML (`_numbered_by_section`, otherwise a "Theorem 1.4" numbered by chapter would go to
   `subsection.1.1.4`), with the original label as a fallback for the search. Changing this computation: increase `PAGES_VERSION`.
   Text of a TeX chapter: counted and cut on `ai.tex_body` (source without hidden text, as for the whole
-  document: `strip_hidden`). Attached statements: at most `limit / 4` characters in total, data tags neutralised
+  document: `strip_hidden`). Attached statements: at most `max(20000, limit // 4)` characters in total (`_chapter_context`; the floor of 20,000 applies to the local model, whose limit is 70,000), data tags neutralised
   (`DATA_TAGS`); title of the chapter reduced to one line without tags in the prompt. Draft and "Edit": one per thread
   (`Assistant.draft`, key `place`); chapter choice kept when the structure is rebuilt (proof indicated).
 
