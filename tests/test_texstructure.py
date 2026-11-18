@@ -277,6 +277,21 @@ class InvisibleTex(unittest.TestCase):
         text, count = self.stripped(r"\NewDocumentCommand{\hide}{s m}{\textcolor{white}{#2}} Opening words. \hide*{GONE} \hide{GONE} REAL")
         self.assertEqual(("GONE" in text, count), (False, 2))
 
+    def test_newif_flag_never_set_true_is_a_false_conditional(self):
+        """\\newif\\ifhide sans aucun \\hidetrue : \\ifhide … \\fi n'est jamais imprimé (la branche \\else l'est) ; mis à vrai
+        quelque part : on ne sait plus, gardé."""
+        for flag, body in ((r"\newif\ifhide", r"\ifhide GONE \fi KEPT"), (r"\newif\ifhide\hidefalse", r"\ifhide GONE \else KEPT \fi"),
+                           (r"\newif\if@hide", r"\if@hide GONE \ifx a b nested \fi still GONE \fi KEPT")):
+            text, count = self.stripped(flag + " Opening words. " + body)
+            self.assertNotIn("GONE", text, body)
+            self.assertIn("KEPT", text, body)
+            self.assertEqual(count, 0, body)
+        text, count = self.stripped(r"Opening words. \ifnum0=1 GONE \else KEPT \fi \iffalse GONE \fi \ifnum1=1 KEPT \fi")
+        self.assertEqual((text.count("KEPT"), "GONE" in text, count), (2, False, 0))
+        for source in (r"\newif\ifhide \newcommand{\on}{\hidetrue} \ifhide KEPT \fi", r"\ifhide KEPT \fi", r"\newif\ifhidden\newif\ifhide \ifhidden KEPT\fi"):
+            text, count = self.stripped(source.replace("\\newif\\ifhidden", r"\newif\ifhidden\hiddentrue", 1))
+            self.assertIn("KEPT", text, source)
+
     def test_readable_colors_and_whole_document_settings_kept(self):
         for body in (r"\textcolor{black!50}{VISIBLE} ok", r"\colorbox{black}{\color{white} VISIBLE}",
                      r"\color{white} VISIBLE " + "word " * 5000,                           # tout le document : un réglage

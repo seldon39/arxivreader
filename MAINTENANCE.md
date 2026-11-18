@@ -502,7 +502,7 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   `\cellcolor` of its cell, a `\\` inside `{…}` not ending the row; also after the color in its own scope), tikz shapes `\fill`… and dark tikz styles, also through another style (in a
   tikz picture); a definition that sets its own dark background; beamer documents (`\documentclass` of the preamble).
   What TeX never executes is blanked first (`_unexecuted`): comments, `\verb`, `\lstinline`, verbatim, lstlisting
-  and minted environments, the false branch of `\iffalse` and of `\ifnum` between two numbers (up to its `\else`). Past ten times `_SCAN_BUDGET`
+  and minted environments, the false branch of `\iffalse`, of `\ifnum` between two numbers and of a `\newif\ifname` flag that no `\nametrue` ever sets (up to its `\else`); `strip_hidden` removes those branches from the text (`_dead_branches`). Past ten times `_SCAN_BUDGET`
   characters of windows on a text (tens of thousands of white passages), white text is judged without background. Count in `hiddenText` of `structure.json`; papers analysed before are
   analysed again when loaded (`STRUCTURE_VERSION` 21), so their statements (`node["tex"]`, sent to the AI) lose it too.
 - Invisible text in a PDF (`localpdf._page_text`, class `_Visible`): the content stream is walked with its graphics
@@ -526,7 +526,7 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   come out wrong (ligatures, math symbols, CID fonts). A `text.json` older than `TEXT_VERSION` is redone once
   (`_refresh_text`), at startup (`redetect_all`) or at the AI's first reading.
   The reader shows the count without a reveal button when only the PDF is displayed (`reader.hiddenTextSource`).
-- Known limits of both (heuristics, by design): a font size combined with a scale (`\tiny\scalebox{0.15}`), TeX indirection beyond simple definitions (`\let`, styles of other
+- Known limits of both (heuristics, by design): other conditionals (`\ifdefined`, `\ifx`, `\if`, `\ifcase`, a flag set true somewhere), a font size combined with a scale (`\tiny\scalebox{0.15}`), TeX indirection beyond simple definitions (`\let`, styles of other
   packages, `\pdfcolorstack`, `\special`, fontspec `Color=`), text covered by a shape or placed off the page, colors
   behind Separation or pattern color spaces and shading colors (counted as dark), near-white just under 0,9. Leaning
   towards keeping readable text: in TeX, white text in a tikz picture that has a dark fill elsewhere, or in a box

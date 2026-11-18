@@ -319,14 +319,16 @@ def _blank(found):
     return re.sub(r"[^\n]", " ", found.group())
 
 
-def _unexecuted(text):
-    """`text` (même longueur) où ce que TeX n'exécute jamais est blanchi : commentaires, \\verb|…|, \\lstinline,
-    verbatim / lstlisting / minted, branche fausse de \\iffalse et de \\ifnum entre deux nombres (jusqu'au \\else
-    ou au \\fi de même niveau)."""
-    text = _UNEXECUTED.sub(_blank, text)
-    pieces, cursor = [], 0
-    for found in _CONDITIONAL.finditer(text):
-        if found.start() < cursor:
+def _dead_branches(text):
+    """Branches que TeX n'exécute jamais, dans `text` (commentaires, \\verb, verbatim déjà blanchis) :
+    [(début du \\if…, fin de la branche, vrai si elle s'arrête à un \\fi)]. Branche fausse de \\iffalse, de \\ifnum entre deux
+    nombres et d'un drapeau \\newif\\ifnom jamais mis à vrai (aucun \\nomtrue dans le texte), jusqu'au \\else ou au \\fi de même
+    niveau."""
+    flags = {found.group(1) for found in re.finditer(r"\\newif\s*\\if([A-Za-z@]+)", text)} - set(re.findall(r"\\([A-Za-z@]+)true(?![A-Za-z@])", text))
+    conditional = re.compile(_CONDITIONAL.pattern + (r"|\\if(" + "|".join(map(re.escape, flags)) + r")(?![A-Za-z@])" if flags else ""))
+    branches, cursor = [], 0
+    for found in conditional.finditer(text):
+        if found.start() < cursor or found.lastindex == 4 and re.search(r"\\(?:newif|let|[gex]?def|expandafter)\s*$", text[max(0, found.start() - 20):found.start()]):
             continue
         if found.group(1) is not None:
             a, op, b = int(found.group(1)), found.group(2), int(found.group(3))
@@ -336,10 +338,20 @@ def _unexecuted(text):
         for token in re.finditer(r"\\(if[A-Za-z]*|fi|else)(?![A-Za-z])", text[start:start + _SCAN]):
             depth += {"fi": -1, "else": 0}.get(token.group(1), 1)
             if depth == 0 or depth == 1 and token.group(1) == "else":
-                stop = start + token.start()
-                pieces += [text[cursor:found.start()], re.sub(r"[^\n]", " ", text[found.start():stop])]
-                cursor = stop
+                cursor = start + token.start()
+                branches.append((found.start(), cursor, token.group(1) == "fi"))
                 break
+    return branches
+
+
+def _unexecuted(text):
+    """`text` (même longueur) où ce que TeX n'exécute jamais est blanchi : commentaires, \\verb|…|, \\lstinline,
+    verbatim / lstlisting / minted, branches mortes des conditionnelles (_dead_branches)."""
+    text = _UNEXECUTED.sub(_blank, text)
+    pieces, cursor = [], 0
+    for start, stop, _ in _dead_branches(text):
+        pieces += [text[cursor:start], re.sub(r"[^\n]", " ", text[start:stop])]
+        cursor = stop
     return "".join(pieces) + text[cursor:]
 
 
@@ -1102,7 +1114,7 @@ def invisible(text):
 
 
 def strip_hidden(text, shifts=None, counted=None):
-    """Passages que LaTeX n'imprime pas : \\begin{comment}…\\end{comment}, \\iffalse…\\fi, argument d'une macro
+    """Passages que LaTeX n'imprime pas : \\begin{comment}…\\end{comment}, branches mortes de conditionnelles (\\iffalse…\\fi), argument d'une macro
     qui ne l'imprime pas (« \\newcommand{\\comment}[1]{} ») ; puis ceux qu'il imprime invisibles (`invisible`).
     `shifts` (liste) : y ajoute la correspondance des positions de chaque étape (Shifts, dans l'ordre). `counted`
     (liste) : y ajoute le nombre de passages invisibles avec des lettres (signalés au lecteur)."""
@@ -1118,19 +1130,8 @@ def strip_hidden(text, shifts=None, counted=None):
             edits.append((match.start(), group[1], ""))
             pos = group[1]
         text = _edit(text, edits, shifts)
-    edits, pos = [], 0
-    for match in re.finditer(r"\\iffalse\b", text):
-        if match.start() < pos:
-            continue
-        depth, cursor = 1, match.end()
-        for token in re.finditer(r"\\(if[A-Za-z]*|fi)\b", text[cursor:]):
-            depth += -1 if token.group(1) == "fi" else 1
-            if depth == 0:
-                edits.append((match.start(), cursor + token.end(), ""))
-                pos = cursor + token.end()
-                break
-        else:
-            break
+    # branches mortes (\iffalse, \ifnum faux, drapeau \newif jamais vrai) : la branche, et son \fi quand elle s'arrête à lui
+    edits = [(start, stop + 3 * closing, "") for start, stop, closing in _dead_branches(_UNEXECUTED.sub(_blank, text))]
     text = _edit(text, edits, shifts)
     spans = invisible(text)
     if counted is not None:
