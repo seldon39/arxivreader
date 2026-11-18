@@ -394,7 +394,7 @@ button next to "Import", or drag PDF files onto the import bar or the library. T
 metadata, otherwise its first page), shown for checking at import, and can be corrected later from the reader
 or the paper's card ("Edit title and authors"). The PDF is read in the reader with highlights, notes and Claude (questions on a selected passage, or on the whole
 paper from its extracted text). There are no statements, dependencies or bibliography (no TeX source).
-A PDF downloaded from arXiv (an "arXiv:…" mention on its first page) is not imported straight away: the app
+A PDF downloaded from arXiv (the "arXiv:… [category] date" stamp on its first pages; a mere citation of an arXiv number does not count) is not imported straight away: the app
 first offers to import its arXiv version instead, which has every feature (no duplicate). Otherwise, if its
 DOI or title is found on arXiv (Semantic Scholar), the app offers to open the arXiv version after the import.
 The file stays on the computer, in the library folder.

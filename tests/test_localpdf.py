@@ -484,6 +484,18 @@ class LocalPdf(unittest.TestCase):
         self.assertEqual(localpdf.arxiv_match(other, get_s2=fake_s2)["arxivId"], "1801.00001")
         self.assertIsNone(localpdf.arxiv_match(other, get_s2=lambda *a: {"title": "Something else entirely", "externalIds": {"ArXiv": "x"}}))
 
+    def test_citation_is_not_a_stamp(self):
+        """Seule la mention suivie de la catégorie est le tampon d'arXiv : un PDF de revue qui cite un préprint
+        n'en propose pas la version arXiv à la place de l'import."""
+        cited = make_pdf(["Journal article", "This extends arXiv:2305.12345 and arXiv:2305.12346v2 by one of us."])
+        self.assertIsNone(localpdf.arxiv_stamp(cited))
+        checked = self.client.post("/api/papers/pdf?check=1", content=cited, headers={"Content-Type": "application/pdf"}).json()
+        self.assertEqual(checked["paper"]["source"], "local-pdf")  # importé directement
+        self.assertIsNone(localpdf.arxiv_match(checked["paper"], get_s2=lambda *a: None))
+        for stamp, found in (("arXiv:2305.12345v2 [math.DG] 3 Jun 2023", "2305.12345"), ("arXiv:math/0501001v1  [math.AP]  3 Jan 2005", "math/0501001"),
+                             ("arXiv:2305.12345 [math.DG]", "2305.12345")):
+            self.assertEqual(localpdf.arxiv_stamp(make_pdf(["Preprint", stamp])), found, stamp)
+
     def test_broken_or_hostile_pdfs(self):
         self.assertEqual(self.upload(self.pdf[:200]).status_code, 400)  # tronqué
         self.assertEqual(self.upload(b"junk" * 10 + self.pdf).status_code, 200)  # octets avant l'en-tête : admis

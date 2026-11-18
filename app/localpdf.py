@@ -33,6 +33,9 @@ PAGE_CHARS = 200_000   # texte gardé par page, et en tout (l'assistant en lit 4
 TOTAL_CHARS = 800_000  # ne remplit ni la mémoire ni text.json
 S2 = s2.GRAPH
 ARXIV_STAMP = re.compile(r"arXiv:\s*(\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?/\d{7})(?:v\d+)?", re.I)
+# tampon d'arXiv : l'identifiant est suivi de la catégorie entre crochets (« arXiv:2305.12345v2 [math.DG] 3 Jun 2023 ») ;
+# une citation dans le texte (« voir arXiv:2305.12345 ») n'est pas le tampon d'un préprint
+ARXIV_STAMP_FULL = re.compile(ARXIV_STAMP.pattern + r"\s*\[[a-z-]+(?:\.[A-Za-z-]+)?\]", re.I)
 DOI = re.compile(r"\b(10\.\d{4,9}/[^\s\"<>]+[^\s\"<>.,;:)\]])")
 LINE_NOISE = re.compile(r"\d{4}|©|doi|arxiv|page|journal|vol\.|issn", re.I)
 FOOTNOTE = re.compile(r"(?<=[^\W\d_.])\d+|[∗*†‡§¶¹²³⁴⁵⁶⁷⁸⁹⁰]+")  # appels de note collés aux noms (« Bismut1 », « Gromov∗ »)
@@ -743,7 +746,7 @@ def arxiv_stamp(data):
         reader = PdfReader(io.BytesIO(data))
         if reader.is_encrypted and not reader.decrypt(""):
             return None
-        found = ARXIV_STAMP.search("\n".join(_page_text(page) for page in reader.pages[:2]))
+        found = ARXIV_STAMP_FULL.search("\n".join(_page_text(page) for page in reader.pages[:2]))
     except Exception:  # fichier illisible : l'import dira pourquoi
         return None
     return found.group(1) if found else None
@@ -884,7 +887,7 @@ def arxiv_match(paper, api_key=None, get_s2=None):
         pages = json.loads((paper_dir(paper["id"]) / "text.json").read_text(encoding="utf-8"))["pages"][:2]
     except (OSError, ValueError, KeyError):
         pass
-    stamp = ARXIV_STAMP.search("\n".join(pages))
+    stamp = ARXIV_STAMP_FULL.search("\n".join(pages))
     if stamp:
         return {"arxivId": stamp.group(1), "title": paper["title"], "via": "stamp"}
     get_s2 = get_s2 or _s2
