@@ -183,6 +183,7 @@ pre-releases `windows-v1.9.15`… `windows-v1.9.21` and `windows-latest` remain 
   would be needed),
   sign-in of the assistants in `cmd.exe` (`providers.py`), the SDK's `claude.exe` (`ai.py`), the `.zip` of the latest release
   (`updates.py`). MIME types fixed in `main.py` (the Windows registry sometimes serves `.js` as `text/plain`).
+- One instance per library: `launcher.single_instance` (named mutex); `ERROR_ALREADY_EXISTS` is read with `ctypes.get_last_error()` on a `WinDLL(use_last_error=True)`, never with a direct `GetLastError` call (the code may be overwritten in between).
 - Interface: `MAC` / `WINDOWS` in `static/js/i18n.js`; outside the Mac, ⌘ ⌥ ⇧ become Ctrl Alt Shift on display.
 - Not yet on Windows: "Copy a Library…" (menu of the Mac app), signing of the `.exe`.
 

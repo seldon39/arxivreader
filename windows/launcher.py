@@ -76,11 +76,11 @@ def single_instance(library):
     """Vrai si aucun autre arXivReader ne tourne déjà sur cette bibliothèque (verrou nommé de Windows)."""
     name = "Local\\arXivReader-" + hashlib.sha1(str(library.resolve()).lower().encode()).hexdigest()[:16]
     try:
-        kernel32 = ctypes.windll.kernel32
-    except AttributeError:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # sans use_last_error, GetLastError peut être écrasé
+    except (AttributeError, OSError):
         return True
     single_instance.handle = kernel32.CreateMutexW(None, False, name)  # gardé jusqu'à la fin du processus
-    return kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
+    return ctypes.get_last_error() != 183  # ERROR_ALREADY_EXISTS
 
 
 def find_browser():
