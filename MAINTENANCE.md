@@ -487,7 +487,7 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   0,1 on either axis, `\resizebox` under 1 pt, `\texttransparent` and `\transparent` under 0,1, tikz node, picture
   or scope `[opacity=0]`, `\phantom`
   (removed, never counted); the author's macros and environments that do the same (`_hiding_macros`: `\newcommand`,
-  `\def`, `\NewDocumentCommand`, environments; any hidden argument `#k`), and what a definition hides without a
+  `\def`, `\NewDocumentCommand`, environments; each argument `#k` whose every use is hidden), and what a definition hides without a
   parameter. Kept: a declaration that runs to `\end{document}` with no readable text before it (preamble, start
   of the document: a setting of the whole document); white on a dark background (`_Context.on_dark`): last
   `\pagecolor` (outside definitions, readable and dark), dark `\colorbox` (also opened by `\bgroup` in an
@@ -504,7 +504,7 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   What TeX never executes is blanked first (`_unexecuted`): comments, `\verb`, `\lstinline`, verbatim, lstlisting
   and minted environments, the false branch of `\iffalse` and of `\ifnum` between two numbers (up to its `\else`). Past ten times `_SCAN_BUDGET`
   characters of windows on a text (tens of thousands of white passages), white text is judged without background. Count in `hiddenText` of `structure.json`; papers analysed before are
-  analysed again when loaded (`STRUCTURE_VERSION` 20), so their statements (`node["tex"]`, sent to the AI) lose it too.
+  analysed again when loaded (`STRUCTURE_VERSION` 21), so their statements (`node["tex"]`, sent to the AI) lose it too.
 - Invisible text in a PDF (`localpdf._page_text`, class `_Visible`): the content stream is walked with its graphics
   state (q/Q, `cm`, fill and stroke colors with their color spaces and Indexed palettes, `gs` opacity, clipping `W`,
   optional content `BDC /OC` hidden by default, `Tf`, `Tz`, `Tr`, text matrices), each text show judged with the

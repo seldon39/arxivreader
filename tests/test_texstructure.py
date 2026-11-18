@@ -162,6 +162,16 @@ class InvisibleTex(unittest.TestCase):
             self.assertNotIn("IGNORE", text, body)
             self.assertEqual(count, 1, body)
 
+    def test_argument_printed_elsewhere_is_kept(self):
+        """\\phantom{#1}\\llap{#1} : l'argument est imprimé par le second emploi ; caché seulement si tous ses emplois le sont."""
+        for definition in (r"\newcommand{\a}[1]{\phantom{#1}\llap{#1}}", r"\newcommand{\a}[1]{#1\phantom{#1}}",
+                           r"\newcommand{\a}[1]{\textcolor{white}{#1} #1}"):
+            text, count = self.stripped(definition + r" Opening words. \a{SHOWN} end")
+            self.assertIn("SHOWN", text, definition)
+        text, count = self.stripped(r"\newcommand{\a}[1]{\textcolor{white}{#1}\phantom{#1}} Opening words. \a{GONE} end")
+        self.assertNotIn("GONE", text)
+        self.assertEqual(count, 1)
+
     def test_readable_colors_and_whole_document_settings_kept(self):
         for body in (r"\textcolor{black!50}{VISIBLE} ok", r"\colorbox{black}{\color{white} VISIBLE}",
                      r"\color{white} VISIBLE " + "word " * 5000,                           # tout le document : un réglage

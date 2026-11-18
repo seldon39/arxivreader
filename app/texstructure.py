@@ -861,9 +861,10 @@ def _hiding_macros(text, colors):
             if any(not closed for *_, closed in spans):
                 macros["\\begin{" + name + "}"] = ("environment", (), all(span[3] for span in spans if not span[4]))
             continue
+        # un argument n'est caché que si chacun de ses emplois l'est (\phantom{#1}\llap{#1} l'imprime)
         hidden = sorted({int(k) for k in re.findall(r"#(\d)", body[0])
-                         if any(start <= place.start() < stop for place in re.finditer("#" + k, body[0])
-                                for start, stop, *_ in spans)})
+                         if all(any(start <= place.start() < stop for start, stop, *_ in spans)
+                                for place in re.finditer("#" + k, body[0]))})
         if hidden:
             macros[name] = ("argument", hidden, all(span[3] for span in spans))
         elif not re.search(r"#\d", body[0]) and any(not closed for *_, closed in spans):
