@@ -879,8 +879,9 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
     changed; a bare "v1" only with a version or change word, `_VERSION_WORD`); `_other_version` downloads it
     (`library.ensure_version`, then `ensure_ready`, bounded wait); `_versions_compared` adds `<other_version>` and
     `VERSION_PROMPT` before `TASK_PROMPTS["ask"]`; not for an adaptation or a deletion.
-  Text put in these blocks goes through `_neutral` (`PREVIOUS_TAGS`): a new tag used in a block is added to
-  `PREVIOUS_TAGS`. Page (`ai.js`): `parseProposals` reads the proposals (`quote`, `note`, `surface`, `zone`, `pin`, `page`,
+  Text put in these blocks goes through `_neutral` (`PREVIOUS_TAGS` and `GUARD_TAGS`): a new tag used in a block is added to
+  `GUARD_TAGS` (and to `PREVIOUS_TAGS` if it is a tag of the quoted history). The key of a `\label` and a review written by an
+  AI are neutralised too (`_plain_label` in `_tex_context`, `_review_block`). Page (`ai.js`): `parseProposals` reads the proposals (`quote`, `note`, `surface`, `zone`, `pin`, `page`,
   `replaces`, `delete`; a `pin` needs a note; `delete` accepts numeric ids). `applyProposals` applies deletions first
   (`DELETABLE`: highlight, note, block, bookmark; `deletedItem` / `itemOf` follow `annotator.restoredIds` after an undo),
   then the placements: `surfaceOf`, `nearOf` (replaced place, otherwise page hint); in the PDF through

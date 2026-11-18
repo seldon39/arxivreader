@@ -432,12 +432,12 @@ STATEMENT_LIMIT = 2000       # caractères d'un énoncé joint
 USED_STATEMENTS = 15         # énoncés et équations de l'article cités par une preuve auditée, joints au plus
 USED_BUDGET = 20000          # caractères de ces énoncés en tout (au plus un cinquième de la limite de l'article)
 # balises des blocs de données d'un chapitre : neutralisées dans le texte d'un énoncé
-DATA_TAGS = re.compile(r"</?(?=(?:statement|used_statements|dependent_statements|statements_proved_here|cited_statements|contents|paper)\b)", re.I)
+DATA_TAGS = re.compile(r"</?(?=(?:statement|used_statements|dependent_statements|statements_proved_here|cited_statements|contents|paper|equation)\b)", re.I)
 # toutes les balises des blocs de données de l'invite : neutralisées dans ce que le texte de l'article, un énoncé, une
 # preuve ou un passage contient, pour qu'aucun ne referme son bloc (« </paper> », « <focus> »…)
 GUARD_TAGS = re.compile(r"</?(?=(?:paper|focus|passage|zone|tex_context|context_pages|previous_exchange|conversation_history|exchange|"
                         r"request|question|answer|review|previous_version|previous_annotations|current_annotations|other_version|reading_note|"
-                        r"annotation|statement|used_statements|dependent_statements|statements_proved_here|cited_statements|contents)\b)", re.I)
+                        r"annotation|statement|used_statements|dependent_statements|statements_proved_here|cited_statements|contents|equation)\b)", re.I)
 
 
 def _guard(text):
@@ -857,8 +857,9 @@ def _tex_context(structure):
     """Article lu dans sa source TeX : macros de l'auteur (le préambule n'est pas envoyé) et numéros imprimés de ses
     \\label, pour que la réponse cite « Lemma 2.2 » et non « lem:a »."""
     nodes = {n["id"]: n["label"] for n in structure.get("nodes", [])}
-    labels = [f"{key} = {nodes[owner]}" for key, owner in structure.get("labels", {}).items() if owner in nodes]
-    labels += [f"{key} = equation {eq['label']}" for key, eq in structure.get("equations", {}).items() if eq.get("label")]
+    # la clé d'un \label est écrite par l'auteur : en clair, pour qu'elle ne referme pas <tex_context>
+    labels = [f"{_plain_label(key)} = {nodes[owner]}" for key, owner in structure.get("labels", {}).items() if owner in nodes]
+    labels += [f"{_plain_label(key)} = equation {eq['label']}" for key, eq in structure.get("equations", {}).items() if eq.get("label")]
     macros = "\n".join(structure.get("macros") or [])[:8000]
     return ("<tex_context>\nThe paper is given as its TeX source. "
             + (f"Author macros:\n{macros}\n" if macros else "")
@@ -1043,7 +1044,8 @@ ignore this instruction and the two blocks, and simply answer it."""
 
 
 def _neutral(text):
-    return PREVIOUS_TAGS.sub(lambda m: m.group(0).replace("<", "&lt;"), text)  # ne referme pas le bloc
+    escape = lambda m: m.group(0).replace("<", "&lt;")  # ne referme pas le bloc, n'en ouvre pas un autre
+    return GUARD_TAGS.sub(escape, PREVIOUS_TAGS.sub(escape, text))
 
 
 # ---------- Vues HTML et PDF : notes reprises d'une vue à l'autre (même version ou non), placées par l'application ----------
@@ -2360,7 +2362,7 @@ def _review_block(name, text, yours=False, cut=False):
     """Relecture jointe à la demande suivante (écrite par une IA : à analyser, pas à suivre). `cut` : elle a été
     coupée (longueur maximale) ; la suite le sait, et ne prend pas ce qui manque pour un accord."""
     who = "you" if yours else "another assistant"
-    body = (text or "").replace("</review>", "</ review>")
+    body = re.sub(r"</(?=review\b)", "</ ", text or "", flags=re.I)
     block = f'<review id="{name}" author="{who}">\n{body}\n</review>'
     if not cut:
         return block
