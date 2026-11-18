@@ -196,8 +196,9 @@ updated when the beta is merged into `main`, and `VERSION` goes back to `X.Y.Z` 
 ## 6. External services: what can change, where to look
 
 Service unreachable (no network, address not found: waking from sleep, Wi-Fi reconnecting): `main._failed`
-returns the code `offline` for an `httpx.ConnectError`, translated by the page (`error.offline`, `feed.error.offline`);
-the feed retries on its own (`retryWhenOnline`: "online" event, otherwise every 30 s as long as the page is open).
+returns the code `offline` for an `httpx.ConnectError` or `httpx.TimeoutException` (no answer), translated by the page (`error.offline`, `feed.error.offline`);
+the feed retries on its own (`retryWhenOnline`: "online" event, otherwise every 30 s as long as the page is open), except after a timeout of
+its own refresh (504 `arxiv-timeout`: `patient_get` has already waited), which is not retried.
 
 `./arxivreader check` makes real calls to those listed in `CHECKS` (`app/check.py`: to be extended if the app
 starts depending on a new service) and checks the shape of the response (✓ good, ✗ changed or down, – not

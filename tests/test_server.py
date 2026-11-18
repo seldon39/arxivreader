@@ -130,6 +130,8 @@ class Helpers(unittest.TestCase):
         offline = main._failed(httpx.ConnectError("[Errno 8] nodename nor servname provided, or not known"))
         self.assertEqual((offline.status_code, json.loads(offline.body)["code"]), (502, "offline"))
         self.assertNotIn("code", json.loads(main._failed(httpx.ReadError("reset")).body))
+        for error in (httpx.ConnectTimeout("t"), httpx.ReadTimeout("t")):  # sans réponse : « hors ligne », pas le nom de la classe
+            self.assertEqual(json.loads(main._failed(error).body)["code"], "offline")
 
     def test_bounded_decompression(self):
         bomb = gzip.compress(b"\\documentclass{article}" + b" " * (texsource.MAX_FILE_BYTES + 10))
