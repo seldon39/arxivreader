@@ -301,7 +301,7 @@ class InvisibleTex(unittest.TestCase):
             self.assertIn("KEPT", text, source)
 
     def test_named_or_open_ended_conditionals_are_not_dead(self):
-        """\let\ifx=\iffalse nomme une conditionnelle sans l'ouvrir ; \ifnum9<1\macro… : le nombre continue peut-être
+        r"""\let\ifx=\iffalse nomme une conditionnelle sans l'ouvrir ; \ifnum9<1\macro… : le nombre continue peut-être
         (eplain : \ifinteger) ; rien n'est retiré."""
         for body in (r"\def\xoff{\let\ifxref = \iffalse} KEPT one \else KEPT two \fi KEPT three",
                      r"\def\ifinteger#1{\ifcat_\ifnum9<1\gobbleminus#1 _\else A\fi} KEPT one \fi",
@@ -311,7 +311,7 @@ class InvisibleTex(unittest.TestCase):
         self.assertNotIn("GONE", self.stripped(r"\ifnum 0<1\relax KEPT \fi \ifnum 9<1 GONE \fi")[0])
 
     def test_author_macro_applies_after_its_definition_in_its_group(self):
-        """La règle d'une macro de l'auteur ne vaut qu'après sa définition, dans son groupe, jusqu'à sa redéfinition
+        r"""La règle d'une macro de l'auteur ne vaut qu'après sa définition, dans son groupe, jusqu'à sa redéfinition
         (e-french, faq.tex : \def\footnote#1{} à la fin du document effaçait les notes de bas de page d'avant)."""
         for body in (r"Text\footnote{KEPT one} more.\def\footnote#1{}",
                      r"\def\a#1#2{#2}\a{GONE}{KEPT one}\def\a#1#2{#1}\a{KEPT two}{GONE}",
@@ -324,7 +324,7 @@ class InvisibleTex(unittest.TestCase):
         self.assertEqual(("GONE" in text, count), (False, 1))
 
     def test_flag_set_by_let_or_csname_is_not_dead(self):
-        """\newif\ifx mis à vrai par \let\ifx\iftrue ou \csname xtrue\endcsname : sa branche est imprimée."""
+        r"""\newif\ifx mis à vrai par \let\ifx\iftrue ou \csname xtrue\endcsname : sa branche est imprimée."""
         for body in (r"\newif\iffoo \let\iffoo\iftrue \iffoo KEPT one\fi",
                      r"\newif\iffoo \csname footrue\endcsname \iffoo KEPT one\fi"):
             text, count = self.stripped(body)
@@ -484,7 +484,7 @@ class InvisibleTex(unittest.TestCase):
         self.assertNotIn("SECRET", run(r"\begin{tabular}{ll}\color{white} SECRET & b\end{tabular}")[0])
 
     def test_never_executed_text_is_ignored(self):
-        """\verb, \lstinline, verbatim, branche fausse d'une conditionnelle : ni texte caché, ni réglage d'ensemble
+        r"""\verb, \lstinline, verbatim, branche fausse d'une conditionnelle : ni texte caché, ni réglage d'ensemble
         (beamer, \pagecolor) ; le reste de l'article est gardé."""
         visible = "Visible paper text that matters. " * 10
         def run(body):
