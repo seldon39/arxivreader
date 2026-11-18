@@ -1,0 +1,26 @@
+tests/test_localpdf.py
+  s_2e78fe3aad7ffd::t_de92bd7c1f7767 13,141
+  s_2e78fe3aad7ffd::t_e0726b31eccf8a 3,132-140,142-144
+  s_2e78fe3aad7ffd::t_52a1e758d12ec5 145
+app/localpdf.py
+  s_2e78fe3aad7ffd::t_de92bd7c1f7767 18,199-200,494-495,497-499,526-527,537
+  s_2e78fe3aad7ffd::t_b54b9a34de4c70 538-539
+MAINTENANCE.md
+  s_2e78fe3aad7ffd::t_d9222c9447af89 541-542
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "c87ad0dba170daa456b43b8d7fa8dbc4cfacaeaf",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
