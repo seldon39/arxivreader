@@ -73,6 +73,7 @@ is kept in `%LOCALAPPDATA%\arXivReader`.
 - The app relies on WebView2, the Edge engine included in Windows 10 and 11 (if a stripped-down Windows lacks it,
   the app says where to install it).
 - Updating or uninstalling never touches your library, which lives elsewhere.
+- Not yet on Windows: the Mac app's warning before quitting while an AI answer or a review is still running (closing the window stops the work without asking), "Copy a Library…", and a signed `.exe`.
 
 ### Linux
 

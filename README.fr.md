@@ -77,6 +77,7 @@ vers d'autres sites s'ouvrent dans votre navigateur habituel. La bibliothèque e
 - L'application s'appuie sur WebView2, le moteur d'Edge inclus dans Windows 10 et 11 (s'il manque, sur un Windows
   allégé, l'application indique où l'installer).
 - Une mise à jour ou une désinstallation ne touche jamais à la bibliothèque, rangée ailleurs.
+- Pas encore sous Windows : l'avertissement de l'application Mac avant de quitter quand une réponse de l'IA ou une revue est en cours (fermer la fenêtre arrête le travail sans demander), « Copier une bibliothèque… », et un `.exe` signé.
 
 ### Linux
 
