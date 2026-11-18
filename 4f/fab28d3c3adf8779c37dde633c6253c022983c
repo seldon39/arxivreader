@@ -1,0 +1,23 @@
+MAINTENANCE.md
+  s_2e78fe3aad7ffd::t_c28e32dc85ab56 984-987
+app/zotero.py
+  s_2e78fe3aad7ffd::t_2d8a43e75b28c4 308-311,415,419
+tests/test_zotero.py
+  s_2e78fe3aad7ffd::t_ded523125e8fa5 245-246,248,250,312,328,331-334
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "4ffab28d3c3adf8779c37dde633c6253c022983c",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
