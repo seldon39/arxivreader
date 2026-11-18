@@ -1,0 +1,23 @@
+app/sanitize.py
+  s_2e78fe3aad7ffd::t_579be444507d43 92-97
+tests/test_import.py
+  s_2e78fe3aad7ffd::t_003843d5bc6f25 109-118
+MAINTENANCE.md
+  s_2e78fe3aad7ffd::t_b6f04b8b70b2ad 1109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "c94da41fe49faaccce2227b3a8a9ca9e8ab240c0",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
