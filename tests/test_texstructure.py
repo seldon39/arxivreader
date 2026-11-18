@@ -345,6 +345,11 @@ class InvisibleTex(unittest.TestCase):
         text, _ = self.stripped(r"\ifnum 1=" + "1" * 5000 + r"x KEPT \fi B")
         self.assertIn("KEPT", text)
 
+    def test_flag_set_through_csname_if(self):
+        """\expandafter\let\csname ifdraft\endcsname\iftrue met le drapeau à vrai : sa branche est imprimée."""
+        text, _ = self.stripped(r"\newif\ifdraft \expandafter\let\csname ifdraft\endcsname\iftrue \ifdraft KEPT \fi")
+        self.assertIn("KEPT", text)
+
     def test_many_calls_of_a_dark_macro_take_linear_time(self):
         """30 000 appels d'une macro à fond foncé (1 Mo) : près de 0,3 s ; 9 s quand chaque passage blanc parcourait toutes les
         plages d'appel (temps quadratique, recalculé à chaque question posée à l'IA). Borne large."""
