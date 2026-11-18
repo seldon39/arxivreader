@@ -835,7 +835,10 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
 
 - New versions in the feed: `library.new_versions(force)` lists library papers with a newer arXiv version of the last
   `NEW_VERSIONS_DAYS` (45) that is not installed; arXiv asked at most every `NEW_VERSIONS_KEEP` (6 h), `force` from the
-  feed's Refresh (`GET /api/feed/new-versions?force=true`). The answer is kept in the setting `feed.newVersions` (shown at once
+  feed's Refresh (`GET /api/feed/new-versions?force=true`; forced calls that wait for each other, double click or two windows, ask arXiv once:
+  a forced call that finds an answer newer than its own start reuses it). `arxiv._paced` holds `_api_lock` during the whole `patient_get` on
+  purpose (it is what guarantees 3 s between two arXiv requests): a slow arXiv can therefore delay the other arXiv requests, an import's
+  metadata included, for up to a few minutes. The answer is kept in the setting `feed.newVersions` (shown at once
   and offline); an empty arXiv answer erases nothing and a paper missing from a batch keeps its entry; old-style ids are
   compared through `bare` (arXiv answers `math/0601001` for `math.DG/0601001`). Page: `loadNewVersions` runs apart from the
   feed (arXiv can be slow), with a counter (`versionsAsked`) against out-of-order answers; `showNewVersions` redraws only this

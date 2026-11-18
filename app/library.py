@@ -456,9 +456,12 @@ def new_versions(force=False):
         return re.sub(r"^([a-z-]+)\.[A-Z]{2}/", r"\1/", arxiv_id)
 
     papers = [p for p in db.list_papers() if p["arxiv_id"] and p["version"]]
+    started = time.time()
     with _new_versions_guard:
         kept = db.get_settings().get("feed.newVersions") or {}
-        if papers and (force or time.time() - kept.get("checked", 0) > NEW_VERSIONS_KEEP):
+        # appel forcé qui a attendu le verrou : si une autre requête a abouti depuis qu'il a commencé (double clic, deux
+        # fenêtres), sa réponse sert, au lieu d'une requête de plus à arXiv
+        if papers and ((force and kept.get("checked", 0) <= started) or time.time() - kept.get("checked", 0) > NEW_VERSIONS_KEEP):
             try:
                 found = fetch_latest([p["arxiv_id"] for p in papers])
             except Exception as error:

@@ -834,6 +834,27 @@ class NewVersions(Base):
             library.new_versions(force=True)
             self.assertEqual(ask.call_count, 2)
 
+    def test_concurrent_forced_calls_ask_once(self):
+        """Double clic sur « Actualiser », deux fenêtres : le second appel forcé, qui a attendu le verrou, reprend la réponse du premier."""
+        self.add(ID, 1)
+        entered, release = threading.Event(), threading.Event()
+
+        def slow(ids):
+            entered.set()
+            release.wait(5)
+            return {ID: self.meta(2, 3)}
+        with mock.patch.object(library, "fetch_latest", side_effect=slow) as ask:
+            first = threading.Thread(target=lambda: library.new_versions(force=True))
+            first.start()
+            self.assertTrue(entered.wait(5))
+            second = threading.Thread(target=lambda: library.new_versions(force=True))
+            second.start()
+            time.sleep(0.2)  # le second attend le verrou
+            release.set()
+            first.join(5)
+            second.join(5)
+            self.assertEqual(ask.call_count, 1)
+
     def test_offline_keeps_the_last_answer(self):
         self.add(ID, 1)
         with mock.patch.object(library, "fetch_latest", return_value={ID: self.meta(2, 3)}):
