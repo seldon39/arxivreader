@@ -654,7 +654,7 @@ notification is shown under PowerShell's name and a click does not open the app 
   keywords, followed authors, reference papers and books, feed categories) and what you write about yourself in
   *Settings → AI assistant → Your profile* (field, level, what to detail). The settings show exactly what is sent.
   The profile adapts the level and points out real connections with your work; it never softens a review.
-- Claude only receives the text of the paper (invisible text removed), your profile and the request (and, when
+- Claude only receives the text of the paper (the invisible text it detects removed: white, tiny or hidden text; a few tricks escape the detection, see MAINTENANCE), your profile and the request (and, when
   the request needs them, the text of another version or the paper's annotations): no tools,
   no files, no network, no commands, no personal Claude Code settings; nothing is kept on the Claude Code side.
 

@@ -690,7 +690,7 @@ de PowerShell et un clic n'ouvre pas encore l'application.
   dans *Réglages → Assistant IA → Votre profil* (domaine, niveau, ce qu'il faut détailler). Les réglages montrent
   exactement ce qui est envoyé. Le profil adapte le niveau et signale les vrais liens avec vos travaux ; il n'adoucit
   jamais une relecture.
-- Claude ne reçoit que le texte de l'article (le texte invisible est retiré), votre profil et la demande (et, si la
+- Claude ne reçoit que le texte de l'article (le texte invisible qu'il détecte est retiré : blanc, minuscule ou masqué ; quelques procédés échappent à la détection, voir MAINTENANCE), votre profil et la demande (et, si la
   demande en a besoin, le texte d'une autre version ou les annotations de l'article) : aucun
   outil, ni fichiers, ni réseau, ni commandes, ni réglages Claude Code personnels ; rien n'est gardé côté Claude Code.
 
