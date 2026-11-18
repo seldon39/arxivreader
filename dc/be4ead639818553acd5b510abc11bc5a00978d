@@ -1,0 +1,21 @@
+app/texstructure.py
+  s_2e78fe3aad7ffd::t_48d922557939a9 338-351,354,360-362
+tests/test_texstructure.py
+  s_2e78fe3aad7ffd::t_ce1c8e3e7106d9 334-351,356
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "dcbe4ead639818553acd5b510abc11bc5a00978d",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "unknown"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
