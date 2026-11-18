@@ -103,7 +103,7 @@ document.addEventListener("app:zoom", (event) => {
   const range = document.querySelector('dialog[open] input[name="fontSize"]'); // réglages ouverts : curseur et libellé suivent
   if (range) {
     range.value = next;
-    document.getElementById("setting-fontSize")?.replaceChildren(t("settings.fontSize", { n: next }));
+    document.querySelector("body > #settings-dialog #setting-fontSize")?.replaceChildren(t("settings.fontSize", { n: next }));
   }
   saveSettings({ fontSize: next });
 });
@@ -150,7 +150,7 @@ async function noteReadiness(provider, status) {
 let defaultCheck = 0;
 let readyStatuses = {};  // états lus pour le menu (modèles locaux, au moment de choisir)
 async function renderDefaultChoice() {
-  const holder = document.querySelector("#settings-dialog .ai-default");
+  const holder = document.querySelector("body > #settings-dialog .ai-default");
   if (!holder) return;
   const check = ++defaultCheck;
   let found = [];
@@ -244,7 +244,7 @@ function segmented(name, options, current) {
 let currentSection = "reading";
 
 export function openSettingsDialog({ section = null } = {}) {
-  const dialog = document.getElementById("settings-dialog");
+  const dialog = document.querySelector("body > #settings-dialog");  // un article stocké avant le nettoyage pourrait porter cet identifiant
   if (!dialog.open) {  // à l'ouverture : celui utilisé
     configuring = settings.aiProvider || "claude";
     aiSeen = false;

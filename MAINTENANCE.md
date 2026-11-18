@@ -1046,6 +1046,10 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   style as the browser reads it (`_normal_css`: CSS comments removed, escapes such as `fi\78 ed` resolved). A
   `content.html` stored before these rules gets the same treatment when read (`clean_stored`, in the `/content` route;
   a page without `<!`, `<?` or an escaped style is returned as is, without parsing).
+  It also drops what belongs to the interface (ids `view`, `toast`, `settings-dialog`, `settings-button`, `setting-*`;
+  classes `cross-open`, `cross-badge`, `ai-ref`; hrefs beginning with `#/`): an article must never address the
+  application's own elements or routes. `toast()` and `openSettingsDialog()` look their element up as `body > #id`,
+  for an article stored before this rule.
 
 ## 10. Logs and diagnostics
 

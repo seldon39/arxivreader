@@ -73,6 +73,19 @@ class Import(unittest.TestCase):
         self.structure = extract_structure(self.fragment)
         self.html = str(self.fragment)
 
+    def test_article_cannot_take_interface_ids(self):
+        """Ni identifiant de l'interface, ni classe des clics du lecteur, ni lien vers une route de l'application."""
+        html = ('<html><body><article class="ltx_document"><div id="toast">x</div><div id="settings-dialog"></div>'
+                '<span id="setting-fontSize">s</span><span id="S1" class="ltx_p cross-open">a</span>'
+                '<a href="#/arxiv/2401.00001">b</a><a href="#/search?terms=x">c</a><a href="#S1">d</a>'
+                '<a class="ai-ref cross-badge" href="#S1">e</a></article></body></html>')
+        fragment, _ = sanitize_document(html, "https://arxiv.org/html/2401.00002v1/")
+        out = str(fragment)
+        for text in ('id="toast"', 'id="settings-dialog"', 'id="setting-fontSize"', "#/", "cross-open", "cross-badge", "ai-ref"):
+            self.assertNotIn(text, out)
+        for text in ('id="S1"', 'href="#S1"', "ltx_p"):
+            self.assertIn(text, out)
+
     def test_cdata_and_obfuscated_styles(self):
         """CDATA (faux commentaire en HTML5), commentaires et échappements CSS ne passent pas les filtres."""
         html = ('<article class="ltx_document"><p>a<![CDATA[ x><style>*{display:none}</style> ]]>b</p>'

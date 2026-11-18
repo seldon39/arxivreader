@@ -94,7 +94,7 @@ let toastTimer;
 let toastEl;
 // Message bref en bas de l'écran ; `action` ajoute un bouton (« Annuler » une suppression…)
 export function toast(message, { error = false, duration = 3500, action = null } = {}) {
-  toastEl ||= document.getElementById("toast");
+  toastEl ||= document.querySelector("body > #toast");  // pas un « toast » d'un article stocké avant le nettoyage des identifiants
   const el = toastEl;
   // une fenêtre modale (réglages, assistant de démarrage) passe au-dessus de tout : le message s'y range tant qu'elle
   // est ouverte, sinon il serait caché derrière (l'élément gardé ici survit à une fenêtre vidée ou fermée)

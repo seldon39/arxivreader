@@ -72,6 +72,12 @@ CSS_ESCAPE = re.compile(r"\\(?:([0-9a-fA-F]{1,6})[ \t\r\n\f]?|(.))", re.S)
 CSS_COMMENT = re.compile(r"/\*.*?(?:\*/|$)", re.S)
 DATA_IMAGE = re.compile(r"^data:image/(png|jpeg|gif|webp|svg\+xml)[;,]", re.I)
 
+# Ce qui appartient à l'interface : un article n'a pas à porter ces identifiants (getElementById trouverait l'article
+# avant la boîte de réglages ou le message), ces classes (gérées par les clics du lecteur) ni des liens « #/… » (routes)
+RESERVED_IDS = {"view", "toast", "settings-dialog", "settings-button"}
+RESERVED_ID_PREFIX = "setting-"
+RESERVED_CLASSES = {"cross-open", "cross-badge", "ai-ref"}
+
 # Éléments de la page LaTeXML qui ne font pas partie de l'article.
 NOISE_SELECTORS = [
     ".ltx_page_logo", ".ltx_page_navbar", ".ltx_page_footer", ".ltx_TOC", ".ltx_role_footer",
@@ -114,6 +120,8 @@ def clean_stored(html):
 
 
 def _safe_href(href):
+    if href.startswith("#/"):  # route de l'application, pas une ancre de l'article
+        return None
     if href.startswith("#"):
         return href
     scheme = urlparse(href).scheme.lower()
@@ -224,6 +232,15 @@ def sanitize_document(html, base_url):
             key = attr.lower()
             if key not in ALLOWED_ATTRS:
                 del element.attrs[attr]
+            elif key == "id" and (str(value).strip() in RESERVED_IDS or str(value).strip().startswith(RESERVED_ID_PREFIX)):
+                del element.attrs[attr]
+            elif key == "class":
+                tokens = value.split() if isinstance(value, str) else list(value)
+                kept = [token for token in tokens if token not in RESERVED_CLASSES]
+                if kept:
+                    element.attrs[attr] = kept if isinstance(value, list) else " ".join(kept)
+                else:
+                    del element.attrs[attr]
             elif key == "style":
                 cleaned = _clean_style(str(value))
                 if cleaned is None:
