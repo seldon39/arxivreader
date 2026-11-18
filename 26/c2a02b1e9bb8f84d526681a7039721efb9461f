@@ -1,0 +1,25 @@
+MAINTENANCE.md
+  s_2e78fe3aad7ffd::t_663282daa1e163 385-388
+app/latexml.py
+  s_2e78fe3aad7ffd::t_ca46702a974869 670
+app/texfile.py
+  s_2e78fe3aad7ffd::t_cc131ea288d676 209-211
+tests/test_latexml.py
+  s_2e78fe3aad7ffd::t_b49f2dcf0449b2 70-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "26c2a02b1e9bb8f84d526681a7039721efb9461f",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
