@@ -510,7 +510,7 @@ de PowerShell et un clic n'ouvre pas encore l'application.
   zone, ou la page affichée) : l'assistant connaît ainsi les notations et les résultats qui précèdent.
 - **Documents longs** (livres, au-delà de 150 pages environ) : l'assistant reçoit le début (sommaire, introduction,
   notations) et une fenêtre autour de la question (page de la zone ou page qu'on lit, sinon énoncé ou passage cité),
-  plus avant qu'après ; les pages omises sont signalées. Un article part toujours en entier.
+  plus avant qu'après ; les pages omises sont signalées. Un article sous la limite de taille (environ 400 000 caractères, quelques centaines de pages ; environ 70 000 avec un modèle local) part en entier ; au-delà, la règle est celle des livres.
 - **Livres, chapitre par chapitre** : dans un livre (HTML d'arXiv ou fichier TeX à chapitres), les onglets *Résumé*
   et *Relecture* ont un menu *Portée* (par défaut celui qu'on lit, ✓ pour ceux déjà faits), chaque chapitre avec son
   fil. L'assistant lit ce chapitre seul, avec le sommaire du livre et, des autres chapitres, les énoncés seuls (sans

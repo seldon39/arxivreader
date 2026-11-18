@@ -484,7 +484,7 @@ notification is shown under PowerShell's name and a click does not open the app 
   region, or the page shown), so that the assistant knows the notation and earlier results.
 - **Long documents** (books, beyond about 150 pages): the assistant receives the beginning (contents, introduction,
   notation) and a window around the question (the page of the region or the page being read, otherwise the
-  statement or the quoted passage), more before than after; omitted pages are marked. A paper is always sent whole.
+  statement or the quoted passage), more before than after; omitted pages are marked. A paper below the size limit (about 400,000 characters, a few hundred pages; about 70,000 with a local model) is sent whole; beyond it, the same rule applies as for books.
 - **Books, chapter by chapter**: in a book (arXiv HTML or TeX file with chapters), the *Summary* and *Review* tabs
   have a *Scope* menu (the chapter being read by default, ✓ for those already done), each chapter with its own
   thread. The assistant reads that chapter only, with the book's contents and, from other chapters, statements only
