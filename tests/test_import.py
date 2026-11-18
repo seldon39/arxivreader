@@ -106,6 +106,16 @@ class Import(unittest.TestCase):
         self.assertNotIn("u\\72l", again)
         self.assertEqual(clean_stored("<p>simple</p>"), "<p>simple</p>")
 
+    def test_css_escape_out_of_unicode(self):
+        """\\110000 (au-delà d'Unicode) et \\D800 (demi-paire) : U+FFFD, comme le veut CSS ; ni exception ni texte
+        impossible à écrire en UTF-8."""
+        from app.sanitize import clean_stored
+        for style in ("font-family:\\110000", "font-family:\\FFFFFF", "position:fixed;font-family:\\D800"):
+            html = f'<article class="ltx_document"><p style="{style}">x</p></article>'
+            for out in (str(sanitize_document(html, "https://arxiv.org/html/2101.00002v1/")[0]), clean_stored(html)):
+                out.encode("utf-8")
+                self.assertIn(">x</p>", out)
+
     def test_sanitize(self):
         self.assertNotIn("<script", self.html)
         self.assertNotIn("onclick", self.html)

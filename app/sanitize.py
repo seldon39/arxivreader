@@ -89,7 +89,12 @@ def _normal_css(value):
     """Style tel que le navigateur le lit : commentaires CSS retirés, échappements résolus (« fi\\78 ed » = « fixed »,
     « u\\72l( » = « url( »). Les filtres PINNED et UNSAFE_STYLE ne s'appliquent qu'à cette forme."""
     value = CSS_COMMENT.sub("", value)
-    return CSS_ESCAPE.sub(lambda m: chr(int(m.group(1), 16) or 0xFFFD) if m.group(1) else m.group(2), value)
+    return CSS_ESCAPE.sub(lambda m: _code_point(int(m.group(1), 16)) if m.group(1) else m.group(2), value)
+
+
+def _code_point(number):
+    """Caractère d'un échappement CSS : U+FFFD pour 0, une demi-paire (D800–DFFF) ou au-delà d'Unicode (CSS Syntax)."""
+    return chr(0xFFFD if number == 0 or 0xD800 <= number <= 0xDFFF or number > 0x10FFFF else number)
 
 
 def _clean_style(value):
