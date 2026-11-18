@@ -468,7 +468,7 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   miniforge's base Python.
 
 - Invisible text (`structure.mark_hidden`, at the start of the analysis: `plain` keeps it neither in labels nor in
-  titles): text color white or nearly white (`structure.luminance` ≥ `WHITE`, 0,9; a saturated hue, channels at least
+  titles; `plain` walks the tree with a stack, so HTML nested hundreds of levels deep does not raise `RecursionError`): text color white or nearly white (`structure.luminance` ≥ `WHITE`, 0,9; a saturated hue, channels at least
   `SATURATED` 0,5 apart, never counts as white: pure yellow is readable on the page), transparent or zero alpha (`_hiding`, `_color`:
   #rgb(a), #rrggbb(aa), rgb(a)(), a few names; not a background color: `--ltx-bg-color`, `background-color`,
   `--ltx-fill-color`), tiny font, hidden, opacity < 0,1; marked `.arx-hidden-text`, counted, never passed to

@@ -287,13 +287,16 @@ def mark_hidden(fragment):
 
 def plain(element):
     """Texte d'un élément, les formules étant remplacées par leur source TeX entre $."""
-    if isinstance(element, NavigableString):
-        return str(element)
-    if element.name == "math":
-        return "$" + element.get("alttext", "") + "$"
-    if "arx-hidden-text" in (element.get("class") or []):
-        return ""  # texte invisible : ni dans les étiquettes ni dans les titres (transmis à l'IA)
-    return "".join(plain(child) for child in element.children)
+    parts, stack = [], [element]  # pile : une imbrication profonde ne dépasse pas la récursion de Python
+    while stack:
+        node = stack.pop()
+        if isinstance(node, NavigableString):
+            parts.append(str(node))
+        elif node.name == "math":
+            parts.append("$" + node.get("alttext", "") + "$")
+        elif "arx-hidden-text" not in (node.get("class") or []):  # texte invisible : ni dans les étiquettes ni dans les titres (transmis à l'IA)
+            stack.extend(reversed(list(node.children)))
+    return "".join(parts)
 
 
 def squash(text):

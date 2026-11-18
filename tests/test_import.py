@@ -273,6 +273,17 @@ class Import(unittest.TestCase):
         self.assertEqual(extract_structure(fragment)["bibliography"][0]["arxiv"], ["math/0404494"])
 
 
+class DeepNesting(unittest.TestCase):
+    def test_plain_and_structure_survive_deep_html(self):
+        """HTML imbriqué sur 500 niveaux : `plain` n'est pas récursif (RecursionError), le texte caché reste retiré."""
+        from app.structure import plain
+        deep = BeautifulSoup('<div class="ltx_para">' * 500 + 'x<math alttext="y"></math><span class="arx-hidden-text">secret</span>' + "</div>" * 500, "html.parser")
+        self.assertEqual(plain(deep.div), "x$y$")
+        fragment, _ = sanitize_document('<article class="ltx_document">' + '<div class="ltx_para">' * 500 + "x" + "</div>" * 500 + "</article>",
+                                        "https://arxiv.org/html/2401.00001v1/")
+        extract_structure(fragment, {})
+
+
 if __name__ == "__main__":
     unittest.main()
 
