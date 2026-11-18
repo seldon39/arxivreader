@@ -537,7 +537,9 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   and transparent text, which is what an attack uses; `unshown` (then `unshownText`, a quiet note shown only when the PDF is
   displayed alone) for the invisible rendering mode, clipped text and hidden layers, removed all the same (a text
   layer with an invisible mode, clipped labels, as in an ordinary course exported from Keynote, are no attack). A show that is both
-  goes in `hiddenText`; `_refresh_text` rewrites both counts, also when the warning falls to zero. The letters are looked for in the text decoded with the font (`_decoding`: the 256 codes
+  goes in `hiddenText`, except white text that is clipped: its dark backdrop was clipped too (not recorded as a background),
+  so "white on white" cannot be judged, and it goes in `unshownText` (a cropped slide whose off-crop half has white labels on
+  dark boxes: 2407.16803, page 4); tiny or transparent clipped text stays in `hiddenText`; `_refresh_text` rewrites both counts, also when the warning falls to zero. The letters are looked for in the text decoded with the font (`_decoding`: the 256 codes
   of the font shown one by one in a blank page and read by pypdf; costly, so only for text already judged hidden, and
   kept per font for the whole document in `_TABLES`), since a subset font can put letters on
   punctuation codes; no font (missing, null, no `Tf`) or a font that decodes none of the codes: the bytes themselves; a CID font counts any non-zero byte. The rewritten stream is parsed again as bytes (`ContentStream(…, "bytes")`): pypdf would reuse an

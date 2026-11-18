@@ -528,7 +528,9 @@ class _Visible:
         clip = state["clip"]
         clipped = clip is not None and all(not (clip[0] - height <= x <= clip[2] + height and clip[1] - height <= y <= clip[3] + height)
                                            for x, y in points)
-        alert = tiny or white or clear  # ce qu'une attaque emploie : compté à part de ce qui n'est simplement pas affiché
+        # ce qu'une attaque emploie : compté à part de ce qui n'est simplement pas affiché. Blanc découpé : son fond l'est
+        # aussi (pas enregistré, `_clipped`), « blanc sur blanc » ne se juge pas ; retiré, compté non affiché
+        alert = tiny or clear or white and not clipped
         hidden = not blank and (alert or clipped or state["hiddenLayer"] or render in (3, 7) and not (self.scan or self.scanned))
         # lettres cherchées seulement dans un texte caché (lire le codage d'une police coûte)
         if hidden and (bool(raw.strip(b"\x00")) if state.get("cid") else self._letters(raw, state["font"])):

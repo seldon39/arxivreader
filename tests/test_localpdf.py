@@ -219,6 +219,18 @@ class InvisiblePdfText(unittest.TestCase):
         self.assertEqual(counts("1 g " + show + " 0 g BT 3 Tr /F1 12 Tf 72 600 Td (OCR) Tj ET"), ("", (1, 1)))
         self.assertEqual(counts("1 g BT 3 Tr /F1 12 Tf 72 600 Td (BOTH) Tj ET"), ("", (0, 1)))  # Tr 3 : ni rempli ni tracé, la couleur ne joue pas
 
+    def test_clipped_white_text_is_not_an_alert(self):
+        """Texte blanc sur une boîte foncée, toutes deux hors du /BBox d'un formulaire (diapositive recadrée : 2407.16803,
+        p. 4) : la boîte découpée n'est pas un fond, mais le texte n'est pas « blanc sur blanc » pour autant. Retiré, compté
+        non affiché, pas en alerte. Minuscule hors du cadre : toujours une alerte."""
+        def counts(show):
+            form = form_object("BT /F1 12 Tf 0 0 Td (INSIDE) Tj ET " + show)
+            found = localpdf.read_pdf(build_pdf("q 1 0 0 1 72 700 cm /Fm Do Q", "/XObject << /Fm 6 0 R >>", (form,)))
+            return found["pages"][0].strip(), (found["hidden"], found["unshown"])
+        on_box = "0 g 0 -320 200 40 re f 1 g BT /F1 12 Tf 10 -300 Td (OUTSIDE) Tj ET"
+        self.assertEqual(counts(on_box), ("INSIDE", (0, 1)))
+        self.assertEqual(counts("0 g BT /F1 0.2 Tf 10 -300 Td (OUTSIDE) Tj ET"), ("INSIDE", (1, 0)))
+
     def test_light_inline_image_is_no_dark_background(self):
         """Fond de page en image en ligne (dvips) : clair, le texte blanc posé dessus est retiré ; foncé, ou d'une forme
         qu'on ne lit pas (filtre, décodage), il est gardé."""
