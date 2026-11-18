@@ -1,0 +1,23 @@
+MAINTENANCE.md
+  s_2e78fe3aad7ffd::t_259a04e507eab4 487,529
+app/texstructure.py
+  s_2e78fe3aad7ffd::t_909892be188dbb 912,919,921-932,938-942
+tests/test_texstructure.py
+  s_2e78fe3aad7ffd::t_4e78e3697d4566 215-229
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "6ef8ee30b4840ffbe497df797383130cd711b35a",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
