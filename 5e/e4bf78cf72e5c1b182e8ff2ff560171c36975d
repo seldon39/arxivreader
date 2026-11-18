@@ -1,0 +1,23 @@
+README.fr.md
+  s_2e78fe3aad7ffd::t_0636fd3f1e32c6 94
+README.md
+  s_2e78fe3aad7ffd::t_60365fa329b348 89-90
+arxivreader
+  s_2e78fe3aad7ffd::t_fc6eb8ac65d36f 27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "5ee4bf78cf72e5c1b182e8ff2ff560171c36975d",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
