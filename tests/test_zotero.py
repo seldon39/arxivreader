@@ -242,10 +242,12 @@ class Sync(unittest.TestCase):
         self.assertTrue(all(db.get_paper(i)["in_library"] for i in ids))
         self.assertEqual(sorted(f["name"] for f in folders.list_folders()), ["A", "B", "C"])
         self.assertEqual(self.folder_of("A")["papers"], ids[:2])
-        # « Synchroniser maintenant » : appliqué
+        # « Synchroniser maintenant » : appliqué ; les articles des dossiers supprimés restent (remis à la racine, comme
+        # à la corbeille de Zotero : on ne peut pas savoir si l'élément a été retiré), les deux autres sont retirés
         report = self.run_sync()
-        self.assertEqual(report["removedHere"], 8)
+        self.assertEqual(report["removedHere"], 2)
         self.assertEqual(folders.list_folders(), [])
+        self.assertTrue(all(db.get_paper(i)["in_library"] for i in ids[:6]))
 
     def item_of(self, arxiv_id):
         return next(k for k, i in self.zotero.items.items() if zotero.arxiv_of(i["data"]) == arxiv_id and not i["data"].get("deleted"))
@@ -307,7 +309,7 @@ class Sync(unittest.TestCase):
     def test_folder_deleted_keeps_its_papers(self):
         """Élément rangé seulement dans une sous-collection : le dossier supprimé (ici ou dans Zotero), l'article reste
         dans la bibliothèque et son élément revient à la racine « arXivReader » (pas pris pour un retrait)."""
-        for side in ("here", "zotero"):
+        for side in ("here", "zotero", "zotero-emptied"):
             with self.subTest(side=side):
                 self.tearDown()
                 self.setUp()
@@ -323,8 +325,12 @@ class Sync(unittest.TestCase):
                 if side == "here":
                     folders.delete(folder["id"])
                     report = self.run_sync()
-                else:  # Zotero 7 : la sous-collection à la corbeille, l'élément la porte encore
+                elif side == "zotero":  # Zotero 7 : la sous-collection à la corbeille, l'élément la porte encore
                     self.zotero.collections[key]["data"]["deleted"] = True
+                    report = self.run_sync()
+                else:  # Zotero 6, ou corbeille vidée : supprimée pour de bon, l'élément ne la porte plus (même résultat)
+                    self.zotero.request("DELETE", f"{zotero.API}/users/7/collections/{key}", headers={"Zotero-API-Key": "a" * 24})
+                    self.assertNotIn(key, self.zotero.items[item]["data"]["collections"])
                     report = self.run_sync()
                 self.assertEqual(report["removedHere"], 0)
                 self.assertTrue(db.get_paper("1003.2523")["in_library"])

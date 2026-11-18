@@ -1006,9 +1006,11 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   items by arXiv identifier (`zotero.arxiv_of`, index `zotero_index`), never by title.
 - The Zotero synchronisation merges three states (here, Zotero, the previous time): any change to
   `_sync` must keep the tests of `tests/test_zotero.py` (write refused, duplicates merged, deep
-  subcollection, folder deleted during an addition, trash, mass removals). A folder deleted here, or in Zotero while
-  the item still carries its subcollection, never takes its papers with it: they are put back at the root
-  "arXivReader" (`rescued`), even after an interrupted pass.
+  subcollection, folder deleted during an addition, trash, mass removals). A deleted folder never takes its papers
+  with it: they stay in the library and their items go back to the root "arXivReader" (`rescued`), whether the folder
+  was deleted here, put in the Zotero 7 trash or deleted for good (Zotero 6, trash emptied before the sync: the item no
+  longer carries the subcollection, and a removal cannot be told from the deletion), even after an interrupted pass.
+  Consequence: after "Synchronise now", the papers of folders that vanished together with their items are kept.
 - **No request from the page may wait for long** (WebKit may abandon a request that has gone about
   one minute without a response): an import always goes to the background (`POST /api/papers`, update
   `POST /api/papers/{id}/refresh` tracked through `…/importing`), a server-side wait is capped at 45 s (`ensure_ready(..., timeout=45)`, also in `ai._other_version`: the question to the AI is silent until the prompt is built)

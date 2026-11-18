@@ -305,11 +305,10 @@ def _sync(client, importer, careful):
     vanished = sum(1 for fid, (key, _) in mapped.items() if fid in local_folders and key not in subs)
     hold_folders = careful and vanished > 1 and vanished * 2 > len(mapped)  # presque toutes disparues : on attend
     held = set()  # sous-collections disparues, gardées pour l'instant (synchronisation automatique)
-    # dossiers supprimés : leurs articles restent, remis à la racine. Supprimé ici : un élément sorti de l'arbre l'est
-    # par notre suppression de la sous-collection (même à un passage précédent interrompu) ; supprimé dans Zotero
-    # (`binned`, `binned_folders`) : seulement s'il porte encore la sous-collection (à la corbeille de Zotero, ou ses
-    # sous-collections), sinon on ne sait pas s'il a été retiré
-    binned, binned_folders = set(), set()
+    # dossiers supprimés : leurs articles restent, remis à la racine. Supprimé ici ou dans Zotero (même à la corbeille
+    # vidée, Zotero 6 : l'élément a perdu la sous-collection), un élément sorti de l'arbre l'est à cause du dossier :
+    # le résultat ne dépend pas de la corbeille de Zotero (`binned` : sous-collections encore portées par un élément)
+    binned = set()
     for folder_id, (key, name) in mapped.items():
         here, there = local_folders.get(folder_id), subs.get(key)
         if here and there:
@@ -336,7 +335,6 @@ def _sync(client, importer, careful):
                 continue
             folders.delete(folder_id)
             binned.add(key)
-            binned_folders.add(str(folder_id))
             report["folders"] += 1
         elif there and not here:
             # dossier supprimé ici : la sous-collection aussi (pas ses éléments) ; mais si Zotero y a rangé quelque
@@ -414,11 +412,11 @@ def _sync(client, importer, careful):
         binned.add(current)
         stack += below.get(current, [])
     local = {pid: keep(places) for pid, places in _local().items()}
-    # articles qui étaient dans un dossier supprimé ici (il n'existe plus, et pas par Zotero) : leur élément hors de
+    # articles qui étaient dans un dossier supprimé (il n'existe plus) : leur élément hors de
     # l'arbre l'est à cause du dossier, pas d'un retrait (le dossier part, pas ses articles). Places d'avant gardées
     # telles quelles (`kept_before`) tant que l'élément n'est pas remis à la racine : un refus ou une attente ne le perd pas
     existing = {str(f["id"]) for f in folders.list_folders()}
-    orphaned = {pid for pid, places in before.items() if places - {LIBRARY} - existing - binned_folders}
+    orphaned = {pid for pid, places in before.items() if places - {LIBRARY} - existing}
     kept_before = dict(before)
     before = {pid: keep(places) | (places & held_places) for pid, places in before.items()}
     papers = {p["id"]: p for p in db.list_all_papers()}
