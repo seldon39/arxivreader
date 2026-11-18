@@ -70,6 +70,7 @@ STROKES = {b"S", b"s", b"B", b"B*", b"b", b"b*"}
 PAINTS = FILLS | STROKES | {b"n"}
 SHOWS = {b"Tj", b"TJ", b"'", b'"'}
 MIN_VISIBLE_PT = 1      # corps de texte en deçà : invisible à l'écran comme à l'impression
+MIN_BACKGROUND_ALPHA = 0.5  # fond foncé plus transparent : le papier se voit au travers, ce n'est pas un fond
 MIN_BACKGROUND_PT = 4   # fond plus petit (point, filet) : un texte blanc n'y tient pas
 SCAN_SHARE = 0.5        # image qui couvre au moins cette part de la page : page scannée
 MAX_FORM_DEPTH = 12     # formulaires imbriqués plus profond : vidés (aucun article n'en a)
@@ -310,13 +311,15 @@ class _Visible:
             clip = state["clip"]
             if operator in FILLS and points:
                 box = _clipped(_box(points), clip)
-                if box is None:
+                if box is None or state["hiddenLayer"]:  # rien de peint dans un calque masqué
                     pass
                 elif state["fill"] is None or state["fill"] < DARK:
-                    self._background(box)
+                    if state["alpha"] >= MIN_BACKGROUND_ALPHA:
+                        self._background(box)
                 elif state["alpha"] >= 0.95 and state["plain"] and (path["rect"] or _upright(points)):
                     self._paint(box, False)  # aplat clair par-dessus : ce qu'il couvre n'est plus un fond
-            if operator in STROKES and points and (state["stroke"] is None or state["stroke"] < DARK):
+            if (operator in STROKES and points and (state["stroke"] is None or state["stroke"] < DARK)
+                    and state["strokeAlpha"] >= MIN_BACKGROUND_ALPHA and not state["hiddenLayer"]):
                 m = state["ctm"]
                 half = state["lineWidth"] * math.sqrt(abs(m[0] * m[3] - m[1] * m[2])) / 2
                 if 2 * half >= MIN_BACKGROUND_PT:  # trait épais : un bandeau (segment droit), ou les côtés d'un cadre
@@ -333,7 +336,8 @@ class _Visible:
                             self._background(box)
             path.update(points=[], rect=True, clip=False)
         elif operator == b"sh":
-            self._background(state["clip"] or self.page_box)
+            if state["alpha"] >= MIN_BACKGROUND_ALPHA and not state["hiddenLayer"]:
+                self._background(state["clip"] or self.page_box)
         elif operator == b"INLINE IMAGE":
             self._image(state)
 
@@ -357,6 +361,8 @@ class _Visible:
     def _image(self, state):
         """Image : un fond ; les images qui couvrent ensemble au moins SCAN_SHARE de la page (scan d'un seul tenant
         ou en bandes) en font une page scannée."""
+        if state["alpha"] < MIN_BACKGROUND_ALPHA or state["hiddenLayer"]:
+            return
         box = _box([_point(state["ctm"], x, y) for x in (0, 1) for y in (0, 1)])
         self._background(box)
         x0, y0, x1, y1 = self.page_box

@@ -127,6 +127,22 @@ class InvisiblePdfText(unittest.TestCase):
                                             font=font))
         self.assertEqual((found["pages"][0].strip(), found["hidden"]), ("Visible text", 0))
 
+    def test_invisible_shapes_are_no_background(self):
+        """Fond foncé transparent, ou dans un calque masqué : le papier blanc reste dessous, le texte blanc est retiré ;
+        un fond foncé opaque le garde."""
+        white = " 1 g BT /F1 12 Tf 72 700 Td (IGNORE) Tj ET"
+        layer = {"resources": "/Properties << /L0 6 0 R >> /ExtGState << /G0 << /ca 0 >> /G1 << /ca 0.2 >> /G2 << /ca 1 >> >>",
+                 "extra": ("<< /Type /OCG /Name (x) >>",), "catalog": "/OCProperties << /OCGs [6 0 R] /D << /OFF [6 0 R] >> >>"}
+
+        def page(content):
+            found = localpdf.read_pdf(build_pdf(content, layer["resources"], layer["extra"], layer["catalog"]))
+            return found["pages"][0].strip(), found["hidden"]
+        self.assertEqual(page("q /G0 gs 0 g 0 0 612 792 re f Q" + white), ("", 1))
+        self.assertEqual(page("q /G1 gs 0 g 0 0 612 792 re f Q" + white), ("", 1))
+        self.assertEqual(page("/OC /L0 BDC 0 g 0 0 612 792 re f EMC" + white), ("", 1))
+        self.assertEqual(page("/OC /L0 BDC q 612 0 0 792 0 0 cm BI /W 1 /H 1 /CS /G /BPC 8 ID \x00 EI Q EMC" + white), ("", 1))
+        self.assertEqual(page("q /G2 gs 0 g 0 0 612 792 re f Q" + white), ("IGNORE", 0))
+
     def test_state_of_each_show(self):
         """Couleur changée entre deux affichages d'un même bloc de texte : chacun jugé avec la sienne."""
         start = "BT /F1 12 Tf 72 700 Td "
