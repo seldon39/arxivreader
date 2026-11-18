@@ -1477,6 +1477,7 @@ class Reader {
   }
 
   onScroll() {
+    if (this.destroyed) return;  // minuterie du défilement partie avant la fermeture : ne pas écraser la position enregistrée
     if (this.article.classList.contains("typesetting") || this.pdfMode) { this.proofBar.hidden = true; return; } // article pas en page, ou lu dans le PDF
     const anchor = this.currentAnchor();
     if (!anchor) return;
@@ -2988,6 +2989,7 @@ class Reader {
     this.destroyed = true;
     releaseMenuReader(this);  // menus : plus de lecteur (la page suivante enverra son état)
     this.positionSaver?.flush();
+    this.savePosition = () => {};  // plus rien d'en attente ne peut atteindre l'enregistrement
     document.body.classList.remove("reading");
     this.annotator?.destroy();
     this.pdfNotes?.destroy();

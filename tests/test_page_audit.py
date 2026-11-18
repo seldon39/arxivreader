@@ -68,6 +68,41 @@ console.log(JSON.stringify(out));
 
 
 @unittest.skipUnless(shutil.which("node"), "Node absent")
+class ReaderClosing(unittest.TestCase):
+    """Une minuterie de défilement armée avant la fermeture du lecteur ne doit pas écraser la position enregistrée."""
+
+    SCRIPT = """
+const scrollY = 0, CSS = { escape: (s) => s }, encodePosition = (id, offset) => id + "@" + offset;
+class Reader {
+%(scroll)s
+}
+const saved = [];
+const anchor = { id: "S1", closest: () => null, getBoundingClientRect: () => ({ top: 0 }) };
+const reader = Object.assign(new Reader(), {
+  destroyed: %(destroyed)s, pdfMode: false, article: { classList: { contains: () => false } }, proofBar: { hidden: false },
+  currentAnchor: () => anchor, viewTop: () => 0, tocLinks: new Map(), anchors: [], followStatementsChapter() {},
+  panel: { querySelectorAll: () => [], querySelector: () => null }, proofOwner: () => null, showProofBar() {},
+  savePosition: (place) => saved.push(place),
+});
+reader.onScroll();
+console.log(JSON.stringify(saved));
+"""
+
+    def saved(self, destroyed):
+        code = self.SCRIPT % {"scroll": jsfunction.method_source("reader.js", "onScroll"), "destroyed": destroyed}
+        done = subprocess.run(["node", "--input-type=module", "-e", code], capture_output=True, text=True, check=True)
+        return json.loads(done.stdout)
+
+    def test_late_scroll_timer_saves_nothing_after_destroy(self):
+        self.assertEqual(self.saved("false"), ["S1@24"])  # témoin : un lecteur ouvert enregistre
+        self.assertEqual(self.saved("true"), [])
+
+    def test_destroy_cuts_the_saver(self):
+        text = jsfunction.method_source("reader.js", "destroy")
+        self.assertLess(text.index("this.positionSaver?.flush();"), text.index("this.savePosition = () => {};"))
+
+
+@unittest.skipUnless(shutil.which("node"), "Node absent")
 class Markdown(unittest.TestCase):
     PRELUDE = ('globalThis.window = globalThis; globalThis.document = {addEventListener() {}, querySelectorAll: () => [],'
                ' getElementById: () => null, createElement: () => ({})}; globalThis.localStorage = {getItem: () => null, setItem() {}};\n')
