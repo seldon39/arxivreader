@@ -1,0 +1,36 @@
+app/texfile.py
+  s_2e78fe3aad7ffd::t_30c4ad018df120 37,116-117,134-144
+tests/test_texstructure.py
+  s_2e78fe3aad7ffd::t_841c7ceb9e2cae 76-93
+MAINTENANCE.md
+  s_2e78fe3aad7ffd::t_0b13b3d61d661d 435
+  s_2e78fe3aad7ffd::t_fb7a1b258ae332 430-434
+README.md
+  s_2e78fe3aad7ffd::t_fb7a1b258ae332 383
+app/texsource.py
+  s_2e78fe3aad7ffd::t_30c4ad018df120 29-52,104-105,114-120,128,226-240
+app/texstructure.py
+  s_2e78fe3aad7ffd::t_30c4ad018df120 104-107,132-138,1754
+README.fr.md
+  s_2e78fe3aad7ffd::t_fb7a1b258ae332 403
+tests/test_texexport.py
+  s_2e78fe3aad7ffd::t_841c7ceb9e2cae 206-214,218-219,222
+tests/test_texfile.py
+  s_2e78fe3aad7ffd::t_841c7ceb9e2cae 129-145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "351cbd5da054d330766651991250ef0fa023fa67",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
