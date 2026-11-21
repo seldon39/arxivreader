@@ -126,6 +126,23 @@ class TexFile(unittest.TestCase):
         self.assertEqual(texfile._bibliographies(text), ["refs.bib"])
         self.assertEqual(texfile._bibliographies(r"\addbibresource{a.bib}\bibliography{b,c}"), ["a.bib", "b.bib", "c.bib"])
 
+    def test_theorems_declared_in_a_package_of_the_project(self):
+        (self.project / "preamble.sty").write_text("\\ProvidesPackage{preamble}\n\\RequirePackage{amsthm}\n"
+                                                   "\\newtheorem{thm}{Theorem}[section] % main results\n"
+                                                   "\\newtheorem{lem}[thm]{Lemma}\n\\def\\pre@x{1}\n", encoding="utf-8")
+        (self.project.parent / "outside.sty").write_text("\\newtheorem{out}{Outside}\n", encoding="utf-8")
+        (self.project / "paper.tex").write_text(
+            "\\documentclass{article}\n\\usepackage{amsmath, preamble}\n\\usepackage{../outside}\n\\begin{document}\n"
+            "\\section{A}\n\\begin{thm}\\label{t} T.\\end{thm}\n\\begin{lem} L.\\end{lem}\n"
+            "\\begin{proof} By \\ref{t}.\\end{proof}\n\\end{document}\n", encoding="utf-8")
+        files = texfile.read_project(self.project / "paper.tex")
+        self.assertEqual(sorted(files), ["paper.tex", "preamble.sty"])  # paquet du projet ; jamais hors du dossier
+        structure, text = texstructure.from_files(files, "paper.tex")
+        nodes = structure["nodes"]
+        self.assertEqual([n["label"] for n in nodes], ["Theorem 1.1", "Lemma 1.2"])
+        self.assertEqual(nodes[1]["uses"], [nodes[0]["id"]])
+        self.assertNotIn("pre@x", text)  # du paquet, seulement ses déclarations d'énoncés
+
     def test_stable_ids_follow_labels(self):
         structure = texfile.stable_ids(texstructure.extract(ARTICLE))
         ids = [n["id"] for n in structure["nodes"]]

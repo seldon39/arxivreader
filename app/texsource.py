@@ -26,6 +26,30 @@ INPUT = re.compile(r"\\(?:input|include|subfile)\s*\{([^}]+)\}|\\input\s+([^\s{}
 
 def input_target(match):
     return (match.group(1) or match.group(2)).strip()
+
+
+# \usepackage{a,b} et \RequirePackage{…} : un paquet du projet (a.sty à côté du fichier) apporte ses déclarations
+# d'énoncés (\newtheorem… mis dans un paquet personnel)
+PACKAGE = re.compile(r"\\(?:usepackage|RequirePackage)\s*(?:\[[^\]]*\])?\s*\{([^}]+)\}")
+# lignes d'un .sty du projet gardées dans le texte développé, juste après son \usepackage : celles qui déclarent des
+# énoncés (le reste du paquet, macros internes à @, n'est pas du texte de l'article)
+THEOREM_LINE = re.compile(r"^[^\n]*\\(?:newtheorem|spnewtheorem|declaretheorem|newaliascnt|numberwithin|theoremstyle)\b[^\n]*\n?",
+                          re.M)
+# inclusions que le texte développé suit : INPUT (groupes 1, 2), puis PACKAGE (groupe 3)
+INCLUDE = re.compile(INPUT.pattern + "|" + PACKAGE.pattern)
+
+
+def local_packages(files, base, names):
+    """Fichiers .sty du projet que charge « \\usepackage{names} » (cherchés à côté du fichier, puis à la racine)."""
+    found = []
+    for name in names.split(","):
+        name = name.strip()
+        for candidate in (posixpath.join(base, name + ".sty"), name + ".sty"):
+            candidate = posixpath.normpath(candidate)
+            if name and candidate in files:
+                found.append(candidate)
+                break
+    return found
 ENUMERATE = re.compile(r"\\begin\s*\{enumerate\}(?:\s*\[([^\]]*)\])?")
 
 # Paquets de police → police du lecteur
@@ -77,7 +101,8 @@ def _strip_comments(text):
 
 
 def _expand(files, name, depth=0, seen=None):
-    """Texte du fichier `name` avec ses \\input/\\include remplacés (profondeur limitée)."""
+    """Texte du fichier `name` avec ses \\input/\\include remplacés (profondeur limitée), et après le \\usepackage d'un
+    paquet du projet, les lignes de ce paquet qui déclarent des énoncés (une seule fois)."""
     seen = seen if seen is not None else set()
     if depth > 6 or name in seen:
         return ""
@@ -86,6 +111,13 @@ def _expand(files, name, depth=0, seen=None):
     base = posixpath.dirname(name)
 
     def replace(match):
+        if match.group(3) is not None:
+            declared = []
+            for package in local_packages(files, base, match.group(3)):
+                if package not in seen:
+                    seen.add(package)
+                    declared += [line.group(0) for line in THEOREM_LINE.finditer(_strip_comments(files[package]))]
+            return match.group(0) + "".join(declared)
         target = input_target(match)
         for candidate in (target, target + ".tex", posixpath.join(base, target), posixpath.join(base, target + ".tex")):
             candidate = posixpath.normpath(candidate)
@@ -93,7 +125,7 @@ def _expand(files, name, depth=0, seen=None):
                 return _expand(files, candidate, depth + 1, seen)
         return ""
 
-    return INPUT.sub(replace, text)
+    return INCLUDE.sub(replace, text)
 
 
 # ---------- Texte développé avec l'origine de chaque caractère ----------
@@ -191,7 +223,21 @@ def expand_with_origins(files, name):
         starts = [p[0] for p in pieces]
         base = posixpath.dirname(file)
         pos = 0
-        for match in INPUT.finditer(text):  # comme INPUT.sub : de gauche à droite, chaque inclusion développée aussitôt
+        for match in INCLUDE.finditer(text):  # comme INCLUDE.sub : de gauche à droite, chaque inclusion développée aussitôt
+            if match.group(3) is not None:  # \usepackage gardé, suivi des déclarations des paquets du projet
+                out.append(text[pos:match.end()])
+                copy(pieces, starts, file, pos, match.end())
+                pos = match.end()
+                for package in local_packages(files, base, match.group(3)):
+                    if package in seen:
+                        continue
+                    seen.add(package)
+                    package_text, package_pieces = _strip_comments_tracked(files[package])
+                    package_starts = [p[0] for p in package_pieces]
+                    for line in THEOREM_LINE.finditer(package_text):
+                        out.append(line.group(0))
+                        copy(package_pieces, package_starts, package, line.start(), line.end())
+                continue
             out.append(text[pos:match.start()])
             copy(pieces, starts, file, pos, match.start())
             target = input_target(match)

@@ -101,6 +101,10 @@ def plain(text):
 
 # ---------- Déclarations des énoncés ----------
 
+CLASS_THEOREMS = ("theorem", "lemma", "proposition", "corollary", "definition", "remark", "conjecture", "claim", "example",
+                  "question", "problem", "fact", "observation", "notation", "assumption")
+
+
 def declarations(text):
     """{environnement: {name, counter, within, numbered}} et compteurs remis à zéro par section."""
     envs, aliases, within = {}, {}, {}
@@ -125,6 +129,13 @@ def declarations(text):
                      "numbered": keys.get("numbered", "yes") != "no"}
         if keys.get("numberwithin") or keys.get("parent"):
             within[env] = keys.get("numberwithin") or keys.get("parent")
+    # environnements que la classe déclare elle-même (svjour3, siamart, llncs…) : employés sans aucune déclaration dans
+    # la source (ni \\newtheorem ni \\newenvironment), ce sont des énoncés (compteur propre ; les numéros imprimés
+    # viennent du .aux quand le TeX est compilé ici)
+    for env in CLASS_THEOREMS:
+        if env not in envs and re.search(r"\\begin\s*\{%s\}" % env, text) \
+                and not re.search(r"\\(?:re)?newenvironment\s*\*?\s*\{?\\?%s\}|\\(?:New|Renew|Declare)DocumentEnvironment\s*\{%s\}" % (env, env), text):
+            envs[env] = {"name": env.capitalize(), "counter": env, "numbered": True}
     for match in re.finditer(r"\\numberwithin\s*\{(\w+)\}\s*\{(\w+)\}", text):
         within[match.group(1)] = match.group(2)
     # \renewcommand{\thetheorem}{\Alph{theorem}} : « Theorem A » ; {\thesection.\arabic{lemma}} : par section
@@ -1740,7 +1751,7 @@ def _biblatex(text):
 
 def from_source(data):
     """Structure à partir de l'archive de la source arXiv ; None si ce n'est pas du TeX."""
-    files = _read_archive(data, extensions=(".tex", ".ltx", ".bbl", ".json"))
+    files = _read_archive(data, extensions=(".tex", ".ltx", ".sty", ".bbl", ".json"))  # .sty : déclarations d'énoncés
     if not files:
         return None
     main = choose_main(files, files.get("00README.json"))

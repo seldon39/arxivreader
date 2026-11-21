@@ -203,13 +203,23 @@ class Expansion(unittest.TestCase):
         self.assertEqual(origins.at(text.index("def")), ("main.tex", 20))
         self.assertEqual(origins.first("main.tex"), 0)
 
+    def test_project_packages(self):
+        """Déclarations d'énoncés d'un paquet du projet : une fois, après son \\usepackage, venues du .sty."""
+        text, origins = self.check({"main.tex": "\\usepackage[x]{amsmath,defs}\n\\usepackage{defs}\\begin{document}",
+                                    "defs.sty": "% defs\n\\newtheorem{thm}{Theorem} % c\n\\def\\a{1}\n\\theoremstyle{remark}\r\n"
+                                                "\\newtheorem{rem}[thm]{Remark}"})
+        self.assertEqual(text.count("\\newtheorem"), 2)
+        self.assertNotIn("\\def", text)
+        self.assertEqual(origins.at(text.index("\\newtheorem{thm}")), ("defs.sty", 7))
+
     def test_random_sources(self):
         rng = random.Random(7)
         pieces = ["a", "b", " ", "%", "\\", "{", "}", "\n", "\r\n", "\r", "\x0c", "\x85", "\u2028", "\\%", "\\\\",
-                  "\\input{b}", "\\input{c}", "\\input c ", "\\include{sub/d}", "é"]
+                  "\\input{b}", "\\input{c}", "\\input c ", "\\include{sub/d}", "é", "\\usepackage{e}", "\\usepackage{f,e}",
+                  "\\newtheorem{t}{T}"]
         for _ in range(300):
             files = {name: "".join(rng.choice(pieces) for _ in range(rng.randint(0, 40)))
-                     for name in ("main.tex", "b.tex", "c.tex", "sub/d.tex")}
+                     for name in ("main.tex", "b.tex", "c.tex", "sub/d.tex", "e.sty")}
             self.check(files)
 
 

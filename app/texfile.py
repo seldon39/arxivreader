@@ -34,7 +34,7 @@ from pathlib import Path
 from . import annotations, db, texstructure
 from .library import paper_dir, paper_lock, write_atomic, write_atomic_bytes
 from .structure import NEEDS_PROOF
-from .texsource import DOCUMENTCLASS, INPUT, input_target, MAX_FILE_BYTES, MAX_FILES, MAX_TOTAL_BYTES, USEPACKAGE, _strip_comments, analyze_text
+from .texsource import DOCUMENTCLASS, INPUT, input_target, MAX_FILE_BYTES, MAX_FILES, MAX_TOTAL_BYTES, PACKAGE, USEPACKAGE, _strip_comments, analyze_text
 
 SOURCE = "local-tex"
 SUFFIXES = (".tex", ".ltx")
@@ -113,7 +113,8 @@ def _run(command, cwd, env, timeout):
 # ---------- Lecture de la source ----------
 
 def read_project(main):
-    """Fichiers de la source, à partir du fichier principal et de ses \\input/\\include : {chemin relatif: texte}."""
+    """Fichiers de la source, à partir du fichier principal et de ses \\input/\\include, et les paquets du projet qu'il
+    charge (\\usepackage{macros} avec macros.sty dans le dossier) : {chemin relatif: texte}."""
     root = main.parent
     files, queue, total = {}, [main.name], 0
     while queue and len(files) < MAX_FILES:
@@ -130,7 +131,17 @@ def read_project(main):
             continue
         total += size
         base = posixpath.dirname(name)
-        for match in INPUT.finditer(_strip_comments(files[name])):
+        stripped = _strip_comments(files[name])
+        # paquet du projet (\usepackage{macros} et macros.sty à côté) : lu pour ses déclarations d'énoncés
+        for match in PACKAGE.finditer(stripped):
+            for package in match.group(1).split(","):
+                package = package.strip()
+                for candidate in (posixpath.join(base, package + ".sty"), package + ".sty"):
+                    candidate = posixpath.normpath(candidate)
+                    if package and in_project(candidate) and (root / candidate).is_file():
+                        queue.append(candidate)
+                        break
+        for match in INPUT.finditer(stripped):
             target = input_target(match)
             for candidate in (target, target + ".tex", posixpath.join(base, target), posixpath.join(base, target + ".tex")):
                 candidate = posixpath.normpath(candidate)

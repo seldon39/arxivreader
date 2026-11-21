@@ -427,6 +427,12 @@ Snapshots (`ARXIVREADER_SNAPSHOT`) before and after the update help with compari
   filtering). Checked on 6 arXiv papers found by going through 900 recent HTML pages. Bibliography: the `.bib` when all
   are found (an amsrefs `.bbl` escapes it), otherwise the `.bbl` (`nobibtex`). Implicit dependencies ("the above lemma", justification sentence,
   equations in the running text, corollary following a statement): `structure.py` and `texstructure.implicit_dependencies`.
+  Statements of a TeX source declared outside its `.tex` files: a package of the project (`\usepackage{macros}`
+  with `macros.sty` in the folder: `texfile.read_project` reads it, `texsource._expand` and `expand_with_origins`
+  put its declaration lines, `THEOREM_LINE`, right after the `\usepackage`, once, identically in both), and the
+  environments the class provides (svjour3, siamart: `CLASS_THEOREMS` in `texstructure.declarations`, a standard
+  name used with no `\newtheorem` nor `\newenvironment`, own counter, printed numbers from the `.aux` when compiled
+  here). Up to 1.14.12 these papers had no statement at all (6 out of 75 arXiv sources of 2016-2021).
   List labels unknown to LaTeXML ("(enumi)", e.g. `\greek*` from moreenum): redone by `relabelLists`
   (amsfix.js) based on the source (`texsource._label_format`), cross-references and tooltips included. Non-printed text:
   `strip_hidden` also removes the argument of an empty macro (`\newcommand{\comment}[1]{}`). LaTeXML is launched in the document's folder

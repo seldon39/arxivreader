@@ -400,7 +400,7 @@ Le PDF est affiché par pdf.js (Mozilla), intégré à l'application : il indiqu
 le passage du PDF au HTML (sélecteur « HTML | PDF ») revient au même endroit, et que la position de
 lecture est gardée aussi en lisant le PDF. Les scripts contenus dans les PDF ne sont jamais exécutés.
 Énoncés, preuves, dépendances, graphe et bibliographie sont tirés de la source TeX (environnements
-`\newtheorem`, numérotation simulée, `\ref`/`\eqref`/`\cref`) ; un énoncé choisi mène à sa page du PDF
+`\newtheorem`, aussi dans un `.sty` du dossier de l'article ou fournis par la classe du document, numérotation simulée, `\ref`/`\eqref`/`\cref`) ; un énoncé choisi mène à sa page du PDF
 (ancres de hyperref, sinon recherche du texte). Comparé à la version HTML sur 42 articles : 99 % des
 énoncés et 97 % des liens retrouvés. Un article importé avant cette version : bouton « Mettre à jour
 depuis arXiv » de sa carte dans la bibliothèque.

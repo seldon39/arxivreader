@@ -73,6 +73,24 @@ class TexStructure(unittest.TestCase):
         self.assertEqual(self.structure["labels"]["lem:two"], self.nodes["Lemma 1.4"]["id"])
 
 
+class ClassTheorems(unittest.TestCase):
+    """Énoncés que la classe déclare elle-même (svjour3, siamart…), employés sans \\newtheorem dans la source."""
+
+    def test_class_environments_are_statements(self):
+        structure = extract(r"""\documentclass{svjour3}
+\newenvironment{claim}{\par\noindent}{\par}
+\begin{document}
+\begin{theorem}\label{t:main} Main. \end{theorem}
+\begin{lemma}\label{l:key} Key. \end{lemma}
+\begin{proof} By Theorem~\ref{t:main}. \end{proof}
+\begin{claim} Not a statement: the source defines this environment. \end{claim}
+\end{document}""")
+        nodes = structure["nodes"]
+        self.assertEqual([(n["kind"], n["label"]) for n in nodes], [("theorem", "Theorem 1"), ("lemma", "Lemma 1")])
+        self.assertEqual(nodes[1]["uses"], [nodes[0]["id"]])
+        self.assertEqual(len(nodes[1]["proofs"]), 1)
+
+
 class MissingArguments(unittest.TestCase):
     def test_command_without_its_argument(self):
         """« \\section » cité dans une phrase (sans argument) : ignoré, l'analyse continue (ValueError avant)."""

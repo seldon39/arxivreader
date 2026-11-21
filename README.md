@@ -380,7 +380,7 @@ The PDF is displayed by pdf.js (Mozilla), bundled with the app: it knows which p
 switching between PDF and HTML ("HTML | PDF" selector) lands at the same place, and the reading position
 is kept while reading the PDF too. Scripts contained in PDFs are never run.
 Statements, proofs, dependencies, graph and bibliography are taken from the TeX source (`\newtheorem`
-environments, simulated numbering, `\ref`/`\eqref`/`\cref`); choosing a statement goes to its page in the
+environments, also in a `.sty` of the paper's folder or provided by the document class, simulated numbering, `\ref`/`\eqref`/`\cref`); choosing a statement goes to its page in the
 PDF (hyperref anchors, otherwise a text search). Compared with the HTML version on 42 papers: 99 % of the
 statements and 97 % of the links are found. For a paper imported before this feature: "Update from arXiv"
 button on its card in the library.
