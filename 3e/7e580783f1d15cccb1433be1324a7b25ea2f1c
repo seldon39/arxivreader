@@ -1,0 +1,29 @@
+README.md
+  s_2e78fe3aad7ffd::t_d69074ef6212a5 170
+static/js/graph.js
+  s_2e78fe3aad7ffd::t_d69074ef6212a5 207-211,272
+static/js/reader.js
+  s_2e78fe3aad7ffd::t_d69074ef6212a5 2296
+README.fr.md
+  s_2e78fe3aad7ffd::t_d69074ef6212a5 177
+tests/test_reader_layout.py
+  s_2e78fe3aad7ffd::t_d69074ef6212a5 146-166
+static/js/i18n.js
+  s_2e78fe3aad7ffd::t_d69074ef6212a5 1048,2118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "3e7e580783f1d15cccb1433be1324a7b25ea2f1c",
+  "prompts": {},
+  "sessions": {
+    "s_2e78fe3aad7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cdfd517a-8785-46b5-a029-44b2ad391b9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
