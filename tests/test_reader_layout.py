@@ -143,5 +143,26 @@ class AlgorithmNumbers(unittest.TestCase):
         self.assertEqual(declarations(LATEXML_CSS, ".ltx_framed_top").get("border-width"), "1px 0 0")
         self.assertEqual(declarations(LATEXML_CSS, ".ltx_framed_topbottom").get("border-width"), "1px 0")
 
+@unittest.skipUnless(shutil.which("node"), "Node absent")
+class GraphDeselect(unittest.TestCase):
+    """Graphe des dépendances : un clic à côté des énoncés revient au graphe sans énoncé choisi."""
+
+    def deselects(self, on_node, selected):
+        target = "{ closest: (s) => (%s && s === '.node' ? {} : null) }" % ("true" if on_node else "false")
+        return jsfunction.run("graph.js", "deselects", f"deselects({target}, {json.dumps(selected)})")
+
+    def test_click_beside_a_statement_clears_the_choice(self):
+        self.assertTrue(self.deselects(False, "thm1"))
+
+    def test_click_on_a_statement_or_with_nothing_chosen_does_not(self):
+        self.assertFalse(self.deselects(True, "thm1"))
+        self.assertFalse(self.deselects(False, None))
+
+    def test_wired_in_the_graph_and_the_panel(self):
+        graph = (ROOT / "static/js/graph.js").read_text(encoding="utf-8")
+        reader = (ROOT / "static/js/reader.js").read_text(encoding="utf-8")
+        self.assertIn("if (deselects(event.target, selected)) onSelect(null);", graph)
+        self.assertIn("onSelect: (id) => (id ? this.select(id, { scroll: true }) : this.select(null)),", reader)
+
 if __name__ == "__main__":
     unittest.main()

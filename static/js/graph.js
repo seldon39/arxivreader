@@ -204,6 +204,11 @@ function cachedLayout(allNodes, byId, showIsolated, showRemarks) {
   return cache.get(key);
 }
 
+// Clic dans le graphe à côté des énoncés (fond, flèche) : on revient au graphe sans énoncé choisi
+export function deselects(target, selected) {
+  return Boolean(selected) && !target.closest(".node");
+}
+
 export function renderGraph(allNodes, { selected = null, showIsolated = false, showRemarks = false, onSelect = () => {} } = {}) {
   const byId = new Map(allNodes.map((n) => [n.id, n]));
   const { nodes, coords, waypoints, chains, width, height } = cachedLayout(allNodes, byId, showIsolated, showRemarks);
@@ -264,5 +269,6 @@ export function renderGraph(allNodes, { selected = null, showIsolated = false, s
     });
     root.append(group);
   }
+  root.addEventListener("click", (event) => { if (deselects(event.target, selected)) onSelect(null); });
   return root;
 }

@@ -2293,7 +2293,7 @@ class Reader {
   renderGraphTab(body) {
     const graph = renderGraph(this.graphNodes(), {
       selected: this.selected, showIsolated: this.showIsolated, showRemarks: this.showRemarks,
-      onSelect: (id) => this.select(id, { scroll: true }),
+      onSelect: (id) => (id ? this.select(id, { scroll: true }) : this.select(null)),
     });
     const isolated = h("input", { type: "checkbox", checked: this.showIsolated });
     isolated.addEventListener("change", () => { this.showIsolated = isolated.checked; this.renderPanel(); });

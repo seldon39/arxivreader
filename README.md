@@ -167,7 +167,7 @@ sync, with `.venv` as a link to it. The address is http://127.0.0.1:8710/; the s
   links (hyperref): most arXiv PDFs and the TeX files compiled by the app have them.
 - **Collapsible proofs**; handwritten proofs ("*Proof.* … □") are detected automatically.
 - **Structure panel**: list of statements (filtered by type), dependencies of a statement
-  (uses / used by / cites, full chain), dependency **graph** (can be shown full screen).
+  (uses / used by / cites, full chain), dependency **graph** (can be shown full screen; a click beside the chosen statement clears it).
 - Flags any **invisible text** (white, tiny, hidden) the paper may contain. In a PDF, text that is simply not displayed (the
   text layer of a scan, clipped text, a hidden layer) is left out of what the AI receives and mentioned in a quiet note,
   without the warning.
