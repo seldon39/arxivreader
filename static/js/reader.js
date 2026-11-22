@@ -1,7 +1,7 @@
 // Lecteur d'article : texte, sommaire, aperçus des renvois, preuves repliables, panneau des énoncés.
 
 import { api, setReadingVersion } from "./api.js";
-import { closure, renderGraph } from "./graph.js";
+import { aiProfile, aiWarningText, closure, renderGraph } from "./graph.js";
 import { Annotator, findAll, noteEditor } from "./annotations.js";
 import { Assistant } from "./ai.js";
 import { addButton, allButton, askDestination, destinationFolder } from "./biblibrary.js";
@@ -100,6 +100,59 @@ function citedStatement(link, nodes) {
   if (kind) return numbered.find((n) => n.kind === kind) || null;
   if (/^[A-Z]$/.test(number)) return null;  // « [12, Appendix A] » : une lettre seule sans mot d'énoncé n'en désigne pas un
   return numbered.length === 1 ? numbered[0] : null; // « [12, 4.3] » : seulement si le numéro est sans ambiguïté
+}
+
+// Échap revient à la bulle « IA » seulement si on la voit : dans la page (panneau affiché, pas de graphe en plein écran
+// par-dessus) ou dans ce plein écran. Sinon (bulle du panneau restée ouverte derrière, panneau fermé au clavier), elle se
+// ferme sans retenir la touche, qui ferme alors le plein écran ou l'aperçu ouvert.
+function bubbleTakesEscape(connected, visible, modalOpen, inModal) {
+  return connected && visible && (!modalOpen || inModal);
+}
+
+// Avertissement « IA » du graphe : un badge ; la bulle ne s'ouvre qu'au clic, sous le badge (qui reste visible).
+// Elle se ferme par un nouveau clic, un clic ailleurs ou Échap (dans le graphe en plein écran, Échap ferme d'abord la bulle).
+let aiWarnings = 0;
+const PROOFTRACE = "2611.08412";  // Guo, Jin, Ke, Sui : graphe des preuves pour repérer les textes d'IA
+
+// Ligne grise de la bulle : l'étude, et un lien vers l'article de ProofTrace (méthode proche)
+function aiWarningNote() {
+  const [before, after] = t("graph.ai.note", { link: "\u0000" }).split("\u0000");
+  return [before, h("a", { href: `https://arxiv.org/abs/${PROOFTRACE}`, target: "_blank", rel: "noopener noreferrer",
+    title: t("reader.openOutside") }, `arXiv:${PROOFTRACE}`), after];
+}
+function aiWarningBadge(profile) {
+  const id = `ai-warning-${++aiWarnings}`;
+  const bubble = h("div", { class: "ai-warning-bubble", id, role: "dialog", "aria-label": t("graph.ai.label"), hidden: true },
+    h("p", {}, aiWarningText(profile)), h("p", { class: "note" }, ...aiWarningNote()));
+  const button = h("button", { class: "ai-warning", type: "button", title: t("graph.ai.label"), "aria-label": t("graph.ai.label"),
+    "aria-expanded": false, "aria-controls": id, html: icons.warning }, t("graph.ai.badge"));
+  const box = h("span", { class: "ai-warning-box" }, button, bubble);
+  const outside = (event) => { if (!box.isConnected || !box.contains(event.target)) close(); };
+  const escape = (event) => {
+    if (event.key !== "Escape") return;
+    const modal = document.querySelector("dialog:modal");
+    if (bubbleTakesEscape(box.isConnected, box.isConnected && getComputedStyle(box).visibility !== "hidden", Boolean(modal), Boolean(modal?.contains(box)))) {
+      event.preventDefault(); event.stopPropagation(); button.focus();
+    }
+    close();
+  };
+  function close() {
+    bubble.hidden = true;
+    button.setAttribute("aria-expanded", "false");
+    document.removeEventListener("pointerdown", outside, true);
+    document.removeEventListener("keydown", escape, true);
+  }
+  button.addEventListener("click", () => {
+    if (!bubble.hidden) return close();
+    // assez étroite pour rester dans le panneau (ou la fenêtre) à gauche du badge
+    const frame = box.closest(".panel, dialog")?.getBoundingClientRect() || { left: 0 };
+    bubble.style.width = `${Math.max(200, Math.min(320, button.getBoundingClientRect().right - frame.left - 12))}px`;
+    bubble.hidden = false;
+    button.setAttribute("aria-expanded", "true");
+    document.addEventListener("pointerdown", outside, true);
+    document.addEventListener("keydown", escape, true);
+  });
+  return box;
 }
 
 class Reader {
@@ -2290,6 +2343,14 @@ class Reader {
     return select;
   }
 
+  // Profil « IA » du graphe de l'article entier (pas d'un livre) : calculé une fois par structure
+  aiWarning() {
+    if (this.aiProfileOf?.nodes !== this.nodes) {
+      this.aiProfileOf = { nodes: this.nodes, profile: this.structure.book ? null : aiProfile(this.nodes, this.paper.words) };
+    }
+    return this.aiProfileOf.profile;
+  }
+
   renderGraphTab(body) {
     const graph = renderGraph(this.graphNodes(), {
       selected: this.selected, showIsolated: this.showIsolated, showRemarks: this.showRemarks,
@@ -2299,10 +2360,14 @@ class Reader {
     isolated.addEventListener("change", () => { this.showIsolated = isolated.checked; this.renderPanel(); });
     const remarks = h("input", { type: "checkbox", checked: this.showRemarks });
     remarks.addEventListener("change", () => { this.showRemarks = remarks.checked; this.renderPanel(); });
-    const expand = h("button", { class: "button", type: "button", onclick: () => this.openGraphOverlay() }, t("graph.expand"));
+    const expand = h("button", { class: "icon-button", type: "button", title: t("graph.expand"), "aria-label": t("graph.expand"),
+      html: icons.maximize, onclick: () => this.openGraphOverlay() });
+    const profile = this.aiWarning();
     const kinds = [...new Set(this.nodes.map((n) => n.kind))];
     body.append(
-      h("div", { class: "graph-tools" }, this.chapterSelect(), h("label", {}, isolated, t("graph.isolated")), h("label", {}, remarks, t("graph.remarks")), expand),
+      h("div", { class: "graph-tools" }, this.chapterSelect(),
+        h("div", { class: "graph-actions" }, profile && aiWarningBadge(profile), expand),
+        h("div", { class: "graph-options" }, h("label", {}, isolated, t("graph.isolated")), h("label", {}, remarks, t("graph.remarks")))),
       graph ? h("div", { class: "graph-wrap" }, graph) : h("p", { class: "hint" }, t("graph.empty")),
       h("div", { class: "legend" }, kinds.map((k) => h("span", { dataset: { kind: k } }, h("span", { class: "dot" }), t(`kind.${k}`)))),
       h("p", { class: "hint" }, t("graph.help")),
@@ -2332,7 +2397,8 @@ class Reader {
     const wrap = h("div", { class: "graph-wrap" }, draw());
     const closeButton = h("button", { class: "button", type: "button" }, t("graph.close"));
     const overlay = h("dialog", { class: "graph-overlay", "aria-label": t("tabs.graph") },
-      h("header", {}, h("strong", {}, withMath(this.paper.title)), h("span", { style: "flex:1" }), closeButton),
+      h("header", {}, h("strong", {}, withMath(this.paper.title)), h("span", { style: "flex:1" }),
+        this.aiWarning() && aiWarningBadge(this.aiWarning()), closeButton),
       wrap, h("p", { class: "hint", style: "margin: 0 16px 12px" }, t("graph.help")));
     closeButton.addEventListener("click", () => {
       overlay.close();
