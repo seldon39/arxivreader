@@ -1,0 +1,19 @@
+app/version.py
+  s_a838f9eccd6db6::t_ce1a72cbfce8a3 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "aa960e41cad8ee4a73b8817907871585999b60a8",
+  "prompts": {},
+  "sessions": {
+    "s_a838f9eccd6db6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1070b467-f101-42d1-856c-2cb1897f9607",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
