@@ -1,0 +1,27 @@
+tests/test_graph_ai.py
+  s_a838f9eccd6db6::t_1f40491580bab3 17-19,21-22,54,66-70
+  s_a838f9eccd6db6::t_122620725996e9 71
+static/js/graph.js
+  s_a838f9eccd6db6::t_1f40491580bab3 210-212,226
+MAINTENANCE.md
+  s_a838f9eccd6db6::t_575f7428e09edb 803,806-809
+  s_a838f9eccd6db6::t_1cc4c3235f9787 804-805
+static/js/i18n.js
+  s_a838f9eccd6db6::t_b17f0701f37a83 1047,2123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "f1de475254bf9a847920d280955d0f1f3ca6ea64",
+  "prompts": {},
+  "sessions": {
+    "s_a838f9eccd6db6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1070b467-f101-42d1-856c-2cb1897f9607",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
