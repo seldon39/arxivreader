@@ -1,0 +1,50 @@
+app/wordcount.py
+  s_a838f9eccd6db6::t_a7900c5de2d051 8
+  s_a838f9eccd6db6::t_1f2f52157db3b3 17
+  s_a838f9eccd6db6::t_c99d62ae8362a3 1-7,9-16,18-54
+tests/test_wordcount.py
+  s_a838f9eccd6db6::t_a789cafb5b0259 36-38,61,79
+  s_a838f9eccd6db6::t_3087ed8bbe3dea 1-35,39-60,62-78,80-83
+tests/test_graph_ai.py
+  s_a838f9eccd6db6::t_95d1aa5095a1f9 116-123
+  s_a838f9eccd6db6::t_427111eb68239f 1-104,124-131
+  s_a838f9eccd6db6::t_dc0bdd0c557149 105-115
+MAINTENANCE.md
+  s_a838f9eccd6db6::t_9c50caccbf1c06 47,795-813
+static/js/i18n.js
+  s_a838f9eccd6db6::t_a36733e9646550 1046-1050,2122-2126
+  s_a838f9eccd6db6::t_95d1aa5095a1f9 1051,2127
+README.fr.md
+  s_a838f9eccd6db6::t_9c50caccbf1c06 177-180
+README.md
+  s_a838f9eccd6db6::t_9c50caccbf1c06 170-172
+static/js/graph.js
+  s_a838f9eccd6db6::t_a36733e9646550 183,207-239
+  s_a838f9eccd6db6::t_974509c2c1909b 240
+static/js/reader.js
+  s_a838f9eccd6db6::t_dc0bdd0c557149 105-111,133-136
+  s_a838f9eccd6db6::t_a36733e9646550 4,112-114,123-125,127-132,137-157,2346-2353,2363-2365,2368-2370,2400-2401
+  s_a838f9eccd6db6::t_95d1aa5095a1f9 115-122,126
+app/main.py
+  s_a838f9eccd6db6::t_a36733e9646550 32,486
+static/css/app.css
+  s_a838f9eccd6db6::t_a36733e9646550 564-585
+static/js/util.js
+  s_a838f9eccd6db6::t_a36733e9646550 72-73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "48997108ebaf3a682ed2a24ad7c2e82ee87d3a08",
+  "prompts": {},
+  "sessions": {
+    "s_a838f9eccd6db6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1070b467-f101-42d1-856c-2cb1897f9607",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Razvan Apredoaei <92303924+seldon39@users.noreply.github.com>"
+    }
+  }
+}
