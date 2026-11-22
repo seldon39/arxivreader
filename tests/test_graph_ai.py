@@ -14,10 +14,12 @@ def node(id, kind="theorem", uses=(), used_by=(), proved=False):
             "proofs": ["p"] if proved else [], "detectedProof": False}
 
 
-def complete(top, bottom, kind_top="lemma", kind_bottom="theorem", proved=False):
-    """Chaque énoncé du bas utilise tous ceux du haut : graphe complet biparti, croisements inévitables."""
+def complete(top, bottom, kind_top="lemma", kind_bottom="theorem", proved=False, corollaries=1):
+    """Chaque énoncé du bas utilise tous ceux du haut : graphe complet biparti, croisements inévitables ; les
+    `corollaries` premiers énoncés du bas sont des corollaires."""
     tops = [node(f"a{i}", kind_top, used_by=[f"b{j}" for j in range(bottom)], proved=proved) for i in range(top)]
-    bottoms = [node(f"b{j}", kind_bottom, uses=[f"a{i}" for i in range(top)], proved=proved) for j in range(bottom)]
+    bottoms = [node(f"b{j}", "corollary" if j < corollaries else kind_bottom, uses=[f"a{i}" for i in range(top)], proved=proved)
+               for j in range(bottom)]
     return tops + bottoms
 
 
@@ -49,7 +51,7 @@ class Profiles(unittest.TestCase):
         self.assertEqual(self.profile(nodes + [node(f"r{i}", "remark") for i in range(10)], 5000)["model"], "gpt")
 
     def test_claude_crossings_and_density(self):
-        # K(4,4) : 36 croisements pour 16 liens (2,25 par lien) ; 8 énoncés pour 1000 mots
+        # K(4,4) : 36 croisements pour 16 liens (2,25 par lien) ; 8 énoncés pour 1000 mots ; 1 corollaire sur 8
         found = self.profile(complete(4, 4), 1000)
         self.assertEqual(found["model"], "claude")
         self.assertEqual(found["crossings"], 2.25)
@@ -60,6 +62,12 @@ class Profiles(unittest.TestCase):
         self.assertIsNone(self.profile(complete(4, 4), None))  # pas de texte : densité inconnue
         chain = [node(f"n{i}", uses=[f"n{i - 1}"] if i else [], used_by=[f"n{i + 1}"] if i < 9 else []) for i in range(10)]
         self.assertIsNone(self.profile(chain, 1000))  # 10 énoncés pour 1000 mots, aucun croisement
+
+    def test_claude_needs_corollaries(self):
+        # articles humains très découpés, sans corollaire (Bismut, 1603.05103 et 2102.08129 : 2,08 et 1,06 croisement
+        # par lien, 6,3 et 5,3 énoncés pour 1000 mots) : pas le profil des articles de Claude, qui en ont tous
+        self.assertIsNone(self.profile(complete(4, 4, kind_top="proposition", corollaries=0), 1000))
+        self.assertEqual(self.profile(complete(4, 4, kind_top="proposition", corollaries=1), 1000)["model"], "claude")
 
     def test_not_below_eight_statements(self):
         self.assertIsNone(self.profile(complete(3, 4), 500))

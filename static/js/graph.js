@@ -207,7 +207,9 @@ function cachedLayout(allNodes, byId, showIsolated, showRemarks) {
 // Avertissement « IA » (indicatif) : un graphe dont la forme ressemble à celle des articles entièrement rédigés par une IA.
 // Seuils d'une étude d'environ 200 articles (MAINTENANCE.md), mesurée sur le graphe de l'article entier avec les options
 // par défaut : profil GPT = beaucoup de lemmes, (presque) pas de corollaires, presque tout démontré ; profil Claude =
-// beaucoup de croisements par lien et beaucoup d'énoncés pour la longueur. `words` : mots hors formules (serveur).
+// beaucoup de croisements par lien et beaucoup d'énoncés pour la longueur, avec des corollaires (les articles de Claude
+// en ont tous ; sans cette condition, des articles humains très découpés comme ceux de Bismut ressortaient).
+// `words` : mots hors formules (serveur).
 // null : moins de 8 énoncés, ou aucun des deux profils.
 export function aiProfile(allNodes, words) {
   if (allNodes.length < 8) return null;
@@ -221,7 +223,7 @@ export function aiProfile(allNodes, words) {
   const { nodes, chains, fewest } = cachedLayout(allNodes, byId, false, false);
   const crossings = nodes.length >= 2 ? fewest / Math.max(1, chains.length) : 0;
   const density = words > 0 ? 1000 * allNodes.length / words : 0;
-  if (crossings > 0.57 && density > 5.03) return { model: "claude", crossings, density };
+  if (crossings > 0.57 && density > 5.03 && corollaries >= 0.08) return { model: "claude", crossings, density };
   return null;
 }
 
