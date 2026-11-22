@@ -180,7 +180,7 @@ function layout(nodes, byId) {
   const coords = new Map(nodes.map((n) => [n.id, { x: x.get(n.id) + shift - NODE_W / 2, y: rowY(layer.get(n.id)) }]));
   const waypoints = new Map([...items.values()].filter((i) => i.dummy).map((i) => [i.id, { x: x.get(i.id) + shift, y: rowY(i.layer) }]));
   const height = MARGIN * 2 + layers.length * NODE_H + (layers.length - 1) * GAP_Y;
-  return { coords, waypoints, chains, width, height, fewest };
+  return { coords, waypoints, chains, width, height };
 }
 
 // Remarques, exemples, notations : affichés seulement si un autre énoncé s'en sert (ou sur demande)
@@ -202,42 +202,6 @@ function cachedLayout(allNodes, byId, showIsolated, showRemarks) {
     cache.set(key, { nodes, ...(nodes.length ? layout(nodes, byId) : {}) });
   }
   return cache.get(key);
-}
-
-// Avertissement « IA » (indicatif) : un graphe dont la forme ressemble à celle des articles entièrement rédigés par une IA.
-// Seuils d'une étude d'environ 200 articles (MAINTENANCE.md), mesurée sur le graphe de l'article entier avec les options
-// par défaut : profil GPT = beaucoup de lemmes, (presque) pas de corollaires, presque tout démontré ; profil Claude =
-// beaucoup de croisements par lien et beaucoup d'énoncés pour la longueur, avec des corollaires (les articles de Claude
-// en ont tous ; sans cette condition, des articles humains très découpés comme ceux de Bismut ressortaient).
-// `words` : mots hors formules (serveur).
-// null : moins de 8 énoncés, ou aucun des deux profils.
-export function aiProfile(allNodes, words) {
-  if (allNodes.length < 8) return null;
-  const main = allNodes.filter((n) => !SIDE_KINDS.has(n.kind));
-  const share = (test) => main.filter(test).length / Math.max(1, main.length);
-  const lemmas = share((n) => n.kind === "lemma");
-  const corollaries = share((n) => n.kind === "corollary");
-  const proved = share((n) => (n.proofs || []).length || n.detectedProof || n.proofPassage);
-  if (lemmas >= 0.45 && corollaries <= 0.06 && proved >= 0.8) return { model: "gpt", lemmas, corollaries, proved };
-  const byId = new Map(allNodes.map((n) => [n.id, n]));
-  const { nodes, chains, fewest } = cachedLayout(allNodes, byId, false, false);
-  const crossings = nodes.length >= 2 ? fewest / Math.max(1, chains.length) : 0;
-  const density = words > 0 ? 1000 * allNodes.length / words : 0;
-  if (crossings > 0.57 && density > 5.03 && corollaries >= 0.08) return { model: "claude", crossings, density };
-  return null;
-}
-
-// Texte de l'avertissement : modèle soupçonné et valeurs mesurées sur cet article
-export function aiWarningText(profile) {
-  const number = (value, digits) => new Intl.NumberFormat(getLanguage(), { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value);
-  const percent = (value) => number(100 * value, 0);
-  if (profile.model === "gpt") {
-    return t("graph.ai.gpt", { lemmas: percent(profile.lemmas), proved: percent(profile.proved),
-      corollaries: profile.corollaries ? t("graph.ai.corollaries", { n: percent(profile.corollaries) }) : t("graph.ai.noCorollary") });
-  }
-  const plural = new Intl.PluralRules(getLanguage()).select(profile.crossings) === "one" ? "one" : "other";
-  return t("graph.ai.claude", { crossings: t(`graph.ai.crossings.${plural}`, { n: number(profile.crossings, 2) }),
-    density: number(profile.density, 1) });
 }
 
 // Clic dans le graphe à côté des énoncés (fond, flèche) : on revient au graphe sans énoncé choisi

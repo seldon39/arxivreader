@@ -164,5 +164,16 @@ class GraphDeselect(unittest.TestCase):
         self.assertIn("if (deselects(event.target, selected)) onSelect(null);", graph)
         self.assertIn("onSelect: (id) => (id ? this.select(id, { scroll: true }) : this.select(null)),", reader)
 
+class GraphFullScreenIcon(unittest.TestCase):
+    """Graphe des dépendances : le plein écran est une icône (flèches vers les coins) à droite de la barre d'outils."""
+
+    def test_icon_with_its_name(self):
+        reader = (ROOT / "static/js/reader.js").read_text(encoding="utf-8")
+        util = (ROOT / "static/js/util.js").read_text(encoding="utf-8")
+        self.assertIn('h("button", { class: "icon-button", type: "button", title: t("graph.expand"), "aria-label": t("graph.expand"),', reader)
+        self.assertIn("html: icons.maximize, onclick: () => this.openGraphOverlay() });", reader)
+        self.assertIn('h("div", { class: "graph-actions" }, expand)', reader)
+        self.assertIn("  maximize: '<svg", util)
+
 if __name__ == "__main__":
     unittest.main()

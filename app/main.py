@@ -29,7 +29,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import (ai, alerts, annotations, bibtex, bookjob, check, notesync, safety, citations, crossrefs, db, export, feed, feedprune, folders, fulltext, journals, latexml, library, localpdf, onboarding, profile, providers, related, texfile,
-               relevance, search, texexport, updates, wordcount, zotero)
+               relevance, search, texexport, updates, zotero)
 from .arxiv import ArxivError, fetch_metadata, paper_key, parse_arxiv_id, strip_subject_class
 from .config import HOST, PORT, STATIC, TOKEN, TOKEN_FILE
 from .sanitize import clean_stored
@@ -483,7 +483,6 @@ def paper(paper_id: str):
         threading.Thread(target=library.repair_assets, args=(paper_id,), daemon=True).start()
     # sans texte pour l'assistant (PDF scanné) : la page joint les pages autour de la question
     paper = {**paper, "noText": ai.without_text(paper)}
-    paper["words"] = wordcount.words(paper_id)  # densité d'énoncés de l'avertissement « IA » du graphe
     if paper.get("archived_of"):  # version archivée : le lecteur indique la dernière version installée
         paper["mainVersion"] = library.main_of(paper)["version"]
     if paper.get("source") in latexml.SOURCES:  # version HTML expérimentale (LaTeXML), si elle est faite et à jour
